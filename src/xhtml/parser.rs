@@ -1,6 +1,3 @@
-
-
 struct Parser {
     lexer: Lexer,
-
 }

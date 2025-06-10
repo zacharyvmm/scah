@@ -1,3 +1,5 @@
+use crate::utils::reader::{Reader, ReaderRef};
+
 #[derive(Debug, PartialEq)]
 pub enum TokenKind {
     STRING,
@@ -12,48 +14,23 @@ pub struct AttributeToken<'a> {
 }
 
 pub struct AttributeTokenIter<'a> {
-    position: usize,
-    source: &'a str,
+    reader: ReaderRef<'a>,
 }
 
 impl<'a> AttributeTokenIter<'a> {
-    pub fn new(start: usize, input: &'a str) -> Self {
-        return AttributeTokenIter {
-            position: start,
-            source: input,
-        };
-    }
-
-    fn peek_char(&self) -> Option<char> {
-        // This transformation should probably be done before hand
-        return self.source[self.position..].chars().next();
-    }
-
-    fn consume_char(&mut self) -> Option<char> {
-        let next_char = self.peek_char()?;
-        self.position += next_char.len_utf8();
-        return Some(next_char);
+    pub fn new(reader: ReaderRef<'a>) -> Self {
+        return AttributeTokenIter { reader: reader };
     }
 
     fn skip_whitespace(&mut self) {
-        while let Some(c) = self.peek_char() {
+        let mut reader = self.reader.borrow_mut();
+        while let Some(c) = reader.peek() {
             if c.is_whitespace() {
-                self.consume_char();
+                reader.next();
             } else {
                 break;
             }
         }
-    }
-
-    pub fn current_position(&self) -> usize {
-        return self.position;
-    }
-
-    fn create_token(&self, start: usize, end: usize, kind: TokenKind) -> AttributeToken<'a> {
-        return AttributeToken {
-            kind,
-            value: &self.source[start..end],
-        };
     }
 }
 
@@ -62,23 +39,37 @@ impl<'a> Iterator for AttributeTokenIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.skip_whitespace();
-        let start_pos = self.current_position();
 
-        return match self.consume_char()? {
+        let mut reader = self.reader.borrow_mut();
+        let start_pos = reader.get_position();
+
+        return match reader.next()? {
             c if c.is_alphabetic() => {
                 // Find end of word
-                while let Some(next) = self.peek_char() {
+                while let Some(next) = reader.peek() {
                     if next.is_alphanumeric() {
-                        self.consume_char();
+                        reader.next();
                     } else {
                         break;
                     }
                 }
-                Some(self.create_token(start_pos, self.position, TokenKind::STRING))
+                Some(AttributeToken {
+                    kind: TokenKind::STRING,
+                    value: &reader.slice(start_pos..reader.get_position()),
+                })
             }
-            '=' => Some(self.create_token(start_pos, self.position, TokenKind::EQUAL)),
-            '"' => Some(self.create_token(start_pos, self.position, TokenKind::QUOTE)),
-            '\'' => Some(self.create_token(start_pos, self.position, TokenKind::QUOTE)),
+            '=' => Some(AttributeToken {
+                kind: TokenKind::EQUAL,
+                value: &reader.slice(start_pos..reader.get_position()),
+            }),
+            '"' => Some(AttributeToken {
+                kind: TokenKind::QUOTE,
+                value: &reader.slice(start_pos..reader.get_position()),
+            }),
+            '\'' => Some(AttributeToken {
+                kind: TokenKind::QUOTE,
+                value: &reader.slice(start_pos..reader.get_position()),
+            }),
             _ => None,
         };
     }
@@ -90,7 +81,11 @@ mod tests {
 
     #[test]
     fn basic_attribute_iterator() {
-        let mut iterator = AttributeTokenIter::new(0, "key=\"value\"");
+        let string: String = String::from("key=\"value\"");
+
+        let mut reader = Reader::new(&string);
+
+        let mut iterator = AttributeTokenIter::new(reader);
 
         let mut next_iter = iterator.next();
         assert!(next_iter.is_some());
