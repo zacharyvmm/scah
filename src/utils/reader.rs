@@ -1,10 +1,6 @@
-use std::cell::RefCell;
 use std::iter::Peekable;
 use std::ops::Range;
-use std::rc::Rc;
 use std::str::Chars;
-
-pub type ReaderRef<'a> = Rc<RefCell<Reader<'a>>>;
 
 pub struct Reader<'a> {
     source: &'a str,
@@ -13,12 +9,12 @@ pub struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    pub fn new(input: &'a str) -> ReaderRef<'a> {
-        return Rc::new(RefCell::new(Reader {
+    pub fn new(input: &'a str) -> Self {
+        return Self {
             source: input,
             iter: input.chars().peekable(),
             position: 0,
-        }));
+        };
     }
 
     #[inline]
@@ -54,8 +50,7 @@ mod tests {
     #[test]
     fn basic_iterator() {
         let my_string = String::from("Hello World");
-        let mut obj = Reader::new(&my_string);
-        let mut reader = obj.borrow_mut();
+        let mut reader = Reader::new(&my_string);
 
         assert_eq!(reader.next(), Some('H'));
         assert_eq!(reader.next(), Some('e'));

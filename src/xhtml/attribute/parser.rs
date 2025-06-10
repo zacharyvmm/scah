@@ -1,23 +1,9 @@
 use super::tokenizer::{AttributeTokenIter, TokenKind};
-use crate::utils::reader::{Reader, ReaderRef};
-
-// This is the intended output of the all the nodes
-// This exists if their is not hooks
-struct GlobalAttribute {
-    // list of classes
-    // list of id's
-}
-
-struct Hook {
-    // map of css selectors with a linked list of values
-}
-
-// This is the intended output of the node itself
-struct Attribute {}
+use crate::utils::reader::Reader;
 
 enum AttributeFsmState {
-    NEW_KEY,
-    ASSIGN_VALUE,
+    NewKey,
+    AssignValue,
 }
 
 struct Pair<'a> {
@@ -31,55 +17,55 @@ struct Pair<'a> {
 impl<'a> Pair<'a> {
     fn new() -> Self {
         return Pair {
-            state: AttributeFsmState::NEW_KEY,
+            state: AttributeFsmState::NewKey,
             key_buf: None,
             pairs: Vec::new(),
         };
     }
 
-    pub fn set_to_new_key(&mut self) -> () {
+    pub fn set_to_NewKey(&mut self) -> () {
         if let Some(key) = self.key_buf {
             self.pairs.push((key, None));
             self.key_buf = None;
         }
 
-        self.state = AttributeFsmState::NEW_KEY;
+        self.state = AttributeFsmState::NewKey;
     }
 
     pub fn add_string(&mut self, content: &'a str) {
         match self.state {
-            AttributeFsmState::NEW_KEY => {
+            AttributeFsmState::NewKey => {
                 // This should not happen, but better safe then sorry
-                // self.set_to_new_key();
+                // self.set_to_NewKey();
 
                 self.key_buf = Some(content);
 
-                self.state = AttributeFsmState::ASSIGN_VALUE;
+                self.state = AttributeFsmState::AssignValue;
             }
 
-            AttributeFsmState::ASSIGN_VALUE => {
+            AttributeFsmState::AssignValue => {
                 if let Some(key) = self.key_buf {
                     self.pairs.push((key, Some(content)));
                     self.key_buf = None;
                 }
 
-                self.state = AttributeFsmState::NEW_KEY;
+                self.state = AttributeFsmState::NewKey;
             }
         }
     }
 }
 
 struct AttributeParser<'a> {
-    iter: AttributeTokenIter<'a>,
+    iter: AttributeTokenIter,
     pair: Pair<'a>,
-    reader: ReaderRef<'a>,
+    reader: Reader<'a>,
 }
 
 impl<'a> AttributeParser<'a> {
-    fn new(reader: ReaderRef<'a>) -> Self {
+    fn new(reader: Reader<'a>) -> Self {
         return AttributeParser {
-            iter: AttributeTokenIter::new(reader.clone()),
             reader: reader,
+            iter: AttributeTokenIter::new(),
             pair: Pair::new(),
         };
     }
@@ -89,19 +75,18 @@ impl<'a> AttributeParser<'a> {
         let mut position = 0;
 
         //for token in self.iter {
-        while let Some(token) = self.iter.next() {
-            let reader = self.reader.borrow();
+        while let Some(token) = self.iter.next(&mut self.reader) {
             match (opened_quote, token.kind) {
                 (false, TokenKind::QUOTE) => {
                     opened_quote = true;
-                    position = reader.get_position();
+                    position = self.reader.get_position();
                 }
 
                 (true, TokenKind::QUOTE) => {
                     opened_quote = false;
 
-                    let end_position = reader.get_position() - token.value.len();
-                    let content_inside_quotes = &reader.slice(position..end_position);
+                    let end_position = self.reader.get_position() - token.value.len();
+                    let content_inside_quotes = &self.reader.slice(position..end_position);
 
                     self.pair.add_string(content_inside_quotes);
                 }
@@ -116,7 +101,7 @@ impl<'a> AttributeParser<'a> {
             }
         }
 
-        self.pair.set_to_new_key();
+        self.pair.set_to_NewKey();
     }
 }
 
@@ -126,7 +111,7 @@ mod tests {
 
     #[test]
     fn test_key_no_quote_and_value_with_quote() {
-        let mut reader = Reader::new("key=\"value\"");
+        let reader = Reader::new("key=\"value\"");
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
@@ -135,7 +120,7 @@ mod tests {
 
     #[test]
     fn test_key_no_quote_and_value_no_quote() {
-        let mut reader = Reader::new("key=value");
+        let reader = Reader::new("key=value");
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
@@ -144,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_key_with_quote_and_value_with_quote() {
-        let mut reader = Reader::new("\"key\"=\"value\"");
+        let reader = Reader::new("\"key\"=\"value\"");
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
@@ -153,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_multiple_key_value_pairs() {
-        let mut reader = Reader::new("key=\"value\" \"key1\"=value1 \"key2\"=\"value2\" keey");
+        let reader = Reader::new("key=\"value\" \"key1\"=value1 \"key2\"=\"value2\" keey");
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
@@ -165,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_key_with_quote_and_no_value() {
-        let mut reader = Reader::new("\"key\"");
+        let reader = Reader::new("\"key\"");
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
@@ -174,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_key_no_quote_and_no_value() {
-        let mut reader = Reader::new("key");
+        let reader = Reader::new("key");
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
@@ -183,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_long_key_with_spaces() {
-        let mut reader = Reader::new("\"long key with spaces\"=\"value\"");
+        let reader = Reader::new("\"long key with spaces\"=\"value\"");
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
@@ -195,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_long_key_with_spaces_and_different_quote_inside() {
-        let mut reader = Reader::new("\"long key's with spaces\"=\"value\"");
+        let reader = Reader::new("\"long key's with spaces\"=\"value\"");
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
