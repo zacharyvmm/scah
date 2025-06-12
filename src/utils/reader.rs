@@ -28,8 +28,11 @@ impl<'a> Reader<'a> {
     }
 
     #[inline]
-    pub fn peek(&mut self) -> Option<&char> {
-        return self.iter.peek();
+    pub fn peek(&mut self) -> Option<char> {
+        return match self.iter.peek() {
+            Some(peek) => Some(*peek),
+            _ => None
+        };
     }
 }
 
@@ -40,6 +43,20 @@ impl<'a> Iterator for Reader<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.position += 1;
         return self.iter.next();
+    }
+}
+
+impl<'a> Reader<'a> {
+
+    #[inline]
+    pub fn next_until(&mut self, condition: fn(char) -> bool) {
+        while let Some(character) = self.peek() {
+            if condition(character) {
+                self.next();
+            } else {
+                break;
+            }
+        }
     }
 }
 
@@ -62,7 +79,7 @@ mod tests {
         assert_eq!(reader.next(), Some('o'));
         assert_eq!(reader.next(), Some('r'));
         assert_eq!(reader.next(), Some('l'));
-        assert_eq!(reader.peek(), Some(&'d'));
+        assert_eq!(reader.peek(), Some('d'));
         assert_eq!(reader.next(), Some('d'));
 
         assert_eq!(reader.slice(0..5), "Hello");

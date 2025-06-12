@@ -8,32 +8,15 @@ pub enum ElementAttributeToken<'a> {
 }
 
 impl<'a> ElementAttributeToken<'a> {
-    fn skip_whitespace(reader: &mut Reader) {
-        while let Some(c) = reader.peek() {
-            if c.is_whitespace() {
-                reader.next();
-            } else {
-                break;
-            }
-        }
-    }
-
     pub fn next(reader: &mut Reader<'a>)  -> Option<Self> {
-        ElementAttributeToken::skip_whitespace(reader);
-
+        reader.next_until(|c| c.is_whitespace());
 
         let start_pos = reader.get_position();
 
         return match reader.next()? {
             c if c.is_alphabetic() => {
                 // Find end of word
-                while let Some(next) = reader.peek() {
-                    if next.is_alphanumeric() {
-                        reader.next();
-                    } else {
-                        break;
-                    }
-                }
+                reader.next_until(|c| c.is_alphanumeric());
                 return Some(Self::String(&reader.slice(start_pos..reader.get_position())));
             }
             '=' => Some(Self::Equal),
