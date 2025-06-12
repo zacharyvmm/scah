@@ -1,27 +1,33 @@
 use crate::utils::reader::Reader;
 
 #[derive(Debug, PartialEq)]
+pub enum QuoteKind {
+    DoubleQuoted,
+    SingleQuoted
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ElementAttributeToken<'a> {
     String(&'a str),
-    Quote,
+    Quote(QuoteKind),
     Equal,
 }
 
 impl<'a> ElementAttributeToken<'a> {
     pub fn next(reader: &mut Reader<'a>)  -> Option<Self> {
-        reader.next_until(|c| c.is_whitespace());
+        reader.next_while(|c| c.is_whitespace());
 
         let start_pos = reader.get_position();
 
         return match reader.next()? {
             c if c.is_alphabetic() => {
                 // Find end of word
-                reader.next_until(|c| c.is_alphanumeric());
+                reader.next_while(|c| c.is_alphanumeric());
                 return Some(Self::String(&reader.slice(start_pos..reader.get_position())));
             }
             '=' => Some(Self::Equal),
-            '"' => Some(Self::Quote),
-            '\'' => Some(Self::Quote),
+            '"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
+            '\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
             _ => None,
         };
     }
@@ -56,7 +62,7 @@ mod tests {
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
-        assert_eq!(next_value, ElementAttributeToken::Quote);
+        assert_eq!(next_value, ElementAttributeToken::Quote(QuoteKind::DoubleQuoted));
 
         // -----
         next_iter = ElementAttributeToken::next(&mut reader);
@@ -70,7 +76,7 @@ mod tests {
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
-        assert_eq!(next_value, ElementAttributeToken::Quote);
+        assert_eq!(next_value, ElementAttributeToken::Quote(QuoteKind::DoubleQuoted));
 
         // -----
         next_iter = ElementAttributeToken::next(&mut reader);

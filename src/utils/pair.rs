@@ -43,7 +43,6 @@ impl<'a> Pair<'a> {
                 // self.set_to_NewKey();
 
                 self.key_buf = Some(content);
-
                 self.state = PairingState::AssignValue;
             }
 

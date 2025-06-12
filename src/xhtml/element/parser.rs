@@ -1,4 +1,4 @@
-use super::tokenizer::ElementAttributeToken;
+use super::tokenizer::{ElementAttributeToken, QuoteKind};
 use crate::utils::reader::Reader;
 use crate::utils::pair::Pair;
 
@@ -17,19 +17,23 @@ impl<'a> AttributeParser<'a> {
     }
 
     pub fn parse(&mut self) {
-        let mut opened_quote = false;
+        let mut opened_quote: Option<QuoteKind> = None;
         let mut position = self.reader.get_position();
 
         //for token in self.iter {
         while let Some(token) = ElementAttributeToken::next(&mut self.reader) {
-            match (opened_quote, token) {
-                (false, ElementAttributeToken::Quote) => {
-                    opened_quote = true;
+            match (&opened_quote, token) {
+                (Option::None, ElementAttributeToken::Quote(kind)) => {
+                    opened_quote = Some(kind);
                     position = self.reader.get_position();
                 }
 
-                (true, ElementAttributeToken::Quote) => {
-                    opened_quote = false;
+                (Some(previous_quote), ElementAttributeToken::Quote(kind)) => {
+                    if *previous_quote != kind {
+                        continue;
+                    }
+
+                    opened_quote = None;
 
                     // `"` and `'` are always of size 1
                     const SIZE_OF_QUOTE:usize = 1;
@@ -40,7 +44,7 @@ impl<'a> AttributeParser<'a> {
                     self.pair.add_string(content_inside_quotes);
                 }
 
-                (false, ElementAttributeToken::String(string_value)) => {
+                (Option::None, ElementAttributeToken::String(string_value)) => {
                     self.pair.add_string(string_value);
                 }
 

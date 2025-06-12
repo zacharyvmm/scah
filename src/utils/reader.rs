@@ -49,7 +49,7 @@ impl<'a> Iterator for Reader<'a> {
 impl<'a> Reader<'a> {
 
     #[inline]
-    pub fn next_until(&mut self, condition: fn(char) -> bool) {
+    pub fn next_while(&mut self, condition: fn(char) -> bool) {
         while let Some(character) = self.peek() {
             if condition(character) {
                 self.next();
