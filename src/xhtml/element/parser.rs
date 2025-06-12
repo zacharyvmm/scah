@@ -48,9 +48,11 @@ impl<'a> AttributeParser<'a> {
                     self.pair.add_string(string_value);
                 }
 
-                (_, _) => (), //(false, TokenKind::EQUAL) => {
-                              // Trust the fsm should work without this
-                              //}
+                (_, ElementAttributeToken::Equal) => {
+                    self.pair.set_to_assign_value();
+                }
+
+                (_, _) => (),
             }
         }
 
@@ -140,6 +142,45 @@ mod tests {
         assert_eq!(
             parser.pair.get_pairs()[0],
             ("long key's with spaces", Some("value"))
+        );
+    }
+
+    #[test]
+    fn test_long_key_with_spaces_and_real_same_quote_inside() {
+        let reader = Reader::new("\"long key\\\"s with spaces\"=\"value\"");
+        let mut parser = AttributeParser::new(reader);
+        parser.parse();
+
+        assert_eq!(
+            parser.pair.get_pairs()[0],
+            ("long key\\\"s with spaces", Some("value"))
+        );
+    }
+
+    #[test]
+    fn test_valid_anchor_tag_attributes() {
+        let reader = Reader::new("a target=\"_blank\" href=\"/my_cv.pdf\" class=\"px-7 py-3\"");
+        let mut parser = AttributeParser::new(reader);
+        parser.parse();
+
+        assert_eq!(
+            parser.pair.get_pairs()[0],
+            ("a", None)
+        );
+
+        assert_eq!(
+            parser.pair.get_pairs()[1],
+            ("target", Some("_blank"))
+        );
+
+        assert_eq!(
+            parser.pair.get_pairs()[2],
+            ("href", Some("/my_cv.pdf"))
+        );
+
+        assert_eq!(
+            parser.pair.get_pairs()[3],
+            ("class", Some("px-7 py-3"))
         );
     }
 }

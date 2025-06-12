@@ -36,14 +36,22 @@ impl<'a> Pair<'a> {
         self.state = PairingState::NewKey;
     }
 
+    pub fn set_to_assign_value(&mut self) -> () {
+        if !self.key_buf.is_some() {
+            panic!("Should not be possible, but should be handled gracefully");
+        }
+
+        self.state = PairingState::AssignValue;
+    }
+
     pub fn add_string(&mut self, content: &'a str) {
         match self.state {
             PairingState::NewKey => {
-                // This should not happen, but better safe then sorry
-                // self.set_to_NewKey();
-
+                if self.key_buf.is_some(){
+                    self.set_to_new_key();
+                }
                 self.key_buf = Some(content);
-                self.state = PairingState::AssignValue;
+                //self.state = PairingState::AssignValue;
             }
 
             PairingState::AssignValue => {

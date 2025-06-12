@@ -20,15 +20,14 @@ impl<'a> ElementAttributeToken<'a> {
         let start_pos = reader.get_position();
 
         return match reader.next()? {
-            c if c.is_alphabetic() => {
-                // Find end of word
-                reader.next_while(|c| c.is_alphanumeric());
-                return Some(Self::String(&reader.slice(start_pos..reader.get_position())));
-            }
-            '=' => Some(Self::Equal),
             '"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
             '\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
-            _ => None,
+            '=' => Some(Self::Equal),
+            _ => {
+                // Find end of word
+                reader.next_while(|c| !c.is_whitespace() && c != '"' && c != '\'' && c != '=');
+                return Some(Self::String(&reader.slice(start_pos..reader.get_position())));
+            },
         };
     }
 }
