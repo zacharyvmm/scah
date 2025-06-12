@@ -17,11 +17,7 @@ pub struct AttributeTokenIter {
 }
 
 impl AttributeTokenIter {
-    pub fn new() -> Self {
-        return AttributeTokenIter {  };
-    }
-
-    fn skip_whitespace(&mut self, reader: &mut Reader) {
+    fn skip_whitespace(reader: &mut Reader) {
         while let Some(c) = reader.peek() {
             if c.is_whitespace() {
                 reader.next();
@@ -31,8 +27,8 @@ impl AttributeTokenIter {
         }
     }
 
-    pub fn next<'a>(&mut self, reader: &mut Reader<'a>) -> Option<AttributeToken<'a>> {
-        self.skip_whitespace(reader);
+    pub fn next<'a>(reader: &mut Reader<'a>) -> Option<AttributeToken<'a>> {
+        Self::skip_whitespace(reader);
 
         let start_pos = reader.get_position();
 
@@ -78,9 +74,7 @@ mod tests {
 
         let mut reader = Reader::new(&string);
 
-        let mut iterator = AttributeTokenIter::new();
-
-        let mut next_iter = iterator.next(&mut reader);
+        let mut next_iter = AttributeTokenIter::next(&mut reader);
         assert!(next_iter.is_some());
 
         let mut next_value = next_iter.unwrap();
@@ -89,7 +83,7 @@ mod tests {
         assert_eq!(next_value.value, "key");
 
         // -----
-        next_iter = iterator.next(&mut reader);
+        next_iter = AttributeTokenIter::next(&mut reader);
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
@@ -97,7 +91,7 @@ mod tests {
         assert_eq!(next_value.value, "=");
 
         // -----
-        next_iter = iterator.next(&mut reader);
+        next_iter = AttributeTokenIter::next(&mut reader);
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
@@ -105,7 +99,7 @@ mod tests {
         assert_eq!(next_value.value, "\"");
 
         // -----
-        next_iter = iterator.next(&mut reader);
+        next_iter = AttributeTokenIter::next(&mut reader);
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
@@ -113,7 +107,7 @@ mod tests {
         assert_eq!(next_value.value, "value");
 
         // -----
-        next_iter = iterator.next(&mut reader);
+        next_iter = AttributeTokenIter::next(&mut reader);
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
@@ -121,7 +115,7 @@ mod tests {
         assert_eq!(next_value.value, "\"");
 
         // -----
-        next_iter = iterator.next(&mut reader);
+        next_iter = AttributeTokenIter::next(&mut reader);
         assert!(!next_iter.is_some());
     }
 

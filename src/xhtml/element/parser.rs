@@ -1,62 +1,9 @@
 use super::tokenizer::{AttributeTokenIter, TokenKind};
 use crate::utils::reader::Reader;
+use crate::utils::pair::Pair;
 
-enum AttributeFsmState {
-    NewKey,
-    AssignValue,
-}
-
-struct Pair<'a> {
-    state: AttributeFsmState,
-    key_buf: Option<&'a str>,
-
-    // Key Value pair. The Value can be null
-    pairs: Vec<(&'a str, Option<&'a str>)>,
-}
-
-impl<'a> Pair<'a> {
-    fn new() -> Self {
-        return Pair {
-            state: AttributeFsmState::NewKey,
-            key_buf: None,
-            pairs: Vec::new(),
-        };
-    }
-
-    pub fn set_to_NewKey(&mut self) -> () {
-        if let Some(key) = self.key_buf {
-            self.pairs.push((key, None));
-            self.key_buf = None;
-        }
-
-        self.state = AttributeFsmState::NewKey;
-    }
-
-    pub fn add_string(&mut self, content: &'a str) {
-        match self.state {
-            AttributeFsmState::NewKey => {
-                // This should not happen, but better safe then sorry
-                // self.set_to_NewKey();
-
-                self.key_buf = Some(content);
-
-                self.state = AttributeFsmState::AssignValue;
-            }
-
-            AttributeFsmState::AssignValue => {
-                if let Some(key) = self.key_buf {
-                    self.pairs.push((key, Some(content)));
-                    self.key_buf = None;
-                }
-
-                self.state = AttributeFsmState::NewKey;
-            }
-        }
-    }
-}
 
 struct AttributeParser<'a> {
-    iter: AttributeTokenIter,
     pair: Pair<'a>,
     reader: Reader<'a>,
 }
@@ -65,7 +12,6 @@ impl<'a> AttributeParser<'a> {
     fn new(reader: Reader<'a>) -> Self {
         return AttributeParser {
             reader: reader,
-            iter: AttributeTokenIter::new(),
             pair: Pair::new(),
         };
     }
@@ -75,7 +21,7 @@ impl<'a> AttributeParser<'a> {
         let mut position = 0;
 
         //for token in self.iter {
-        while let Some(token) = self.iter.next(&mut self.reader) {
+        while let Some(token) = AttributeTokenIter::next(&mut self.reader) {
             match (opened_quote, token.kind) {
                 (false, TokenKind::QUOTE) => {
                     opened_quote = true;
@@ -101,7 +47,7 @@ impl<'a> AttributeParser<'a> {
             }
         }
 
-        self.pair.set_to_NewKey();
+        self.pair.set_to_new_key();
     }
 }
 
@@ -115,7 +61,7 @@ mod tests {
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
-        assert_eq!(parser.pair.pairs[0], ("key", Some("value")));
+        assert_eq!(parser.pair.get_pairs()[0], ("key", Some("value")));
     }
 
     #[test]
@@ -124,7 +70,7 @@ mod tests {
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
-        assert_eq!(parser.pair.pairs[0], ("key", Some("value")));
+        assert_eq!(parser.pair.get_pairs()[0], ("key", Some("value")));
     }
 
     #[test]
@@ -133,7 +79,7 @@ mod tests {
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
-        assert_eq!(parser.pair.pairs[0], ("key", Some("value")));
+        assert_eq!(parser.pair.get_pairs()[0], ("key", Some("value")));
     }
 
     #[test]
@@ -142,10 +88,10 @@ mod tests {
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
-        assert_eq!(parser.pair.pairs[0], ("key", Some("value")));
-        assert_eq!(parser.pair.pairs[1], ("key1", Some("value1")));
-        assert_eq!(parser.pair.pairs[2], ("key2", Some("value2")));
-        assert_eq!(parser.pair.pairs[3], ("keey", None));
+        assert_eq!(parser.pair.get_pairs()[0], ("key", Some("value")));
+        assert_eq!(parser.pair.get_pairs()[1], ("key1", Some("value1")));
+        assert_eq!(parser.pair.get_pairs()[2], ("key2", Some("value2")));
+        assert_eq!(parser.pair.get_pairs()[3], ("keey", None));
     }
 
     #[test]
@@ -154,7 +100,7 @@ mod tests {
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
-        assert_eq!(parser.pair.pairs[0], ("key", None));
+        assert_eq!(parser.pair.get_pairs()[0], ("key", None));
     }
 
     #[test]
@@ -163,7 +109,7 @@ mod tests {
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
-        assert_eq!(parser.pair.pairs[0], ("key", None));
+        assert_eq!(parser.pair.get_pairs()[0], ("key", None));
     }
 
     #[test]
@@ -173,7 +119,7 @@ mod tests {
         parser.parse();
 
         assert_eq!(
-            parser.pair.pairs[0],
+            parser.pair.get_pairs()[0],
             ("long key with spaces", Some("value"))
         );
     }
@@ -185,7 +131,7 @@ mod tests {
         parser.parse();
 
         assert_eq!(
-            parser.pair.pairs[0],
+            parser.pair.get_pairs()[0],
             ("long key's with spaces", Some("value"))
         );
     }
