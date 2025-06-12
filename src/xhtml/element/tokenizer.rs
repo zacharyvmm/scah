@@ -1,22 +1,13 @@
 use crate::utils::reader::Reader;
 
 #[derive(Debug, PartialEq)]
-pub enum TokenKind {
-    STRING,
-    QUOTE,
-    EQUAL,
+pub enum ElementAttributeToken<'a> {
+    String(&'a str),
+    Quote,
+    Equal,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct AttributeToken<'a> {
-    pub kind: TokenKind,
-    pub value: &'a str,
-}
-
-pub struct AttributeTokenIter {
-}
-
-impl AttributeTokenIter {
+impl<'a> ElementAttributeToken<'a> {
     fn skip_whitespace(reader: &mut Reader) {
         while let Some(c) = reader.peek() {
             if c.is_whitespace() {
@@ -27,8 +18,9 @@ impl AttributeTokenIter {
         }
     }
 
-    pub fn next<'a>(reader: &mut Reader<'a>) -> Option<AttributeToken<'a>> {
-        Self::skip_whitespace(reader);
+    pub fn next(reader: &mut Reader<'a>)  -> Option<Self> {
+        ElementAttributeToken::skip_whitespace(reader);
+
 
         let start_pos = reader.get_position();
 
@@ -42,23 +34,11 @@ impl AttributeTokenIter {
                         break;
                     }
                 }
-                Some(AttributeToken {
-                    kind: TokenKind::STRING,
-                    value: &reader.slice(start_pos..reader.get_position()),
-                })
+                return Some(Self::String(&reader.slice(start_pos..reader.get_position())));
             }
-            '=' => Some(AttributeToken {
-                kind: TokenKind::EQUAL,
-                value: &reader.slice(start_pos..reader.get_position()),
-            }),
-            '"' => Some(AttributeToken {
-                kind: TokenKind::QUOTE,
-                value: &reader.slice(start_pos..reader.get_position()),
-            }),
-            '\'' => Some(AttributeToken {
-                kind: TokenKind::QUOTE,
-                value: &reader.slice(start_pos..reader.get_position()),
-            }),
+            '=' => Some(Self::Equal),
+            '"' => Some(Self::Quote),
+            '\'' => Some(Self::Quote),
             _ => None,
         };
     }
@@ -74,48 +54,43 @@ mod tests {
 
         let mut reader = Reader::new(&string);
 
-        let mut next_iter = AttributeTokenIter::next(&mut reader);
+        let mut next_iter = ElementAttributeToken::next(&mut reader);
         assert!(next_iter.is_some());
 
         let mut next_value = next_iter.unwrap();
 
-        assert_eq!(next_value.kind, TokenKind::STRING);
-        assert_eq!(next_value.value, "key");
+        assert_eq!(next_value, ElementAttributeToken::String("key"));
 
         // -----
-        next_iter = AttributeTokenIter::next(&mut reader);
+        next_iter = ElementAttributeToken::next(&mut reader);
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
-        assert_eq!(next_value.kind, TokenKind::EQUAL);
-        assert_eq!(next_value.value, "=");
+        assert_eq!(next_value, ElementAttributeToken::Equal);
 
         // -----
-        next_iter = AttributeTokenIter::next(&mut reader);
+        next_iter = ElementAttributeToken::next(&mut reader);
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
-        assert_eq!(next_value.kind, TokenKind::QUOTE);
-        assert_eq!(next_value.value, "\"");
+        assert_eq!(next_value, ElementAttributeToken::Quote);
 
         // -----
-        next_iter = AttributeTokenIter::next(&mut reader);
+        next_iter = ElementAttributeToken::next(&mut reader);
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
-        assert_eq!(next_value.kind, TokenKind::STRING);
-        assert_eq!(next_value.value, "value");
+        assert_eq!(next_value, ElementAttributeToken::String("value"));
 
         // -----
-        next_iter = AttributeTokenIter::next(&mut reader);
+        next_iter = ElementAttributeToken::next(&mut reader);
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
-        assert_eq!(next_value.kind, TokenKind::QUOTE);
-        assert_eq!(next_value.value, "\"");
+        assert_eq!(next_value, ElementAttributeToken::Quote);
 
         // -----
-        next_iter = AttributeTokenIter::next(&mut reader);
+        next_iter = ElementAttributeToken::next(&mut reader);
         assert!(!next_iter.is_some());
     }
 

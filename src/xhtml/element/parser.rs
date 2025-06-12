@@ -1,4 +1,4 @@
-use super::tokenizer::{AttributeTokenIter, TokenKind};
+use super::tokenizer::ElementAttributeToken;
 use crate::utils::reader::Reader;
 use crate::utils::pair::Pair;
 
@@ -18,27 +18,30 @@ impl<'a> AttributeParser<'a> {
 
     pub fn parse(&mut self) {
         let mut opened_quote = false;
-        let mut position = 0;
+        let mut position = self.reader.get_position();
 
         //for token in self.iter {
-        while let Some(token) = AttributeTokenIter::next(&mut self.reader) {
-            match (opened_quote, token.kind) {
-                (false, TokenKind::QUOTE) => {
+        while let Some(token) = ElementAttributeToken::next(&mut self.reader) {
+            match (opened_quote, token) {
+                (false, ElementAttributeToken::Quote) => {
                     opened_quote = true;
                     position = self.reader.get_position();
                 }
 
-                (true, TokenKind::QUOTE) => {
+                (true, ElementAttributeToken::Quote) => {
                     opened_quote = false;
 
-                    let end_position = self.reader.get_position() - token.value.len();
-                    let content_inside_quotes = &self.reader.slice(position..end_position);
+                    // `"` and `'` are always of size 1
+                    const SIZE_OF_QUOTE:usize = 1;
+
+                    let end_position = self.reader.get_position() - SIZE_OF_QUOTE;
+                    let content_inside_quotes = self.reader.slice(position..end_position);
 
                     self.pair.add_string(content_inside_quotes);
                 }
 
-                (false, TokenKind::STRING) => {
-                    self.pair.add_string(token.value);
+                (false, ElementAttributeToken::String(string_value)) => {
+                    self.pair.add_string(string_value);
                 }
 
                 (_, _) => (), //(false, TokenKind::EQUAL) => {
