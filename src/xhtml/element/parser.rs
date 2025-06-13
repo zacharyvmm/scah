@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_valid_anchor_tag_attributes() {
-        let reader = Reader::new("a target=\"_blank\" href=\"/my_cv.pdf\" class=\"px-7 py-3\"");
+        let reader = Reader::new("a target=\"_blank\" href=\"/my_cv.pdf\" class=\"px-7 py-3\" hello-world=hello-world");
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
@@ -181,6 +181,11 @@ mod tests {
         assert_eq!(
             parser.pair.get_pairs()[3],
             ("class", Some("px-7 py-3"))
+        );
+        
+        assert_eq!(
+            parser.pair.get_pairs()[4],
+            ("hello-world", Some("hello-world"))
         );
     }
 }

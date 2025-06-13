@@ -23,6 +23,7 @@ impl<'a> ElementAttributeToken<'a> {
             '"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
             '\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
             '=' => Some(Self::Equal),
+            '>' => None,
             _ => {
                 // Find end of word
                 reader.next_while(|c| !c.is_whitespace() && c != '"' && c != '\'' && c != '=');
