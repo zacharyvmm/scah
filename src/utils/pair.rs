@@ -1,4 +1,3 @@
-
 enum PairingState {
     NewKey,
     AssignValue,
@@ -22,7 +21,7 @@ impl<'a> Pair<'a> {
             pairs: Vec::new(),
         };
     }
-    
+
     pub fn get_pairs(&self) -> &Pairing<'a> {
         return &self.pairs;
     }
@@ -47,7 +46,7 @@ impl<'a> Pair<'a> {
     pub fn add_string(&mut self, content: &'a str) {
         match self.state {
             PairingState::NewKey => {
-                if self.key_buf.is_some(){
+                if self.key_buf.is_some() {
                     self.set_to_new_key();
                 }
                 self.key_buf = Some(content);

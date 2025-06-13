@@ -31,7 +31,7 @@ impl<'a> Reader<'a> {
     pub fn peek(&mut self) -> Option<char> {
         return match self.iter.peek() {
             Some(peek) => Some(*peek),
-            _ => None
+            _ => None,
         };
     }
 }
@@ -47,7 +47,6 @@ impl<'a> Iterator for Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-
     #[inline]
     pub fn next_while(&mut self, condition: fn(char) -> bool) {
         while let Some(character) = self.peek() {

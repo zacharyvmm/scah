@@ -1,7 +1,7 @@
-use super::tokenizer::{ElementAttributeToken, QuoteKind};
-use crate::utils::reader::Reader;
+use super::tokenizer::ElementAttributeToken;
 use crate::utils::pair::Pair;
-
+use crate::utils::reader::Reader;
+use crate::utils::token::QuoteKind;
 
 struct AttributeParser<'a> {
     pair: Pair<'a>,
@@ -36,7 +36,7 @@ impl<'a> AttributeParser<'a> {
                     opened_quote = None;
 
                     // `"` and `'` are always of size 1
-                    const SIZE_OF_QUOTE:usize = 1;
+                    const SIZE_OF_QUOTE: usize = 1;
 
                     let end_position = self.reader.get_position() - SIZE_OF_QUOTE;
                     let content_inside_quotes = self.reader.slice(position..end_position);
@@ -159,30 +159,20 @@ mod tests {
 
     #[test]
     fn test_valid_anchor_tag_attributes() {
-        let reader = Reader::new("a target=\"_blank\" href=\"/my_cv.pdf\" class=\"px-7 py-3\" hello-world=hello-world");
+        let reader = Reader::new(
+            "a target=\"_blank\" href=\"/my_cv.pdf\" class=\"px-7 py-3\" hello-world=hello-world",
+        );
         let mut parser = AttributeParser::new(reader);
         parser.parse();
 
-        assert_eq!(
-            parser.pair.get_pairs()[0],
-            ("a", None)
-        );
+        assert_eq!(parser.pair.get_pairs()[0], ("a", None));
 
-        assert_eq!(
-            parser.pair.get_pairs()[1],
-            ("target", Some("_blank"))
-        );
+        assert_eq!(parser.pair.get_pairs()[1], ("target", Some("_blank")));
 
-        assert_eq!(
-            parser.pair.get_pairs()[2],
-            ("href", Some("/my_cv.pdf"))
-        );
+        assert_eq!(parser.pair.get_pairs()[2], ("href", Some("/my_cv.pdf")));
 
-        assert_eq!(
-            parser.pair.get_pairs()[3],
-            ("class", Some("px-7 py-3"))
-        );
-        
+        assert_eq!(parser.pair.get_pairs()[3], ("class", Some("px-7 py-3")));
+
         assert_eq!(
             parser.pair.get_pairs()[4],
             ("hello-world", Some("hello-world"))
