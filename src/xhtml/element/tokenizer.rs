@@ -21,7 +21,7 @@ impl<'a> ElementAttributeToken<'a> {
             '>' => None,
             _ => {
                 // Find end of word
-                reader.next_while(|c| !c.is_whitespace() && c != '"' && c != '\'' && c != '=');
+                reader.next_while(|c| !matches!(c, ' ' | '"' | '\'' | '='));
                 return Some(Self::String(reader.slice(start_pos..reader.get_position())));
             }
         };
