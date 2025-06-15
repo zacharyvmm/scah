@@ -12,13 +12,18 @@ impl<'a> ElementAttributeToken<'a> {
     pub fn next(reader: &mut Reader<'a>) -> Option<Self> {
         reader.next_while(|c| c.is_whitespace());
 
+        if let Some(token) = reader.peek() {
+            if token == '>' {
+                return None;
+            };
+        }
+
         let start_pos = reader.get_position();
 
         return match reader.next()? {
             '"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
             '\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
             '=' => Some(Self::Equal),
-            '>' => None,
             _ => {
                 // Find end of word
                 reader.next_while(|c| !matches!(c, ' ' | '"' | '\'' | '='));

@@ -18,6 +18,7 @@ pub enum QueryKind<'a> {
     Has(Element<'a>), // `:has()`
     Not(Element<'a>), // `:not()`
 
+    // TODO: I'm not sure how this would belong to `QueryKind` and not `Selection`
     Or(Box<Self>), // This is the `,` on a selection. ex: `a#hello > p, p.world`
 }
 

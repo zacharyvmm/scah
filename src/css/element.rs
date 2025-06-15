@@ -47,7 +47,8 @@ impl<'a> SelectionKeyWords<'a> {
             ']' => Some(Self::CloseAttribute),
             _ => {
                 // Find end of word
-                reader.next_while(|c| !c.is_whitespace() && c != '#' && c != '.' && c != '[');
+                // POTENTIAL BUG ??? |> I'm pretty sure this is missing '\'' and '"'
+                reader.next_while(|c| !matches!(c, ' ' | '#' | '.' | '['));
                 return Some(Self::String(reader.slice(start_pos..reader.get_position())));
             }
         };
@@ -96,12 +97,17 @@ impl<'a> SelectionAttributeToken<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct Element<'a> {
-    name: Option<&'a str>,
-    id: Option<&'a str>,
-    class: Option<&'a str>,
-    attributes: Vec<AttributeSelection<'a>>,
+    pub(super) name: Option<&'a str>,
+    pub(super) id: Option<&'a str>,
+    pub(super) class: Option<&'a str>,
+    pub(super) attributes: Vec<AttributeSelection<'a>>,
 }
 
+// TODO: I don't like this abstraction
+// 1) `build` should be called something like `from`
+// 2) The data (Element struct) should be seperated from the parsing logic
+// 2.1) The parsing logic should continue to use the iterator parttern I have been using.
+// 2.1.1) The flow should look like this => Reader -> Tokenizer -> ElementIterator -> SelectionIterator
 impl<'a> Element<'a> {
     pub fn new() -> Self {
         return Self {
@@ -293,8 +299,25 @@ mod tests {
 
     #[test]
     fn test_handle_duplicates_in_element_definition() {
-        let reader = Reader::new("element#id.class[selected=true]#id#notid");
+        let mut reader = Reader::new("element#id.class[selected=true]#id#notid");
         // Since this is used by the developer is acceptable to throw an error in the system
-        assert!(false);
+        let mut element = Element::new();
+        element.build(&mut reader);
+
+        assert_eq!(
+            element,
+            Element {
+                name: Some("element"),
+                id: Some("id"),
+                class: Some("class"),
+                attributes: Vec::from([
+                    AttributeSelection {
+                        name: "selected",
+                        value: Some("true"),
+                        kind: AttributeSelectionKind::Exact
+                    }
+                ]),
+            }
+        );
     }
 }
