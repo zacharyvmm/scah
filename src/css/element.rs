@@ -97,10 +97,10 @@ impl<'a> SelectionAttributeToken<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct Element<'a> {
-    pub(super) name: Option<&'a str>,
-    pub(super) id: Option<&'a str>,
-    pub(super) class: Option<&'a str>,
-    pub(super) attributes: Vec<AttributeSelection<'a>>,
+    name: Option<&'a str>,
+    id: Option<&'a str>,
+    class: Option<&'a str>,
+    attributes: Vec<AttributeSelection<'a>>,
 }
 
 // TODO: I don't like this abstraction
@@ -109,6 +109,20 @@ pub struct Element<'a> {
 // 2.1) The parsing logic should continue to use the iterator parttern I have been using.
 // 2.1.1) The flow should look like this => Reader -> Tokenizer -> ElementIterator -> SelectionIterator
 impl<'a> Element<'a> {
+    pub(super) fn new(
+        name: Option<&'a str>,
+        id: Option<&'a str>,
+        class: Option<&'a str>,
+        attributes: Vec<AttributeSelection<'a>>,
+    ) -> Self {
+        return Self {
+            name: name,
+            id: id,
+            class: class,
+            attributes: attributes,
+        };
+    }
+
     fn handle_attribute_parsing(&mut self, reader: &mut Reader<'a>) {
         let mut opened_quote: Option<QuoteKind> = None;
         let mut position = reader.get_position();

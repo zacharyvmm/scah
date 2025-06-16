@@ -11,21 +11,6 @@ pub enum Combinator {
     // I'm pretty sure this does not apply to the scope of the project.
     Namespace, // `|`
 }
-pub enum QueryKind<'a> {
-    Element(Element<'a>),
-
-    Combinator(Combinator),
-
-    Has(Element<'a>), // `:has()`
-    Not(Element<'a>), // `:not()`
-
-    // TODO: I'm not sure how this would belong to `QueryKind` and not `Selection`
-    Or(Box<Self>), // This is the `,` on a selection. ex: `a#hello > p, p.world`
-}
-
-pub struct Selection<'a> {
-    query: Vec<QueryKind<'a>>,
-}
 
 impl Combinator {
     fn next<'a>(reader: &mut Reader<'a>) -> Option<Self> {
@@ -59,7 +44,53 @@ impl<'a> From<&mut Reader<'a>> for Combinator {
             }
         }
 
-        return combinator.expect("Their must be a Combinator here");
+        return combinator.expect("A combinator should be here");
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum QueryKind<'a> {
+    Element(Element<'a>),
+
+    Combinator(Combinator),
+
+    Has(Element<'a>), // `:has()`
+    Not(Element<'a>), // `:not()`
+
+    // TODO: I'm not sure how this would belong to `QueryKind` and not `Selection`
+    Or(Box<Self>), // This is the `,` on a selection. ex: `a#hello > p, p.world`
+}
+
+impl<'a> QueryKind<'a> {
+    fn next(reader: &mut Reader<'a>, last: Option<&Self>) -> Option<Self> {
+        match last {
+            Option::None | Some(Self::Combinator(_)) => Some(Self::Element(Element::from(reader))),
+            Some(_) => {
+                if let Some(token) = reader.peek() {
+                    if matches!(token, '>' | ' ' | '+' | '~' | '|') {
+                        return Some(Self::Combinator(Combinator::from(reader)));
+                    };
+                }
+
+                return None;
+            }
+        }
+    }
+}
+
+pub struct Selection<'a> {
+    query: Vec<QueryKind<'a>>,
+}
+
+impl<'a> From<&mut Reader<'a>> for Selection<'a> {
+    fn from(reader: &mut Reader<'a>) -> Self {
+        let mut selection = Self { query: Vec::new() };
+
+        while let Some(query) = QueryKind::next(reader, selection.query.last()) {
+            selection.query.push(query);
+        }
+
+        return selection;
     }
 }
 
@@ -76,30 +107,49 @@ mod tests {
 
         let second_element = Element::from(&mut reader);
 
-        // get combinator if it exists
-        //
-        // get next element
-
         assert_eq!(
             first_element,
-            Element {
-                name: Some("element"),
-                id: Some("id"),
-                class: Some("class"),
-                attributes: Vec::new(),
-            }
+            Element::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
         );
 
         assert_eq!(combinator, Combinator::Child);
 
         assert_eq!(
             second_element,
-            Element {
-                name: Some("other"),
-                id: Some("other_id"),
-                class: Some("other_class"),
-                attributes: Vec::new(),
-            }
+            Element::new(
+                Some("other"),
+                Some("other_id"),
+                Some("other_class"),
+                Vec::new(),
+            )
+        );
+    }
+
+    #[test]
+    fn test_selection_on_basic_query() {
+        let mut reader = Reader::new("element#id.class > other#other_id.other_class");
+        let selection = Selection::from(&mut reader);
+
+        assert_eq!(
+            selection.query[0],
+            QueryKind::Element(Element::new(
+                Some("element"),
+                Some("id"),
+                Some("class"),
+                Vec::new(),
+            ))
+        );
+
+        assert_eq!(selection.query[1], QueryKind::Combinator(Combinator::Child));
+
+        assert_eq!(
+            selection.query[2],
+            QueryKind::Element(Element::new(
+                Some("other"),
+                Some("other_id"),
+                Some("other_class"),
+                Vec::new(),
+            ))
         );
     }
 }
