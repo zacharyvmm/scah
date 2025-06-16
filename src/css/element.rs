@@ -109,15 +109,6 @@ pub struct Element<'a> {
 // 2.1) The parsing logic should continue to use the iterator parttern I have been using.
 // 2.1.1) The flow should look like this => Reader -> Tokenizer -> ElementIterator -> SelectionIterator
 impl<'a> Element<'a> {
-    pub fn new() -> Self {
-        return Self {
-            name: None,
-            id: None,
-            class: None,
-            attributes: Vec::new(),
-        };
-    }
-
     fn handle_attribute_parsing(&mut self, reader: &mut Reader<'a>) {
         let mut opened_quote: Option<QuoteKind> = None;
         let mut position = reader.get_position();
@@ -198,22 +189,31 @@ impl<'a> Element<'a> {
             kind: kind.unwrap(),
         });
     }
+}
 
-    pub fn build(&mut self, reader: &mut Reader<'a>) {
+impl<'a> From<&mut Reader<'a>> for Element<'a> {
+    fn from(reader: &mut Reader<'a>) -> Self {
+        let mut element = Self {
+            name: None,
+            id: None,
+            class: None,
+            attributes: Vec::new(),
+        };
+
         let mut previous: Option<SelectionKeyWords> = None;
 
         while let Some(word) = SelectionKeyWords::next(reader) {
             match (previous, &word) {
                 (Option::None, SelectionKeyWords::String(name)) => {
-                    self.name = Some(name);
+                    element.name = Some(name);
                 }
                 (Some(SelectionKeyWords::ID), SelectionKeyWords::String(id_name)) => {
-                    self.id = Some(id_name);
+                    element.id = Some(id_name);
                 }
                 (Some(SelectionKeyWords::CLASS), SelectionKeyWords::String(class_name)) => {
-                    self.class = Some(class_name);
+                    element.class = Some(class_name);
                 }
-                (_, SelectionKeyWords::OpenAttribute) => self.handle_attribute_parsing(reader),
+                (_, SelectionKeyWords::OpenAttribute) => element.handle_attribute_parsing(reader),
 
                 (Some(SelectionKeyWords::ID), _) | (Some(SelectionKeyWords::CLASS), _) => (),
 
@@ -222,6 +222,8 @@ impl<'a> Element<'a> {
 
             previous = Some(word);
         }
+
+        return element;
     }
 }
 
@@ -232,8 +234,7 @@ mod tests {
     #[test]
     fn test_basic_element_selection() {
         let mut reader = Reader::new("element#id.class");
-        let mut element = Element::new();
-        element.build(&mut reader);
+        let element = Element::from(&mut reader);
 
         assert_eq!(
             element,
@@ -250,8 +251,7 @@ mod tests {
     fn test_fully_detailed_element_selection() {
         let mut reader = Reader::new("element#id.class[selected=true]");
 
-        let mut element = Element::new();
-        element.build(&mut reader);
+        let element = Element::from(&mut reader);
 
         assert_eq!(
             element,
@@ -272,8 +272,7 @@ mod tests {
     fn test_two_fully_detailed_element_selection() {
         let mut reader = Reader::new("element#id.class[href~=\"_blank\"][selected=true]");
 
-        let mut element = Element::new();
-        element.build(&mut reader);
+        let element = Element::from(&mut reader);
 
         assert_eq!(
             element,
@@ -301,8 +300,7 @@ mod tests {
     fn test_handle_duplicates_in_element_definition() {
         let mut reader = Reader::new("element#id.class[selected=true]#id#notid");
         // Since this is used by the developer is acceptable to throw an error in the system
-        let mut element = Element::new();
-        element.build(&mut reader);
+        let element = Element::from(&mut reader);
 
         assert_eq!(
             element,
@@ -310,13 +308,11 @@ mod tests {
                 name: Some("element"),
                 id: Some("id"),
                 class: Some("class"),
-                attributes: Vec::from([
-                    AttributeSelection {
-                        name: "selected",
-                        value: Some("true"),
-                        kind: AttributeSelectionKind::Exact
-                    }
-                ]),
+                attributes: Vec::from([AttributeSelection {
+                    name: "selected",
+                    value: Some("true"),
+                    kind: AttributeSelectionKind::Exact
+                }]),
             }
         );
     }
