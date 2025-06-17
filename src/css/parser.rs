@@ -57,12 +57,16 @@ pub enum QueryKind<'a> {
     Has(Element<'a>), // `:has()`
     Not(Element<'a>), // `:not()`
 
+    // TODO: I will need to optimize away inoficient `Any` usage, ex: `p > * a` to `p  a`
+    // Valid usage: `p > * > a`
+    Any, // `*`
+
     // TODO: I'm not sure how this would belong to `QueryKind` and not `Selection`
     Or(Box<Self>), // This is the `,` on a selection. ex: `a#hello > p, p.world`
 }
 
 impl<'a> QueryKind<'a> {
-    fn next(reader: &mut Reader<'a>, last: Option<&Self>) -> Option<Self> {
+    pub fn next(reader: &mut Reader<'a>, last: Option<&Self>) -> Option<Self> {
         match last {
             Option::None | Some(Self::Combinator(_)) => Some(Self::Element(Element::from(reader))),
             Some(_) => {
@@ -75,22 +79,6 @@ impl<'a> QueryKind<'a> {
                 return None;
             }
         }
-    }
-}
-
-pub struct Selection<'a> {
-    query: Vec<QueryKind<'a>>,
-}
-
-impl<'a> From<&mut Reader<'a>> for Selection<'a> {
-    fn from(reader: &mut Reader<'a>) -> Self {
-        let mut selection = Self { query: Vec::new() };
-
-        while let Some(query) = QueryKind::next(reader, selection.query.last()) {
-            selection.query.push(query);
-        }
-
-        return selection;
     }
 }
 
@@ -122,34 +110,6 @@ mod tests {
                 Some("other_class"),
                 Vec::new(),
             )
-        );
-    }
-
-    #[test]
-    fn test_selection_on_basic_query() {
-        let mut reader = Reader::new("element#id.class > other#other_id.other_class");
-        let selection = Selection::from(&mut reader);
-
-        assert_eq!(
-            selection.query[0],
-            QueryKind::Element(Element::new(
-                Some("element"),
-                Some("id"),
-                Some("class"),
-                Vec::new(),
-            ))
-        );
-
-        assert_eq!(selection.query[1], QueryKind::Combinator(Combinator::Child));
-
-        assert_eq!(
-            selection.query[2],
-            QueryKind::Element(Element::new(
-                Some("other"),
-                Some("other_id"),
-                Some("other_class"),
-                Vec::new(),
-            ))
         );
     }
 }

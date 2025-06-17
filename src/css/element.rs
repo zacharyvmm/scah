@@ -1,3 +1,4 @@
+use crate::utils::pair::Pair;
 use crate::utils::reader::Reader;
 use crate::utils::token::QuoteKind;
 
@@ -238,6 +239,29 @@ impl<'a> From<&mut Reader<'a>> for Element<'a> {
         }
 
         return element;
+    }
+}
+
+impl<'a> Element<'a> {
+    // NOTE: The fsm element uses this function to check if it complies with the element in the
+    // chain
+    fn is_subset(&self, other: &Element<'a>) -> bool {
+        if self.name.is_some() && self.name != other.name {
+            return false;
+        }
+
+        if self.id.is_some() && self.id != other.id {
+            return false;
+        }
+
+        // TODO: Use attribute Selector specifier
+        if self.class.is_some() && self.class != other.class {
+            return false;
+        }
+
+        // TODO: check the attributes
+
+        return true;
     }
 }
 
