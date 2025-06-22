@@ -139,11 +139,8 @@ mod tests {
         let mut reader = Reader::new("p key=\"value\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(
-            element.name,
-            Some("p")
-        );
-        
+        assert_eq!(element.name, Some("p"));
+
         assert_eq!(
             element.attributes[0],
             Attribute {
@@ -158,11 +155,8 @@ mod tests {
         let mut reader = Reader::new("p key=value");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(
-            element.name,
-            Some("p")
-        );
-        
+        assert_eq!(element.name, Some("p"));
+
         assert_eq!(element.attributes.len(), 1);
 
         assert_eq!(
@@ -179,11 +173,8 @@ mod tests {
         let mut reader = Reader::new("p \"key\"=\"value\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(
-            element.name,
-            Some("p")
-        );
-        
+        assert_eq!(element.name, Some("p"));
+
         assert_eq!(
             element.attributes[0],
             Attribute {
@@ -198,11 +189,8 @@ mod tests {
         let mut reader = Reader::new("p key=\"value\" \"key1\"=value1 \"key2\"=\"value2\" keey");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(
-            element.name,
-            Some("p")
-        );
-        
+        assert_eq!(element.name, Some("p"));
+
         assert_eq!(
             element.attributes[0],
             Attribute {
@@ -238,11 +226,8 @@ mod tests {
         let mut reader = Reader::new("p \"key\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(
-            element.name,
-            Some("p")
-        );
-        
+        assert_eq!(element.name, Some("p"));
+
         assert_eq!(
             element.attributes[0],
             Attribute {
@@ -257,10 +242,7 @@ mod tests {
         let mut reader = Reader::new("p key");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(
-            element.name,
-            Some("p")
-        );
+        assert_eq!(element.name, Some("p"));
 
         assert_eq!(
             element.attributes[0],
@@ -276,10 +258,7 @@ mod tests {
         let mut reader = Reader::new("p \"long key with spaces\"=\"value\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(
-            element.name,
-            Some("p")
-        );
+        assert_eq!(element.name, Some("p"));
 
         assert_eq!(
             element.attributes[0],
@@ -295,10 +274,7 @@ mod tests {
         let mut reader = Reader::new("p \"long key's with spaces\"=\"value\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(
-            element.name,
-            Some("p")
-        );
+        assert_eq!(element.name, Some("p"));
 
         assert_eq!(
             element.attributes[0],
@@ -314,10 +290,7 @@ mod tests {
         let mut reader = Reader::new("p \"long key\\\"s with spaces\"=\"value\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(
-            element.name,
-            Some("p")
-        );
+        assert_eq!(element.name, Some("p"));
 
         assert_eq!(
             element.attributes[0],
@@ -335,10 +308,7 @@ mod tests {
         );
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(
-            element.name,
-            Some("a")
-        );
+        assert_eq!(element.name, Some("a"));
 
         assert_eq!(
             element.attributes[0],
@@ -356,10 +326,7 @@ mod tests {
             }
         );
 
-        assert_eq!(
-            element.class,
-            Some("px-7 py-3")
-        );
+        assert_eq!(element.class, Some("px-7 py-3"));
 
         assert_eq!(
             element.attributes[2],

@@ -1,5 +1,6 @@
 use crate::utils::reader::Reader;
 use crate::utils::token::QuoteKind;
+use crate::xhtml::element::parser::{Attribute, XHtmlElement};
 
 #[derive(Debug, PartialEq)]
 pub enum AttributeSelectionKind {
@@ -17,6 +18,20 @@ pub struct AttributeSelection<'a> {
     name: &'a str,
     value: Option<&'a str>,
     kind: AttributeSelectionKind,
+}
+
+impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
+    fn eq(&self, other: &Attribute<'b>) -> bool {
+        if self.name == other.name {
+            return false;
+        }
+
+        match self.kind {
+            _ => {}
+        }
+
+        return true;
+    }
 }
 
 enum SelectionKeyWords<'a> {
@@ -241,10 +256,8 @@ impl<'a> From<&mut Reader<'a>> for Element<'a> {
     }
 }
 
-impl<'a> Element<'a> {
-    // NOTE: The fsm element uses this function to check if it complies with the element in the
-    // chain
-    fn is_subset(&self, other: &Element<'a>) -> bool {
+impl<'a, 'b> PartialEq<XHtmlElement<'b>> for Element<'a> {
+    fn eq(&self, other: &XHtmlElement<'b>) -> bool {
         if self.name.is_some() && self.name != other.name {
             return false;
         }
@@ -253,12 +266,10 @@ impl<'a> Element<'a> {
             return false;
         }
 
-        // TODO: Use attribute Selector specifier
+        // TODO: This technically works using a `WhitespaceSeparated` search
         if self.class.is_some() && self.class != other.class {
             return false;
         }
-
-        // TODO: check the attributes
 
         return true;
     }

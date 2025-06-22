@@ -1,2 +1,2 @@
-mod element;
+pub mod element;
 mod parser;
