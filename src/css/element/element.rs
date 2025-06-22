@@ -1,37 +1,14 @@
 use crate::utils::reader::Reader;
 use crate::utils::token::QuoteKind;
-use crate::xhtml::element::parser::{Attribute, XHtmlElement};
+use super::string_search::AttributeSelectionKind;
 
-#[derive(Debug, PartialEq)]
-pub enum AttributeSelectionKind {
-    Presence,            // [attribute]
-    Exact,               // [attribute=value]
-    WhitespaceSeparated, // [attribute~=value]
-    HyphenSeparated,     // [attribute|=value]
-    Prefix,              // [attribute^=value]
-    Suffix,              // [attribute$=value]
-    Substring,           // [attribute*=value]
-}
+
 
 #[derive(Debug, PartialEq)]
 pub struct AttributeSelection<'a> {
-    name: &'a str,
-    value: Option<&'a str>,
-    kind: AttributeSelectionKind,
-}
-
-impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
-    fn eq(&self, other: &Attribute<'b>) -> bool {
-        if self.name == other.name {
-            return false;
-        }
-
-        match self.kind {
-            _ => {}
-        }
-
-        return true;
-    }
+    pub(super) name: &'a str,
+    pub(super) value: Option<&'a str>,
+    pub(super) kind: AttributeSelectionKind,
 }
 
 enum SelectionKeyWords<'a> {
@@ -112,10 +89,10 @@ impl<'a> SelectionAttributeToken<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct Element<'a> {
-    name: Option<&'a str>,
-    id: Option<&'a str>,
-    class: Option<&'a str>,
-    attributes: Vec<AttributeSelection<'a>>,
+    pub(super) name: Option<&'a str>,
+    pub(super) id: Option<&'a str>,
+    pub(super) class: Option<&'a str>,
+    pub(super) attributes: Vec<AttributeSelection<'a>>,
 }
 
 // TODO: I don't like this abstraction
@@ -124,7 +101,7 @@ pub struct Element<'a> {
 // 2.1) The parsing logic should continue to use the iterator parttern I have been using.
 // 2.1.1) The flow should look like this => Reader -> Tokenizer -> ElementIterator -> SelectionIterator
 impl<'a> Element<'a> {
-    pub(super) fn new(
+    pub(crate) fn new(
         name: Option<&'a str>,
         id: Option<&'a str>,
         class: Option<&'a str>,
@@ -256,24 +233,6 @@ impl<'a> From<&mut Reader<'a>> for Element<'a> {
     }
 }
 
-impl<'a, 'b> PartialEq<XHtmlElement<'b>> for Element<'a> {
-    fn eq(&self, other: &XHtmlElement<'b>) -> bool {
-        if self.name.is_some() && self.name != other.name {
-            return false;
-        }
-
-        if self.id.is_some() && self.id != other.id {
-            return false;
-        }
-
-        // TODO: This technically works using a `WhitespaceSeparated` search
-        if self.class.is_some() && self.class != other.class {
-            return false;
-        }
-
-        return true;
-    }
-}
 
 #[cfg(test)]
 mod tests {

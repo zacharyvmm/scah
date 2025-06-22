@@ -1,4 +1,4 @@
-use super::element::Element;
+use super::element::element::Element;
 use super::parser::{Combinator, QueryKind};
 use crate::utils::reader::Reader;
 // Build FSM from css selector
