@@ -1,6 +1,6 @@
 use super::pair::Pair;
 use super::tokenizer::ElementAttributeToken;
-use crate::utils::reader::Reader;
+use crate::utils::reader::{self, Reader};
 use crate::utils::token::QuoteKind;
 
 #[derive(Debug, PartialEq)]
@@ -11,18 +11,25 @@ pub struct Attribute<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct XHtmlElement<'a> {
-    pub name: Option<&'a str>,
+    pub name: &'a str,
     pub id: Option<&'a str>,
     pub class: Option<&'a str>,
     pub attributes: Vec<Attribute<'a>>,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum XHtmlTag<'a> {
+    Open(XHtmlElement<'a>),
+    Close(&'a str),
+}
+
 impl<'a> XHtmlElement<'a> {
     fn add_to_element(&mut self, attribute: Attribute<'a>) -> () {
+        // TODO: This was a cool experiment, but I think `if statements` are needed here instead
         match (&self, &attribute) {
             (
                 XHtmlElement {
-                    name: Option::None,
+                    name: "",
                     class: _,
                     id: _,
                     attributes: _,
@@ -32,7 +39,7 @@ impl<'a> XHtmlElement<'a> {
                     value: Option::None,
                 },
             ) => {
-                self.name = Some(attribute.name);
+                self.name = attribute.name;
             }
             (
                 XHtmlElement {
@@ -72,7 +79,7 @@ impl<'a> XHtmlElement<'a> {
 impl<'a> From<&mut Reader<'a>> for XHtmlElement<'a> {
     fn from(reader: &mut Reader<'a>) -> Self {
         let mut element = Self {
-            name: None,
+            name: "",
             id: None,
             class: None,
             attributes: Vec::new(),
@@ -130,6 +137,28 @@ impl<'a> From<&mut Reader<'a>> for XHtmlElement<'a> {
     }
 }
 
+// TODO: Parse the closing tag for the XHtmlTag
+impl<'a> From<&mut Reader<'a>> for XHtmlTag<'a> {
+    fn from(reader: &mut Reader<'a>) -> Self {
+        reader.next_while(|c| c.is_whitespace());
+        if let Some(character) = reader.peek() {
+            if character == '/' {
+                let start = reader.get_position() + 1;
+                reader.next_while(|c| c != '>');
+
+                let end = reader.get_position();
+
+                // BUG: Handle start and end not conforming to the rules of slices.
+
+                // BUG: The Formating of the string breaks this code
+
+                return Self::Close(reader.slice(start..end));
+            }
+        }
+        return Self::Open(XHtmlElement::from(reader));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,8 +167,7 @@ mod tests {
     fn test_key_no_quote_and_value_with_quote() {
         let mut reader = Reader::new("p key=\"value\"");
         let element = XHtmlElement::from(&mut reader);
-
-        assert_eq!(element.name, Some("p"));
+        assert_eq!(element.name, "p");
 
         assert_eq!(
             element.attributes[0],
@@ -155,7 +183,7 @@ mod tests {
         let mut reader = Reader::new("p key=value");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(element.name, Some("p"));
+        assert_eq!(element.name, "p");
 
         assert_eq!(element.attributes.len(), 1);
 
@@ -173,7 +201,7 @@ mod tests {
         let mut reader = Reader::new("p \"key\"=\"value\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(element.name, Some("p"));
+        assert_eq!(element.name, "p");
 
         assert_eq!(
             element.attributes[0],
@@ -189,7 +217,7 @@ mod tests {
         let mut reader = Reader::new("p key=\"value\" \"key1\"=value1 \"key2\"=\"value2\" keey");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(element.name, Some("p"));
+        assert_eq!(element.name, "p");
 
         assert_eq!(
             element.attributes[0],
@@ -226,7 +254,7 @@ mod tests {
         let mut reader = Reader::new("p \"key\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(element.name, Some("p"));
+        assert_eq!(element.name, "p");
 
         assert_eq!(
             element.attributes[0],
@@ -242,7 +270,7 @@ mod tests {
         let mut reader = Reader::new("p key");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(element.name, Some("p"));
+        assert_eq!(element.name, "p");
 
         assert_eq!(
             element.attributes[0],
@@ -258,7 +286,7 @@ mod tests {
         let mut reader = Reader::new("p \"long key with spaces\"=\"value\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(element.name, Some("p"));
+        assert_eq!(element.name, "p");
 
         assert_eq!(
             element.attributes[0],
@@ -274,7 +302,7 @@ mod tests {
         let mut reader = Reader::new("p \"long key's with spaces\"=\"value\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(element.name, Some("p"));
+        assert_eq!(element.name, "p");
 
         assert_eq!(
             element.attributes[0],
@@ -290,7 +318,7 @@ mod tests {
         let mut reader = Reader::new("p \"long key\\\"s with spaces\"=\"value\"");
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(element.name, Some("p"));
+        assert_eq!(element.name, "p");
 
         assert_eq!(
             element.attributes[0],
@@ -308,7 +336,7 @@ mod tests {
         );
         let element = XHtmlElement::from(&mut reader);
 
-        assert_eq!(element.name, Some("a"));
+        assert_eq!(element.name, "a");
 
         assert_eq!(
             element.attributes[0],
@@ -335,5 +363,40 @@ mod tests {
                 value: Some("hello-world")
             }
         );
+    }
+
+    #[test]
+    fn test_xhtml_tag_open() {
+        let mut reader = Reader::new("p key=\"value\"");
+        let tag = XHtmlTag::from(&mut reader);
+
+        assert_eq!(
+            tag,
+            XHtmlTag::Open(XHtmlElement {
+                name: "p",
+                id: None,
+                class: None,
+                attributes: Vec::from([Attribute {
+                    name: "key",
+                    value: Some("value")
+                }]),
+            })
+        );
+    }
+
+    #[test]
+    fn test_xhtml_tag_close() {
+        let mut reader = Reader::new("/p>");
+        let tag = XHtmlTag::from(&mut reader);
+
+        assert_eq!(tag, XHtmlTag::Close("p"));
+    }
+
+    #[test]
+    fn test_xhtml_tag_close_weird_formatting() {
+        let mut reader = Reader::new("  /   p   >");
+        let tag = XHtmlTag::from(&mut reader);
+
+        assert_eq!(tag, XHtmlTag::Close("p"));
     }
 }

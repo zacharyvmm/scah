@@ -16,7 +16,7 @@ impl AttributeSelectionKind {
             Self::Presence => true,
             Self::WhitespaceSeparated => source.split_whitespace().any(|word| word == query),
             Self::HyphenSeparated => source.split_whitespace().any(|word| {
-                if  word == query {
+                if word == query {
                     return true;
                 }
 
@@ -24,9 +24,9 @@ impl AttributeSelectionKind {
                     return false;
                 }
 
-
                 // query is prefix of word with `-` nextup
-                return query == &word[0..query.len()] && "-" == &word[query.len()..query.len()+1];
+                return query == &word[0..query.len()]
+                    && "-" == &word[query.len()..query.len() + 1];
             }),
             Self::Prefix => {
                 if query.len() > source.len() {
@@ -41,9 +41,7 @@ impl AttributeSelectionKind {
                 query == &source[(source.len() - query.len())..]
             }
 
-            Self::Substring => {
-                source.contains(query)
-            }
+            Self::Substring => source.contains(query),
         }
     }
 }
@@ -72,7 +70,7 @@ mod tests {
 
     #[test]
     fn test_with_hypen_separated() {
-        let kind = AttributeSelectionKind::HyphenSeparated; 
+        let kind = AttributeSelectionKind::HyphenSeparated;
         assert!(kind.find("en", "hello en-world"));
     }
 
@@ -100,3 +98,4 @@ mod tests {
         assert!(kind.find("world", "helloworldintest"));
     }
 }
+

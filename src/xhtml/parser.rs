@@ -1,20 +1,45 @@
-use super::element::parser::XHtmlElement;
+use super::element::parser::{XHtmlElement, XHtmlTag};
 use crate::utils::reader::Reader;
 
-enum XHtmlParser<'a> {
-    Open(&'a str),  // <name>
-    Close(&'a str), // </name>
+struct XHtmlParser<'a> {
+    stack: Vec<&'a str>,
 }
 
 impl<'a> XHtmlParser<'a> {
-    fn next(reader: &mut Reader) {}
-}
+    pub fn new() -> Self {
+        return Self { stack: Vec::new() };
+    }
 
-fn parse(reader: &mut Reader) {
-    // move until it finds the first `<`
-    reader.next_while(|c| c != '<');
+    pub fn next(&mut self, reader: &mut Reader<'a>) -> Option<XHtmlElement<'a>> {
+        // move until it finds the first `<`
+        reader.next_upto(|c| c != '<');
 
-    let parser = XHtmlElement::from(reader);
+        if reader.peek().is_none() {
+            return None;
+        }
+
+        // TODO: I need to handle the start and end position
+
+        let tag = XHtmlTag::from(&mut *reader);
+
+        reader.next_while(|c| c.is_whitespace());
+
+        match tag {
+            XHtmlTag::Open(element) => {
+                self.stack.push(element.name);
+
+                return Some(element);
+            }
+            XHtmlTag::Close(closing_tag) => {
+                while let Some(name) = self.stack.pop() {
+                    if name == closing_tag {
+                        break;
+                    }
+                }
+                return None;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -33,5 +58,79 @@ mod tests {
         </html>
         "#,
         );
+
+        let mut parser = XHtmlParser::new();
+
+        // STEP 1
+        let mut element = parser.next(&mut reader);
+        assert_eq!(
+            element,
+            Some(XHtmlElement {
+                name: "html",
+                id: None,
+                class: None,
+                attributes: Vec::new()
+            })
+        );
+        assert_eq!(parser.stack, Vec::from(["html"]));
+
+        // STEP 2
+        element = parser.next(&mut reader);
+        assert_eq!(
+            element,
+            Some(XHtmlElement {
+                name: "h1",
+                id: None,
+                class: None,
+                attributes: Vec::new()
+            })
+        );
+        assert_eq!(parser.stack, Vec::from(["html", "h1"]));
+
+        // STEP 3
+        element = parser.next(&mut reader);
+        assert_eq!(element, None);
+        assert_eq!(parser.stack, Vec::from(["html"]));
+
+        // STEP 4
+        element = parser.next(&mut reader);
+        assert_eq!(
+            element,
+            Some(XHtmlElement {
+                name: "p",
+                id: None,
+                class: Some("indent"),
+                attributes: Vec::new()
+            })
+        );
+        assert_eq!(parser.stack, Vec::from(["html", "p"]));
+
+        // STEP 5
+        element = parser.next(&mut reader);
+        assert_eq!(
+            element,
+            Some(XHtmlElement {
+                name: "span",
+                id: Some("name"),
+                class: Some("bold"),
+                attributes: Vec::new()
+            })
+        );
+        assert_eq!(parser.stack, Vec::from(["html", "p", "span"]));
+
+        // STEP 6
+        element = parser.next(&mut reader);
+        assert_eq!(element, None);
+        assert_eq!(parser.stack, Vec::from(["html", "p"]));
+
+        // STEP 6
+        element = parser.next(&mut reader);
+        assert_eq!(element, None);
+        assert_eq!(parser.stack, Vec::from(["html"]));
+
+        // STEP 6
+        element = parser.next(&mut reader);
+        assert_eq!(element, None);
+        assert_eq!(parser.stack.len(), 0);
     }
 }

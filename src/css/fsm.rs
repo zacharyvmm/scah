@@ -1,6 +1,6 @@
-use super::element::element::Element;
 use super::parser::{Combinator, QueryKind};
 use crate::utils::reader::Reader;
+use crate::xhtml::element::parser::XHtmlElement;
 // Build FSM from css selector
 
 pub struct Selection<'a> {
@@ -24,11 +24,17 @@ impl<'a> From<&mut Reader<'a>> for Selection<'a> {
 }
 
 impl<'a> Selection<'a> {
-    pub fn transition(&mut self, other: &Element<'a>) -> () {
+    pub fn transition<'b>(&mut self, other: &XHtmlElement<'b>) -> () {
         let current = &self.query[self.positon];
 
         match current {
-            QueryKind::Element(element) => {}
+            QueryKind::Element(element) => {
+                if element == other {
+                    self.positon += 1;
+                } else {
+                    // Based on the previous connector a the system would decide what to do
+                }
+            }
 
             // TODO: This based on this we either 1) move or 2) stay put or 3) give up
             QueryKind::Combinator(combinator) => {}
@@ -44,6 +50,7 @@ impl<'a> Selection<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::element::element::Element;
     use super::*;
 
     #[test]

@@ -57,6 +57,16 @@ impl<'a> Reader<'a> {
             }
         }
     }
+
+    // NOTE: next_while, but it consumes the character
+    #[inline]
+    pub fn next_upto(&mut self, condition: fn(char) -> bool) {
+        while let Some(character) = self.next() {
+            if !condition(character) {
+                break;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

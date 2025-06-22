@@ -1,8 +1,6 @@
+use super::string_search::AttributeSelectionKind;
 use crate::utils::reader::Reader;
 use crate::utils::token::QuoteKind;
-use super::string_search::AttributeSelectionKind;
-
-
 
 #[derive(Debug, PartialEq)]
 pub struct AttributeSelection<'a> {
@@ -232,7 +230,6 @@ impl<'a> From<&mut Reader<'a>> for Element<'a> {
         return element;
     }
 }
-
 
 #[cfg(test)]
 mod tests {

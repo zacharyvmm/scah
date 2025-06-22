@@ -1,5 +1,8 @@
-use crate::{css::element::string_search::AttributeSelectionKind, xhtml::element::parser::{Attribute, XHtmlElement}};
-use super::element::{Element, AttributeSelection};
+use super::element::{AttributeSelection, Element};
+use crate::{
+    css::element::string_search::AttributeSelectionKind,
+    xhtml::element::parser::{Attribute, XHtmlElement},
+};
 
 impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
     fn eq(&self, other: &Attribute<'b>) -> bool {
@@ -13,37 +16,42 @@ impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
 
         if other.value.is_none() {
             return false;
-        } 
+        }
 
         return self.kind.find(self.value.unwrap(), other.value.unwrap());
     }
-
-    /*
-    #[inline]
-    fn ne(&self, other: &Attribute<'b>) -> bool {
-        !self.eq(other)
-    }
-    */
 }
 
 impl<'a, 'b> PartialEq<XHtmlElement<'b>> for Element<'a> {
     fn eq(&self, other: &XHtmlElement<'b>) -> bool {
-        if self.name.is_some() && self.name != other.name {
-            return false;
+        if let Some(name) = self.name {
+            if name != other.name {
+                return false;
+            }
         }
 
         if self.id.is_some() && self.id != other.id {
             return false;
         }
 
-        if self.class.is_some() && other.class.is_some() 
-        && !other.class.unwrap().split_whitespace().any(|word| word == self.class.unwrap()) {
+        if self.class.is_some()
+            && other.class.is_some()
+            && !other
+                .class
+                .unwrap()
+                .split_whitespace()
+                .any(|word| word == self.class.unwrap())
+        {
             return false;
         }
 
-        let other_attributes_conform_to_selector = !self.attributes.iter().all(|selector_attribute| {
-            other.attributes.iter().any(|xhtml_attribute| selector_attribute == xhtml_attribute)
-        });
+        let other_attributes_conform_to_selector =
+            !self.attributes.iter().all(|selector_attribute| {
+                other
+                    .attributes
+                    .iter()
+                    .any(|xhtml_attribute| selector_attribute == xhtml_attribute)
+            });
         if other_attributes_conform_to_selector {
             return false;
         }
@@ -51,7 +59,6 @@ impl<'a, 'b> PartialEq<XHtmlElement<'b>> for Element<'a> {
         return true;
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -86,7 +93,7 @@ mod tests {
                 }])
             },
             XHtmlElement {
-                name: Some("hello"),
+                name: "hello",
                 id: Some("id"),
                 class: Some("hello world"),
                 attributes: Vec::from([
@@ -97,6 +104,41 @@ mod tests {
                     Attribute {
                         name: "key2",
                         value: Some("value2")
+                    },
+                    Attribute {
+                        name: "selected",
+                        value: Some("true")
+                    },
+                ])
+            }
+        );
+    }
+
+    #[test]
+    fn test_realistic_search() {
+        assert_eq!(
+            Element {
+                name: Some("a"),
+                id: None,
+                class: Some("underline-green"),
+                attributes: Vec::from([AttributeSelection {
+                    name: "href",
+                    value: None,
+                    kind: AttributeSelectionKind::Presence,
+                }])
+            },
+            XHtmlElement {
+                name: "a",
+                id: Some("search-link"),
+                class: Some("text-white underline-green p-4"),
+                attributes: Vec::from([
+                    Attribute {
+                        name: "key1",
+                        value: Some("value1")
+                    },
+                    Attribute {
+                        name: "href",
+                        value: Some("/search")
                     },
                     Attribute {
                         name: "selected",
