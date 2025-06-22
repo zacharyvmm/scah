@@ -1,4 +1,4 @@
-use super::element::parser::AttributeParser;
+use super::element::parser::XHtmlElement;
 use crate::utils::reader::Reader;
 
 enum XHtmlParser<'a> {
@@ -14,7 +14,7 @@ fn parse(reader: &mut Reader) {
     // move until it finds the first `<`
     reader.next_while(|c| c != '<');
 
-    let parser = AttributeParser::from(reader);
+    let parser = XHtmlElement::from(reader);
 }
 
 #[cfg(test)]

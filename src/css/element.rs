@@ -1,4 +1,3 @@
-use crate::utils::pair::Pair;
 use crate::utils::reader::Reader;
 use crate::utils::token::QuoteKind;
 
