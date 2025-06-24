@@ -1,4 +1,4 @@
-use super::query::{Combinator, QueryKind};
+use super::query::QueryKind;
 use crate::utils::reader::Reader;
 use crate::xhtml::element::element::XHtmlElement;
 // Build FSM from css selector
@@ -51,6 +51,7 @@ impl<'a> Selection<'a> {
 #[cfg(test)]
 mod tests {
     use super::super::element::element::QueryElement;
+    use super::super::query::Combinator;
     use super::*;
 
     #[test]
