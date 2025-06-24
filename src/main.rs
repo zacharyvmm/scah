@@ -8,7 +8,7 @@ fn main() {
 
 mod scrooge {
     pub mod css {
-        use crate::xhtml::element::parser::XHtmlElement;
+        use crate::xhtml::element::element::XHtmlElement;
 
         struct Hook {
             //fsm: SelectorFSM,

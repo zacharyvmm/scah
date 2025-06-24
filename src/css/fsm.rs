@@ -1,6 +1,6 @@
-use super::parser::{Combinator, QueryKind};
+use super::query::{Combinator, QueryKind};
 use crate::utils::reader::Reader;
-use crate::xhtml::element::parser::XHtmlElement;
+use crate::xhtml::element::element::XHtmlElement;
 // Build FSM from css selector
 
 pub struct Selection<'a> {
@@ -50,7 +50,7 @@ impl<'a> Selection<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::element::element::Element;
+    use super::super::element::element::QueryElement;
     use super::*;
 
     #[test]
@@ -60,7 +60,7 @@ mod tests {
 
         assert_eq!(
             selection.query[0],
-            QueryKind::Element(Element::new(
+            QueryKind::Element(QueryElement::new(
                 Some("element"),
                 Some("id"),
                 Some("class"),
@@ -72,7 +72,7 @@ mod tests {
 
         assert_eq!(
             selection.query[2],
-            QueryKind::Element(Element::new(
+            QueryKind::Element(QueryElement::new(
                 Some("other"),
                 Some("other_id"),
                 Some("other_class"),

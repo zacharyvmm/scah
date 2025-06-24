@@ -1,6 +1,6 @@
 use super::pair::Pair;
 use super::tokenizer::ElementAttributeToken;
-use crate::utils::reader::{self, Reader};
+use crate::utils::reader::Reader;
 use crate::utils::token::QuoteKind;
 
 #[derive(Debug, PartialEq)]

@@ -1,4 +1,4 @@
-use super::parser::Attribute;
+use super::element::Attribute;
 
 pub enum Pair<'a> {
     NewKey,

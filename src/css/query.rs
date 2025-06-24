@@ -1,4 +1,4 @@
-use super::element::element::Element;
+use super::element::element::QueryElement;
 use crate::utils::reader::Reader;
 
 #[derive(Debug, PartialEq)]
@@ -50,12 +50,12 @@ impl<'a> From<&mut Reader<'a>> for Combinator {
 
 #[derive(Debug, PartialEq)]
 pub enum QueryKind<'a> {
-    Element(Element<'a>),
+    Element(QueryElement<'a>),
 
     Combinator(Combinator),
 
-    Has(Element<'a>), // `:has()`
-    Not(Element<'a>), // `:not()`
+    Has(QueryElement<'a>), // `:has()`
+    Not(QueryElement<'a>), // `:not()`
 
     // TODO: I will need to optimize away inoficient `Any` usage, ex: `p > * a` to `p  a`
     // Valid usage: `p > * > a`
@@ -68,7 +68,9 @@ pub enum QueryKind<'a> {
 impl<'a> QueryKind<'a> {
     pub fn next(reader: &mut Reader<'a>, last: Option<&Self>) -> Option<Self> {
         match last {
-            Option::None | Some(Self::Combinator(_)) => Some(Self::Element(Element::from(reader))),
+            Option::None | Some(Self::Combinator(_)) => {
+                Some(Self::Element(QueryElement::from(reader)))
+            }
             Some(_) => {
                 if let Some(token) = reader.peek() {
                     if matches!(token, '>' | ' ' | '+' | '~' | '|') {
@@ -89,22 +91,22 @@ mod tests {
     #[test]
     fn test_basic_element_selection_with_combinator() {
         let mut reader = Reader::new("element#id.class > other#other_id.other_class");
-        let first_element = Element::from(&mut reader);
+        let first_element = QueryElement::from(&mut reader);
 
         let combinator = Combinator::from(&mut reader);
 
-        let second_element = Element::from(&mut reader);
+        let second_element = QueryElement::from(&mut reader);
 
         assert_eq!(
             first_element,
-            Element::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
+            QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
         );
 
         assert_eq!(combinator, Combinator::Child);
 
         assert_eq!(
             second_element,
-            Element::new(
+            QueryElement::new(
                 Some("other"),
                 Some("other_id"),
                 Some("other_class"),

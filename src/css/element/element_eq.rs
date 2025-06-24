@@ -1,8 +1,6 @@
-use super::element::{AttributeSelection, Element};
-use crate::{
-    css::element::string_search::AttributeSelectionKind,
-    xhtml::element::parser::{Attribute, XHtmlElement},
-};
+use super::element::{AttributeSelection, QueryElement};
+use super::string_search::AttributeSelectionKind;
+use crate::xhtml::element::element::{Attribute, XHtmlElement};
 
 impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
     fn eq(&self, other: &Attribute<'b>) -> bool {
@@ -22,7 +20,7 @@ impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
     }
 }
 
-impl<'a, 'b> PartialEq<XHtmlElement<'b>> for Element<'a> {
+impl<'a, 'b> PartialEq<XHtmlElement<'b>> for QueryElement<'a> {
     fn eq(&self, other: &XHtmlElement<'b>) -> bool {
         if let Some(name) = self.name {
             if name != other.name {
@@ -82,7 +80,7 @@ mod tests {
     #[test]
     fn test_element_selection_comparison() {
         assert_eq!(
-            Element {
+            QueryElement {
                 name: Some("hello"),
                 id: Some("id"),
                 class: Some("world"),
@@ -117,7 +115,7 @@ mod tests {
     #[test]
     fn test_realistic_search() {
         assert_eq!(
-            Element {
+            QueryElement {
                 name: Some("a"),
                 id: None,
                 class: Some("underline-green"),

@@ -98,4 +98,3 @@ mod tests {
         assert!(kind.find("world", "helloworldintest"));
     }
 }
-

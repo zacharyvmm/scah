@@ -86,7 +86,7 @@ impl<'a> SelectionAttributeToken<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Element<'a> {
+pub struct QueryElement<'a> {
     pub(super) name: Option<&'a str>,
     pub(super) id: Option<&'a str>,
     pub(super) class: Option<&'a str>,
@@ -98,7 +98,7 @@ pub struct Element<'a> {
 // 2) The data (Element struct) should be seperated from the parsing logic
 // 2.1) The parsing logic should continue to use the iterator parttern I have been using.
 // 2.1.1) The flow should look like this => Reader -> Tokenizer -> ElementIterator -> SelectionIterator
-impl<'a> Element<'a> {
+impl<'a> QueryElement<'a> {
     pub(crate) fn new(
         name: Option<&'a str>,
         id: Option<&'a str>,
@@ -195,7 +195,7 @@ impl<'a> Element<'a> {
     }
 }
 
-impl<'a> From<&mut Reader<'a>> for Element<'a> {
+impl<'a> From<&mut Reader<'a>> for QueryElement<'a> {
     fn from(reader: &mut Reader<'a>) -> Self {
         let mut element = Self {
             name: None,
@@ -238,11 +238,11 @@ mod tests {
     #[test]
     fn test_basic_element_selection() {
         let mut reader = Reader::new("element#id.class");
-        let element = Element::from(&mut reader);
+        let element = QueryElement::from(&mut reader);
 
         assert_eq!(
             element,
-            Element {
+            QueryElement {
                 name: Some("element"),
                 id: Some("id"),
                 class: Some("class"),
@@ -255,11 +255,11 @@ mod tests {
     fn test_fully_detailed_element_selection() {
         let mut reader = Reader::new("element#id.class[selected=true]");
 
-        let element = Element::from(&mut reader);
+        let element = QueryElement::from(&mut reader);
 
         assert_eq!(
             element,
-            Element {
+            QueryElement {
                 name: Some("element"),
                 id: Some("id"),
                 class: Some("class"),
@@ -276,11 +276,11 @@ mod tests {
     fn test_two_fully_detailed_element_selection() {
         let mut reader = Reader::new("element#id.class[href~=\"_blank\"][selected=true]");
 
-        let element = Element::from(&mut reader);
+        let element = QueryElement::from(&mut reader);
 
         assert_eq!(
             element,
-            Element {
+            QueryElement {
                 name: Some("element"),
                 id: Some("id"),
                 class: Some("class"),
@@ -304,11 +304,11 @@ mod tests {
     fn test_handle_duplicates_in_element_definition() {
         let mut reader = Reader::new("element#id.class[selected=true]#id#notid");
         // Since this is used by the developer is acceptable to throw an error in the system
-        let element = Element::from(&mut reader);
+        let element = QueryElement::from(&mut reader);
 
         assert_eq!(
             element,
-            Element {
+            QueryElement {
                 name: Some("element"),
                 id: Some("id"),
                 class: Some("class"),

@@ -1,4 +1,4 @@
-use super::element::parser::{XHtmlElement, XHtmlTag};
+use super::element::element::{XHtmlElement, XHtmlTag};
 use crate::utils::reader::Reader;
 
 struct XHtmlParser<'a> {
