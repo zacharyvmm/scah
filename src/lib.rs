@@ -2,10 +2,6 @@ mod css;
 mod utils;
 mod xhtml;
 
-fn main() {
-    println!("Hello World");
-}
-
 mod scrooge {
     pub mod css {
         use crate::xhtml::element::element::XHtmlElement;
