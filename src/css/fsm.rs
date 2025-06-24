@@ -1,7 +1,6 @@
 use super::query::QueryKind;
 use crate::utils::reader::Reader;
-use crate::xhtml::element::element::XHtmlElement;
-// Build FSM from css selector
+use crate::{css::query::Combinator, xhtml::element::element::XHtmlElement};
 
 pub struct Selection<'a> {
     query: Vec<QueryKind<'a>>,
@@ -15,30 +14,100 @@ impl<'a> From<&mut Reader<'a>> for Selection<'a> {
             positon: 0,
         };
 
-        while let Some(query) = QueryKind::next(reader, selection.query.last()) {
-            selection.query.push(query);
+        while let Some(token) = QueryKind::next(reader, selection.query.last()) {
+            selection.query.push(token);
         }
+        selection.query.push(QueryKind::EOF);
 
         return selection;
     }
 }
 
 impl<'a> Selection<'a> {
-    pub fn transition<'b>(&mut self, other: &XHtmlElement<'b>) -> () {
-        let current = &self.query[self.positon];
+    pub fn new() -> Self {
+        Self {
+            query: Vec::new(),
+            positon: 0,
+        }
+    }
+
+    fn check_previous_selector_validity(&mut self, depth: u8) -> bool {
+        let previous = &mut self.query[self.positon - 1];
+
+        match previous {
+            QueryKind::Element(element) => {
+                return true;
+            }
+
+            QueryKind::Combinator(Combinator::Child(previous_element_depth)) => {
+                if *previous_element_depth != depth - 1 {
+                    return false;
+                }
+
+                return true;
+            }
+
+            QueryKind::Combinator(Combinator::NextSibling(previous_sibling)) => {
+                if *previous_sibling == true {
+                    *previous_sibling = false;
+                    return false;
+                }
+
+                return true;
+            }
+
+            QueryKind::Combinator(_) => {
+                self.positon += 1;
+
+                return true;
+            }
+            QueryKind::EOF => false,
+            _ => true,
+        }
+    }
+
+    pub fn transition<'b>(&mut self, xhtml_element: &XHtmlElement<'b>, depth: u8) -> bool {
+        let current = &mut self.query[self.positon];
 
         match current {
             QueryKind::Element(element) => {
-                if element == other {
+                if element == xhtml_element {
                     self.positon += 1;
-                } else {
-                    // Based on the previous connector a the system would decide what to do
+
+                    return true;
                 }
+
+                return false;
             }
 
-            // TODO: This based on this we either 1) move or 2) stay put or 3) give up
-            QueryKind::Combinator(combinator) => {}
-            _ => (),
+            QueryKind::Combinator(Combinator::Child(previous_element_depth)) => {
+                *previous_element_depth = depth;
+                self.positon += 1;
+
+                return true;
+            }
+
+            QueryKind::Combinator(Combinator::NextSibling(previous_sibling)) => {
+                *previous_sibling = true;
+                self.positon += 1;
+
+                return true;
+            }
+
+            QueryKind::Combinator(Combinator::SubsequentSibling(subsequent)) => {
+                *subsequent = true;
+                self.positon += 1;
+
+                return true;
+            }
+
+            QueryKind::Combinator(_) => {
+                self.positon += 1;
+
+                return true;
+            }
+            QueryKind::EOF => true,
+            _ => false,
         }
     }
 
@@ -51,7 +120,6 @@ impl<'a> Selection<'a> {
 #[cfg(test)]
 mod tests {
     use super::super::element::element::QueryElement;
-    use super::super::query::Combinator;
     use super::*;
 
     #[test]
@@ -60,25 +128,23 @@ mod tests {
         let selection = Selection::from(&mut reader);
 
         assert_eq!(
-            selection.query[0],
-            QueryKind::Element(QueryElement::new(
-                Some("element"),
-                Some("id"),
-                Some("class"),
-                Vec::new(),
-            ))
-        );
-
-        assert_eq!(selection.query[1], QueryKind::Combinator(Combinator::Child));
-
-        assert_eq!(
-            selection.query[2],
-            QueryKind::Element(QueryElement::new(
-                Some("other"),
-                Some("other_id"),
-                Some("other_class"),
-                Vec::new(),
-            ))
+            selection.query,
+            Vec::from([
+                QueryKind::Element(QueryElement::new(
+                    Some("element"),
+                    Some("id"),
+                    Some("class"),
+                    Vec::new(),
+                )),
+                QueryKind::Combinator(Combinator::Child(0)),
+                QueryKind::Element(QueryElement::new(
+                    Some("other"),
+                    Some("other_id"),
+                    Some("other_class"),
+                    Vec::new(),
+                )),
+                QueryKind::EOF,
+            ])
         );
     }
 

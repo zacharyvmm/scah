@@ -3,10 +3,13 @@ use crate::utils::reader::Reader;
 
 #[derive(Debug, PartialEq)]
 pub enum Combinator {
-    Child,             // `>`
+    // u4: Last Element Depth (size of stack)
+    Child(u8),         // `>`
     Descendant,        // ` `
-    NextSibling,       // `+`
-    SubsequentSibling, // `~`
+    NextSibling(bool), // `+`
+
+    // BUG: By definition of this Combinator it's a SelectAll query
+    SubsequentSibling(bool), // `~`
 
     // I'm pretty sure this does not apply to the scope of the project.
     Namespace, // `|`
@@ -21,10 +24,10 @@ impl Combinator {
         }
 
         match reader.next()? {
-            '>' => Some(Self::Child),
+            '>' => Some(Self::Child(0)),
             ' ' => Some(Self::Descendant),
-            '+' => Some(Self::NextSibling),
-            '~' => Some(Self::SubsequentSibling),
+            '+' => Some(Self::NextSibling(false)),
+            '~' => Some(Self::SubsequentSibling(false)),
             '|' => Some(Self::Namespace),
             _ => panic!("Not possible root"),
         }
@@ -63,6 +66,8 @@ pub enum QueryKind<'a> {
 
     // TODO: I'm not sure how this would belong to `QueryKind` and not `Selection`
     Or(Box<Self>), // This is the `,` on a selection. ex: `a#hello > p, p.world`
+
+    EOF,
 }
 
 impl<'a> QueryKind<'a> {
@@ -102,7 +107,7 @@ mod tests {
             QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
         );
 
-        assert_eq!(combinator, Combinator::Child);
+        assert_eq!(combinator, Combinator::Child(0));
 
         assert_eq!(
             second_element,

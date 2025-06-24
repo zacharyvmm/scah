@@ -1,8 +1,22 @@
 use super::element::element::{XHtmlElement, XHtmlTag};
 use crate::utils::reader::Reader;
+use std::ops::Range;
+
+#[derive(Debug, PartialEq)]
+pub struct BodyContent<'a> {
+    element: XHtmlElement<'a>,
+    text_content: Option<Range<usize>>,
+    inner_html: Option<&'a str>,
+}
+
+#[derive(Debug, PartialEq)]
+struct StackItem<'a> {
+    name: &'a str,
+    body: Option<BodyContent<'a>>,
+}
 
 struct XHtmlParser<'a> {
-    stack: Vec<&'a str>,
+    stack: Vec<StackItem<'a>>,
 }
 
 impl<'a> XHtmlParser<'a> {
@@ -22,17 +36,26 @@ impl<'a> XHtmlParser<'a> {
 
         let tag = XHtmlTag::from(&mut *reader);
 
-        reader.next_while(|c| c.is_whitespace());
+        // TODO: register the start
+        //reader.next_while(|c| c.is_whitespace());
 
         match tag {
             XHtmlTag::Open(element) => {
-                self.stack.push(element.name);
+                // TODO: if conforms a FSM end then add the optional body
+
+                // Check already created FSM's list
+                // Check new FSM list
+
+                self.stack.push(StackItem {
+                    name: element.name,
+                    body: None,
+                });
 
                 return Some(element);
             }
             XHtmlTag::Close(closing_tag) => {
-                while let Some(name) = self.stack.pop() {
-                    if name == closing_tag {
+                while let Some(item) = self.stack.pop() {
+                    if item.name == closing_tag {
                         break;
                     }
                 }
@@ -72,7 +95,13 @@ mod tests {
                 attributes: Vec::new()
             })
         );
-        assert_eq!(parser.stack, Vec::from(["html"]));
+        assert_eq!(
+            parser.stack,
+            Vec::from([StackItem {
+                name: "html",
+                body: None
+            }])
+        );
 
         // STEP 2
         element = parser.next(&mut reader);
@@ -85,12 +114,30 @@ mod tests {
                 attributes: Vec::new()
             })
         );
-        assert_eq!(parser.stack, Vec::from(["html", "h1"]));
+        assert_eq!(
+            parser.stack,
+            Vec::from([
+                StackItem {
+                    name: "html",
+                    body: None
+                },
+                StackItem {
+                    name: "h1",
+                    body: None
+                }
+            ])
+        );
 
         // STEP 3
         element = parser.next(&mut reader);
         assert_eq!(element, None);
-        assert_eq!(parser.stack, Vec::from(["html"]));
+        assert_eq!(
+            parser.stack,
+            Vec::from([StackItem {
+                name: "html",
+                body: None
+            }])
+        );
 
         // STEP 4
         element = parser.next(&mut reader);
@@ -103,7 +150,19 @@ mod tests {
                 attributes: Vec::new()
             })
         );
-        assert_eq!(parser.stack, Vec::from(["html", "p"]));
+        assert_eq!(
+            parser.stack,
+            Vec::from([
+                StackItem {
+                    name: "html",
+                    body: None
+                },
+                StackItem {
+                    name: "p",
+                    body: None
+                }
+            ])
+        );
 
         // STEP 5
         element = parser.next(&mut reader);
@@ -116,17 +175,51 @@ mod tests {
                 attributes: Vec::new()
             })
         );
-        assert_eq!(parser.stack, Vec::from(["html", "p", "span"]));
+        assert_eq!(
+            parser.stack,
+            Vec::from([
+                StackItem {
+                    name: "html",
+                    body: None
+                },
+                StackItem {
+                    name: "p",
+                    body: None
+                },
+                StackItem {
+                    name: "span",
+                    body: None
+                }
+            ])
+        );
 
         // STEP 6
         element = parser.next(&mut reader);
         assert_eq!(element, None);
-        assert_eq!(parser.stack, Vec::from(["html", "p"]));
+        assert_eq!(
+            parser.stack,
+            Vec::from([
+                StackItem {
+                    name: "html",
+                    body: None
+                },
+                StackItem {
+                    name: "p",
+                    body: None
+                }
+            ])
+        );
 
         // STEP 6
         element = parser.next(&mut reader);
         assert_eq!(element, None);
-        assert_eq!(parser.stack, Vec::from(["html"]));
+        assert_eq!(
+            parser.stack,
+            Vec::from([StackItem {
+                name: "html",
+                body: None
+            }])
+        );
 
         // STEP 6
         element = parser.next(&mut reader);
