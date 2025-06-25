@@ -1,17 +1,19 @@
 use super::query::QueryKind;
+use crate::css::element;
+use crate::css::element::element::QueryElement;
 use crate::utils::reader::Reader;
 use crate::{css::query::Combinator, xhtml::element::element::XHtmlElement};
 
 pub struct Selection<'a> {
     query: Vec<QueryKind<'a>>,
-    positon: usize,
+    position: usize,
 }
 
 impl<'a> From<&mut Reader<'a>> for Selection<'a> {
     fn from(reader: &mut Reader<'a>) -> Self {
         let mut selection = Self {
             query: Vec::new(),
-            positon: 0,
+            position: 0,
         };
 
         while let Some(token) = QueryKind::next(reader, selection.query.last()) {
@@ -27,94 +29,94 @@ impl<'a> Selection<'a> {
     pub fn new() -> Self {
         Self {
             query: Vec::new(),
-            positon: 0,
+            position: 0,
         }
     }
 
-    fn check_previous_selector_validity(&mut self, depth: u8) -> bool {
-        let previous = &mut self.query[self.positon - 1];
-
-        match previous {
-            QueryKind::Element(element) => {
-                return true;
-            }
-
-            QueryKind::Combinator(Combinator::Child(previous_element_depth)) => {
-                if *previous_element_depth != depth - 1 {
-                    return false;
-                }
-
-                return true;
-            }
-
-            QueryKind::Combinator(Combinator::NextSibling(previous_sibling)) => {
-                if *previous_sibling == true {
-                    *previous_sibling = false;
-                    return false;
-                }
-
-                return true;
-            }
-
-            QueryKind::Combinator(_) => {
-                self.positon += 1;
-
-                return true;
-            }
-            QueryKind::EOF => false,
-            _ => true,
+    fn next_until_element<'b>(&mut self, depth: u8) {
+        let current = &self.query[self.position];
+        if let QueryKind::Combinator(_) = current {
+            self.position += 1;
         }
     }
 
-    pub fn transition<'b>(&mut self, xhtml_element: &XHtmlElement<'b>, depth: u8) -> bool {
-        let current = &mut self.query[self.positon];
-
-        match current {
-            QueryKind::Element(element) => {
-                if element == xhtml_element {
-                    self.positon += 1;
-
-                    return true;
-                }
-
-                return false;
-            }
-
-            QueryKind::Combinator(Combinator::Child(previous_element_depth)) => {
-                *previous_element_depth = depth;
-                self.positon += 1;
-
-                return true;
-            }
-
-            QueryKind::Combinator(Combinator::NextSibling(previous_sibling)) => {
-                *previous_sibling = true;
-                self.positon += 1;
-
-                return true;
-            }
-
-            QueryKind::Combinator(Combinator::SubsequentSibling(subsequent)) => {
-                *subsequent = true;
-                self.positon += 1;
-
-                return true;
-            }
-
-            QueryKind::Combinator(_) => {
-                self.positon += 1;
-
-                return true;
-            }
-            QueryKind::EOF => true,
-            _ => false,
+    fn previous_child_combinator_invalid(&mut self, depth: u8) -> bool {
+        if self.position == 0 {
+            return false;
         }
+
+        let previous = &self.query[self.position - 1];
+
+        assert!(!matches!(previous, &QueryKind::Element(..)));
+
+        if let QueryKind::Combinator(Combinator::Child(previous_element_depth)) = previous {
+            if *previous_element_depth + 1 != depth {
+                return true;
+            }
+            return false;
+        } else {
+            false
+        }
+    }
+
+    // NOTE: In the case of failure IF last element is NextSibling, then go back to the Element that the NextSibling is referencing
+    fn next_sibling_failed_move_back(&mut self) {
+        if self.position == 0 {
+            return;
+        }
+
+        let previous = &self.query[self.position - 1];
+
+        if let QueryKind::Combinator(Combinator::NextSibling) = previous {
+            self.position -= 2;
+            assert!(matches!(
+                &self.query[self.position],
+                &QueryKind::Element(..)
+            ));
+        }
+    }
+
+    pub fn next<'b>(&mut self, xhtml_element: &XHtmlElement<'b>, depth: u8) -> bool {
+        self.next_until_element(depth);
+
+        if self.previous_child_combinator_invalid(depth) {
+            return false;
+        }
+
+        let current = &self.query[self.position];
+
+        // TODO: Refactor this to a match to handle `Has` and `Not`
+        let ret = if let QueryKind::Element(element) = current {
+            // NOTE: Compare xhtml element to selector element
+            if element == xhtml_element {
+                self.position += 1;
+                return true;
+            }
+
+            self.next_sibling_failed_move_back();
+
+            return false;
+        } else {
+            false
+        };
+
+        if ret {
+            // IF the next item is a child then it should be set to the current depth
+            let next = &mut self.query[self.position];
+            if let QueryKind::Combinator(Combinator::Child(previous_element_depth)) = next {
+                if *previous_element_depth == 0 {
+                    *previous_element_depth = depth;
+                }
+            }
+        }
+
+        return ret;
     }
 
     // TODO: Step back:
     // If the fsm have moved already then this function is to do a reverse transition when the
     // element is out of scope but the Selection have not been created.
-    pub fn step_back(&mut self) {}
+    pub fn back(&mut self, depth: u8) {}
 }
 
 #[cfg(test)]
@@ -151,6 +153,48 @@ mod tests {
     #[test]
     fn test_selection_fsm_element_name_selection() {
         let mut reader = Reader::new("element > p");
-        let selection = Selection::from(&mut reader);
+        let mut selection = Selection::from(&mut reader);
+
+        let mut fsm_moved: bool = selection.next(
+            &XHtmlElement {
+                name: "element",
+                id: None,
+                class: None,
+                attributes: Vec::new(),
+            },
+            0,
+        );
+
+        assert_eq!(fsm_moved, true);
+        assert_eq!(
+            selection.query[selection.position],
+            QueryKind::Combinator(Combinator::Child(0))
+        );
+
+        fsm_moved = selection.next(
+            &XHtmlElement {
+                name: "p",
+                id: None,
+                class: None,
+                attributes: Vec::new(),
+            },
+            0,
+        );
+
+        assert_eq!(fsm_moved, false);
+
+        fsm_moved = selection.next(
+            &XHtmlElement {
+                name: "p",
+                id: None,
+                class: None,
+                attributes: Vec::new(),
+            },
+            1,
+        );
+
+        assert_eq!(fsm_moved, true);
+
+        assert_eq!(selection.query[selection.position], QueryKind::EOF);
     }
 }

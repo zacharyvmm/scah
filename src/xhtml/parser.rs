@@ -24,6 +24,10 @@ impl<'a> XHtmlParser<'a> {
         return Self { stack: Vec::new() };
     }
 
+    fn depth(&self) -> u8 {
+        self.stack.len() as u8
+    }
+
     pub fn next(&mut self, reader: &mut Reader<'a>) -> Option<XHtmlElement<'a>> {
         // move until it finds the first `<`
         reader.next_upto(|c| c != '<');

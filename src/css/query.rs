@@ -4,12 +4,12 @@ use crate::utils::reader::Reader;
 #[derive(Debug, PartialEq)]
 pub enum Combinator {
     // u4: Last Element Depth (size of stack)
-    Child(u8),         // `>`
-    Descendant,        // ` `
-    NextSibling(bool), // `+`
+    Child(u8),   // `>`
+    Descendant,  // ` `
+    NextSibling, // `+`
 
     // BUG: By definition of this Combinator it's a SelectAll query
-    SubsequentSibling(bool), // `~`
+    SubsequentSibling, // `~`
 
     // I'm pretty sure this does not apply to the scope of the project.
     Namespace, // `|`
@@ -26,8 +26,8 @@ impl Combinator {
         match reader.next()? {
             '>' => Some(Self::Child(0)),
             ' ' => Some(Self::Descendant),
-            '+' => Some(Self::NextSibling(false)),
-            '~' => Some(Self::SubsequentSibling(false)),
+            '+' => Some(Self::NextSibling),
+            '~' => Some(Self::SubsequentSibling),
             '|' => Some(Self::Namespace),
             _ => panic!("Not possible root"),
         }
