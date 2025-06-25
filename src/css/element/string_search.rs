@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum AttributeSelectionKind {
     Presence,            // [attribute]
     Exact,               // [attribute=value]

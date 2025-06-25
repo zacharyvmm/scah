@@ -9,7 +9,7 @@ enum Select<'html> {
     One(SelectElement<'html>),
 }
 
-struct SelectionMap<'query, 'html> {
+pub struct SelectionMap<'query, 'html> {
     selections: Vec<(&'query str, Select<'html>)>,
 }
 
@@ -35,5 +35,14 @@ impl<'query, 'html> SelectionMap<'query, 'html> {
         } else {
             panic!("Selection set to a single element, but tried to append an element");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_() {
     }
 }

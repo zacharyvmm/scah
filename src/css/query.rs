@@ -1,7 +1,7 @@
 use super::element::element::QueryElement;
 use crate::utils::reader::Reader;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Combinator {
     // u4: Last Element Depth (size of stack)
     Child(u8),   // `>`
@@ -51,7 +51,7 @@ impl<'a> From<&mut Reader<'a>> for Combinator {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum QueryKind<'a> {
     Element(QueryElement<'a>),
 

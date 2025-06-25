@@ -2,7 +2,7 @@ use super::string_search::AttributeSelectionKind;
 use crate::utils::reader::Reader;
 use crate::utils::token::QuoteKind;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct AttributeSelection<'a> {
     pub(super) name: &'a str,
     pub(super) value: Option<&'a str>,
@@ -85,7 +85,7 @@ impl<'a> SelectionAttributeToken<'a> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct QueryElement<'a> {
     pub(super) name: Option<&'a str>,
     pub(super) id: Option<&'a str>,

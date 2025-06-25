@@ -1,9 +1,9 @@
 use super::query::QueryKind;
-use crate::css::element;
-use crate::css::element::element::QueryElement;
+use crate::css::query::Combinator;
 use crate::utils::reader::Reader;
-use crate::{css::query::Combinator, xhtml::element::element::XHtmlElement};
+use crate::xhtml::element::element::XHtmlElement;
 
+#[derive(Clone)]
 pub struct Selection<'a> {
     query: Vec<QueryKind<'a>>,
     position: usize,
@@ -73,6 +73,22 @@ impl<'a> Selection<'a> {
                 &self.query[self.position],
                 &QueryKind::Element(..)
             ));
+        }
+    }
+
+    pub fn done(&self) -> bool {
+        assert!(self.position <= self.query.len());
+
+        self.query[self.position] == QueryKind::EOF
+    }
+
+    pub fn reset(&mut self) {
+        self.position = 0;
+
+        for query in &mut self.query {
+            if let QueryKind::Combinator(Combinator::Child(previous_element_depth)) = query {
+                *previous_element_depth = 0;
+            }
         }
     }
 
