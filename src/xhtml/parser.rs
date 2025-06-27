@@ -1,4 +1,6 @@
 use super::element::element::{XHtmlElement, XHtmlTag};
+use super::text_content::TextContent;
+use crate::css::selectors::Selectors;
 use crate::utils::reader::Reader;
 use std::ops::Range;
 
@@ -15,29 +17,37 @@ struct StackItem<'a> {
     body: Option<BodyContent<'a>>,
 }
 
-struct XHtmlParser<'a> {
+struct XHtmlParser<'a, 'query> {
     stack: Vec<StackItem<'a>>,
+    content: TextContent<'a>,
+    selectors: Selectors<'query, 'a>,
 }
 
-impl<'a> XHtmlParser<'a> {
-    pub fn new() -> Self {
-        return Self { stack: Vec::new() };
+impl<'a, 'query> XHtmlParser<'a, 'query> {
+    pub fn new(selectors: Selectors<'query, 'a>) -> Self {
+        return Self {
+            stack: Vec::new(),
+            content: TextContent::new(),
+            selectors: selectors,
+        };
     }
 
     fn depth(&self) -> u8 {
         self.stack.len() as u8
     }
 
-    pub fn next(&mut self, reader: &mut Reader<'a>) -> Option<XHtmlElement<'a>> {
+    pub fn next(&mut self, reader: &mut Reader<'a>) -> bool {
         // move until it finds the first `<`
         reader.next_upto(|c| c != '<');
 
         if reader.peek().is_none() {
-            return None;
+            return false;
         }
 
         // TODO: I need to handle the start and end position
 
+        self.content.push(reader);
+        self.content.reset_start();
         let tag = XHtmlTag::from(&mut *reader);
 
         // TODO: register the start
@@ -50,20 +60,35 @@ impl<'a> XHtmlParser<'a> {
                 // Check already created FSM's list
                 // Check new FSM list
 
+                self.selectors.feed(&element, self.depth());
+
+                self.content.push(reader);
                 self.stack.push(StackItem {
                     name: element.name,
                     body: None,
                 });
 
-                return Some(element);
+                return true;
             }
             XHtmlTag::Close(closing_tag) => {
                 while let Some(item) = self.stack.pop() {
+                    if let Some(body) = item.body {
+                        if let Some(inner_html) = body.inner_html {
+                            //inner_html = &inner_html[..reader.get_position()]
+                        }
+
+                        if let Some(text_content) = body.text_content {
+                            self.content.push(reader);
+
+                            //text_content.end =
+                        }
+                    }
+
                     if item.name == closing_tag {
                         break;
                     }
                 }
-                return None;
+                return false;
             }
         }
     }
@@ -72,21 +97,23 @@ impl<'a> XHtmlParser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::css::selectors::{ElementContent, SelectorQuery, SelectorQueryKind, Selectors};
 
-    #[test]
-    fn test_basic_html() {
-        let mut reader = Reader::new(
-            r#"
+    const basic_html: &str = r#"
         <html>
             <h1>Hello World</h1>
             <p class="indent">
                 My name is <span id="name" class="bold">Zachary</span>
             </p>
         </html>
-        "#,
-        );
+        "#;
 
-        let mut parser = XHtmlParser::new();
+    /*
+    #[test]
+    fn test_basic_html() {
+        let mut reader = Reader::new(basic_html);
+
+        let mut parser = XHtmlParser::new(Selectors::new(Vec::new()));
 
         // STEP 1
         let mut element = parser.next(&mut reader);
@@ -214,7 +241,7 @@ mod tests {
             ])
         );
 
-        // STEP 6
+        // STEP 7
         element = parser.next(&mut reader);
         assert_eq!(element, None);
         assert_eq!(
@@ -225,9 +252,28 @@ mod tests {
             }])
         );
 
-        // STEP 6
+        // STEP 8
         element = parser.next(&mut reader);
         assert_eq!(element, None);
         assert_eq!(parser.stack.len(), 0);
+    }
+    */
+
+    #[test]
+    fn test_basic_html_with_selection() {
+        let mut reader = Reader::new(basic_html);
+        let queries = Vec::from([SelectorQuery {
+            kind: SelectorQueryKind::All,
+            query: "p.indent > .bold",
+            data: ElementContent {
+                inner_html: false,
+                text_content: true,
+                attributes: Vec::new(),
+            },
+        }]);
+
+        let mut parser = XHtmlParser::new(Selectors::new(queries));
+
+        while parser.next(&mut reader) {}
     }
 }

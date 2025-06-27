@@ -14,10 +14,15 @@ pub struct SelectionMap<'query, 'html> {
 }
 
 impl<'query, 'html> SelectionMap<'query, 'html> {
-    pub(crate) fn new() -> Self {
-        Self {
-            selections: Vec::new(),
+    pub(crate) fn new(string_queries: &Vec<SelectorQuery<'query>>) -> Self {
+        let mut map: Self = Self {
+            selections: Vec::with_capacity(string_queries.len()),
+        };
+        for i in 0..string_queries.len() {
+            map.selections[i].0 = string_queries[i];
         }
+
+        return map;
     }
 
     pub(crate) fn create_pairing(&mut self, query: &'query str, selection: Select<'html>) -> usize {
@@ -43,6 +48,5 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_() {
-    }
+    fn test_() {}
 }

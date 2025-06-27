@@ -209,12 +209,16 @@ impl<'a> From<&mut Reader<'a>> for QueryElement<'a> {
         while let Some(word) = SelectionKeyWords::next(reader) {
             match (previous, &word) {
                 (Option::None, SelectionKeyWords::String(name)) => {
+                    assert_eq!(element.name, None);
                     element.name = Some(*name);
                 }
                 (Some(SelectionKeyWords::ID), SelectionKeyWords::String(id_name)) => {
-                    element.id = Some(*id_name);
+                    if element.id.is_none() {
+                        element.id = Some(*id_name);
+                    }
                 }
                 (Some(SelectionKeyWords::CLASS), SelectionKeyWords::String(class_name)) => {
+                    // BUG: their is more class that means it should be a list of class
                     element.class = Some(*class_name);
                 }
                 (_, SelectionKeyWords::OpenAttribute) => element.handle_attribute_parsing(reader),

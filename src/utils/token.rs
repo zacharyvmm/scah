@@ -3,4 +3,3 @@ pub enum QuoteKind {
     DoubleQuoted,
     SingleQuoted,
 }
-

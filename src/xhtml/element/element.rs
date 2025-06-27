@@ -25,53 +25,14 @@ pub enum XHtmlTag<'a> {
 
 impl<'a> XHtmlElement<'a> {
     fn add_to_element(&mut self, attribute: Attribute<'a>) -> () {
-        // TODO: This was a cool experiment, but I think `if statements` are needed here instead
-        match (&self, &attribute) {
-            (
-                XHtmlElement {
-                    name: "",
-                    class: _,
-                    id: _,
-                    attributes: _,
-                },
-                Attribute {
-                    name: _,
-                    value: Option::None,
-                },
-            ) => {
-                self.name = attribute.name;
-            }
-            (
-                XHtmlElement {
-                    name: _,
-                    class: Option::None,
-                    id: _,
-                    attributes: _,
-                },
-                Attribute {
-                    name: "class",
-                    value: Some(class_name),
-                },
-            ) => {
-                self.class = Some(class_name);
-            }
-            (
-                XHtmlElement {
-                    name: _,
-                    class: _,
-                    id: Option::None,
-                    attributes: _,
-                },
-                Attribute {
-                    name: "id",
-                    value: Some(id_name),
-                },
-            ) => {
-                self.id = Some(id_name);
-            }
-            (_, _) => {
-                self.attributes.push(attribute);
-            }
+        if self.name == "" && attribute.value.is_none() {
+            self.name = attribute.name;
+        } else if self.class.is_none() && attribute.name == "class" && attribute.value.is_some() {
+            self.class = attribute.value;
+        } else if self.id.is_none() && attribute.name == "id" && attribute.value.is_some() {
+            self.id = attribute.value;
+        } else {
+            self.attributes.push(attribute);
         }
     }
 }
