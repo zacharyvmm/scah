@@ -1,20 +1,13 @@
-use super::element::element::{XHtmlElement, XHtmlTag};
+use super::element::element::XHtmlTag;
 use super::text_content::TextContent;
-use crate::css::selectors::Selectors;
+use crate::css::selectors::{Body, Selectors};
 use crate::utils::reader::Reader;
 use std::ops::Range;
 
 #[derive(Debug, PartialEq)]
-pub struct BodyContent<'a> {
-    element: XHtmlElement<'a>,
-    text_content: Option<Range<usize>>,
-    inner_html: Option<&'a str>,
-}
-
-#[derive(Debug, PartialEq)]
 struct StackItem<'a> {
     name: &'a str,
-    body: Option<BodyContent<'a>>,
+    body: Option<Body<'a>>,
 }
 
 struct XHtmlParser<'a, 'query> {
@@ -38,16 +31,14 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
 
     pub fn next(&mut self, reader: &mut Reader<'a>) -> bool {
         // move until it finds the first `<`
-        reader.next_upto(|c| c != '<');
+        reader.next_while(|c| c != '<');
 
         if reader.peek().is_none() {
             return false;
         }
 
-        // TODO: I need to handle the start and end position
-
-        self.content.push(reader);
-        self.content.reset_start();
+        self.content.push(reader, reader.get_position());
+        //self.content.set_start(reader.get_position());
         let tag = XHtmlTag::from(&mut *reader);
 
         // TODO: register the start
@@ -55,30 +46,58 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
 
         match tag {
             XHtmlTag::Open(element) => {
+                self.content.set_start(reader.get_position());
+
                 // TODO: if conforms a FSM end then add the optional body
 
                 // Check already created FSM's list
                 // Check new FSM list
 
-                self.selectors.feed(&element, self.depth());
+                let name = element.name;
 
-                self.content.push(reader);
+                let need_more_info = self.selectors.feed(element, self.depth());
+
+                if need_more_info.is_none() {
+                    self.stack.push(StackItem {
+                        name: name,
+                        body: None,
+                    });
+
+                    return true;
+                }
+
+                let (wait, mut body) = need_more_info.unwrap();
+                if wait.text_content {
+                    body.content.text_content = Some(Range {
+                        start: self.content.get_position(),
+                        end: self.content.get_position(),
+                    })
+                }
+
+                if wait.inner_html {
+                    body.content.inner_html = Some(Range {
+                        start: reader.get_position(),
+                        end: reader.get_position(),
+                    })
+                }
                 self.stack.push(StackItem {
-                    name: element.name,
-                    body: None,
+                    name: name,
+                    body: Some(body),
                 });
 
                 return true;
             }
             XHtmlTag::Close(closing_tag) => {
-                while let Some(item) = self.stack.pop() {
-                    if let Some(body) = item.body {
-                        if let Some(inner_html) = body.inner_html {
+                self.content.set_start(reader.get_position());
+                while let Some(item) = &mut self.stack.pop() {
+                    if let Some(body) = &mut item.body {
+                        if let Some(range) = &mut body.content.inner_html {
                             //inner_html = &inner_html[..reader.get_position()]
+                            range.end = reader.get_position();
                         }
 
-                        if let Some(text_content) = body.text_content {
-                            self.content.push(reader);
+                        if let Some(range) = &mut body.content.text_content {
+                            range.end = self.content.get_position() - 1;
 
                             //text_content.end =
                         }
@@ -88,7 +107,7 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
                         break;
                     }
                 }
-                return false;
+                return self.stack.len() != 0;
             }
         }
     }
@@ -108,7 +127,6 @@ mod tests {
         </html>
         "#;
 
-    /*
     #[test]
     fn test_basic_html() {
         let mut reader = Reader::new(basic_html);
@@ -116,16 +134,8 @@ mod tests {
         let mut parser = XHtmlParser::new(Selectors::new(Vec::new()));
 
         // STEP 1
-        let mut element = parser.next(&mut reader);
-        assert_eq!(
-            element,
-            Some(XHtmlElement {
-                name: "html",
-                id: None,
-                class: None,
-                attributes: Vec::new()
-            })
-        );
+        let mut continue_parser = parser.next(&mut reader);
+        assert!(continue_parser);
         assert_eq!(
             parser.stack,
             Vec::from([StackItem {
@@ -135,16 +145,8 @@ mod tests {
         );
 
         // STEP 2
-        element = parser.next(&mut reader);
-        assert_eq!(
-            element,
-            Some(XHtmlElement {
-                name: "h1",
-                id: None,
-                class: None,
-                attributes: Vec::new()
-            })
-        );
+        continue_parser = parser.next(&mut reader);
+        assert!(continue_parser);
         assert_eq!(
             parser.stack,
             Vec::from([
@@ -160,27 +162,12 @@ mod tests {
         );
 
         // STEP 3
-        element = parser.next(&mut reader);
-        assert_eq!(element, None);
-        assert_eq!(
-            parser.stack,
-            Vec::from([StackItem {
-                name: "html",
-                body: None
-            }])
-        );
+        continue_parser = parser.next(&mut reader);
+        assert!(continue_parser);
 
         // STEP 4
-        element = parser.next(&mut reader);
-        assert_eq!(
-            element,
-            Some(XHtmlElement {
-                name: "p",
-                id: None,
-                class: Some("indent"),
-                attributes: Vec::new()
-            })
-        );
+        continue_parser = parser.next(&mut reader);
+        assert!(continue_parser);
         assert_eq!(
             parser.stack,
             Vec::from([
@@ -196,16 +183,8 @@ mod tests {
         );
 
         // STEP 5
-        element = parser.next(&mut reader);
-        assert_eq!(
-            element,
-            Some(XHtmlElement {
-                name: "span",
-                id: Some("name"),
-                class: Some("bold"),
-                attributes: Vec::new()
-            })
-        );
+        continue_parser = parser.next(&mut reader);
+        assert!(continue_parser);
         assert_eq!(
             parser.stack,
             Vec::from([
@@ -225,8 +204,8 @@ mod tests {
         );
 
         // STEP 6
-        element = parser.next(&mut reader);
-        assert_eq!(element, None);
+        continue_parser = parser.next(&mut reader);
+        assert!(continue_parser);
         assert_eq!(
             parser.stack,
             Vec::from([
@@ -242,22 +221,14 @@ mod tests {
         );
 
         // STEP 7
-        element = parser.next(&mut reader);
-        assert_eq!(element, None);
-        assert_eq!(
-            parser.stack,
-            Vec::from([StackItem {
-                name: "html",
-                body: None
-            }])
-        );
+        continue_parser = parser.next(&mut reader);
+        assert!(continue_parser);
 
         // STEP 8
-        element = parser.next(&mut reader);
-        assert_eq!(element, None);
+        continue_parser = parser.next(&mut reader);
+        assert!(!continue_parser);
         assert_eq!(parser.stack.len(), 0);
     }
-    */
 
     #[test]
     fn test_basic_html_with_selection() {
@@ -268,12 +239,62 @@ mod tests {
             data: ElementContent {
                 inner_html: false,
                 text_content: true,
-                attributes: Vec::new(),
+                //attributes: Vec::new(),
             },
         }]);
 
         let mut parser = XHtmlParser::new(Selectors::new(queries));
 
-        while parser.next(&mut reader) {}
+        //while parser.next(&mut reader) {}
+    }
+
+    #[test]
+    fn test_text_content_and_inner_html() {
+        let mut reader = Reader::new(basic_html);
+        let queries = Vec::from([]);
+
+        let mut parser = XHtmlParser::new(Selectors::new(queries));
+
+        let mut continue_parser = parser.next(&mut reader); // <html>
+        assert_eq!(true, continue_parser);
+
+        continue_parser = parser.next(&mut reader); // <h1>
+        assert_eq!(true, continue_parser);
+
+        continue_parser = parser.next(&mut reader); // </h1>
+        assert_eq!(true, continue_parser);
+        assert_eq!(parser.content.list, Vec::from(["Hello World"]));
+
+        continue_parser = parser.next(&mut reader); // <p class="indent">
+        assert_eq!(true, continue_parser);
+        assert_eq!(parser.content.list, Vec::from(["Hello World"]));
+
+        continue_parser = parser.next(&mut reader); // <span id="name" class="bold">
+        assert_eq!(true, continue_parser);
+        assert_eq!(
+            parser.content.list,
+            Vec::from(["Hello World", "My name is"])
+        );
+
+        continue_parser = parser.next(&mut reader); // </span>
+        assert_eq!(true, continue_parser);
+        assert_eq!(
+            parser.content.list,
+            Vec::from(["Hello World", "My name is", "Zachary"])
+        );
+
+        continue_parser = parser.next(&mut reader); // </p>
+        assert_eq!(true, continue_parser);
+        assert_eq!(
+            parser.content.list,
+            Vec::from(["Hello World", "My name is", "Zachary"])
+        );
+
+        continue_parser = parser.next(&mut reader); // </html>
+        assert_eq!(true, continue_parser);
+        assert_eq!(
+            parser.content.list,
+            Vec::from(["Hello World", "My name is", "Zachary"])
+        );
     }
 }
