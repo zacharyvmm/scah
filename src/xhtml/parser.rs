@@ -36,8 +36,9 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
         if reader.peek().is_none() {
             return false;
         }
+        let before_element_position = reader.get_position();
 
-        self.content.push(reader, reader.get_position());
+        self.content.push(reader, before_element_position);
         //self.content.set_start(reader.get_position());
         let tag = XHtmlTag::from(&mut *reader);
 
@@ -89,18 +90,18 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
             }
             XHtmlTag::Close(closing_tag) => {
                 self.content.set_start(reader.get_position());
-                while let Some(item) = &mut self.stack.pop() {
-                    if let Some(body) = &mut item.body {
+                while let Some(item) = self.stack.pop() {
+                    if let Some(mut body) = item.body {
                         if let Some(range) = &mut body.content.inner_html {
                             //inner_html = &inner_html[..reader.get_position()]
-                            range.end = reader.get_position();
+                            range.end = before_element_position;
                         }
 
-                        if let Some(range) = &mut body.content.text_content {
-                            range.end = self.content.get_position() - 1;
-
-                            //text_content.end =
+                        if let Some(ref mut range) = body.content.text_content {
+                            range.end = self.content.get_position();
                         }
+
+                        self.selectors.on_stack_pop(body);
                     }
 
                     if item.name == closing_tag {
@@ -116,9 +117,9 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::css::selection_map::{BodyContent, Select, SelectionMap};
     use crate::css::selectors::{ElementContent, SelectorQuery, SelectorQueryKind, Selectors};
     use crate::xhtml::element::element::XHtmlElement;
-    use crate::css::selection_map::{BodyContent, SelectionMap, Select};
     use std::ops::Range;
 
     const basic_html: &str = r#"
@@ -278,13 +279,13 @@ mod tests {
     }
 
     #[test]
-    fn test_basic_html_with_selection_with_text_content() {
+    fn test_basic_html_with_selection_with_text_content_and_inner_html() {
         let mut reader = Reader::new(basic_html);
         let queries = Vec::from([SelectorQuery {
             kind: SelectorQueryKind::First,
             query: "p.indent > .bold",
             data: ElementContent {
-                inner_html: false,
+                inner_html: true,
                 text_content: true,
                 //attributes: Vec::new(),
             },
@@ -301,25 +302,26 @@ mod tests {
                 "Pending: {:?}\n\n\n\n\n",
                 parser.selectors.pending_selectors
             );
+            println!("Content: {:?}\n", parser.content);
         }
 
-        let name = basic_html.find("Zachary").unwrap();
+        assert_eq!(
+            parser.content.concat(
+                parser.selectors.map.elements[0]
+                    .text_content
+                    .clone()
+                    .unwrap()
+            ),
+            "Zachary"
+        );
+        assert_eq!(
+            reader.slice(parser.selectors.map.elements[0].inner_html.clone().unwrap()),
+            "Zachary"
+        );
 
         assert_eq!(
-            parser.selectors.map,
-            SelectionMap {
-                elements: Vec::from([BodyContent {
-                    element: XHtmlElement {
-                        name: "span",
-                        id: Some("name"),
-                        class: Some("bold"),
-                        attributes: Vec::new()
-                    },
-                    text_content: Some(Range {start: name, end: name + 7}),
-                    inner_html: None
-                }]),
-                mappings: Vec::from([("p.indent > .bold", Select::One(Some(0)))]),
-            }
+            parser.selectors.map.mappings,
+            Vec::from([("p.indent > .bold", Select::One(Some(0)))]),
         );
     }
 

@@ -154,18 +154,32 @@ impl<'query, 'html> Selectors<'query, 'html> {
                 ));
             }
 
-            let element_index = self.map.add_element(xhtml_element);
+            let element_index = self.map.add_element(BodyContent {
+                element: xhtml_element,
+                text_content: None,
+                inner_html: None,
+            });
 
             println!("idxs: {:?}", idxs);
             for idx in idxs {
                 println!("idx: {:?}", idx);
-                self.map.push(idx, element_index, None, None);
+                self.map.push(idx, element_index);
             }
 
             return None;
         }
 
         return None;
+    }
+
+    pub fn on_stack_pop(&mut self, body: Body<'html>) {
+        let element_index = self.map.add_element(body.content);
+
+        println!("idxs: {:?}", body.idxs);
+        for idx in body.idxs {
+            println!("idx: {:?}", idx);
+            self.map.push(idx, element_index);
+        }
     }
 }
 

@@ -122,7 +122,6 @@ impl<'a> Selection<'a> {
             return false;
         }
         return false;
-
     }
 
     // TODO: Step back:

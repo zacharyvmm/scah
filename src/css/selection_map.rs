@@ -58,31 +58,21 @@ impl<'query, 'html> SelectionMap<'query, 'html> {
         return map;
     }
 
-    pub(crate) fn add_element(&mut self, element: XHtmlElement<'html>) -> usize {
-        self.elements.push(BodyContent {
-            element: element,
-            text_content: None,
-            inner_html: None,
-        });
+    pub(crate) fn add_element(&mut self, content: BodyContent<'html>) -> usize {
+        self.elements.push(content);
 
         return self.elements.len() - 1;
     }
 
-    pub(crate) fn push(
-        &mut self,
-        index: usize,
-        element_index: usize,
-        text_content: Option<Range<usize>>,
-        inner_html: Option<Range<usize>>,
-    ) -> () {
+    pub(crate) fn push(&mut self, index: usize, element_index: usize) -> () {
         assert!(index < self.mappings.len());
 
-        assert!(element_index < self.elements.len(), "{} < {}", element_index, self.elements.len());
-
-        let content = &mut self.elements[element_index];
-        content.text_content = text_content;
-        content.inner_html = inner_html;
-
+        assert!(
+            element_index < self.elements.len(),
+            "{} < {}",
+            element_index,
+            self.elements.len()
+        );
         self.mappings[index].1.push(element_index);
     }
 }

@@ -2,6 +2,7 @@ use std::ops::Range;
 
 use crate::utils::reader::Reader;
 
+#[derive(Debug)]
 pub struct TextContent<'html> {
     pub(super) list: Vec<&'html str>,
     pub(super) text_start: usize,
@@ -21,7 +22,7 @@ impl<'html> TextContent<'html> {
 
     pub fn get_position(&self) -> usize {
         assert_ne!(self.list.len(), 0);
-        self.list.len() - 1
+        self.list.len()
     }
 
     pub fn push(&mut self, reader: &Reader<'html>, end_position: usize) {
@@ -41,7 +42,7 @@ impl<'html> TextContent<'html> {
         //self.text_start = reader.get_position();
     }
 
-    pub fn concat(&self, range: Range<usize>) {
-        self.list[range].concat();
+    pub fn concat(&self, range: Range<usize>) -> String {
+        self.list[range].concat()
     }
 }
