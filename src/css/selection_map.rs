@@ -15,7 +15,7 @@ type SelectCollection = Vec<usize>;
 type SelectElement = Option<usize>;
 
 #[derive(Debug, PartialEq)]
-enum Select {
+pub enum Select {
     All(SelectCollection),
     One(SelectElement),
 }
@@ -32,9 +32,10 @@ impl Select {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct SelectionMap<'query, 'html> {
-    elements: Vec<BodyContent<'html>>,
-    mappings: Vec<(&'query str, Select)>,
+    pub elements: Vec<BodyContent<'html>>,
+    pub mappings: Vec<(&'query str, Select)>,
 }
 
 impl<'query, 'html> SelectionMap<'query, 'html> {
@@ -64,7 +65,7 @@ impl<'query, 'html> SelectionMap<'query, 'html> {
             inner_html: None,
         });
 
-        return self.elements.len();
+        return self.elements.len() - 1;
     }
 
     pub(crate) fn push(
@@ -74,13 +75,9 @@ impl<'query, 'html> SelectionMap<'query, 'html> {
         text_content: Option<Range<usize>>,
         inner_html: Option<Range<usize>>,
     ) -> () {
-        if index >= self.mappings.len() {
-            return;
-        }
+        assert!(index < self.mappings.len());
 
-        if element_index >= self.elements.len() {
-            return;
-        }
+        assert!(element_index < self.elements.len(), "{} < {}", element_index, self.elements.len());
 
         let content = &mut self.elements[element_index];
         content.text_content = text_content;

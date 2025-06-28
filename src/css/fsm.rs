@@ -3,7 +3,7 @@ use crate::css::query::Combinator;
 use crate::utils::reader::Reader;
 use crate::xhtml::element::element::XHtmlElement;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Selection<'a> {
     query: Vec<QueryKind<'a>>,
     position: usize,
@@ -102,31 +102,27 @@ impl<'a> Selection<'a> {
         let current = &self.query[self.position];
 
         // TODO: Refactor this to a match to handle `Has` and `Not`
-        let ret = if let QueryKind::Element(element) = current {
+        if let QueryKind::Element(element) = current {
             // NOTE: Compare xhtml element to selector element
             if element == xhtml_element {
                 self.position += 1;
+                println!("increase position");
+                let next = &mut self.query[self.position];
+                if let QueryKind::Combinator(Combinator::Child(previous_element_depth)) = next {
+                    if *previous_element_depth == 0 {
+                        *previous_element_depth = depth;
+                    }
+                }
+
                 return true;
             }
 
             self.next_sibling_failed_move_back();
 
             return false;
-        } else {
-            false
-        };
-
-        if ret {
-            // IF the next item is a child then it should be set to the current depth
-            let next = &mut self.query[self.position];
-            if let QueryKind::Combinator(Combinator::Child(previous_element_depth)) = next {
-                if *previous_element_depth == 0 {
-                    *previous_element_depth = depth;
-                }
-            }
         }
+        return false;
 
-        return ret;
     }
 
     // TODO: Step back:
@@ -212,5 +208,43 @@ mod tests {
         assert_eq!(fsm_moved, true);
 
         assert_eq!(selection.query[selection.position], QueryKind::EOF);
+    }
+
+    #[test]
+    fn test_selection_fsm_complex_element_selection() {
+        let mut reader = Reader::new("p.indent > .bold");
+        let mut selection = Selection::from(&mut reader);
+
+        let mut fsm_moved: bool = selection.next(
+            &XHtmlElement {
+                name: "p",
+                id: None,
+                class: Some("indent"),
+                attributes: Vec::new(),
+            },
+            0,
+        );
+
+        assert_eq!(fsm_moved, true);
+        assert_eq!(
+            selection.query[selection.position],
+            QueryKind::Combinator(Combinator::Child(0))
+        );
+
+        fsm_moved = selection.next(
+            &XHtmlElement {
+                name: "span",
+                id: Some("name"),
+                class: Some("bold"),
+                attributes: Vec::new(),
+            },
+            1,
+        );
+
+        assert_eq!(fsm_moved, true);
+
+        assert_eq!(selection.query[selection.position], QueryKind::EOF);
+
+        assert!(selection.done());
     }
 }

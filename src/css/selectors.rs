@@ -9,7 +9,7 @@ use super::selection_map::{BodyContent, SelectionMap};
 // handles storing the values
 // handles parsing the selector strings on constructor creation
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum SelectorQueryKind {
     First,
     All,
@@ -23,15 +23,15 @@ pub struct ElementContent {
     pub inner_html: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SelectorQuery<'a> {
     pub kind: SelectorQueryKind,
     pub query: &'a str,
     pub data: ElementContent,
 }
 
-#[derive(Clone)]
-struct RequestedContent<'a> {
+#[derive(Debug, Clone)]
+pub struct RequestedContent<'a> {
     index: usize,
     selection: Selection<'a>,
     query: SelectorQuery<'a>,
@@ -43,10 +43,11 @@ pub struct Body<'a> {
     pub content: BodyContent<'a>,
 }
 
+#[derive(Debug)]
 pub struct Selectors<'query, 'html> {
-    map: SelectionMap<'query, 'html>,
-    selections: Vec<RequestedContent<'query>>,
-    pending_selectors: Vec<RequestedContent<'query>>,
+    pub map: SelectionMap<'query, 'html>,
+    pub selections: Vec<RequestedContent<'query>>,
+    pub pending_selectors: Vec<RequestedContent<'query>>,
 }
 
 impl<'query, 'html> Selectors<'query, 'html> {
@@ -68,6 +69,7 @@ impl<'query, 'html> Selectors<'query, 'html> {
                 query: queries[i].clone(),
             });
         }
+        println!("{:?}", selectors.selections);
 
         return selectors;
     }
@@ -91,6 +93,7 @@ impl<'query, 'html> Selectors<'query, 'html> {
                         inner_html |= req.query.data.inner_html;
                     }
 
+                    println!("index: {}", req.index);
                     idxs.push(req.index);
 
                     // remove from list
@@ -153,7 +156,9 @@ impl<'query, 'html> Selectors<'query, 'html> {
 
             let element_index = self.map.add_element(xhtml_element);
 
+            println!("idxs: {:?}", idxs);
             for idx in idxs {
+                println!("idx: {:?}", idx);
                 self.map.push(idx, element_index, None, None);
             }
 

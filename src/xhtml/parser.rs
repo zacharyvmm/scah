@@ -117,6 +117,9 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
 mod tests {
     use super::*;
     use crate::css::selectors::{ElementContent, SelectorQuery, SelectorQueryKind, Selectors};
+    use crate::xhtml::element::element::XHtmlElement;
+    use crate::css::selection_map::{BodyContent, SelectionMap, Select};
+    use std::ops::Range;
 
     const basic_html: &str = r#"
         <html>
@@ -238,6 +241,50 @@ mod tests {
             query: "p.indent > .bold",
             data: ElementContent {
                 inner_html: false,
+                text_content: false,
+                //attributes: Vec::new(),
+            },
+        }]);
+
+        let mut parser = XHtmlParser::new(Selectors::new(queries));
+
+        while parser.next(&mut reader) {
+            println!("Iterating");
+            println!("Stack: {:?}\n", parser.stack);
+            println!("Map: {:?}\n", parser.selectors.map);
+            println!("Selections: {:?}\n", parser.selectors.selections);
+            println!(
+                "Pending: {:?}\n\n\n\n\n",
+                parser.selectors.pending_selectors
+            );
+        }
+
+        assert_eq!(
+            parser.selectors.map,
+            SelectionMap {
+                elements: Vec::from([BodyContent {
+                    element: XHtmlElement {
+                        name: "span",
+                        id: Some("name"),
+                        class: Some("bold"),
+                        attributes: Vec::new()
+                    },
+                    text_content: None,
+                    inner_html: None
+                }]),
+                mappings: Vec::from([("p.indent > .bold", Select::All(Vec::from([0])))]),
+            }
+        );
+    }
+
+    #[test]
+    fn test_basic_html_with_selection_with_text_content() {
+        let mut reader = Reader::new(basic_html);
+        let queries = Vec::from([SelectorQuery {
+            kind: SelectorQueryKind::First,
+            query: "p.indent > .bold",
+            data: ElementContent {
+                inner_html: false,
                 text_content: true,
                 //attributes: Vec::new(),
             },
@@ -245,11 +292,39 @@ mod tests {
 
         let mut parser = XHtmlParser::new(Selectors::new(queries));
 
-        //while parser.next(&mut reader) {}
+        while parser.next(&mut reader) {
+            println!("Iterating");
+            println!("Stack: {:?}\n", parser.stack);
+            println!("Map: {:?}\n", parser.selectors.map);
+            println!("Selections: {:?}\n", parser.selectors.selections);
+            println!(
+                "Pending: {:?}\n\n\n\n\n",
+                parser.selectors.pending_selectors
+            );
+        }
+
+        let name = basic_html.find("Zachary").unwrap();
+
+        assert_eq!(
+            parser.selectors.map,
+            SelectionMap {
+                elements: Vec::from([BodyContent {
+                    element: XHtmlElement {
+                        name: "span",
+                        id: Some("name"),
+                        class: Some("bold"),
+                        attributes: Vec::new()
+                    },
+                    text_content: Some(Range {start: name, end: name + 7}),
+                    inner_html: None
+                }]),
+                mappings: Vec::from([("p.indent > .bold", Select::One(Some(0)))]),
+            }
+        );
     }
 
     #[test]
-    fn test_text_content_and_inner_html() {
+    fn test_text_content() {
         let mut reader = Reader::new(basic_html);
         let queries = Vec::from([]);
 
