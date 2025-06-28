@@ -101,13 +101,13 @@ impl<'a> From<&mut Reader<'a>> for XHtmlElement<'a> {
 // TODO: Parse the closing tag for the XHtmlTag
 impl<'a> From<&mut Reader<'a>> for XHtmlTag<'a> {
     fn from(reader: &mut Reader<'a>) -> Self {
-        reader.next_while(|c| c.is_whitespace());
+        reader.next_while(|c| c.is_whitespace() || c == '<');
         if let Some(character) = reader.peek() {
             if character == '/' {
                 let start = reader.get_position() + 1;
-                reader.next_while(|c| c != '>');
+                reader.next_upto(|c| c != '>');
 
-                let end = reader.get_position();
+                let end = reader.get_position() - 1;
 
                 // BUG: Handle start and end not conforming to the rules of slices.
 

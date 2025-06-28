@@ -256,42 +256,42 @@ mod tests {
         let mut parser = XHtmlParser::new(Selectors::new(queries));
 
         let mut continue_parser = parser.next(&mut reader); // <html>
-        assert_eq!(true, continue_parser);
+        assert!(continue_parser);
 
         continue_parser = parser.next(&mut reader); // <h1>
-        assert_eq!(true, continue_parser);
+        assert!(continue_parser);
 
         continue_parser = parser.next(&mut reader); // </h1>
-        assert_eq!(true, continue_parser);
+        assert!(continue_parser);
         assert_eq!(parser.content.list, Vec::from(["Hello World"]));
 
         continue_parser = parser.next(&mut reader); // <p class="indent">
-        assert_eq!(true, continue_parser);
+        assert!(continue_parser);
         assert_eq!(parser.content.list, Vec::from(["Hello World"]));
 
         continue_parser = parser.next(&mut reader); // <span id="name" class="bold">
-        assert_eq!(true, continue_parser);
+        assert!(continue_parser);
         assert_eq!(
             parser.content.list,
             Vec::from(["Hello World", "My name is"])
         );
 
         continue_parser = parser.next(&mut reader); // </span>
-        assert_eq!(true, continue_parser);
+        assert!(continue_parser);
         assert_eq!(
             parser.content.list,
             Vec::from(["Hello World", "My name is", "Zachary"])
         );
 
         continue_parser = parser.next(&mut reader); // </p>
-        assert_eq!(true, continue_parser);
+        assert!(continue_parser);
         assert_eq!(
             parser.content.list,
             Vec::from(["Hello World", "My name is", "Zachary"])
         );
 
         continue_parser = parser.next(&mut reader); // </html>
-        assert_eq!(true, continue_parser);
+        assert!(!continue_parser);
         assert_eq!(
             parser.content.list,
             Vec::from(["Hello World", "My name is", "Zachary"])
