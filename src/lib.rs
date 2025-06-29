@@ -8,6 +8,7 @@ pub use css::selectors::{InnerContent, SelectorQuery, SelectorQueryKind};
 use utils::reader::Reader;
 use xhtml::parser::XHtmlParser;
 pub use xhtml::text_content::TextContent;
+pub use xhtml::element::element::{XHtmlElement, Attribute};
 
 pub fn parse<'html, 'query>(
     html: &'html str,
