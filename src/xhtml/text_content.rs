@@ -42,7 +42,7 @@ impl<'html> TextContent<'html> {
         //self.text_start = reader.get_position();
     }
 
-    pub fn concat(&self, range: Range<usize>) -> String {
-        self.list[range].concat()
+    pub fn join(&self, range: Range<usize>) -> String {
+        self.list[range].join(" ")
     }
 }

@@ -1,4 +1,3 @@
-use crate::css::element;
 use crate::utils::reader::Reader;
 use crate::xhtml::element::element::XHtmlElement;
 

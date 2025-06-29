@@ -4,9 +4,9 @@ use std::ops::Range;
 
 #[derive(Debug, PartialEq)]
 pub struct BodyContent<'a> {
-    pub(crate) element: XHtmlElement<'a>,
-    pub(crate) text_content: Option<Range<usize>>,
-    pub(crate) inner_html: Option<Range<usize>>,
+    pub element: XHtmlElement<'a>,
+    pub text_content: Option<Range<usize>>,
+    pub inner_html: Option<Range<usize>>,
 }
 
 // usize is the index of in the elements list
@@ -75,12 +75,4 @@ impl<'query, 'html> SelectionMap<'query, 'html> {
         );
         self.mappings[index].1.push(element_index);
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_() {}
 }

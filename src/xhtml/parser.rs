@@ -1,6 +1,5 @@
 use super::element::element::XHtmlTag;
 use super::text_content::TextContent;
-use crate::SelectionMap;
 use crate::css::selectors::{Body, Selectors};
 use crate::utils::reader::Reader;
 use std::ops::Range;
@@ -13,7 +12,7 @@ struct StackItem<'a> {
 
 pub struct XHtmlParser<'a, 'query> {
     stack: Vec<StackItem<'a>>,
-    content: TextContent<'a>,
+    pub content: TextContent<'a>,
     pub selectors: Selectors<'query, 'a>,
 }
 
@@ -96,7 +95,6 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
                 while let Some(item) = self.stack.pop() {
                     if let Some(mut body) = item.body {
                         if let Some(ref mut range) = body.content.inner_html {
-                            //inner_html = &inner_html[..reader.get_position()]
                             range.end = before_element_position;
                         }
 
@@ -305,7 +303,7 @@ mod tests {
         }
 
         assert_eq!(
-            parser.content.concat(
+            parser.content.join(
                 parser.selectors.map.elements[0]
                     .text_content
                     .clone()
