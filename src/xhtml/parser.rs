@@ -30,7 +30,6 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
     }
 
     pub fn next(&mut self, reader: &mut Reader<'a>) -> bool {
-        println!("{:?}", self.stack);
         // move until it finds the first `<`
         reader.next_while(|c| c != '<');
 
@@ -114,6 +113,7 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
                         self.selectors.on_stack_pop(body);
                     }
 
+                    println!("{:?}", self.stack);
                     self.selectors.back(self.depth());
 
                     if item.name == closing_tag {

@@ -4,10 +4,6 @@ use crate::xhtml::element::element::XHtmlElement;
 use super::fsm::Selection;
 use super::selection_map::{BodyContent, SelectionMap};
 
-// handles checking all the selectors (new and pending)
-// handles storing the values
-// handles parsing the selector strings on constructor creation
-
 #[derive(Debug, Clone)]
 pub enum SelectorQueryKind {
     First,
@@ -16,8 +12,6 @@ pub enum SelectorQueryKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct InnerContent {
-    // Do I need this ??? I can I not just return all the attributes of the element
-    //pub attributes: Vec<&'a str>,
     pub text_content: bool,
     pub inner_html: bool,
 }

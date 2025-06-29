@@ -167,6 +167,7 @@ fn test_html_page_all_valid_anchor_tags_in_main() {
     }]);
 
     let (map, _) = parse(HTML, queries);
-
-    assert_eq!(map.elements.len(), 5);
+    // I think the bug is that the on pop it's still on the a[href]
+    // thus if the current element has a depth of 0 we need to check the element before that
+    assert_eq!(map.elements.len(), 6);
 }

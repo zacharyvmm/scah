@@ -113,13 +113,16 @@ impl<'a> Selection<'a> {
         }
 
         // TODO: Refactor this to a match to handle `Has` and `Not`
-        if let QueryKind::Element(depth, element) = &mut self.query[self.position] {
+
+        println!("LIST: {:?}", self.query);
+        if let QueryKind::Element(ref mut depth, ref element) = self.query[self.position] {
             println!("Comparing `{:?}` with `{:?}`", element, xhtml_element);
             // NOTE: Compare xhtml element to selector element
             if element == xhtml_element {
                 self.position += 1;
 
                 *depth = stack_depth;
+                println!("LIST: {:?}", self.query);
 
                 self.next_until_element();
                 return true;
@@ -132,13 +135,7 @@ impl<'a> Selection<'a> {
         return false;
     }
 
-    // TODO: Step back:
-    // If the fsm have moved already then this function is to do a reverse transition when the
-    // element is out of scope but the Selection have not been created.
     pub fn back(&mut self, depth: u8) {
-        // The challenge of this is that I don't really know when to step back
-        // To solve this problem you basiclly need to record the stack depth for every Selector element and compare on `back`
-
         if self.position == 0 {
             return;
         }
@@ -160,12 +157,25 @@ impl<'a> Selection<'a> {
         if !matches!(self.query[element_position], QueryKind::Element(..)) {
             element_position = self.position - 1;
         }
-        let QueryKind::Element(ref mut element_depth, _) = self.query[element_position] else {
-            panic!(
+
+        let element_depth = match &mut self.query[element_position] {
+            QueryKind::Element(0, _) => {
+                let previous_element = &mut self.query[element_position - 2];
+                let QueryKind::Element(el_depth, _) = previous_element else {
+                    panic!(
+                        "The item in the query list before a child combinator should always be an `Element`."
+                    )
+                };
+
+                el_depth
+            }
+            QueryKind::Element(el_depth, _) => el_depth,
+            _ => panic!(
                 "The item in the query list before a child combinator should always be an `Element`."
-            )
+            ),
         };
 
+        println!("{} == {}", *element_depth, depth);
         if *element_depth == depth {
             assert!(element_position >= 2);
             self.position = element_position - 2;
