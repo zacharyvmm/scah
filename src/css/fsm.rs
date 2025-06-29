@@ -144,6 +144,7 @@ impl<'a> Selection<'a> {
         }
 
         if self.query[self.position] == QueryKind::EOF {
+            println!("EOF {}", self.position);
             self.position -= 1;
             let QueryKind::Element(ref mut element_depth, _) = self.query[self.position] else {
                 panic!(

@@ -30,6 +30,7 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
     }
 
     pub fn next(&mut self, reader: &mut Reader<'a>) -> bool {
+        println!("{:?}", self.stack);
         // move until it finds the first `<`
         reader.next_while(|c| c != '<');
 
@@ -40,7 +41,15 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
 
         self.content.push(reader, before_element_position);
         //self.content.set_start(reader.get_position());
-        let tag = XHtmlTag::from(&mut *reader);
+        let tag = {
+            let mut tag: Option<XHtmlTag> = None;
+
+            while tag.is_none() {
+                tag = XHtmlTag::from(&mut *reader);
+            }
+
+            tag.unwrap()
+        };
 
         // TODO: register the start
         //reader.next_while(|c| c.is_whitespace());

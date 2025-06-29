@@ -102,6 +102,71 @@ fn test_html_page_single_main() {
 
     println!("{:?}", map);
 
-    // This fails because the statemachine does not step back
     assert_eq!(map.elements.len(), 1);
+}
+
+#[test]
+fn test_html_page_all_anchor_tag_selection() {
+    let queries = Vec::from([SelectorQuery {
+        kind: SelectorQueryKind::All,
+        query: "a",
+        data: InnerContent {
+            inner_html: true,
+            text_content: true,
+        },
+    }]);
+
+    let (map, _) = parse(HTML, queries);
+
+    assert_eq!(map.elements.len(), 7);
+}
+
+#[test]
+fn test_html_page_all_anchor_tag_starting_with_link_selection() {
+    let queries = Vec::from([SelectorQuery {
+        kind: SelectorQueryKind::All,
+        query: "a[href^=link]",
+        data: InnerContent {
+            inner_html: true,
+            text_content: true,
+        },
+    }]);
+
+    let (map, _) = parse(HTML, queries);
+
+    assert_eq!(map.elements.len(), 3);
+}
+
+#[test]
+fn test_html_page_children_valid_anchor_tags_in_main() {
+    let queries = Vec::from([SelectorQuery {
+        kind: SelectorQueryKind::All,
+        query: "main > section > a[href]",
+        data: InnerContent {
+            inner_html: true,
+            text_content: true,
+        },
+    }]);
+
+    let (map, _) = parse(HTML, queries);
+
+    println!("Map: {:?}", map.elements);
+
+    assert_eq!(map.elements.len(), 5);
+}
+
+#[test]
+fn test_html_page_all_valid_anchor_tags_in_main() {
+    let queries = Vec::from([SelectorQuery {
+        kind: SelectorQueryKind::All,
+        query: "main > section a[href]",
+        data: InnerContent {
+            inner_html: true,
+            text_content: true,
+        },
+    }]);
+
+    let (map, _) = parse(HTML, queries);
+
+    assert_eq!(map.elements.len(), 5);
 }

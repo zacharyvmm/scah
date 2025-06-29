@@ -92,7 +92,6 @@ impl<'query, 'html> Selectors<'query, 'html> {
                         inner_html |= req.query.data.inner_html;
                     }
 
-                    println!("index: {}", req.index);
                     idxs.push(req.index);
 
                     match req.query.kind {
@@ -169,9 +168,7 @@ impl<'query, 'html> Selectors<'query, 'html> {
                 inner_html: None,
             });
 
-            println!("idxs: {:?}", idxs);
             for idx in idxs {
-                println!("idx: {:?}", idx);
                 self.map.push(idx, element_index);
             }
 
@@ -182,6 +179,7 @@ impl<'query, 'html> Selectors<'query, 'html> {
     }
 
     pub fn back(&mut self, depth: u8) {
+        println!("STACK POP _BACK_");
         self.pending_selectors.retain_mut(|req| {
             req.selection.back(depth);
 
@@ -192,9 +190,7 @@ impl<'query, 'html> Selectors<'query, 'html> {
     pub fn on_stack_pop(&mut self, body: Body<'html>) {
         let element_index = self.map.add_element(body.content);
 
-        println!("idxs: {:?}", body.idxs);
         for idx in body.idxs {
-            println!("idx: {:?}", idx);
             self.map.push(idx, element_index);
         }
     }

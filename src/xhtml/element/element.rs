@@ -99,8 +99,8 @@ impl<'a> From<&mut Reader<'a>> for XHtmlElement<'a> {
 }
 
 // TODO: Parse the closing tag for the XHtmlTag
-impl<'a> From<&mut Reader<'a>> for XHtmlTag<'a> {
-    fn from(reader: &mut Reader<'a>) -> Self {
+impl<'a> XHtmlTag<'a> {
+    pub fn from(reader: &mut Reader<'a>) -> Option<Self> {
         reader.next_while(|c| c.is_whitespace() || c == '<');
         if let Some(character) = reader.peek() {
             if character == '/' {
@@ -113,13 +113,14 @@ impl<'a> From<&mut Reader<'a>> for XHtmlTag<'a> {
 
                 // BUG: The Formating of the string breaks this code
 
-                return Self::Close(reader.slice(start..end).trim());
-            } /*else if character == '!' {
-            // This is a comment
-            reader.next_upto(|c| c != '>');
-            }*/
+                return Some(Self::Close(reader.slice(start..end).trim()));
+            } else if character == '!' {
+                // This is a comment
+                reader.next_upto(|c| c != '>');
+                return None;
+            }
         }
-        return Self::Open(XHtmlElement::from(reader));
+        return Some(Self::Open(XHtmlElement::from(reader)));
     }
 }
 
@@ -336,7 +337,7 @@ mod tests {
 
         assert_eq!(
             tag,
-            XHtmlTag::Open(XHtmlElement {
+            Some(XHtmlTag::Open(XHtmlElement {
                 name: "p",
                 id: None,
                 class: None,
@@ -344,7 +345,7 @@ mod tests {
                     name: "key",
                     value: Some("value")
                 }]),
-            })
+            }))
         );
     }
 
@@ -353,7 +354,7 @@ mod tests {
         let mut reader = Reader::new("/p>");
         let tag = XHtmlTag::from(&mut reader);
 
-        assert_eq!(tag, XHtmlTag::Close("p"));
+        assert_eq!(tag, Some(XHtmlTag::Close("p")));
     }
 
     #[test]
@@ -361,6 +362,6 @@ mod tests {
         let mut reader = Reader::new("  /   p   >");
         let tag = XHtmlTag::from(&mut reader);
 
-        assert_eq!(tag, XHtmlTag::Close("p"));
+        assert_eq!(tag, Some(XHtmlTag::Close("p")));
     }
 }
