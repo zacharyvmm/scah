@@ -3,11 +3,11 @@ mod utils;
 mod xhtml;
 
 pub use css::selection_map::{BodyContent, SelectionMap};
-pub use css::selectors::{InnerContent, SelectorQuery, SelectorQueryKind};
-pub use xhtml::text_content::TextContent;
 use css::selectors::Selectors;
+pub use css::selectors::{InnerContent, SelectorQuery, SelectorQueryKind};
 use utils::reader::Reader;
 use xhtml::parser::XHtmlParser;
+pub use xhtml::text_content::TextContent;
 
 pub fn parse<'html, 'query>(
     html: &'html str,
