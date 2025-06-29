@@ -95,10 +95,20 @@ impl<'query, 'html> Selectors<'query, 'html> {
                     println!("index: {}", req.index);
                     idxs.push(req.index);
 
-                    // remove from list
-                    return false;
+                    match req.query.kind {
+                        SelectorQueryKind::First => {
+                            // remove the fsm from current list
+                            return false;
+                        }
+                        SelectorQueryKind::All => {
+                            // reset to default values
+                            req.selection.back(depth);
+                            return true;
+                        }
+                    }
                 }
             }
+
             return true;
         });
 
@@ -169,6 +179,14 @@ impl<'query, 'html> Selectors<'query, 'html> {
         }
 
         return None;
+    }
+
+    pub fn back(&mut self, depth: u8) {
+        self.pending_selectors.retain_mut(|req| {
+            req.selection.back(depth);
+
+            return !req.selection.is_reset();
+        });
     }
 
     pub fn on_stack_pop(&mut self, body: Body<'html>) {

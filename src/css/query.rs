@@ -4,7 +4,7 @@ use crate::utils::reader::Reader;
 #[derive(Debug, PartialEq, Clone)]
 pub enum Combinator {
     // u4: Last Element Depth (size of stack)
-    Child(u8),   // `>`
+    Child,       // `>`
     Descendant,  // ` `
     NextSibling, // `+`
 
@@ -24,7 +24,7 @@ impl Combinator {
         }
 
         match reader.next()? {
-            '>' => Some(Self::Child(0)),
+            '>' => Some(Self::Child),
             ' ' => Some(Self::Descendant),
             '+' => Some(Self::NextSibling),
             '~' => Some(Self::SubsequentSibling),
@@ -53,7 +53,7 @@ impl<'a> From<&mut Reader<'a>> for Combinator {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum QueryKind<'a> {
-    Element(QueryElement<'a>),
+    Element(u8, QueryElement<'a>),
 
     Combinator(Combinator),
 
@@ -74,7 +74,7 @@ impl<'a> QueryKind<'a> {
     pub fn next(reader: &mut Reader<'a>, last: Option<&Self>) -> Option<Self> {
         match last {
             Option::None | Some(Self::Combinator(_)) => {
-                Some(Self::Element(QueryElement::from(reader)))
+                Some(Self::Element(0, QueryElement::from(reader)))
             }
             Some(_) => {
                 if let Some(token) = reader.peek() {
@@ -107,7 +107,7 @@ mod tests {
             QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
         );
 
-        assert_eq!(combinator, Combinator::Child(0));
+        assert_eq!(combinator, Combinator::Child);
 
         assert_eq!(
             second_element,

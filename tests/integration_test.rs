@@ -1,5 +1,5 @@
-use scrooge::{BodyContent, InnerContent, SelectorQuery, SelectorQueryKind, parse};
-const html: &str = r#"
+use scrooge::{InnerContent, SelectorQuery, SelectorQueryKind, parse};
+const HTML: &str = r#"
 <!DOCTYPE html>
 <html>
 <head>
@@ -53,11 +53,11 @@ fn test_html_page() {
         },
     }]);
 
-    let (mut map, content) = parse(html, queries);
+    let (mut map, content) = parse(HTML, queries);
 
     let last = map.elements.pop().unwrap();
     assert_eq!(
-        html[last.inner_html.unwrap()].trim(),
+        HTML[last.inner_html.unwrap()].trim(),
         r#"<a href="wrong-main">Not selected (main has no red-background class)</a>"#
     );
 
@@ -68,7 +68,7 @@ fn test_html_page() {
 
     let first = map.elements.pop().unwrap();
     assert_eq!(
-        html[first.inner_html.unwrap()].trim(),
+        HTML[first.inner_html.unwrap()].trim(),
         r#"<!-- These 3 links will be selected by the selector -->
             <a href="link1">Link 1</a>
             <a href="link2">Link 2</a>
@@ -98,7 +98,9 @@ fn test_html_page_single_main() {
         },
     }]);
 
-    let (map, _) = parse(html, queries);
+    let (map, _) = parse(HTML, queries);
+
+    println!("{:?}", map);
 
     // This fails because the statemachine does not step back
     assert_eq!(map.elements.len(), 1);

@@ -105,6 +105,8 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
                         self.selectors.on_stack_pop(body);
                     }
 
+                    self.selectors.back(self.depth());
+
                     if item.name == closing_tag {
                         break;
                     }
@@ -370,5 +372,32 @@ mod tests {
             parser.content.list,
             Vec::from(["Hello World", "My name is", "Zachary"])
         );
+    }
+
+    #[test]
+    fn test_fsm_states() {
+        let mut reader = Reader::new(basic_html);
+        let queries = Vec::from([SelectorQuery {
+            kind: SelectorQueryKind::All,
+            query: "p.indent > .bold",
+            data: InnerContent {
+                inner_html: false,
+                text_content: false,
+                //attributes: Vec::new(),
+            },
+        }]);
+
+        let mut parser = XHtmlParser::new(Selectors::new(queries));
+
+        while parser.next(&mut reader) {
+            println!("Iterating");
+            println!("Stack: {:?}\n", parser.stack);
+            println!("Map: {:?}\n", parser.selectors.map);
+            println!("Selections: {:?}\n", parser.selectors.selections);
+            println!(
+                "Pending: {:?}\n\n\n\n\n",
+                parser.selectors.pending_selectors
+            );
+        }
     }
 }

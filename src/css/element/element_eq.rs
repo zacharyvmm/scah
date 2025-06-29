@@ -33,12 +33,12 @@ impl<'a, 'b> PartialEq<XHtmlElement<'b>> for QueryElement<'a> {
         }
 
         if self.class.is_some()
-            && other.class.is_some()
-            && !other
-                .class
-                .unwrap()
-                .split_whitespace()
-                .any(|word| word == self.class.unwrap())
+            && (other.class.is_none()
+                || !other
+                    .class
+                    .unwrap()
+                    .split_whitespace()
+                    .any(|word| word == self.class.unwrap()))
         {
             return false;
         }
