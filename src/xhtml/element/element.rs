@@ -114,7 +114,10 @@ impl<'a> From<&mut Reader<'a>> for XHtmlTag<'a> {
                 // BUG: The Formating of the string breaks this code
 
                 return Self::Close(reader.slice(start..end).trim());
-            }
+            } /*else if character == '!' {
+            // This is a comment
+            reader.next_upto(|c| c != '>');
+            }*/
         }
         return Self::Open(XHtmlElement::from(reader));
     }

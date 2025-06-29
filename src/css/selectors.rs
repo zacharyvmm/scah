@@ -16,7 +16,7 @@ pub enum SelectorQueryKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ElementContent {
+pub struct InnerContent {
     // Do I need this ??? I can I not just return all the attributes of the element
     //pub attributes: Vec<&'a str>,
     pub text_content: bool,
@@ -27,7 +27,7 @@ pub struct ElementContent {
 pub struct SelectorQuery<'a> {
     pub kind: SelectorQueryKind,
     pub query: &'a str,
-    pub data: ElementContent,
+    pub data: InnerContent,
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +78,7 @@ impl<'query, 'html> Selectors<'query, 'html> {
         &mut self,
         xhtml_element: XHtmlElement<'html>,
         depth: u8,
-    ) -> Option<(ElementContent, Body<'html>)> {
+    ) -> Option<(InnerContent, Body<'html>)> {
         let mut idxs: Vec<usize> = Vec::new();
 
         let mut text_content: bool = false;
@@ -139,7 +139,7 @@ impl<'query, 'html> Selectors<'query, 'html> {
         if idxs.len() > 0 {
             if text_content | inner_html {
                 return Some((
-                    ElementContent {
+                    InnerContent {
                         text_content,
                         inner_html,
                     },
@@ -192,7 +192,7 @@ mod tests {
         let queries = Vec::from([SelectorQuery {
             kind: SelectorQueryKind::All,
             query: "main.red-background > section#id > a[href]",
-            data: ElementContent {
+            data: InnerContent {
                 inner_html: false,
                 text_content: false,
                 //attributes: Vec::from(["href"]),

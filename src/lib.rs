@@ -2,35 +2,21 @@ mod css;
 mod utils;
 mod xhtml;
 
-mod scrooge {
-    pub mod css {
-        use crate::xhtml::element::element::XHtmlElement;
+pub use css::selection_map::{BodyContent, SelectionMap};
+use css::selectors::Selectors;
+pub use css::selectors::{InnerContent, SelectorQuery, SelectorQueryKind};
+use utils::reader::Reader;
+use xhtml::parser::XHtmlParser;
 
-        struct Hook {
-            //fsm: SelectorFSM,
-            queue: Vec<String>,
-            // When going throught the fsm selectors IF it conforms to the fsm then it appended at that state to the back of the list.
-        }
+pub fn parse<'html, 'query>(
+    html: &'html str,
+    queries: Vec<SelectorQuery<'query>>,
+) -> SelectionMap<'query, 'html> {
+    let selectors = Selectors::new(queries);
+    let mut parser = XHtmlParser::new(selectors);
 
-        impl Hook {
-            fn transition<'b>(element: XHtmlElement<'b>) {
-                // Check the last FSM ==[if State of FSM is not *DONE* then]==> try next step
+    let mut reader = Reader::new(html);
+    while parser.next(&mut reader) {}
 
-                // ----------------------------
-                // When the scope ends the FSM needs to *step back* if state is not *DONE*
-            }
-        }
-
-        struct Selectors {
-            hooks: Vec<Hook>,
-        }
-        impl Selectors {
-            fn transition<'b>(element: XHtmlElement<'b>) {
-                // This will step throught every single selector FSM
-                // In addition, it will add in a list the elements (with the desired information) corresponding to the hook used
-            }
-        }
-    }
-
-    pub mod xhtml {}
+    return parser.selectors.map;
 }

@@ -1,5 +1,6 @@
 use super::element::element::XHtmlTag;
 use super::text_content::TextContent;
+use crate::SelectionMap;
 use crate::css::selectors::{Body, Selectors};
 use crate::utils::reader::Reader;
 use std::ops::Range;
@@ -10,10 +11,10 @@ struct StackItem<'a> {
     body: Option<Body<'a>>,
 }
 
-struct XHtmlParser<'a, 'query> {
+pub struct XHtmlParser<'a, 'query> {
     stack: Vec<StackItem<'a>>,
     content: TextContent<'a>,
-    selectors: Selectors<'query, 'a>,
+    pub selectors: Selectors<'query, 'a>,
 }
 
 impl<'a, 'query> XHtmlParser<'a, 'query> {
@@ -68,6 +69,8 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
                 }
 
                 let (wait, mut body) = need_more_info.unwrap();
+                assert!(wait.text_content | wait.inner_html);
+
                 if wait.text_content {
                     body.content.text_content = Some(Range {
                         start: self.content.get_position(),
@@ -92,7 +95,7 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
                 self.content.set_start(reader.get_position());
                 while let Some(item) = self.stack.pop() {
                     if let Some(mut body) = item.body {
-                        if let Some(range) = &mut body.content.inner_html {
+                        if let Some(ref mut range) = body.content.inner_html {
                             //inner_html = &inner_html[..reader.get_position()]
                             range.end = before_element_position;
                         }
@@ -118,9 +121,8 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
 mod tests {
     use super::*;
     use crate::css::selection_map::{BodyContent, Select, SelectionMap};
-    use crate::css::selectors::{ElementContent, SelectorQuery, SelectorQueryKind, Selectors};
+    use crate::css::selectors::{InnerContent, SelectorQuery, SelectorQueryKind, Selectors};
     use crate::xhtml::element::element::XHtmlElement;
-    use std::ops::Range;
 
     const basic_html: &str = r#"
         <html>
@@ -240,7 +242,7 @@ mod tests {
         let queries = Vec::from([SelectorQuery {
             kind: SelectorQueryKind::All,
             query: "p.indent > .bold",
-            data: ElementContent {
+            data: InnerContent {
                 inner_html: false,
                 text_content: false,
                 //attributes: Vec::new(),
@@ -284,7 +286,7 @@ mod tests {
         let queries = Vec::from([SelectorQuery {
             kind: SelectorQueryKind::First,
             query: "p.indent > .bold",
-            data: ElementContent {
+            data: InnerContent {
                 inner_html: true,
                 text_content: true,
                 //attributes: Vec::new(),
@@ -298,11 +300,8 @@ mod tests {
             println!("Stack: {:?}\n", parser.stack);
             println!("Map: {:?}\n", parser.selectors.map);
             println!("Selections: {:?}\n", parser.selectors.selections);
-            println!(
-                "Pending: {:?}\n\n\n\n\n",
-                parser.selectors.pending_selectors
-            );
-            println!("Content: {:?}\n", parser.content);
+            println!("Pending: {:?}\n", parser.selectors.pending_selectors);
+            println!("Content: {:?}\n\n\n\n\n", parser.content);
         }
 
         assert_eq!(
