@@ -1,7 +1,7 @@
 use crate::utils::reader::Reader;
 use crate::xhtml::element::element::XHtmlElement;
 
-use super::fsm::Selection;
+use super::parser::fsm::Selection;
 use super::selection_map::{BodyContent, SelectionMap};
 
 #[derive(Debug, Clone)]

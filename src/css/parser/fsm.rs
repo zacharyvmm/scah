@@ -1,6 +1,6 @@
-use super::query::QueryKind;
-use crate::css::element::element::QueryElement;
-use crate::css::query::Combinator;
+use super::query_tokenizer::QueryKind;
+use super::element::element::QueryElement;
+use super::query_tokenizer::Combinator;
 use crate::utils::reader::Reader;
 use crate::xhtml::element::element::XHtmlElement;
 
