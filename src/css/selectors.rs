@@ -62,7 +62,6 @@ impl<'query, 'html> Selectors<'query, 'html> {
                 query: queries[i].clone(),
             });
         }
-        println!("{:?}", selectors.selections);
 
         return selectors;
     }
@@ -173,7 +172,6 @@ impl<'query, 'html> Selectors<'query, 'html> {
     }
 
     pub fn back(&mut self, depth: u8) {
-        println!("STACK POP _BACK_");
         self.pending_selectors.retain_mut(|req| {
             req.selection.back(depth);
 

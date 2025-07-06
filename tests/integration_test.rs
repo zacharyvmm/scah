@@ -1,4 +1,6 @@
-use scrooge::{InnerContent, SelectorQuery, SelectorQueryKind, parse, Attribute, XHtmlElement, BodyContent};
+use scrooge::{
+    Attribute, BodyContent, InnerContent, SelectorQuery, SelectorQueryKind, XHtmlElement, parse,
+};
 const HTML: &str = r#"
 <!DOCTYPE html>
 <html>
@@ -100,8 +102,6 @@ fn test_html_page_single_main() {
 
     let (map, _) = parse(HTML, queries);
 
-    println!("{:?}", map);
-
     assert_eq!(map.elements.len(), 1);
 }
 
@@ -150,8 +150,6 @@ fn test_html_page_children_valid_anchor_tags_in_main() {
 
     let (map, _) = parse(HTML, queries);
 
-    println!("Map: {:?}", map.elements);
-
     assert_eq!(map.elements.len(), 5);
 }
 
@@ -170,9 +168,15 @@ fn test_html_page_all_valid_anchor_tags_in_main() {
     // I think the bug is that the on pop it's still on the a[href]
     // thus if the current element has a depth of 0 we need to check the element before that
     assert_eq!(map.elements.len(), 6);
-    {    
-        let BodyContent{element, inner_html, text_content}  = &map.elements[0];
-        assert_eq!(*element, XHtmlElement {
+    {
+        let BodyContent {
+            element,
+            inner_html,
+            text_content,
+        } = &map.elements[0];
+        assert_eq!(
+            *element,
+            XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
@@ -180,15 +184,22 @@ fn test_html_page_all_valid_anchor_tags_in_main() {
                     name: "href",
                     value: Some("link1")
                 }])
-            });
+            }
+        );
 
         assert_eq!(content.join(text_content.clone().unwrap()), "Link 1");
         assert_eq!(&HTML[inner_html.clone().unwrap()], "Link 1");
     }
 
-    {    
-        let BodyContent{element, inner_html, text_content}  = &map.elements[1];
-        assert_eq!(*element, XHtmlElement {
+    {
+        let BodyContent {
+            element,
+            inner_html,
+            text_content,
+        } = &map.elements[1];
+        assert_eq!(
+            *element,
+            XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
@@ -196,16 +207,22 @@ fn test_html_page_all_valid_anchor_tags_in_main() {
                     name: "href",
                     value: Some("link2")
                 }])
-            });
+            }
+        );
 
         assert_eq!(content.join(text_content.clone().unwrap()), "Link 2");
         assert_eq!(&HTML[inner_html.clone().unwrap()], "Link 2");
     }
-    
 
-    {    
-        let BodyContent{element, inner_html, text_content}  = &map.elements[2];
-        assert_eq!(*element, XHtmlElement {
+    {
+        let BodyContent {
+            element,
+            inner_html,
+            text_content,
+        } = &map.elements[2];
+        assert_eq!(
+            *element,
+            XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
@@ -213,15 +230,22 @@ fn test_html_page_all_valid_anchor_tags_in_main() {
                     name: "href",
                     value: Some("link3")
                 }])
-            });
+            }
+        );
 
         assert_eq!(content.join(text_content.clone().unwrap()), "Link 3");
         assert_eq!(&HTML[inner_html.clone().unwrap()], "Link 3");
     }
 
-    {    
-        let BodyContent{element, inner_html, text_content}  = &map.elements[3];
-        assert_eq!(*element, XHtmlElement {
+    {
+        let BodyContent {
+            element,
+            inner_html,
+            text_content,
+        } = &map.elements[3];
+        assert_eq!(
+            *element,
+            XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
@@ -229,15 +253,28 @@ fn test_html_page_all_valid_anchor_tags_in_main() {
                     name: "href",
                     value: Some("not-selected")
                 }])
-            });
+            }
+        );
 
-        assert_eq!(content.join(text_content.clone().unwrap()), "Not selected (nested in div)");
-        assert_eq!(&HTML[inner_html.clone().unwrap()], "Not selected (nested in div)");
+        assert_eq!(
+            content.join(text_content.clone().unwrap()),
+            "Not selected (nested in div)"
+        );
+        assert_eq!(
+            &HTML[inner_html.clone().unwrap()],
+            "Not selected (nested in div)"
+        );
     }
 
-    {    
-        let BodyContent{element, inner_html, text_content}  = &map.elements[4];
-        assert_eq!(*element, XHtmlElement {
+    {
+        let BodyContent {
+            element,
+            inner_html,
+            text_content,
+        } = &map.elements[4];
+        assert_eq!(
+            *element,
+            XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
@@ -245,15 +282,28 @@ fn test_html_page_all_valid_anchor_tags_in_main() {
                     name: "href",
                     value: Some("wrong-section")
                 }])
-            });
+            }
+        );
 
-        assert_eq!(content.join(text_content.clone().unwrap()), "Not selected (wrong section)");
-        assert_eq!(&HTML[inner_html.clone().unwrap()], "Not selected (wrong section)");
+        assert_eq!(
+            content.join(text_content.clone().unwrap()),
+            "Not selected (wrong section)"
+        );
+        assert_eq!(
+            &HTML[inner_html.clone().unwrap()],
+            "Not selected (wrong section)"
+        );
     }
 
-    {    
-        let BodyContent{element, inner_html, text_content}  = &map.elements[5];
-        assert_eq!(*element, XHtmlElement {
+    {
+        let BodyContent {
+            element,
+            inner_html,
+            text_content,
+        } = &map.elements[5];
+        assert_eq!(
+            *element,
+            XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
@@ -261,9 +311,16 @@ fn test_html_page_all_valid_anchor_tags_in_main() {
                     name: "href",
                     value: Some("wrong-main")
                 }])
-            });
+            }
+        );
 
-        assert_eq!(content.join(text_content.clone().unwrap()), "Not selected (main has no red-background class)");
-        assert_eq!(&HTML[inner_html.clone().unwrap()], "Not selected (main has no red-background class)");
+        assert_eq!(
+            content.join(text_content.clone().unwrap()),
+            "Not selected (main has no red-background class)"
+        );
+        assert_eq!(
+            &HTML[inner_html.clone().unwrap()],
+            "Not selected (main has no red-background class)"
+        );
     }
 }

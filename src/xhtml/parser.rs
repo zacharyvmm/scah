@@ -113,7 +113,6 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
                         self.selectors.on_stack_pop(body);
                     }
 
-                    println!("{:?}", self.stack);
                     self.selectors.back(self.depth());
 
                     if item.name == closing_tag {
@@ -260,16 +259,7 @@ mod tests {
 
         let mut parser = XHtmlParser::new(Selectors::new(queries));
 
-        while parser.next(&mut reader) {
-            println!("Iterating");
-            println!("Stack: {:?}\n", parser.stack);
-            println!("Map: {:?}\n", parser.selectors.map);
-            println!("Selections: {:?}\n", parser.selectors.selections);
-            println!(
-                "Pending: {:?}\n\n\n\n\n",
-                parser.selectors.pending_selectors
-            );
-        }
+        while parser.next(&mut reader) {}
 
         assert_eq!(
             parser.selectors.map,
@@ -304,14 +294,7 @@ mod tests {
 
         let mut parser = XHtmlParser::new(Selectors::new(queries));
 
-        while parser.next(&mut reader) {
-            println!("Iterating");
-            println!("Stack: {:?}\n", parser.stack);
-            println!("Map: {:?}\n", parser.selectors.map);
-            println!("Selections: {:?}\n", parser.selectors.selections);
-            println!("Pending: {:?}\n", parser.selectors.pending_selectors);
-            println!("Content: {:?}\n\n\n\n\n", parser.content);
-        }
+        while parser.next(&mut reader) {}
 
         assert_eq!(
             parser.content.join(
@@ -398,15 +381,6 @@ mod tests {
 
         let mut parser = XHtmlParser::new(Selectors::new(queries));
 
-        while parser.next(&mut reader) {
-            println!("Iterating");
-            println!("Stack: {:?}\n", parser.stack);
-            println!("Map: {:?}\n", parser.selectors.map);
-            println!("Selections: {:?}\n", parser.selectors.selections);
-            println!(
-                "Pending: {:?}\n\n\n\n\n",
-                parser.selectors.pending_selectors
-            );
-        }
+        while parser.next(&mut reader) {}
     }
 }

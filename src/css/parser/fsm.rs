@@ -1,6 +1,6 @@
-use super::query_tokenizer::QueryKind;
 use super::element::element::QueryElement;
 use super::query_tokenizer::Combinator;
+use super::query_tokenizer::QueryKind;
 use crate::utils::reader::Reader;
 use crate::xhtml::element::element::XHtmlElement;
 
@@ -114,15 +114,12 @@ impl<'a> Selection<'a> {
 
         // TODO: Refactor this to a match to handle `Has` and `Not`
 
-        println!("LIST: {:?}", self.query);
         if let QueryKind::Element(ref mut depth, ref element) = self.query[self.position] {
-            println!("Comparing `{:?}` with `{:?}`", element, xhtml_element);
             // NOTE: Compare xhtml element to selector element
             if element == xhtml_element {
                 self.position += 1;
 
                 *depth = stack_depth;
-                println!("LIST: {:?}", self.query);
 
                 self.next_until_element();
                 return true;
@@ -141,7 +138,6 @@ impl<'a> Selection<'a> {
         }
 
         if self.query[self.position] == QueryKind::EOF {
-            println!("EOF {}", self.position);
             self.position -= 1;
             let QueryKind::Element(ref mut element_depth, _) = self.query[self.position] else {
                 panic!(
@@ -175,7 +171,6 @@ impl<'a> Selection<'a> {
             ),
         };
 
-        println!("{} == {}", *element_depth, depth);
         if *element_depth == depth {
             assert!(element_position >= 2);
             self.position = element_position - 2;
