@@ -274,7 +274,7 @@ mod tests {
                     text_content: None,
                     inner_html: None
                 }]),
-                mappings: Vec::from([("p.indent > .bold", Select::All(Vec::from([0])))]),
+                mappings: Vec::from([Select::All("p.indent > .bold", Vec::from([0]))]),
             }
         );
     }
@@ -312,7 +312,7 @@ mod tests {
 
         assert_eq!(
             parser.selectors.map.mappings,
-            Vec::from([("p.indent > .bold", Select::One(Some(0)))]),
+            Vec::from([Select::One("p.indent > .bold", Some(0))]),
         );
     }
 

@@ -1,40 +1,49 @@
 use super::query_tokenizer::Combinator;
-use super::query_tokenizer::{QueryKind, ChainKind};
+use super::query_tokenizer::QueryKind;
+use crate::css::parser::element::element::QueryElement;
 use crate::utils::reader::Reader;
 use crate::xhtml::element::element::XHtmlElement;
 
-#[derive(Debug, Clone)]
-pub struct TreeSelection<'a> {
-    query: Vec<QueryKind<'a>>,
-    position: usize,
+#[derive(PartialEq)]
+enum Mode {
+    First,
+    All,
 }
 
-impl<'a> From<&mut Reader<'a>> for TreeSelection<'a> {
-    fn from(reader: &mut Reader<'a>) -> Self {
-        let mut selection = Self {
-            query: Vec::new(),
-            position: 0,
-        };
+enum Store<'a> {
+    Single(Option<XHtmlElement<'a>>),
+    List1D(Vec<XHtmlElement<'a>>),
+    List2D(Vec<Vec<XHtmlElement<'a>>>),
+    List3D(Vec<Vec<Vec<XHtmlElement<'a>>>>),
+}
 
-        while let Some(token) = QueryKind::next(reader, selection.query.last()) {
-            selection.query.push(token);
+pub struct TreeBuilder<'a> {
+    max_save_depth: u8,
+    previous_save_depth: u8,
+    mode: Mode,
+    list: Vec<QueryKind<'a>>,
+}
+
+impl<'a> From<&mut Reader<'a>> for TreeBuilder<'a> {
+    fn from(reader: &mut Reader<'a>) -> Self {
+        let mut selection = Self { 
+            max_save_depth: 1,
+            previous_save_depth: 0,
+            mode: Mode::All,
+            list: Vec::new()};
+
+        while let Some(token) = QueryKind::next(reader, selection.list.last()) {
+            selection.list.push(token);
         }
-        selection.query.push(QueryKind::EOF);
+        selection.list.push(QueryKind::Save);
 
         return selection;
     }
 }
 
-impl<'a> TreeSelection<'a> {
-    pub fn new() -> Self {
-        Self {
-            query: Vec::new(),
-            position: 0,
-        }
-    }
+impl<'a> TreeBuilder<'a> {
 
-    pub fn append(&mut self, mut other: Self, chain: Option<ChainKind>) -> () {
-
+    pub fn append(&mut self, branch: bool, mut other: Self) -> () {
         // Operation
         // x -> o
         //   -> o
@@ -42,16 +51,63 @@ impl<'a> TreeSelection<'a> {
         // List
         // x -> o o o o o o o
 
-
+        // [blank element, combinator, ...]
         // remove blank first element
-        other.query.remove(0);
+        assert!(matches!(
+            other.list[0],
+            QueryKind::Element(
+                _,
+                QueryElement {
+                    name: None | Some("&"),
+                    ..
+                }
+            )
+        ));
+        other.list.remove(0);
 
-        if chain != None {
-            self.query.pop();
-            self.query.push(QueryKind::Offset(chain, other.query.len() as u16));
+        if branch {
+            // Only if I don't want to save the end element of the previous query
+            self.list.pop();
+
+            self.list
+                .push(QueryKind::Offset(other.list.len() as u16));
+
+            self.previous_save_depth = other.max_save_depth;
+            self.max_save_depth += other.max_save_depth;
+
+            other.max_save_depth = 0;
         }
 
-        self.query.append(&mut other.query);
+        if self.previous_save_depth < other.max_save_depth {
+            self.max_save_depth = self.max_save_depth - self.previous_save_depth + other.max_save_depth;
+            self.previous_save_depth = 0;
+        }
+
+        self.list.append(&mut other.list);
+    }
+
+    fn mode(&mut self, mode: Mode) -> () {
+        self.mode = mode;
+    }
+
+    fn storage(&self) -> Store<'a> {
+        
+        match self.mode {
+            Mode::First => {
+                if self.max_save_depth == 1 {
+                    return Store::Single(None);
+                }
+
+                return Store::List1D(Vec::with_capacity(self.max_save_depth as usize));
+            },
+            Mode::All => {
+                if self.max_save_depth == 1 {
+                    return Store::List1D(Vec::new());
+                }
+
+                return Store::List2D(Vec::from([Vec::with_capacity(self.max_save_depth as usize)]))
+            },
+        }
     }
 }
 
@@ -63,10 +119,10 @@ mod tests {
     #[test]
     fn test_selection_on_basic_query() {
         let mut reader = Reader::new("element#id.class > other#other_id.other_class");
-        let selection = TreeSelection::from(&mut reader);
+        let selection = TreeBuilder::from(&mut reader);
 
         assert_eq!(
-            selection.query,
+            selection.list,
             Vec::from([
                 QueryKind::Element(
                     0,
@@ -82,7 +138,7 @@ mod tests {
                         Vec::new(),
                     )
                 ),
-                QueryKind::EOF,
+                QueryKind::Save,
             ])
         );
     }
@@ -93,10 +149,10 @@ mod tests {
         let mut then_a_reader = Reader::new("> a");
         let mut then_p_reader = Reader::new(" p");
 
-        let mut selection = TreeSelection::from(&mut reader);
+        let mut selection = TreeBuilder::from(&mut reader);
 
         assert_eq!(
-            selection.query,
+            selection.list,
             Vec::from([
                 QueryKind::Element(
                     0,
@@ -112,15 +168,15 @@ mod tests {
                         Vec::new(),
                     )
                 ),
-                QueryKind::EOF,
+                QueryKind::Save,
             ])
         );
 
-        selection.append(TreeSelection::from(&mut then_a_reader), Some(ChainKind::And));
-        selection.append(TreeSelection::from(&mut then_p_reader), None);
+        selection.append(true, TreeBuilder::from(&mut then_a_reader));
+        selection.append(true, TreeBuilder::from(&mut then_p_reader));
 
         assert_eq!(
-            selection.query,
+            selection.list,
             Vec::from([
                 QueryKind::Element(
                     0,
@@ -136,31 +192,14 @@ mod tests {
                         Vec::new(),
                     )
                 ),
-                QueryKind::Offset(Some(ChainKind::And), 3),
+                QueryKind::Offset(3),
                 QueryKind::Combinator(Combinator::Child),
-                QueryKind::Element(
-                    0,
-                    QueryElement::new(
-                        Some("a"),
-                        None,
-                        None,
-                        Vec::new(),
-                    )
-                ),
-                QueryKind::EOF,
+                QueryKind::Element(0, QueryElement::new(Some("a"), None, None, Vec::new(),)),
+                QueryKind::Save,
                 QueryKind::Combinator(Combinator::Descendant),
-                QueryKind::Element(
-                    0,
-                    QueryElement::new(
-                        Some("p"),
-                        None,
-                        None,
-                        Vec::new(),
-                    )
-                ),
-                QueryKind::EOF,
+                QueryKind::Element(0, QueryElement::new(Some("p"), None, None, Vec::new(),)),
+                QueryKind::Save,
             ])
         );
-
     }
 }

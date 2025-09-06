@@ -51,7 +51,7 @@ impl<'a> From<&mut Reader<'a>> for Combinator {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+/*#[derive(Debug, PartialEq, Clone)]
 pub enum ChainKind {
     And,
     Or,
@@ -60,6 +60,7 @@ pub enum ChainKind {
     Nand,
     Nor,
 }
+*/
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum QueryKind<'a> {
@@ -76,10 +77,10 @@ pub enum QueryKind<'a> {
 
     // TODO: I'm not sure how this would belong to `QueryKind` and not `Selection`
     //Or(Box<Self>), // This is the `,` on a selection. ex: `a#hello > p, p.world`
+    //Offset(Option<ChainKind>, u16), // second branch offset
+    Offset(u16), // second branch offset
 
-    Offset(Option<ChainKind>, u16), // second branch offset
-
-    EOF,
+    Save, // The previous Element is saved
 }
 
 impl<'a> QueryKind<'a> {

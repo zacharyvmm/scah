@@ -1,4 +1,4 @@
 mod element;
 pub mod fsm;
-pub mod tree_fsm;
 mod query_tokenizer;
+pub mod tree_fsm;

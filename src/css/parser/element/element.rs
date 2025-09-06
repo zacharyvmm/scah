@@ -87,10 +87,10 @@ impl<'a> SelectionAttributeToken<'a> {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct QueryElement<'a> {
-    pub(super) name: Option<&'a str>,
-    pub(super) id: Option<&'a str>,
-    pub(super) class: Option<&'a str>,
-    pub(super) attributes: Vec<AttributeSelection<'a>>,
+    pub name: Option<&'a str>,
+    pub id: Option<&'a str>,
+    pub class: Option<&'a str>,
+    pub attributes: Vec<AttributeSelection<'a>>,
 }
 
 // TODO: I don't like this abstraction

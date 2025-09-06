@@ -20,7 +20,7 @@ impl<'a> From<&mut Reader<'a>> for Selection<'a> {
         while let Some(token) = QueryKind::next(reader, selection.query.last()) {
             selection.query.push(token);
         }
-        selection.query.push(QueryKind::EOF);
+        selection.query.push(QueryKind::Save);
 
         return selection;
     }
@@ -41,7 +41,7 @@ impl<'a> Selection<'a> {
         }
         assert!(matches!(
             self.query[self.position],
-            QueryKind::Element(..) | QueryKind::EOF
+            QueryKind::Element(..) | QueryKind::Save
         ));
     }
 
@@ -88,7 +88,7 @@ impl<'a> Selection<'a> {
     pub fn done(&self) -> bool {
         assert!(self.position <= self.query.len());
 
-        self.query[self.position] == QueryKind::EOF
+        self.query[self.position] == QueryKind::Save
     }
 
     pub fn is_reset(&self) -> bool {
@@ -137,7 +137,7 @@ impl<'a> Selection<'a> {
             return;
         }
 
-        if self.query[self.position] == QueryKind::EOF {
+        if self.query[self.position] == QueryKind::Save {
             self.position -= 1;
             let QueryKind::Element(ref mut element_depth, _) = self.query[self.position] else {
                 panic!(
@@ -206,7 +206,7 @@ mod tests {
                         Vec::new(),
                     )
                 ),
-                QueryKind::EOF,
+                QueryKind::Save,
             ])
         );
     }
@@ -250,7 +250,7 @@ mod tests {
 
         assert_eq!(fsm_moved, true);
 
-        assert_eq!(selection.query[selection.position], QueryKind::EOF);
+        assert_eq!(selection.query[selection.position], QueryKind::Save);
     }
 
     #[test]
@@ -280,7 +280,7 @@ mod tests {
 
         assert_eq!(fsm_moved, true);
 
-        assert_eq!(selection.query[selection.position], QueryKind::EOF);
+        assert_eq!(selection.query[selection.position], QueryKind::Save);
 
         assert!(selection.done());
     }
@@ -312,7 +312,7 @@ mod tests {
 
         assert_eq!(fsm_moved, true);
 
-        assert_eq!(selection.query[selection.position], QueryKind::EOF);
+        assert_eq!(selection.query[selection.position], QueryKind::Save);
 
         assert!(selection.done());
 
