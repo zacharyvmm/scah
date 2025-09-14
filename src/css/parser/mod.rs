@@ -1,5 +1,4 @@
-mod element;
-pub mod fsm;
-pub mod fsm_builder;
+pub(super) mod element;
 pub mod pattern_section;
-mod query_tokenizer;
+pub(super) mod query_tokenizer;
+pub mod fsm_builder;

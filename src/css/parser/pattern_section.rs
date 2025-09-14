@@ -9,7 +9,7 @@ pub enum Mode {
 
 #[derive(PartialEq, Debug)]
 pub struct PatternSection<'a> {
-    pub(super) pattern: Vec<PatternStep<'a>>,
+    pub(crate) pattern: Vec<PatternStep<'a>>,
     pub(super) kind: Mode,
 
     pub(super) parent: Option<u16>, // real index

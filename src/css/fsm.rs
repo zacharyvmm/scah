@@ -1,6 +1,6 @@
-use super::pattern_section::PatternSection;
-use super::query_tokenizer::Combinator;
-use super::query_tokenizer::PatternStep;
+use super::parser::pattern_section::PatternSection;
+use super::parser::query_tokenizer::Combinator;
+use super::parser::query_tokenizer::PatternStep;
 use crate::xhtml::element::element::XHtmlElement;
 
 #[derive(Debug, Clone)]
@@ -196,9 +196,9 @@ impl Selection {
 
 #[cfg(test)]
 mod tests {
-    use super::super::element::element::QueryElement;
-    use super::super::fsm_builder::FsmBuilder;
-    use super::super::pattern_section::{Mode, PatternSection};
+    use super::super::parser::element::element::QueryElement;
+    use super::super::parser::fsm_builder::FsmBuilder;
+    use super::super::parser::pattern_section::{Mode, PatternSection};
     use super::*;
     use crate::utils::reader::Reader;
 
