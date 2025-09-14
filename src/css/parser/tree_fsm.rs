@@ -4,33 +4,29 @@ use crate::css::parser::element::element::QueryElement;
 use crate::utils::reader::Reader;
 use crate::xhtml::element::element::XHtmlElement;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum Mode {
     First,
     All,
 }
 
-enum Store<'a> {
-    Single(Option<XHtmlElement<'a>>),
-    List1D(Vec<XHtmlElement<'a>>),
-    List2D(Vec<Vec<XHtmlElement<'a>>>),
-    List3D(Vec<Vec<Vec<XHtmlElement<'a>>>>),
-}
-
-pub struct TreeBuilder<'a> {
-    max_save_depth: u8,
-    previous_save_depth: u8,
-    mode: Mode,
+#[derive(PartialEq, Debug)]
+struct QuerySection<'a> {
     list: Vec<QueryKind<'a>>,
+    kind: Mode,
+
+    parent: Option<u16>, // real index
+    children: Vec<u16>,  // offset
 }
 
-impl<'a> From<&mut Reader<'a>> for TreeBuilder<'a> {
-    fn from(reader: &mut Reader<'a>) -> Self {
-        let mut selection = Self { 
-            max_save_depth: 1,
-            previous_save_depth: 0,
-            mode: Mode::All,
-            list: Vec::new()};
+impl<'a> QuerySection<'a> {
+    fn new(reader: &mut Reader<'a>, mode: Mode) -> Self {
+        let mut selection = Self {
+            list: Vec::new(),
+            kind: mode,
+            parent: None,
+            children: Vec::new(),
+        };
 
         while let Some(token) = QueryKind::next(reader, selection.list.last()) {
             selection.list.push(token);
@@ -41,73 +37,43 @@ impl<'a> From<&mut Reader<'a>> for TreeBuilder<'a> {
     }
 }
 
-impl<'a> TreeBuilder<'a> {
+pub struct FsmBuilder<'a> {
+    list: Vec<QuerySection<'a>>,
+}
 
-    pub fn append(&mut self, branch: bool, mut other: Self) -> () {
-        // Operation
-        // x -> o
-        //   -> o
-
-        // List
-        // x -> o o o o o o o
-
-        // [blank element, combinator, ...]
-        // remove blank first element
-        assert!(matches!(
-            other.list[0],
-            QueryKind::Element(
-                _,
-                QueryElement {
-                    name: None | Some("&"),
-                    ..
-                }
-            )
-        ));
-        other.list.remove(0);
-
-        if branch {
-            // Only if I don't want to save the end element of the previous query
-            self.list.pop();
-
-            self.list
-                .push(QueryKind::Offset(other.list.len() as u16));
-
-            self.previous_save_depth = other.max_save_depth;
-            self.max_save_depth += other.max_save_depth;
-
-            other.max_save_depth = 0;
-        }
-
-        if self.previous_save_depth < other.max_save_depth {
-            self.max_save_depth = self.max_save_depth - self.previous_save_depth + other.max_save_depth;
-            self.previous_save_depth = 0;
-        }
-
-        self.list.append(&mut other.list);
+impl<'a> FsmBuilder<'a> {
+    pub fn new(sections: Vec<QuerySection<'a>>) -> Self {
+        Self { list: sections }
     }
 
-    fn mode(&mut self, mode: Mode) -> () {
-        self.mode = mode;
-    }
+    pub fn append(&mut self, mut sections: Vec<QuerySection<'a>>) -> () {
+        let list_len = self.list.len();
+        if list_len > 0 && sections.len() > 1 {
+            let ref mut last = self.list[list_len - 1];
 
-    fn storage(&self) -> Store<'a> {
-        
-        match self.mode {
-            Mode::First => {
-                if self.max_save_depth == 1 {
-                    return Store::Single(None);
+            for index in 0..sections.len() {
+                // ----- Empty element -----
+                assert!(matches!(
+                    sections[index].list[0],
+                    QueryKind::Element(
+                        _,
+                        QueryElement {
+                            name: None | Some("&"),
+                            ..
+                        }
+                    )
+                ));
+                sections[index].list.remove(0);
+                // -------------------------
+
+                if sections[index].parent == Option::None {
+                    sections[index].parent = Some((list_len - 1) as u16);
+                    last.children.push(index as u16);
                 }
-
-                return Store::List1D(Vec::with_capacity(self.max_save_depth as usize));
-            },
-            Mode::All => {
-                if self.max_save_depth == 1 {
-                    return Store::List1D(Vec::new());
-                }
-
-                return Store::List2D(Vec::from([Vec::with_capacity(self.max_save_depth as usize)]))
-            },
+            }
         }
+
+        self.list.append(&mut sections);
     }
 }
 
@@ -119,10 +85,11 @@ mod tests {
     #[test]
     fn test_selection_on_basic_query() {
         let mut reader = Reader::new("element#id.class > other#other_id.other_class");
-        let selection = TreeBuilder::from(&mut reader);
+        let section = QuerySection::new(&mut reader, Mode::All);
+        let selection = FsmBuilder::new(Vec::from([section]));
 
         assert_eq!(
-            selection.list,
+            selection.list[0].list,
             Vec::from([
                 QueryKind::Element(
                     0,
@@ -149,56 +116,96 @@ mod tests {
         let mut then_a_reader = Reader::new("> a");
         let mut then_p_reader = Reader::new(" p");
 
-        let mut selection = TreeBuilder::from(&mut reader);
+        let section = QuerySection::new(&mut reader, Mode::All);
+        let mut selection = FsmBuilder::new(Vec::from([section]));
 
         assert_eq!(
             selection.list,
-            Vec::from([
-                QueryKind::Element(
-                    0,
-                    QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
-                ),
-                QueryKind::Combinator(Combinator::Child),
-                QueryKind::Element(
-                    0,
-                    QueryElement::new(
-                        Some("other"),
-                        Some("other_id"),
-                        Some("other_class"),
-                        Vec::new(),
-                    )
-                ),
-                QueryKind::Save,
-            ])
+            Vec::from([QuerySection {
+                list: Vec::from([
+                    QueryKind::Element(
+                        0,
+                        QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
+                    ),
+                    QueryKind::Combinator(Combinator::Child),
+                    QueryKind::Element(
+                        0,
+                        QueryElement::new(
+                            Some("other"),
+                            Some("other_id"),
+                            Some("other_class"),
+                            Vec::new(),
+                        )
+                    ),
+                    QueryKind::Save,
+                ]),
+                kind: Mode::All,
+                parent: Option::None,
+                children: Vec::new(),
+            }])
         );
 
-        selection.append(true, TreeBuilder::from(&mut then_a_reader));
-        selection.append(true, TreeBuilder::from(&mut then_p_reader));
+        selection.append(Vec::from([
+            QuerySection::new(&mut then_a_reader, Mode::All),
+            QuerySection::new(&mut then_p_reader, Mode::All),
+        ]));
 
         assert_eq!(
             selection.list,
             Vec::from([
-                QueryKind::Element(
-                    0,
-                    QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
-                ),
-                QueryKind::Combinator(Combinator::Child),
-                QueryKind::Element(
-                    0,
-                    QueryElement::new(
-                        Some("other"),
-                        Some("other_id"),
-                        Some("other_class"),
-                        Vec::new(),
-                    )
-                ),
-                QueryKind::Offset(3),
-                QueryKind::Combinator(Combinator::Child),
-                QueryKind::Element(0, QueryElement::new(Some("a"), None, None, Vec::new(),)),
-                QueryKind::Save,
-                QueryKind::Combinator(Combinator::Descendant),
-                QueryKind::Element(0, QueryElement::new(Some("p"), None, None, Vec::new(),)),
-                QueryKind::Save,
+                QuerySection {
+                    list: Vec::from([
+                        QueryKind::Element(
+                            0,
+                            QueryElement::new(
+                                Some("element"),
+                                Some("id"),
+                                Some("class"),
+                                Vec::new(),
+                            )
+                        ),
+                        QueryKind::Combinator(Combinator::Child),
+                        QueryKind::Element(
+                            0,
+                            QueryElement::new(
+                                Some("other"),
+                                Some("other_id"),
+                                Some("other_class"),
+                                Vec::new(),
+                            )
+                        ),
+                        QueryKind::Save,
+                    ]),
+                    kind: Mode::All,
+                    parent: Option::None,
+                    children: Vec::from([0, 1]),
+                },
+                QuerySection {
+                    list: Vec::from([
+                        QueryKind::Combinator(Combinator::Child),
+                        QueryKind::Element(
+                            0,
+                            QueryElement::new(Some("a"), None, None, Vec::new(),)
+                        ),
+                        QueryKind::Save,
+                    ]),
+                    kind: Mode::All,
+                    parent: Some(0),
+                    children: Vec::new(),
+                },
+                QuerySection {
+                    list: Vec::from([
+                        QueryKind::Combinator(Combinator::Descendant),
+                        QueryKind::Element(
+                            0,
+                            QueryElement::new(Some("p"), None, None, Vec::new(),)
+                        ),
+                        QueryKind::Save,
+                    ]),
+                    kind: Mode::All,
+                    parent: Some(0),
+                    children: Vec::new(),
+                },
             ])
         );
     }

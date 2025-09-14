@@ -74,12 +74,6 @@ pub enum QueryKind<'a> {
     // TODO: I will need to optimize away inoficient `Any` usage, ex: `p > * a` to `p  a`
     // Valid usage: `p > * > a`
     Any, // `*`
-
-    // TODO: I'm not sure how this would belong to `QueryKind` and not `Selection`
-    //Or(Box<Self>), // This is the `,` on a selection. ex: `a#hello > p, p.world`
-    //Offset(Option<ChainKind>, u16), // second branch offset
-    Offset(u16), // second branch offset
-
     Save, // The previous Element is saved
 }
 
