@@ -1,180 +1,195 @@
-use super::element::element::QueryElement;
+use super::pattern_section::PatternSection;
 use super::query_tokenizer::Combinator;
-use super::query_tokenizer::QueryKind;
-use crate::utils::reader::Reader;
+use super::query_tokenizer::PatternStep;
 use crate::xhtml::element::element::XHtmlElement;
 
 #[derive(Debug, Clone)]
-pub struct Selection<'a> {
-    query: Vec<QueryKind<'a>>,
+pub struct Selection {
+    element_depth_stack: Vec<u8>,
+    pattern: usize,
     position: usize,
 }
 
-impl<'a> From<&mut Reader<'a>> for Selection<'a> {
-    fn from(reader: &mut Reader<'a>) -> Self {
-        let mut selection = Self {
-            query: Vec::new(),
-            position: 0,
-        };
-
-        while let Some(token) = QueryKind::next(reader, selection.query.last()) {
-            selection.query.push(token);
-        }
-        selection.query.push(QueryKind::Save);
-
-        return selection;
-    }
-}
-
-impl<'a> Selection<'a> {
+impl Selection {
     pub fn new() -> Self {
         Self {
-            query: Vec::new(),
+            element_depth_stack: Vec::new(),
+            pattern: 0,
             position: 0,
         }
     }
 
-    fn next_until_element<'b>(&mut self) {
-        let current = &self.query[self.position];
-        if let QueryKind::Combinator(_) = current {
+    fn step_back<'query>(&mut self, query: &Vec<PatternSection<'query>>) {
+        if self.position - 1 >= 0 {
+            self.position -= 1;
+            return;
+        }
+
+        assert_ne!(self.pattern, 0);
+        self.pattern -= 1;
+        let last_idx_of_previous_pattern_section = &query[self.pattern].pattern.len() - 1;
+        if query[self.pattern].pattern[last_idx_of_previous_pattern_section] == PatternStep::Save {
+            self.position == last_idx_of_previous_pattern_section - 1;
+        } else {
+            self.position == last_idx_of_previous_pattern_section;
+        }
+    }
+
+    fn step_foward<'query>(&mut self, query: &Vec<PatternSection<'query>>) {
+        if self.position + 1 < query[self.pattern].pattern.len() {
             self.position += 1;
+            return;
+        }
+
+        assert_ne!(self.pattern, query[self.pattern].pattern.len() - 1);
+        self.pattern += 1;
+        self.position = 0;
+    }
+
+    fn next_until_element<'query>(&mut self, query: &Vec<PatternSection<'query>>) {
+        let current = &query[self.pattern].pattern[self.position];
+        if let PatternStep::Combinator(_) = current {
+            self.step_foward(query);
         }
         assert!(matches!(
-            self.query[self.position],
-            QueryKind::Element(..) | QueryKind::Save
+            query[self.pattern].pattern[self.position],
+            PatternStep::Element(..) | PatternStep::Save
         ));
     }
 
-    fn previous_child_combinator_invalid(&mut self, depth: u8) -> bool {
+    fn previous_child_combinator_invalid<'query>(
+        &mut self,
+        pattern: &Vec<PatternStep>,
+        depth: u8,
+    ) -> bool {
         if self.position == 0 {
             return false;
         }
 
-        let previous = &self.query[self.position - 1];
+        let previous = &pattern[self.position - 1];
 
-        assert!(!matches!(previous, &QueryKind::Element(..)));
+        // assert: not Element
+        assert!(!matches!(previous, &PatternStep::Element(..)));
 
-        if let QueryKind::Combinator(Combinator::Child) = previous {
-            let previous_element = &mut self.query[self.position - 2];
-            let QueryKind::Element(element_depth, _) = previous_element else {
-                panic!(
-                    "The item in the query list before a child combinator should always be an `Element`."
-                )
-            };
-
-            return *element_depth + 1 != depth;
+        if let PatternStep::Combinator(Combinator::Child) = previous {
+            let element_depth = self
+                .element_depth_stack
+                .last()
+                .expect("Their must be a item in the stack");
+            return element_depth + 1 != depth;
         } else {
             false
         }
     }
 
     // NOTE: In the case of failure IF last element is NextSibling, then go back to the Element that the NextSibling is referencing
-    fn next_sibling_failed_move_back(&mut self) {
-        if self.position == 0 {
+    fn next_sibling_failed_move_back<'query>(&mut self, query: &Vec<PatternSection<'query>>) {
+        if self.pattern == 0 && self.position == 0 {
             return;
         }
 
-        let previous = &self.query[self.position - 1];
+        let previous = &query[self.pattern].pattern[self.position - 1];
 
-        if let QueryKind::Combinator(Combinator::NextSibling) = previous {
-            self.position -= 2;
+        if let PatternStep::Combinator(Combinator::NextSibling) = previous {
+            self.step_back(query);
             assert!(matches!(
-                &self.query[self.position],
-                &QueryKind::Element(..)
+                &query[self.pattern].pattern[self.position],
+                &PatternStep::Element(..)
+            ));
+            self.step_back(query); // Last Element or Save
+            if query[self.pattern].pattern[self.position] == PatternStep::Save {
+                self.step_back(query);
+            }
+
+            assert!(matches!(
+                &query[self.pattern].pattern[self.position],
+                &PatternStep::Element(..)
             ));
         }
     }
 
-    pub fn done(&self) -> bool {
-        assert!(self.position <= self.query.len());
-
-        self.query[self.position] == QueryKind::Save
-    }
-
     pub fn is_reset(&self) -> bool {
-        assert!(self.position <= self.query.len());
-
-        self.position == 0
+        self.position == 0 && self.pattern == 0 && self.element_depth_stack.len() == 0
     }
 
     pub fn reset(&mut self) {
+        self.pattern - 0;
         self.position = 0;
 
-        for query in &mut self.query {
-            if let QueryKind::Element(depth, _) = query {
-                *depth = 0;
-            }
-        }
+        self.element_depth_stack.clear();
     }
 
-    pub fn next<'b>(&mut self, xhtml_element: &XHtmlElement<'b>, stack_depth: u8) -> bool {
-        if self.previous_child_combinator_invalid(stack_depth) {
+    pub fn next<'query, 'html>(
+        &mut self,
+        query: &Vec<PatternSection<'query>>,
+        xhtml_element: &XHtmlElement<'html>,
+        stack_depth: u8,
+    ) -> bool {
+        if self.previous_child_combinator_invalid(&query[self.pattern].pattern, stack_depth) {
             return false;
         }
 
         // TODO: Refactor this to a match to handle `Has` and `Not`
 
-        if let QueryKind::Element(ref mut depth, ref element) = self.query[self.position] {
+        if let PatternStep::Element(ref element) = query[self.pattern].pattern[self.position] {
             // NOTE: Compare xhtml element to selector element
             if element == xhtml_element {
-                self.position += 1;
+                self.step_foward(query);
 
-                *depth = stack_depth;
+                self.element_depth_stack.push(stack_depth);
 
-                self.next_until_element();
+                self.next_until_element(query);
                 return true;
             }
 
-            self.next_sibling_failed_move_back();
+            self.next_sibling_failed_move_back(query);
 
             return false;
         }
         return false;
     }
 
-    pub fn back(&mut self, depth: u8) {
+    pub fn back<'query>(&mut self, query: &Vec<PatternSection<'query>>, depth: u8) {
         if self.position == 0 {
             return;
         }
 
-        if self.query[self.position] == QueryKind::Save {
-            self.position -= 1;
-            let QueryKind::Element(ref mut element_depth, _) = self.query[self.position] else {
-                panic!(
-                    "The item in the query list before a child combinator should always be an `Element`."
-                )
-            };
-            *element_depth = 0;
+        if query[self.pattern].pattern[self.position] == PatternStep::Save {
+            if self.position == 0 {
+                self.pattern -= 1;
+            } else {
+                self.position -= 1;
+            }
+
+            assert!(
+                matches!(
+                    query[self.pattern].pattern[self.position],
+                    PatternStep::Element(..)
+                ),
+                "The item in the query list before a child combinator should always be an `Element`."
+            );
+            self.element_depth_stack.pop();
             return;
         }
 
         let mut element_position = self.position;
-        //assert!(!matches!(self.query[element_position], QueryKind::Element(..)));
-        if !matches!(self.query[element_position], QueryKind::Element(..)) {
+        //assert!(!matches!(self.query[element_position], PatternStep::Element(..)));
+        if !matches!(
+            query[self.pattern].pattern[element_position],
+            PatternStep::Element(..)
+        ) {
             element_position = self.position - 1;
         }
 
-        let element_depth = match &mut self.query[element_position] {
-            QueryKind::Element(0, _) => {
-                let previous_element = &mut self.query[element_position - 2];
-                let QueryKind::Element(el_depth, _) = previous_element else {
-                    panic!(
-                        "The item in the query list before a child combinator should always be an `Element`."
-                    )
-                };
-
-                el_depth
-            }
-            QueryKind::Element(el_depth, _) => el_depth,
-            _ => panic!(
-                "The item in the query list before a child combinator should always be an `Element`."
-            ),
-        };
+        let element_depth = self
+            .element_depth_stack
+            .last()
+            .expect("Must have an element in the stack");
 
         if *element_depth == depth {
             assert!(element_position >= 2);
             self.position = element_position - 2;
-            *element_depth = 0;
+            self.element_depth_stack.pop();
         }
     }
 }
@@ -182,41 +197,20 @@ impl<'a> Selection<'a> {
 #[cfg(test)]
 mod tests {
     use super::super::element::element::QueryElement;
+    use super::super::fsm_builder::FsmBuilder;
+    use super::super::pattern_section::{Mode, PatternSection};
     use super::*;
-
-    #[test]
-    fn test_selection_on_basic_query() {
-        let mut reader = Reader::new("element#id.class > other#other_id.other_class");
-        let selection = Selection::from(&mut reader);
-
-        assert_eq!(
-            selection.query,
-            Vec::from([
-                QueryKind::Element(
-                    0,
-                    QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
-                ),
-                QueryKind::Combinator(Combinator::Child),
-                QueryKind::Element(
-                    0,
-                    QueryElement::new(
-                        Some("other"),
-                        Some("other_id"),
-                        Some("other_class"),
-                        Vec::new(),
-                    )
-                ),
-                QueryKind::Save,
-            ])
-        );
-    }
+    use crate::utils::reader::Reader;
 
     #[test]
     fn test_selection_fsm_element_name_selection() {
         let mut reader = Reader::new("element > p");
-        let mut selection = Selection::from(&mut reader);
+        let pattern = PatternSection::new(&mut reader, Mode::All);
+        let builder = FsmBuilder::new(Vec::from([pattern]));
+        let mut selection = Selection::new();
 
         let mut fsm_moved: bool = selection.next(
+            &builder.list,
             &XHtmlElement {
                 name: "element",
                 id: None,
@@ -227,6 +221,7 @@ mod tests {
         );
 
         fsm_moved = selection.next(
+            &builder.list,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -239,6 +234,7 @@ mod tests {
         assert_eq!(fsm_moved, false);
 
         fsm_moved = selection.next(
+            &builder.list,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -250,15 +246,21 @@ mod tests {
 
         assert_eq!(fsm_moved, true);
 
-        assert_eq!(selection.query[selection.position], QueryKind::Save);
+        assert_eq!(
+            builder.list[selection.pattern].pattern[selection.position],
+            PatternStep::Save
+        );
     }
 
     #[test]
     fn test_selection_fsm_complex_element_selection() {
         let mut reader = Reader::new("p.indent > .bold");
-        let mut selection = Selection::from(&mut reader);
+        let pattern = PatternSection::new(&mut reader, Mode::All);
+        let builder = FsmBuilder::new(Vec::from([pattern]));
+        let mut selection = Selection::new();
 
         let mut fsm_moved: bool = selection.next(
+            &builder.list,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -269,6 +271,7 @@ mod tests {
         );
 
         fsm_moved = selection.next(
+            &builder.list,
             &XHtmlElement {
                 name: "span",
                 id: Some("name"),
@@ -280,17 +283,23 @@ mod tests {
 
         assert_eq!(fsm_moved, true);
 
-        assert_eq!(selection.query[selection.position], QueryKind::Save);
+        assert_eq!(
+            builder.list[selection.pattern].pattern[selection.position],
+            PatternStep::Save
+        );
 
-        assert!(selection.done());
+        //assert!(selection.done());
     }
 
     #[test]
     fn test_selection_fsm_complex_element_selection_with_step_back() {
         let mut reader = Reader::new("p.indent > .bold");
-        let mut selection = Selection::from(&mut reader);
+        let pattern = PatternSection::new(&mut reader, Mode::All);
+        let builder = FsmBuilder::new(Vec::from([pattern]));
+        let mut selection = Selection::new();
 
         let mut fsm_moved: bool = selection.next(
+            &builder.list,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -301,6 +310,7 @@ mod tests {
         );
 
         fsm_moved = selection.next(
+            &builder.list,
             &XHtmlElement {
                 name: "span",
                 id: Some("name"),
@@ -312,22 +322,25 @@ mod tests {
 
         assert_eq!(fsm_moved, true);
 
-        assert_eq!(selection.query[selection.position], QueryKind::Save);
+        assert_eq!(
+            builder.list[selection.pattern].pattern[selection.position],
+            PatternStep::Save
+        );
 
-        assert!(selection.done());
+        //assert!(selection.done());
 
-        selection.back(1);
+        selection.back(&builder.list, 1);
 
         assert_eq!(selection.is_reset(), false);
         assert_eq!(selection.position, 2);
 
         // Does nothing
-        selection.back(1);
+        selection.back(&builder.list, 1);
 
         assert_eq!(selection.is_reset(), false);
         assert_eq!(selection.position, 2);
 
-        selection.back(0);
+        selection.back(&builder.list, 0);
 
         assert_eq!(selection.is_reset(), true);
     }

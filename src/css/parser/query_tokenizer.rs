@@ -63,8 +63,8 @@ pub enum ChainKind {
 */
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum QueryKind<'a> {
-    Element(u8, QueryElement<'a>),
+pub enum PatternStep<'a> {
+    Element(QueryElement<'a>),
 
     Combinator(Combinator),
 
@@ -73,15 +73,15 @@ pub enum QueryKind<'a> {
 
     // TODO: I will need to optimize away inoficient `Any` usage, ex: `p > * a` to `p  a`
     // Valid usage: `p > * > a`
-    Any, // `*`
+    Any,  // `*`
     Save, // The previous Element is saved
 }
 
-impl<'a> QueryKind<'a> {
+impl<'a> PatternStep<'a> {
     pub fn next(reader: &mut Reader<'a>, last: Option<&Self>) -> Option<Self> {
         match last {
             Option::None | Some(Self::Combinator(_)) => {
-                Some(Self::Element(0, QueryElement::from(reader)))
+                Some(Self::Element(QueryElement::from(reader)))
             }
             Some(_) => {
                 if let Some(token) = reader.peek() {

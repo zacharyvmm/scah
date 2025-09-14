@@ -19,7 +19,6 @@ type SelectElement = Option<ArraySize>;
 type SelectCollection = Vec<ArraySize>;
 type SelectMultiPointCollection = Vec<Vec<ArraySize>>;
 
-
 #[derive(Debug, PartialEq)]
 pub enum Select<'query> {
     All(&'query str, SelectCollection),
@@ -36,7 +35,6 @@ impl<'query> Select<'query> {
             }
         }
     }
-
 }
 
 #[derive(Debug, PartialEq)]
@@ -53,9 +51,9 @@ impl<'query, 'html> SelectionMap<'query, 'html> {
         };
         for i in 0..queries.len() {
             map.mappings.push(match queries[i].kind {
-                    SelectorQueryKind::All => Select::All(queries[i].query, Vec::new()),
-                    SelectorQueryKind::First => Select::One(queries[i].query, None),
-                });
+                SelectorQueryKind::All => Select::All(queries[i].query, Vec::new()),
+                SelectorQueryKind::First => Select::One(queries[i].query, None),
+            });
         }
 
         return map;
