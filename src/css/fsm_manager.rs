@@ -1,4 +1,4 @@
-use super::fsm_session::{Element, FsmSession};
+use super::fsm_session::FsmSession;
 use crate::XHtmlElement;
 
 struct FsmManager<'query, 'html> {
@@ -15,9 +15,8 @@ impl<'query, 'html> FsmManager<'query, 'html> {
     }
 
     fn step_foward(&'html mut self, depth: usize, xhtml_element: XHtmlElement<'html>) {
-        let element = Element::Element(xhtml_element);
         for session in self.sessions.iter_mut() {
-            session.step_foward(depth, &mut element);
+            session.step_foward(depth, &xhtml_element);
         }
     }
 

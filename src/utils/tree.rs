@@ -1,7 +1,5 @@
-use crate::XHtmlElement;
-use crate::css::fsm_session::Element;
+use crate::{XHtmlElement, xhtml::element};
 
-#[derive(Default)]
 pub struct Tree<'html> {
     list: Vec<Node<'html>>,
     root: usize,
@@ -36,14 +34,10 @@ impl<'html> Tree<'html> {
         }
     }
 
-    pub fn push(&'html mut self, parent: usize, element: &mut Element<'html>) -> usize {
-        self.list.push(Node::new(parent, element.get()));
-
-        let last_index = self.list.len() - 1;
+    pub fn push(&mut self, parent: usize, element: XHtmlElement<'html>) -> usize {
+        let last_index = self.list.len();
+        self.list.push(Node::new(parent, element));
         self.list[parent].children.push(last_index);
-
-        *element = Element::Ref(&self.list[last_index].value);
-
         return last_index;
     }
 }
