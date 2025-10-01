@@ -12,8 +12,8 @@ pub struct PatternSection<'a> {
     pub(crate) pattern: Vec<PatternStep<'a>>,
     pub(super) kind: Mode,
 
-    pub(super) parent: Option<u16>, // real index
-    pub(super) children: Vec<u16>,  // offset
+    pub(super) parent: Option<usize>, // real index
+    pub(super) children: Vec<usize>,  // offset
 }
 
 impl<'a> PatternSection<'a> {

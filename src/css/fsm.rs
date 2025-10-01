@@ -5,7 +5,7 @@ use crate::xhtml::element::element::XHtmlElement;
 
 #[derive(Debug, Clone)]
 pub struct Selection {
-    element_depth_stack: Vec<u8>,
+    element_depth_stack: Vec<usize>,
     pattern: usize,
     position: usize,
 }
@@ -60,7 +60,7 @@ impl Selection {
     fn previous_child_combinator_invalid<'query>(
         &mut self,
         pattern: &Vec<PatternStep>,
-        depth: u8,
+        depth: usize,
     ) -> bool {
         if self.position == 0 {
             return false;
@@ -123,7 +123,7 @@ impl Selection {
         &mut self,
         query: &Vec<PatternSection<'query>>,
         xhtml_element: &XHtmlElement<'html>,
-        stack_depth: u8,
+        stack_depth: usize,
     ) -> bool {
         if self.previous_child_combinator_invalid(&query[self.pattern].pattern, stack_depth) {
             return false;
@@ -149,7 +149,7 @@ impl Selection {
         return false;
     }
 
-    pub fn back<'query>(&mut self, query: &Vec<PatternSection<'query>>, depth: u8) {
+    pub fn back<'query>(&mut self, query: &Vec<PatternSection<'query>>, depth: usize) {
         if self.position == 0 {
             return;
         }

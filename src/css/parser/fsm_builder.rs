@@ -29,8 +29,8 @@ impl<'a> FsmBuilder<'a> {
                 // -------------------------
 
                 if sections[index].parent == Option::None {
-                    sections[index].parent = Some((list_len - 1) as u16);
-                    last.children.push(index as u16);
+                    sections[index].parent = Some(list_len - 1);
+                    last.children.push(index);
                 }
             }
         }

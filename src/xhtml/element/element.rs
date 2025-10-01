@@ -3,13 +3,13 @@ use super::tokenizer::ElementAttributeToken;
 use crate::utils::reader::Reader;
 use crate::utils::token::QuoteKind;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Attribute<'a> {
     pub name: &'a str,
     pub value: Option<&'a str>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct XHtmlElement<'a> {
     pub name: &'a str,
     pub id: Option<&'a str>,
