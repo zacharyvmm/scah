@@ -2,7 +2,7 @@
 # Anything in this document is subject to change.
 
 
-from scrooge import HtmlParser, Selectors
+from onego import HtmlParser, Selectors
 
 s = Selectors()
 s.template = {

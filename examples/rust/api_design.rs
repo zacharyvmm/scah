@@ -1,6 +1,6 @@
 // NOTE: This is a direct translation from the `api_design.py` file
 
-use scrooge::{HtmlParser, InnerContent, Selectors, Reader};
+use onego::{HtmlParser, InnerContent, Selectors, Reader};
 
 fn main() {
     let mut s = Selectors::new();

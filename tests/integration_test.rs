@@ -1,4 +1,4 @@
-use scrooge::{
+use onego::{
     Attribute, BodyContent, InnerContent, SelectorQuery, SelectorQueryKind, XHtmlElement, parse,
 };
 const HTML: &str = r#"

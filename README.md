@@ -1,1 +1,1 @@
-# Scrooge (the <u>***cheap***</u> html css query selector)
+# 1Go
