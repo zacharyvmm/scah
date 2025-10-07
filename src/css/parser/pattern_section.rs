@@ -32,4 +32,8 @@ impl<'a> PatternSection<'a> {
 
         return selection;
     }
+
+    pub fn len(&self) -> usize {
+        return self.pattern.len();
+    }
 }

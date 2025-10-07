@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "scrooge"
+name = "onego"
 version = "0.0.1"

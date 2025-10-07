@@ -2,5 +2,4 @@ pub mod fsm;
 pub mod fsm_manager;
 pub mod fsm_session;
 mod parser;
-pub mod selection_map;
-pub mod selectors;
+mod tree;
