@@ -8,6 +8,11 @@ pub struct Selection {
     element_depth_stack: Vec<usize>,
     pattern: usize,
     position: usize,
+    // start_position: usize,
+    /*
+     * When `start_position - position <= 0` then the fsm is deleted
+     * this allows the fsm to be confined to a specific scope
+     */
 }
 
 impl Selection {
@@ -20,7 +25,7 @@ impl Selection {
     }
 
     fn step_back<'query>(&mut self, query: &Vec<PatternSection<'query>>) {
-        if self.position - 1 >= 0 {
+        if self.position > 0 {
             self.position -= 1;
             return;
         }
@@ -29,9 +34,9 @@ impl Selection {
         self.pattern -= 1;
         let last_idx_of_previous_pattern_section = &query[self.pattern].pattern.len() - 1;
         if query[self.pattern].pattern[last_idx_of_previous_pattern_section] == PatternStep::Save {
-            self.position == last_idx_of_previous_pattern_section - 1;
+            self.position = last_idx_of_previous_pattern_section - 1;
         } else {
-            self.position == last_idx_of_previous_pattern_section;
+            self.position = last_idx_of_previous_pattern_section;
         }
     }
 
@@ -42,6 +47,7 @@ impl Selection {
         }
 
         assert_ne!(self.pattern, query[self.pattern].pattern.len() - 1);
+        // BUG: This assumes that the tree is a linked list
         self.pattern += 1;
         self.position = 0;
     }

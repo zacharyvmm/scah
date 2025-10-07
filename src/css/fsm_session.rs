@@ -1,6 +1,7 @@
 use super::fsm::Selection;
 use super::parser::pattern_section::PatternSection;
 use super::tree::Tree;
+use super::parser::query_tokenizer::{PatternStep, Combinator};
 
 use crate::XHtmlElement;
 
@@ -12,30 +13,75 @@ use crate::XHtmlElement;
  * 4) Send the agrogated information back to the caller
  */
 
+struct Pattern<'query> {
+    descendants: Vec<Vec<usize>>,
+    pub list: &'query Vec<PatternSection<'query>>,
+}
+
+impl<'query> Pattern<'query> {
+    fn generate_descendants(&mut self) {
+        for section_index in 0..self.list.len() {
+            let mut section_descendants = Vec::new();
+            let pattern_steps = &self.list[section_index].pattern;
+            for index in 0..pattern_steps.len() {
+                if pattern_steps[index] == PatternStep::Combinator(Combinator::Descendant) {
+                    section_descendants.push(index);
+                }
+            }
+            self.descendants.push(section_descendants);
+        }
+    }
+
+    pub fn new(list: &'query Vec<PatternSection<'query>>) -> Self {
+        let mut pattern = Self { 
+            list: list,
+            descendants: Vec::with_capacity(list.len()), 
+        };
+        pattern.generate_descendants();
+
+        return pattern;
+    }
+
+    pub fn last_descendant(&self, fsm_section_index: usize, fsm_step_index: usize) -> (usize, usize) {
+        // BUG The pattern sections are not linkedlist it's a tree so in reality this need to check the parent
+        for section_index in (0..fsm_section_index+1).rev() {
+            for step_index in (&self.descendants[section_index]).into_iter().rev()  {
+                if *step_index < fsm_step_index {
+                    return (section_index, *step_index);
+                }
+            }
+        }
+        return (0, 0);
+    }
+}
+
+/*
+ * Way's to add a fsm:
+ * 1) at init you create a fsm
+ * 2) if the input element matches the lowest scope (lowest decendant or root)
+ * 3) at a forking in fsm tree; the current fsm is reassigned (takes the first branch) and creates new fsm's for the other branches 
+*/
 pub struct FsmSession<'query, 'html> {
-    list: &'query Vec<PatternSection<'query>>,
+    pattern: &'query Pattern<'query>,
     tree: Tree<'html>,
 
     fsms: Vec<(usize, Selection)>,
 }
 
 impl<'query, 'html> FsmSession<'query, 'html> {
-    fn new(pattern: &'query Vec<PatternSection<'query>>) -> Self {
+    fn new(pattern: &'query Pattern<'query>) -> Self {
         Self {
-            list: pattern,
+            pattern: pattern,
             tree: Tree::new(),
 
             fsms: Vec::from([(0, Selection::new())]),
         }
     }
 
-    fn create_fsm() -> Selection {
-        Selection::new()
-    }
-
     pub fn step_foward(&mut self, depth: usize, element: &XHtmlElement<'html>) {
         for (previous_node_idx, fsm) in self.fsms.iter_mut() {
-            let next = fsm.next(self.list, element, depth);
+            let next = fsm.next(self.pattern.list, element, depth);
+            // TODO: if the pattern section (ex: their are 3 branches) changed the must reassign this fsm (ex: the first branch) to the first branch and create other branches (#2 and #3 of the branches).
 
             if next {
                 // TODO: `element.clone()` inefficient for if their's only a single selection saving the element (99.99% of the time)
@@ -48,7 +94,7 @@ impl<'query, 'html> FsmSession<'query, 'html> {
 
     fn reevaluate_descendants(&mut self, depth: usize, element: &XHtmlElement<'html>) {
         // The first node is always reevaluated (BECAUSE the start of a query is basicly a Descendant selection) unless
-        // When you are already in a descendant scope the descendant element is reevaluated:w
+        // When you are already in a descendant scope the descendant element is reevaluated
             // Once the fsm's current combinator is not a descendant selection a fsm with the lowest descendant selection is created
             // for example: `html main section > div > a`, if you are now at `div` you must create a `section` selector for the inner scope of div (just in case a `section` is within the `div` or `a`)
             // Inner Scope fsm, this is a fsm with that litterary starts within the scope and dies at the end of the scope, thus this handles the recursion problem
@@ -84,7 +130,9 @@ mod tests {
             PatternSection::new(&mut then_p_reader, Mode::All),
         ]));
 
-        let mut session = FsmSession::new(&selection.list);
+        let pattern = Pattern::new(&selection.list);
+
+        let mut session = FsmSession::new(&pattern);
 
         // 1: fsm first position
         // 1: fsm second position
