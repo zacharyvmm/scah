@@ -10,10 +10,10 @@ pub enum Mode {
 #[derive(PartialEq, Debug)]
 pub struct PatternSection<'a> {
     pub(crate) pattern: Vec<PatternStep<'a>>,
-    pub(super) kind: Mode,
+    pub(crate) kind: Mode,
 
-    pub(super) parent: Option<usize>, // real index
-    pub(super) children: Vec<usize>,  // offset
+    pub(crate) parent: Option<usize>, // real index
+    pub(crate) children: Vec<usize>,  // offset
 }
 
 impl<'a> PatternSection<'a> {

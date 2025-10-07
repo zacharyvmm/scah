@@ -1,7 +1,7 @@
 use super::fsm::Selection;
 use super::parser::pattern_section::PatternSection;
+use super::parser::query_tokenizer::{Combinator, PatternStep};
 use super::tree::Tree;
-use super::parser::query_tokenizer::{PatternStep, Combinator};
 
 use crate::XHtmlElement;
 
@@ -16,6 +16,11 @@ use crate::XHtmlElement;
 struct Pattern<'query> {
     descendants: Vec<Vec<usize>>,
     pub list: &'query Vec<PatternSection<'query>>,
+}
+
+enum NextPosition<U, T> {
+    Link(U, T),
+    Fork(Vec<(U, T)>),
 }
 
 impl<'query> Pattern<'query> {
@@ -33,19 +38,57 @@ impl<'query> Pattern<'query> {
     }
 
     pub fn new(list: &'query Vec<PatternSection<'query>>) -> Self {
-        let mut pattern = Self { 
+        let mut pattern = Self {
             list: list,
-            descendants: Vec::with_capacity(list.len()), 
+            descendants: Vec::with_capacity(list.len()),
         };
         pattern.generate_descendants();
 
         return pattern;
     }
 
-    pub fn last_descendant(&self, fsm_section_index: usize, fsm_step_index: usize) -> (usize, usize) {
+    pub fn next(&self, section_index: usize, step_index: usize) -> NextPosition<usize, usize> {
+        assert!(section_index < self.list.len());
+        assert!(step_index < self.list[section_index].len());
+
+        if step_index + 1 < self.list[section_index].len() {
+            return NextPosition::Link(section_index, step_index + 1);
+        } else {
+            let ref section = self.list[section_index];
+            return NextPosition::Fork(
+                section
+                    .children
+                    .iter()
+                    .map(|child_index| (*child_index, 0))
+                    .collect(),
+            );
+        }
+    }
+
+    pub fn back(&self, section_index: usize, step_index: usize) -> (usize, usize) {
+        assert!(section_index < self.list.len());
+        assert!(step_index < self.list[section_index].len());
+
+        if step_index > 0 {
+            return (section_index, step_index - 1);
+        } else {
+            let ref section = self.list[section_index];
+            if let Some(parent) = section.parent {
+                return (parent, section.len() - 1);
+            } else {
+                return (0, 0);
+            }
+        }
+    }
+
+    pub fn last_descendant(
+        &self,
+        fsm_section_index: usize,
+        fsm_step_index: usize,
+    ) -> (usize, usize) {
         // BUG The pattern sections are not linkedlist it's a tree so in reality this need to check the parent
-        for section_index in (0..fsm_section_index+1).rev() {
-            for step_index in (&self.descendants[section_index]).into_iter().rev()  {
+        for section_index in (0..fsm_section_index + 1).rev() {
+            for step_index in (&self.descendants[section_index]).into_iter().rev() {
                 if *step_index < fsm_step_index {
                     return (section_index, *step_index);
                 }
@@ -59,7 +102,7 @@ impl<'query> Pattern<'query> {
  * Way's to add a fsm:
  * 1) at init you create a fsm
  * 2) if the input element matches the lowest scope (lowest decendant or root)
- * 3) at a forking in fsm tree; the current fsm is reassigned (takes the first branch) and creates new fsm's for the other branches 
+ * 3) at a forking in fsm tree; the current fsm is reassigned (takes the first branch) and creates new fsm's for the other branches
 */
 pub struct FsmSession<'query, 'html> {
     pattern: &'query Pattern<'query>,
@@ -95,9 +138,9 @@ impl<'query, 'html> FsmSession<'query, 'html> {
     fn reevaluate_descendants(&mut self, depth: usize, element: &XHtmlElement<'html>) {
         // The first node is always reevaluated (BECAUSE the start of a query is basicly a Descendant selection) unless
         // When you are already in a descendant scope the descendant element is reevaluated
-            // Once the fsm's current combinator is not a descendant selection a fsm with the lowest descendant selection is created
-            // for example: `html main section > div > a`, if you are now at `div` you must create a `section` selector for the inner scope of div (just in case a `section` is within the `div` or `a`)
-            // Inner Scope fsm, this is a fsm with that litterary starts within the scope and dies at the end of the scope, thus this handles the recursion problem
+        // Once the fsm's current combinator is not a descendant selection a fsm with the lowest descendant selection is created
+        // for example: `html main section > div > a`, if you are now at `div` you must create a `section` selector for the inner scope of div (just in case a `section` is within the `div` or `a`)
+        // Inner Scope fsm, this is a fsm with that litterary starts within the scope and dies at the end of the scope, thus this handles the recursion problem
 
         // The fsm reevalutes the first element in the pattern sections and if one exists a new fsm is created
         // for example on ever cycle the first node is reevaluated
@@ -112,7 +155,10 @@ impl<'query, 'html> FsmSession<'query, 'html> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{css::parser::{fsm_builder::FsmBuilder, pattern_section::Mode}, utils::reader::Reader};
+    use crate::{
+        css::parser::{fsm_builder::FsmBuilder, pattern_section::Mode},
+        utils::reader::Reader,
+    };
 
     use super::*;
 
