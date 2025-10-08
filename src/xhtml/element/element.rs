@@ -105,9 +105,10 @@ impl<'a> XHtmlTag<'a> {
         if let Some(character) = reader.peek() {
             if character == '/' {
                 let start = reader.get_position() + 1;
-                reader.next_upto(|c| c != '>');
+                reader.next_while(|c| c != '>');
 
-                let end = reader.get_position() - 1;
+                let end = reader.get_position();
+                reader.skip();
 
                 // BUG: Handle start and end not conforming to the rules of slices.
 
@@ -116,7 +117,8 @@ impl<'a> XHtmlTag<'a> {
                 return Some(Self::Close(reader.slice(start..end).trim()));
             } else if character == '!' {
                 // This is a comment
-                reader.next_upto(|c| c != '>');
+                reader.next_while(|c| c != '>');
+                reader.skip();
                 return None;
             }
         }

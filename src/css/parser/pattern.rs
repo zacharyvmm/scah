@@ -44,9 +44,9 @@ pub struct Pattern<'query> {
     pub list: Vec<PatternSection<'query>>,
 }
 
-pub enum NextPosition<U, T> {
-    Link(U, T),
-    Fork(Vec<(U, T)>),
+pub enum NextPosition {
+    Link(usize, usize),
+    Fork(Vec<(usize, usize)>),
 }
 
 impl<'query> Pattern<'query> {
@@ -97,7 +97,7 @@ impl<'query> Pattern<'query> {
         self.list.append(&mut sections);
     }
 
-    pub fn next(&self, section_index: usize, step_index: usize) -> NextPosition<usize, usize> {
+    pub fn next(&self, section_index: usize, step_index: usize) -> NextPosition {
         assert!(section_index < self.list.len());
         assert!(step_index < self.list[section_index].len());
 
