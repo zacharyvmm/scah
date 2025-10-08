@@ -1,4 +1,3 @@
 pub(super) mod element;
-pub mod fsm_builder;
-pub mod pattern_section;
+pub mod pattern;
 pub(super) mod query_tokenizer;

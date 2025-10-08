@@ -1,4 +1,4 @@
-use super::parser::pattern_section::PatternSection;
+use super::parser::pattern::PatternSection;
 use super::parser::query_tokenizer::Combinator;
 use super::parser::query_tokenizer::PatternStep;
 use crate::xhtml::element::element::XHtmlElement;
@@ -202,9 +202,7 @@ impl Selection {
 
 #[cfg(test)]
 mod tests {
-    use super::super::parser::element::element::QueryElement;
-    use super::super::parser::fsm_builder::FsmBuilder;
-    use super::super::parser::pattern_section::{Mode, PatternSection};
+    use super::super::parser::pattern::{Mode, Pattern, PatternSection};
     use super::*;
     use crate::utils::reader::Reader;
 
@@ -212,7 +210,7 @@ mod tests {
     fn test_selection_fsm_element_name_selection() {
         let mut reader = Reader::new("element > p");
         let pattern = PatternSection::new(&mut reader, Mode::All);
-        let builder = FsmBuilder::new(Vec::from([pattern]));
+        let builder = Pattern::new(Vec::from([pattern]));
         let mut selection = Selection::new();
 
         let mut fsm_moved: bool = selection.next(
@@ -262,7 +260,7 @@ mod tests {
     fn test_selection_fsm_complex_element_selection() {
         let mut reader = Reader::new("p.indent > .bold");
         let pattern = PatternSection::new(&mut reader, Mode::All);
-        let builder = FsmBuilder::new(Vec::from([pattern]));
+        let builder = Pattern::new(Vec::from([pattern]));
         let mut selection = Selection::new();
 
         let mut fsm_moved: bool = selection.next(
@@ -301,7 +299,7 @@ mod tests {
     fn test_selection_fsm_complex_element_selection_with_step_back() {
         let mut reader = Reader::new("p.indent > .bold");
         let pattern = PatternSection::new(&mut reader, Mode::All);
-        let builder = FsmBuilder::new(Vec::from([pattern]));
+        let builder = Pattern::new(Vec::from([pattern]));
         let mut selection = Selection::new();
 
         let mut fsm_moved: bool = selection.next(
