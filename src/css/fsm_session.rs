@@ -2,8 +2,8 @@ use super::fsm::Selection;
 use super::parser::pattern::Pattern;
 use super::tree::Tree;
 
-use crate::css::parser::pattern::NextPosition;
 use crate::XHtmlElement;
+use crate::css::parser::pattern::NextPosition;
 
 /*
  * Fsm Session should have the following abilities:
@@ -45,10 +45,12 @@ impl<'query, 'html> FsmSession<'query, 'html> {
             match next {
                 NextPosition::Link(pat, pos) => {
                     (fsm.pattern, fsm.position) = (pat, pos);
-                },
+                }
                 NextPosition::Fork(mut selections) => {
                     // first is a reassign of the current fsm
-                    let first = selections.pop().expect("There has to be an element in the vector");
+                    let first = selections
+                        .pop()
+                        .expect("There has to be an element in the vector");
                     (fsm.pattern, fsm.position) = (first.0, first.1);
 
                     for (pattern, position) in selections {
@@ -58,7 +60,7 @@ impl<'query, 'html> FsmSession<'query, 'html> {
                     }
 
                     // the other are created
-                },
+                }
                 NextPosition::NoMovement => continue,
             }
 

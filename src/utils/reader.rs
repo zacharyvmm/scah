@@ -32,9 +32,7 @@ impl<'a> Reader<'a> {
     #[inline]
     pub fn peek(&mut self) -> Option<char> {
         return match self.iter.peek() {
-            Some((_, peek)) => {
-                Some(*peek)
-            },
+            Some((_, peek)) => Some(*peek),
             None => None,
         };
     }
@@ -42,12 +40,20 @@ impl<'a> Reader<'a> {
     #[inline]
     pub fn next_while(&mut self, condition: fn(char) -> bool) {
         while let Some(_) = self.iter.next_if(|(_, c)| condition(*c)) {}
-        self.position = self.iter.peek().map(|(p, _)| *p).unwrap_or(self.source.len());
+        self.position = self
+            .iter
+            .peek()
+            .map(|(p, _)| *p)
+            .unwrap_or(self.source.len());
     }
 
     pub fn skip(&mut self) {
         _ = self.iter.next();
-        self.position = self.iter.peek().map(|(p, _)| *p).unwrap_or(self.source.len());
+        self.position = self
+            .iter
+            .peek()
+            .map(|(p, _)| *p)
+            .unwrap_or(self.source.len());
     }
 }
 
@@ -58,10 +64,14 @@ impl<'a> Iterator for Reader<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             Some((_, c)) => {
-                self.position = self.iter.peek().map(|(p, _)| *p).unwrap_or(self.source.len());
+                self.position = self
+                    .iter
+                    .peek()
+                    .map(|(p, _)| *p)
+                    .unwrap_or(self.source.len());
                 Some(c)
             }
-            None => None
+            None => None,
         }
     }
 }

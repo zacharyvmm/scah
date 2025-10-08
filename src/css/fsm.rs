@@ -26,34 +26,18 @@ impl Selection {
     }
 
     fn skip_until_next_element<'query>(&mut self, query: &Pattern<'query>) {
-        let (new_pattern, new_position) = query.next(self.pattern, self.position).unwrap_link("It's should not be possible to be a fork here");
+        let (new_pattern, new_position) = query
+            .next(self.pattern, self.position)
+            .unwrap_link("It's should not be possible to be a fork here");
 
         let current = query.get(new_pattern, new_position);
 
-
         if let PatternStep::Combinator(_) = current {
-            // MOVE
             (self.pattern, self.position) = (new_pattern, new_position);
         }
-
-        // if let PatternStep::Save = current {
-        //     (self.pattern, self.position) = query.next(self.pattern, self.position).unwrap_link("It's should not be possible to be a fork here");
-        // }
-        // assert!(matches!(current, PatternStep::Combinator(..)), "There should always be a combinator between elements");
-
-        // MOVE
-        // (self.pattern, self.position) = query.next(self.pattern, self.position).unwrap_link("It's should not be possible to be a fork here");
-        // assert!(matches!(
-        //     query.get(self.pattern, self.position),
-        //     PatternStep::Element(..) | PatternStep::Save
-        // ));
     }
 
-    fn previous_child_combinator_invalid<'query>(
-        &mut self,
-        query: &Pattern,
-        depth: usize,
-    ) -> bool {
+    fn previous_child_combinator_invalid<'query>(&mut self, query: &Pattern, depth: usize) -> bool {
         if self.position == 0 {
             return false;
         }
@@ -128,7 +112,7 @@ impl Selection {
 
         if let PatternStep::Element(element) = query.get(self.pattern, self.position) {
             // NOTE: Compare xhtml element to selector element
-            if element == xhtml_element { 
+            if element == xhtml_element {
                 self.element_depth_stack.push(stack_depth);
                 self.skip_until_next_element(query);
                 return query.next(self.pattern, self.position);
@@ -172,12 +156,10 @@ impl Selection {
             (element_pattern, element_position) = query.back(self.pattern, self.position);
         }
 
-        assert!(
-            matches!(
+        assert!(matches!(
             *query.get(element_pattern, element_position),
             PatternStep::Element(..)
-            )
-        );
+        ));
 
         let element_depth = self
             .element_depth_stack
@@ -191,12 +173,10 @@ impl Selection {
             (self.pattern, self.position) = query.back(self.pattern, self.position);
             self.element_depth_stack.pop();
 
-            assert!(
-                matches!(
+            assert!(matches!(
                 *query.get(self.pattern, self.position),
                 PatternStep::Element(..)
-                )
-            );
+            ));
         }
     }
 }
@@ -215,48 +195,58 @@ mod tests {
         let mut selection = Selection::new();
 
         println!("1");
-        let mut fsm_moved  = selection.next(
-            &builder,
-            &XHtmlElement {
-                name: "element",
-                id: None,
-                class: None,
-                attributes: Vec::new(),
-            },
-            0,
-        ).unwrap_link("has to be a link here");
+        let mut fsm_moved = selection
+            .next(
+                &builder,
+                &XHtmlElement {
+                    name: "element",
+                    id: None,
+                    class: None,
+                    attributes: Vec::new(),
+                },
+                0,
+            )
+            .unwrap_link("has to be a link here");
         println!("2");
 
         // Manually move
         (selection.pattern, selection.position) = fsm_moved;
 
-        println!("{} {} {:?}", selection.pattern, selection.position, *builder.get(selection.pattern, selection.position));
-
+        println!(
+            "{} {} {:?}",
+            selection.pattern,
+            selection.position,
+            *builder.get(selection.pattern, selection.position)
+        );
 
         println!("3");
-        assert_eq!(selection.next(
-            &builder,
-            &XHtmlElement {
-                name: "p",
-                id: None,
-                class: None,
-                attributes: Vec::new(),
-            },
-            0,
-        ), NextPosition::NoMovement);
+        assert_eq!(
+            selection.next(
+                &builder,
+                &XHtmlElement {
+                    name: "p",
+                    id: None,
+                    class: None,
+                    attributes: Vec::new(),
+                },
+                0,
+            ),
+            NextPosition::NoMovement
+        );
         println!("4");
 
-
-        fsm_moved = selection.next(
-            &builder,
-            &XHtmlElement {
-                name: "p",
-                id: None,
-                class: None,
-                attributes: Vec::new(),
-            },
-            1,
-        ).unwrap_link("has to be a link here");
+        fsm_moved = selection
+            .next(
+                &builder,
+                &XHtmlElement {
+                    name: "p",
+                    id: None,
+                    class: None,
+                    attributes: Vec::new(),
+                },
+                1,
+            )
+            .unwrap_link("has to be a link here");
         println!("5");
 
         // Manually move
@@ -275,29 +265,33 @@ mod tests {
         let builder = Pattern::new(Vec::from([pattern]));
         let mut selection = Selection::new();
 
-        let mut fsm_moved = selection.next(
-            &builder,
-            &XHtmlElement {
-                name: "p",
-                id: None,
-                class: Some("indent"),
-                attributes: Vec::new(),
-            },
-            0,
-        ).unwrap_link("has to be a link here");
+        let mut fsm_moved = selection
+            .next(
+                &builder,
+                &XHtmlElement {
+                    name: "p",
+                    id: None,
+                    class: Some("indent"),
+                    attributes: Vec::new(),
+                },
+                0,
+            )
+            .unwrap_link("has to be a link here");
 
         (selection.pattern, selection.position) = fsm_moved;
 
-        fsm_moved = selection.next(
-            &builder,
-            &XHtmlElement {
-                name: "span",
-                id: Some("name"),
-                class: Some("bold"),
-                attributes: Vec::new(),
-            },
-            1,
-        ).unwrap_link("has to be a link here");
+        fsm_moved = selection
+            .next(
+                &builder,
+                &XHtmlElement {
+                    name: "span",
+                    id: Some("name"),
+                    class: Some("bold"),
+                    attributes: Vec::new(),
+                },
+                1,
+            )
+            .unwrap_link("has to be a link here");
 
         (selection.pattern, selection.position) = fsm_moved;
 
@@ -316,29 +310,33 @@ mod tests {
         let builder = Pattern::new(Vec::from([pattern]));
         let mut selection = Selection::new();
 
-        let mut fsm_moved = selection.next(
-            &builder,
-            &XHtmlElement {
-                name: "p",
-                id: None,
-                class: Some("indent"),
-                attributes: Vec::new(),
-            },
-            0,
-        ).unwrap_link("has to be a link here");
+        let mut fsm_moved = selection
+            .next(
+                &builder,
+                &XHtmlElement {
+                    name: "p",
+                    id: None,
+                    class: Some("indent"),
+                    attributes: Vec::new(),
+                },
+                0,
+            )
+            .unwrap_link("has to be a link here");
 
         (selection.pattern, selection.position) = fsm_moved;
 
-        fsm_moved = selection.next(
-            &builder,
-            &XHtmlElement {
-                name: "span",
-                id: Some("name"),
-                class: Some("bold"),
-                attributes: Vec::new(),
-            },
-            1,
-        ).unwrap_link("has to be a link here");
+        fsm_moved = selection
+            .next(
+                &builder,
+                &XHtmlElement {
+                    name: "span",
+                    id: Some("name"),
+                    class: Some("bold"),
+                    attributes: Vec::new(),
+                },
+                1,
+            )
+            .unwrap_link("has to be a link here");
 
         (selection.pattern, selection.position) = fsm_moved;
 
