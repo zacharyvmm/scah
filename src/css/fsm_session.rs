@@ -2,6 +2,7 @@ use super::fsm::Selection;
 use super::parser::pattern::Pattern;
 use super::tree::Tree;
 
+use crate::css::parser::pattern::NextPosition;
 use crate::XHtmlElement;
 
 /*
@@ -35,21 +36,42 @@ impl<'query, 'html> FsmSession<'query, 'html> {
         }
     }
 
-    pub fn step_foward(&mut self, depth: usize, element: &XHtmlElement<'html>) {
+    pub fn next(&mut self, element: &XHtmlElement<'html>, depth: usize) {
+        let mut new_fsms: Vec<(usize, Selection)> = Vec::new();
         for (previous_node_idx, fsm) in self.fsms.iter_mut() {
-            let next = fsm.next(&self.pattern.list, element, depth);
+            let next = fsm.next(&self.pattern, element, depth);
             // TODO: if the pattern section (ex: their are 3 branches) changed the must reassign this fsm (ex: the first branch) to the first branch and create other branches (#2 and #3 of the branches).
 
-            if next {
-                // TODO: `element.clone()` inefficient for if their's only a single selection saving the element (99.99% of the time)
-                *previous_node_idx = self.tree.push(*previous_node_idx, element.clone());
+            match next {
+                NextPosition::Link(pat, pos) => {
+                    (fsm.pattern, fsm.position) = (pat, pos);
+                },
+                NextPosition::Fork(mut selections) => {
+                    // first is a reassign of the current fsm
+                    let first = selections.pop().expect("There has to be an element in the vector");
+                    (fsm.pattern, fsm.position) = (first.0, first.1);
+
+                    for (pattern, position) in selections {
+                        let mut new_fsm = Selection::new();
+                        (new_fsm.pattern, new_fsm.position) = (pattern, position);
+                        new_fsms.push((*previous_node_idx, new_fsm));
+                    }
+
+                    // the other are created
+                },
+                NextPosition::NoMovement => continue,
             }
+
+            // TODO: `element.clone()` inefficient for if their's only a single selection saving the element (99.99% of the time)
+            *previous_node_idx = self.tree.push(*previous_node_idx, element.clone());
         }
+
+        self.fsms.append(&mut new_fsms);
     }
 
-    pub fn step_back(&self, depth: usize) {}
+    pub fn back(&self, depth: usize) {}
 
-    fn reevaluate_descendants(&mut self, depth: usize, element: &XHtmlElement<'html>) {
+    fn reevaluate_descendants(&mut self, element: &XHtmlElement<'html>, depth: usize) {
         // The first node is always reevaluated (BECAUSE the start of a query is basicly a Descendant selection) unless
         // When you are already in a descendant scope the descendant element is reevaluated
         // Once the fsm's current combinator is not a descendant selection a fsm with the lowest descendant selection is created
@@ -75,26 +97,72 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_mock_fsm_assign_to_tree() {
-        let mut reader = Reader::new("element#id.class > other#other_id.other_class");
-        let mut then_a_reader = Reader::new("> a");
-        let mut then_p_reader = Reader::new(" p");
+    fn test_fsm_with_multi_pattern_sections() {
+        let first = PatternSection::new(&mut Reader::new("main.indent > .bold"), Mode::All);
+        let second = PatternSection::new(&mut Reader::new(" p"), Mode::All);
+        let second_alternate = PatternSection::new(&mut Reader::new("> span > a"), Mode::All);
+        let mut builder = Pattern::new(Vec::from([first]));
+        builder.append(Vec::from([second, second_alternate]));
+        let mut session = FsmSession::new(&builder);
 
-        let section = PatternSection::new(&mut reader, Mode::All);
-        let mut selection = Pattern::new(Vec::from([section]));
+        session.next(
+            &XHtmlElement {
+                name: "p",
+                id: None,
+                class: Some("indent"),
+                attributes: Vec::new(),
+            },
+            0,
+        );
 
-        selection.append(Vec::from([
-            PatternSection::new(&mut then_a_reader, Mode::All),
-            PatternSection::new(&mut then_p_reader, Mode::All),
-        ]));
+        session.next(
+            &XHtmlElement {
+                name: "main",
+                id: Some("name"),
+                class: Some("indent"),
+                attributes: Vec::new(),
+            },
+            0,
+        );
 
-        let pattern = Pattern::new(selection.list);
+        session.next(
+            &XHtmlElement {
+                name: "div",
+                id: Some("name"),
+                class: Some(".bold"),
+                attributes: Vec::new(),
+            },
+            1,
+        );
 
-        let mut session = FsmSession::new(&pattern);
+        session.next(
+            &XHtmlElement {
+                name: "span",
+                id: Some("name"),
+                class: Some(".class"),
+                attributes: Vec::new(),
+            },
+            2,
+        );
 
-        // 1: fsm first position
-        // 1: fsm second position
-        // 2: fsm first position
-        // 1.2: fsmn second alternate position
+        session.next(
+            &XHtmlElement {
+                name: "p",
+                id: Some("name"),
+                class: Some(".bold"),
+                attributes: Vec::new(),
+            },
+            3,
+        );
+
+        session.next(
+            &XHtmlElement {
+                name: "a",
+                id: Some("name"),
+                class: Some(".class"),
+                attributes: Vec::new(),
+            },
+            3,
+        );
     }
 }

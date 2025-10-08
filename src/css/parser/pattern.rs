@@ -10,7 +10,7 @@ pub enum Mode {
 
 #[derive(PartialEq, Debug)]
 pub struct PatternSection<'a> {
-    pub(crate) pattern: Vec<PatternStep<'a>>,
+    pub(crate) steps: Vec<PatternStep<'a>>,
     pub(crate) kind: Mode,
 
     pub(crate) parent: Option<usize>, // real index
@@ -20,22 +20,22 @@ pub struct PatternSection<'a> {
 impl<'a> PatternSection<'a> {
     pub fn new(reader: &mut Reader<'a>, mode: Mode) -> Self {
         let mut selection = Self {
-            pattern: Vec::new(),
+            steps: Vec::new(),
             kind: mode,
             parent: None,
             children: Vec::new(),
         };
 
-        while let Some(token) = PatternStep::next(reader, selection.pattern.last()) {
-            selection.pattern.push(token);
+        while let Some(token) = PatternStep::next(reader, selection.steps.last()) {
+            selection.steps.push(token);
         }
-        selection.pattern.push(PatternStep::Save);
+        selection.steps.push(PatternStep::Save);
 
         return selection;
     }
 
     pub fn len(&self) -> usize {
-        return self.pattern.len();
+        return self.steps.len();
     }
 }
 
@@ -44,16 +44,27 @@ pub struct Pattern<'query> {
     pub list: Vec<PatternSection<'query>>,
 }
 
+#[derive(PartialEq, Debug)]
 pub enum NextPosition {
     Link(usize, usize),
     Fork(Vec<(usize, usize)>),
+    NoMovement,
+}
+
+impl NextPosition {
+    pub fn unwrap_link(self, error_message: &str) -> (usize, usize) {
+        match self {
+            Self::Link(p1, p2) => (p1, p2),
+            _ => panic!("{}", error_message),
+        }
+    }
 }
 
 impl<'query> Pattern<'query> {
     fn generate_descendants(&mut self) {
         for section_index in 0..self.list.len() {
             let mut section_descendants = Vec::new();
-            let pattern_steps = &self.list[section_index].pattern;
+            let pattern_steps = &self.list[section_index].steps;
             for index in 0..pattern_steps.len() {
                 if pattern_steps[index] == PatternStep::Combinator(Combinator::Descendant) {
                     section_descendants.push(index);
@@ -78,13 +89,13 @@ impl<'query> Pattern<'query> {
             for index in 0..sections.len() {
                 // ----- Empty element -----
                 assert!(matches!(
-                    sections[index].pattern[0],
+                    sections[index].steps[0],
                     PatternStep::Element(QueryElement {
                         name: None | Some("&"),
                         ..
                     })
                 ));
-                sections[index].pattern.remove(0);
+                sections[index].steps.remove(0);
                 // -------------------------
 
                 if sections[index].parent == Option::None {
@@ -95,6 +106,10 @@ impl<'query> Pattern<'query> {
         }
 
         self.list.append(&mut sections);
+    }
+
+    pub fn get(&self, section_index: usize, step_index: usize) -> &PatternStep<'query> {
+        return &self.list[section_index].steps[step_index];
     }
 
     pub fn next(&self, section_index: usize, step_index: usize) -> NextPosition {
@@ -163,7 +178,7 @@ mod tests {
         let selection = Pattern::new(Vec::from([section]));
 
         assert_eq!(
-            selection.list[0].pattern,
+            selection.list[0].steps,
             Vec::from([
                 PatternStep::Element(QueryElement::new(
                     Some("element"),
@@ -195,7 +210,7 @@ mod tests {
         assert_eq!(
             selection.list,
             Vec::from([PatternSection {
-                pattern: Vec::from([
+                steps: Vec::from([
                     PatternStep::Element(QueryElement::new(
                         Some("element"),
                         Some("id"),
@@ -226,7 +241,7 @@ mod tests {
             selection.list,
             Vec::from([
                 PatternSection {
-                    pattern: Vec::from([
+                    steps: Vec::from([
                         PatternStep::Element(QueryElement::new(
                             Some("element"),
                             Some("id"),
@@ -247,7 +262,7 @@ mod tests {
                     children: Vec::from([0, 1]),
                 },
                 PatternSection {
-                    pattern: Vec::from([
+                    steps: Vec::from([
                         PatternStep::Combinator(Combinator::Child),
                         PatternStep::Element(QueryElement::new(Some("a"), None, None, Vec::new(),)),
                         PatternStep::Save,
@@ -257,7 +272,7 @@ mod tests {
                     children: Vec::new(),
                 },
                 PatternSection {
-                    pattern: Vec::from([
+                    steps: Vec::from([
                         PatternStep::Combinator(Combinator::Descendant),
                         PatternStep::Element(QueryElement::new(Some("p"), None, None, Vec::new(),)),
                         PatternStep::Save,

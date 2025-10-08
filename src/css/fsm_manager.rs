@@ -14,9 +14,9 @@ impl<'query, 'html> FsmManager<'query, 'html> {
         }
     }
 
-    fn step_foward(&'html mut self, depth: usize, xhtml_element: XHtmlElement<'html>) {
+    fn next(&'html mut self, xhtml_element: XHtmlElement<'html>, depth: usize) {
         for session in self.sessions.iter_mut() {
-            session.step_foward(depth, &xhtml_element);
+            session.next(&xhtml_element, depth);
         }
     }
 

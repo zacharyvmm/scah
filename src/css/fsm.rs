@@ -1,13 +1,14 @@
-use super::parser::pattern::PatternSection;
+use super::parser::pattern::Pattern;
 use super::parser::query_tokenizer::Combinator;
 use super::parser::query_tokenizer::PatternStep;
+use crate::css::parser::pattern::NextPosition;
 use crate::xhtml::element::element::XHtmlElement;
 
 #[derive(Debug, Clone)]
 pub struct Selection {
     element_depth_stack: Vec<usize>,
-    pattern: usize,
-    position: usize,
+    pub(super) pattern: usize,
+    pub(super) position: usize,
     // start_position: usize,
     /*
      * When `start_position - position <= 0` then the fsm is deleted
@@ -24,57 +25,44 @@ impl Selection {
         }
     }
 
-    fn step_back<'query>(&mut self, query: &Vec<PatternSection<'query>>) {
-        if self.position > 0 {
-            self.position -= 1;
-            return;
-        }
+    fn skip_until_next_element<'query>(&mut self, query: &Pattern<'query>) {
+        let (new_pattern, new_position) = query.next(self.pattern, self.position).unwrap_link("It's should not be possible to be a fork here");
 
-        assert_ne!(self.pattern, 0);
-        self.pattern -= 1;
-        let last_idx_of_previous_pattern_section = &query[self.pattern].pattern.len() - 1;
-        if query[self.pattern].pattern[last_idx_of_previous_pattern_section] == PatternStep::Save {
-            self.position = last_idx_of_previous_pattern_section - 1;
-        } else {
-            self.position = last_idx_of_previous_pattern_section;
-        }
-    }
+        let current = query.get(new_pattern, new_position);
 
-    fn step_foward<'query>(&mut self, query: &Vec<PatternSection<'query>>) {
-        if self.position + 1 < query[self.pattern].pattern.len() {
-            self.position += 1;
-            return;
-        }
 
-        assert_ne!(self.pattern, query[self.pattern].pattern.len() - 1);
-        // BUG: This assumes that the tree is a linked list
-        self.pattern += 1;
-        self.position = 0;
-    }
-
-    fn next_until_element<'query>(&mut self, query: &Vec<PatternSection<'query>>) {
-        let current = &query[self.pattern].pattern[self.position];
         if let PatternStep::Combinator(_) = current {
-            self.step_foward(query);
+            // MOVE
+            (self.pattern, self.position) = (new_pattern, new_position);
         }
-        assert!(matches!(
-            query[self.pattern].pattern[self.position],
-            PatternStep::Element(..) | PatternStep::Save
-        ));
+
+        // if let PatternStep::Save = current {
+        //     (self.pattern, self.position) = query.next(self.pattern, self.position).unwrap_link("It's should not be possible to be a fork here");
+        // }
+        // assert!(matches!(current, PatternStep::Combinator(..)), "There should always be a combinator between elements");
+
+        // MOVE
+        // (self.pattern, self.position) = query.next(self.pattern, self.position).unwrap_link("It's should not be possible to be a fork here");
+        // assert!(matches!(
+        //     query.get(self.pattern, self.position),
+        //     PatternStep::Element(..) | PatternStep::Save
+        // ));
     }
 
     fn previous_child_combinator_invalid<'query>(
         &mut self,
-        pattern: &Vec<PatternStep>,
+        query: &Pattern,
         depth: usize,
     ) -> bool {
         if self.position == 0 {
             return false;
         }
 
-        let previous = &pattern[self.position - 1];
+        let (p1, p2) = query.back(self.pattern, self.position);
+        let previous = query.get(p1, p2);
 
         // assert: not Element
+        println!("{} {}", p1, p2);
         assert!(!matches!(previous, &PatternStep::Element(..)));
 
         if let PatternStep::Combinator(Combinator::Child) = previous {
@@ -89,26 +77,27 @@ impl Selection {
     }
 
     // NOTE: In the case of failure IF last element is NextSibling, then go back to the Element that the NextSibling is referencing
-    fn next_sibling_failed_move_back<'query>(&mut self, query: &Vec<PatternSection<'query>>) {
+    fn next_sibling_failed_move_back<'query>(&mut self, query: &Pattern<'query>) {
         if self.pattern == 0 && self.position == 0 {
             return;
         }
 
-        let previous = &query[self.pattern].pattern[self.position - 1];
+        let (p1, p2) = query.back(self.pattern, self.position);
+        let previous = query.get(p1, p2);
 
         if let PatternStep::Combinator(Combinator::NextSibling) = previous {
-            self.step_back(query);
+            (self.pattern, self.position) = query.back(self.pattern, self.position);
             assert!(matches!(
-                &query[self.pattern].pattern[self.position],
+                query.get(self.pattern, self.position),
                 &PatternStep::Element(..)
             ));
-            self.step_back(query); // Last Element or Save
-            if query[self.pattern].pattern[self.position] == PatternStep::Save {
-                self.step_back(query);
+            (self.pattern, self.position) = query.back(self.pattern, self.position);
+            if *query.get(self.pattern, self.position) == PatternStep::Save {
+                (self.pattern, self.position) = query.back(self.pattern, self.position);
             }
 
             assert!(matches!(
-                &query[self.pattern].pattern[self.position],
+                query.get(self.pattern, self.position),
                 &PatternStep::Element(..)
             ));
         }
@@ -127,40 +116,35 @@ impl Selection {
 
     pub fn next<'query, 'html>(
         &mut self,
-        query: &Vec<PatternSection<'query>>,
+        query: &Pattern<'query>,
         xhtml_element: &XHtmlElement<'html>,
         stack_depth: usize,
-    ) -> bool {
-        if self.previous_child_combinator_invalid(&query[self.pattern].pattern, stack_depth) {
-            return false;
+    ) -> NextPosition {
+        if self.previous_child_combinator_invalid(&query, stack_depth) {
+            return NextPosition::NoMovement;
         }
 
         // TODO: Refactor this to a match to handle `Has` and `Not`
 
-        if let PatternStep::Element(ref element) = query[self.pattern].pattern[self.position] {
+        if let PatternStep::Element(element) = query.get(self.pattern, self.position) {
             // NOTE: Compare xhtml element to selector element
-            if element == xhtml_element {
-                self.step_foward(query);
-
+            if element == xhtml_element { 
                 self.element_depth_stack.push(stack_depth);
-
-                self.next_until_element(query);
-                return true;
+                self.skip_until_next_element(query);
+                return query.next(self.pattern, self.position);
             }
 
             self.next_sibling_failed_move_back(query);
-
-            return false;
         }
-        return false;
+        return NextPosition::NoMovement;
     }
 
-    pub fn back<'query>(&mut self, query: &Vec<PatternSection<'query>>, depth: usize) {
+    pub fn back<'query>(&mut self, query: &Pattern<'query>, depth: usize) {
         if self.position == 0 {
             return;
         }
 
-        if query[self.pattern].pattern[self.position] == PatternStep::Save {
+        if *query.get(self.pattern, self.position) == PatternStep::Save {
             if self.position == 0 {
                 self.pattern -= 1;
             } else {
@@ -169,7 +153,7 @@ impl Selection {
 
             assert!(
                 matches!(
-                    query[self.pattern].pattern[self.position],
+                    *query.get(self.pattern, self.position),
                     PatternStep::Element(..)
                 ),
                 "The item in the query list before a child combinator should always be an `Element`."
@@ -178,14 +162,22 @@ impl Selection {
             return;
         }
 
+        let mut element_pattern = self.pattern;
         let mut element_position = self.position;
         //assert!(!matches!(self.query[element_position], PatternStep::Element(..)));
         if !matches!(
-            query[self.pattern].pattern[element_position],
+            *query.get(self.pattern, self.position),
             PatternStep::Element(..)
         ) {
-            element_position = self.position - 1;
+            (element_pattern, element_position) = query.back(self.pattern, self.position);
         }
+
+        assert!(
+            matches!(
+            *query.get(element_pattern, element_position),
+            PatternStep::Element(..)
+            )
+        );
 
         let element_depth = self
             .element_depth_stack
@@ -193,9 +185,18 @@ impl Selection {
             .expect("Must have an element in the stack");
 
         if *element_depth == depth {
-            assert!(element_position >= 2);
-            self.position = element_position - 2;
+            //assert!(element_position >= 2);
+            //self.position = element_position - 2;
+            (self.pattern, self.position) = query.back(element_pattern, element_position);
+            (self.pattern, self.position) = query.back(self.pattern, self.position);
             self.element_depth_stack.pop();
+
+            assert!(
+                matches!(
+                *query.get(self.pattern, self.position),
+                PatternStep::Element(..)
+                )
+            );
         }
     }
 }
@@ -213,8 +214,9 @@ mod tests {
         let builder = Pattern::new(Vec::from([pattern]));
         let mut selection = Selection::new();
 
-        let mut fsm_moved: bool = selection.next(
-            &builder.list,
+        println!("1");
+        let mut fsm_moved  = selection.next(
+            &builder,
             &XHtmlElement {
                 name: "element",
                 id: None,
@@ -222,10 +224,18 @@ mod tests {
                 attributes: Vec::new(),
             },
             0,
-        );
+        ).unwrap_link("has to be a link here");
+        println!("2");
 
-        fsm_moved = selection.next(
-            &builder.list,
+        // Manually move
+        (selection.pattern, selection.position) = fsm_moved;
+
+        println!("{} {} {:?}", selection.pattern, selection.position, *builder.get(selection.pattern, selection.position));
+
+
+        println!("3");
+        assert_eq!(selection.next(
+            &builder,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -233,12 +243,12 @@ mod tests {
                 attributes: Vec::new(),
             },
             0,
-        );
+        ), NextPosition::NoMovement);
+        println!("4");
 
-        assert_eq!(fsm_moved, false);
 
         fsm_moved = selection.next(
-            &builder.list,
+            &builder,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -246,12 +256,14 @@ mod tests {
                 attributes: Vec::new(),
             },
             1,
-        );
+        ).unwrap_link("has to be a link here");
+        println!("5");
 
-        assert_eq!(fsm_moved, true);
+        // Manually move
+        (selection.pattern, selection.position) = fsm_moved;
 
         assert_eq!(
-            builder.list[selection.pattern].pattern[selection.position],
+            *builder.get(selection.pattern, selection.position),
             PatternStep::Save
         );
     }
@@ -263,8 +275,8 @@ mod tests {
         let builder = Pattern::new(Vec::from([pattern]));
         let mut selection = Selection::new();
 
-        let mut fsm_moved: bool = selection.next(
-            &builder.list,
+        let mut fsm_moved = selection.next(
+            &builder,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -272,10 +284,12 @@ mod tests {
                 attributes: Vec::new(),
             },
             0,
-        );
+        ).unwrap_link("has to be a link here");
+
+        (selection.pattern, selection.position) = fsm_moved;
 
         fsm_moved = selection.next(
-            &builder.list,
+            &builder,
             &XHtmlElement {
                 name: "span",
                 id: Some("name"),
@@ -283,12 +297,12 @@ mod tests {
                 attributes: Vec::new(),
             },
             1,
-        );
+        ).unwrap_link("has to be a link here");
 
-        assert_eq!(fsm_moved, true);
+        (selection.pattern, selection.position) = fsm_moved;
 
         assert_eq!(
-            builder.list[selection.pattern].pattern[selection.position],
+            *builder.get(selection.pattern, selection.position),
             PatternStep::Save
         );
 
@@ -302,8 +316,8 @@ mod tests {
         let builder = Pattern::new(Vec::from([pattern]));
         let mut selection = Selection::new();
 
-        let mut fsm_moved: bool = selection.next(
-            &builder.list,
+        let mut fsm_moved = selection.next(
+            &builder,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -311,10 +325,12 @@ mod tests {
                 attributes: Vec::new(),
             },
             0,
-        );
+        ).unwrap_link("has to be a link here");
+
+        (selection.pattern, selection.position) = fsm_moved;
 
         fsm_moved = selection.next(
-            &builder.list,
+            &builder,
             &XHtmlElement {
                 name: "span",
                 id: Some("name"),
@@ -322,29 +338,29 @@ mod tests {
                 attributes: Vec::new(),
             },
             1,
-        );
+        ).unwrap_link("has to be a link here");
 
-        assert_eq!(fsm_moved, true);
+        (selection.pattern, selection.position) = fsm_moved;
 
         assert_eq!(
-            builder.list[selection.pattern].pattern[selection.position],
+            *builder.get(selection.pattern, selection.position),
             PatternStep::Save
         );
 
         //assert!(selection.done());
 
-        selection.back(&builder.list, 1);
+        selection.back(&builder, 1);
 
         assert_eq!(selection.is_reset(), false);
         assert_eq!(selection.position, 2);
 
         // Does nothing
-        selection.back(&builder.list, 1);
+        selection.back(&builder, 1);
 
         assert_eq!(selection.is_reset(), false);
         assert_eq!(selection.position, 2);
 
-        selection.back(&builder.list, 0);
+        selection.back(&builder, 0);
 
         assert_eq!(selection.is_reset(), true);
     }
