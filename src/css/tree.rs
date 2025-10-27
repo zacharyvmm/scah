@@ -1,8 +1,10 @@
 use crate::XHtmlElement;
 
 // This is essentially a Selection DOM or Selection Object Model
+
+#[derive(PartialEq, Debug)]
 pub struct Tree<'html> {
-    list: Vec<Node<'html>>,
+    pub(super) list: Vec<Node<'html>>,
     root: usize,
 }
 

@@ -27,16 +27,13 @@ impl<'query, 'html> Selection<'query, 'html> {
             let ref mut pattern = self.patterns[i];
 
             if pattern.next(self.fsms, depth, element) {
-                println!("next");
                 let kind = &self.fsms[pattern.position].state_kind;
 
                 if pattern.retry(self.fsms) {
-                    println!("retry");
                     self.retry_points.push(pattern.clone());
                 }
 
                 if *kind == SelectionKind::None {
-                    println!("none");
                     pattern.move_foward(depth);
                     continue;
                 }
@@ -54,7 +51,6 @@ impl<'query, 'html> Selection<'query, 'html> {
                 // Go back to the last ALL selection in the fsms list
                 // If their are none then the whole selection is done
             }
-            println!("{pattern:?}")
         }
     }
 
@@ -91,6 +87,8 @@ mod tests {
     use crate::XHtmlElement;
     use crate::css::parser::element::element::QueryElement;
     use crate::css::parser::query_tokenizer::Combinator;
+    use crate::css::state::Save;
+    use crate::css::tree::Node;
 
     use super::*;
 
@@ -164,6 +162,146 @@ mod tests {
                 depths: vec![0, 1]
             }]
         );
+        assert_eq!(
+            selection.retry_points,
+            vec![
+                Pattern {
+                    parent_save_position: 0,
+                    position: 0,
+                    depths: vec![]
+                },
+                Pattern {
+                    parent_save_position: 0,
+                    position: 1,
+                    depths: vec![0]
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_fsm_next_descendant_save() {
+        let fsms = &vec![
+            Fsm::new(
+                Combinator::Descendant,
+                QueryElement {
+                    name: Some("div"),
+                    id: None,
+                    class: None,
+                    attributes: vec![],
+                },
+                SelectionKind::First(Save {
+                    inner_html: false,
+                    text_content: false,
+                }),
+            ),
+            Fsm::new(
+                Combinator::Descendant,
+                QueryElement {
+                    name: Some("a"),
+                    id: None,
+                    class: None,
+                    attributes: vec![],
+                },
+                SelectionKind::First(Save {
+                    inner_html: false,
+                    text_content: false,
+                }),
+            ),
+        ];
+
+        let mut selection = Selection::new(fsms);
+
+        selection.next(
+            0,
+            &XHtmlElement {
+                name: "div",
+                id: None,
+                class: None,
+                attributes: vec![],
+            },
+        );
+
+        assert_eq!(
+            selection.patterns,
+            vec![Pattern {
+                parent_save_position: 0,
+                position: 1,
+                depths: vec![0]
+            }]
+        );
+
+        assert_eq!(
+            selection.tree.list,
+            vec![Node {
+                value: XHtmlElement {
+                    name: "div",
+                    id: None,
+                    class: None,
+                    attributes: vec![],
+                },
+                inner_html: Option::None,
+                text_content: Option::None,
+                children: vec![],
+            }]
+        );
+
+        assert_eq!(
+            selection.retry_points,
+            vec![Pattern {
+                parent_save_position: 0,
+                position: 0,
+                depths: vec![]
+            }]
+        );
+
+        selection.next(
+            1,
+            &XHtmlElement {
+                name: "a",
+                id: None,
+                class: None,
+                attributes: vec![],
+            },
+        );
+
+        assert_eq!(
+            selection.patterns,
+            vec![Pattern {
+                parent_save_position: 1,
+                position: 2,
+                depths: vec![0, 1]
+            }]
+        );
+
+        assert_eq!(
+            selection.tree.list,
+            vec![
+                Node {
+                    value: XHtmlElement {
+                        name: "div",
+                        id: None,
+                        class: None,
+                        attributes: vec![],
+                    },
+                    inner_html: Option::None,
+                    text_content: Option::None,
+                    children: vec![1],
+                },
+                Node {
+                    value: XHtmlElement {
+                        name: "a",
+                        id: None,
+                        class: None,
+                        attributes: vec![],
+                    },
+                    inner_html: Option::None,
+                    text_content: Option::None,
+                    children: vec![],
+                }
+            ]
+        );
+
         assert_eq!(
             selection.retry_points,
             vec![

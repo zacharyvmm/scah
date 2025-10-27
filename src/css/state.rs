@@ -5,8 +5,8 @@ use crate::css::parser::query_tokenizer::Combinator;
 #[derive(PartialEq)]
 pub struct Save {
     // attributes: bool, // If your saving this has to be on
-    inner_html: bool,
-    text_content: bool,
+    pub inner_html: bool,
+    pub text_content: bool,
 }
 
 #[derive(PartialEq)]
