@@ -42,6 +42,11 @@ impl<'html> Tree<'html> {
         }
         return last_index;
     }
+
+    pub fn set_content(&mut self, position:usize, inner_html: Option<&'html str>, text_content: Option<&'html str>) {
+        self.list[position].inner_html = inner_html;
+        self.list[position].text_content = text_content;
+    }
 }
 
 #[cfg(test)]
