@@ -1,15 +1,13 @@
-use crate::{
-    XHtmlElement,
-    css::{
-        parser::query_tokenizer::Combinator,
-        state::{Fsm, SelectionKind},
-    },
-};
+use super::parser::query_tokenizer::Combinator;
+use super::state::{Fsm, SelectionKind};
+use crate::XHtmlElement;
 
+// This is the statefull part of the Fsms, thus this is a light wrapper
+#[derive(PartialEq, Debug, Clone)]
 pub struct Pattern {
     pub(crate) parent_save_position: usize, // in the tree
     pub(crate) position: usize,
-    depths: Vec<usize>, // Depths since the last save position
+    pub(super) depths: Vec<usize>, // Depths since the last save position
 }
 
 impl Pattern {
@@ -60,6 +58,11 @@ impl Pattern {
     #[inline]
     pub fn retry(&self, fsms: &Vec<Fsm>) -> bool {
         fsms[self.position].retry()
+    }
+
+    #[inline]
+    pub fn is_reset(&self) -> bool {
+        return self.position == 0 && self.depths.len() == 0;
     }
 
     pub fn move_foward(&mut self, depth: usize) {
