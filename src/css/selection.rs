@@ -1,6 +1,7 @@
 use super::pattern::Pattern;
 use super::state::{Fsm, SelectionKind};
 use super::tree::Tree;
+use crate::utils::Reader;
 use crate::XHtmlElement;
 
 struct Selection<'query, 'html> {
@@ -83,9 +84,10 @@ impl<'query, 'html> Selection<'query, 'html> {
         //self.patterns.remove
     }
 }
+
 mod tests {
     use crate::XHtmlElement;
-    use crate::css::parser::element::element::QueryElement;
+    use crate::css::parser::element::QueryElement;
     use crate::css::parser::query_tokenizer::Combinator;
     use crate::css::state::Save;
     use crate::css::tree::Node;

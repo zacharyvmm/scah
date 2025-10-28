@@ -1,6 +1,6 @@
 use super::query_tokenizer::{Combinator, PatternStep};
-use crate::css::parser::element::element::QueryElement;
-use crate::utils::reader::Reader;
+use crate::css::parser::element::QueryElement;
+use crate::utils::Reader;
 
 #[derive(PartialEq, Debug)]
 pub enum Mode {
@@ -165,11 +165,11 @@ impl<'query> Pattern<'query> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::element::element::QueryElement;
+    use super::super::element::QueryElement;
     use super::super::pattern::{Mode, PatternSection};
     use super::super::query_tokenizer::Combinator;
     use super::*;
-    use crate::utils::reader::Reader;
+    use crate::utils::Reader;
 
     #[test]
     fn test_selection_on_basic_query() {

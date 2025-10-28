@@ -1,6 +1,5 @@
 use super::string_search::AttributeSelectionKind;
-use crate::utils::reader::Reader;
-use crate::utils::token::QuoteKind;
+use crate::utils::{Reader, QuoteKind};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct AttributeSelection<'a> {

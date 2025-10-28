@@ -94,7 +94,7 @@ impl<'query, 'html> FsmSession<'query, 'html> {
 #[cfg(test)]
 mod tests {
     use crate::css::parser::pattern::{Mode, PatternSection};
-    use crate::utils::reader::Reader;
+    use crate::utils::Reader;
 
     use super::*;
 

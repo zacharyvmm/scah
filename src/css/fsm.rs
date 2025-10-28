@@ -185,7 +185,7 @@ impl Selection {
 mod tests {
     use super::super::parser::pattern::{Mode, Pattern, PatternSection};
     use super::*;
-    use crate::utils::reader::Reader;
+    use crate::utils::Reader;
 
     #[test]
     fn test_selection_fsm_element_name_selection() {

@@ -1,5 +1,5 @@
 use crate::XHtmlElement;
-use crate::css::parser::element::element::QueryElement;
+use crate::css::parser::element::QueryElement;
 use crate::css::parser::query_tokenizer::Combinator;
 
 #[derive(PartialEq)]

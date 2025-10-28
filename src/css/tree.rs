@@ -58,7 +58,7 @@ impl<'html> Tree<'html> {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::reader::Reader;
+    use crate::utils::Reader;
 
     use super::*;
 

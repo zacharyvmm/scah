@@ -1,2 +1,5 @@
-pub mod reader;
-pub(crate) mod token;
+mod reader;
+mod token;
+
+pub(crate) use reader::Reader;
+pub(crate)  use token::QuoteKind;
