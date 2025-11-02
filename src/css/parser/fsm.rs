@@ -1,53 +1,23 @@
 use crate::XHtmlElement;
 use crate::css::parser::element::QueryElement;
-use crate::css::parser::query_tokenizer::Combinator;
+use crate::css::parser::lexer::Combinator;
 
-#[derive(PartialEq)]
-pub struct Save {
-    // attributes: bool, // If your saving this has to be on
-    pub inner_html: bool,
-    pub text_content: bool,
-}
-
-#[derive(PartialEq)]
-pub enum SelectionKind {
-    First(Save),
-    All(Save),
-    None, // No Save
-}
-
+#[derive(PartialEq, Debug)]
 pub struct Fsm<'query> {
     pub transition: Combinator, // from transition
     pub state: QueryElement<'query>,
-    pub state_kind: SelectionKind,
 }
 
 impl<'query> Fsm<'query> {
-    pub fn new(
-        transition: Combinator,
-        state: QueryElement<'query>,
-        state_kind: SelectionKind,
-    ) -> Self {
-        if transition == Combinator::SubsequentSibling
-            && matches!(state_kind, SelectionKind::First(..))
-        {
-            println!(
-                "WARNING: a `~` (Subsequent Sibling Combinator) with a First selection is equivalent to a `+` (Next Sibling Combinator) with a First selection."
-            );
-        }
-
-        return Self {
-            transition,
-            state,
-            state_kind,
-        };
+    pub fn new(transition: Combinator, state: QueryElement<'query>) -> Self {
+        return Self { transition, state };
     }
 
     pub fn next<'html>(
         &self,
+        element: &'html XHtmlElement<'html>,
         current_depth: usize,
         last_depth: usize,
-        element: &'html XHtmlElement<'html>,
     ) -> bool {
         assert!(current_depth >= last_depth);
 
@@ -72,21 +42,15 @@ impl<'query> Fsm<'query> {
 
     pub fn back<'html>(
         &self,
+        element: &'html str,
         current_depth: usize,
         last_depth: usize,
-        element: &'html str,
     ) -> bool {
         if current_depth == last_depth {
             return self.state.name.is_some() && self.state.name.unwrap() == element;
         }
 
         return false;
-    }
-
-    pub fn retry(&self) -> bool {
-        return self.transition == Combinator::Descendant
-            || (self.transition == Combinator::SubsequentSibling
-                && matches!(self.state_kind, SelectionKind::All(..)));
     }
 }
 
@@ -103,20 +67,16 @@ mod tests {
                 class: None,
                 attributes: vec![],
             },
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
         );
         assert!(fsm.next(
-            4,
-            1,
             &XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
                 attributes: vec![]
-            }
+            },
+            4,
+            1,
         ));
     }
 
@@ -130,20 +90,16 @@ mod tests {
                 class: None,
                 attributes: vec![],
             },
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
         );
         assert!(fsm.next(
-            2,
-            1,
             &XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
                 attributes: vec![]
-            }
+            },
+            2,
+            1,
         ));
     }
 
@@ -157,20 +113,16 @@ mod tests {
                 class: None,
                 attributes: vec![],
             },
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
         );
         assert!(!fsm.next(
-            4,
-            1,
             &XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
                 attributes: vec![]
-            }
+            },
+            4,
+            1,
         ));
     }
 
@@ -184,20 +136,16 @@ mod tests {
                 class: None,
                 attributes: vec![],
             },
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
         );
         assert!(fsm.next(
-            1,
-            1,
             &XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
                 attributes: vec![]
-            }
+            },
+            1,
+            1,
         ));
     }
     #[test]
@@ -210,20 +158,16 @@ mod tests {
                 class: None,
                 attributes: vec![],
             },
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
         );
         assert!(fsm.next(
-            1,
-            1,
             &XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
                 attributes: vec![]
-            }
+            },
+            1,
+            1,
         ));
     }
 }

@@ -1,9 +1,9 @@
-use super::fsm_session::FsmSession;
+use super::selection::Selection;
 use crate::XHtmlElement;
 
 struct FsmManager<'query, 'html> {
     list: Vec<XHtmlElement<'html>>,
-    sessions: Vec<FsmSession<'query, 'html>>,
+    sessions: Vec<Selection<'query, 'html>>,
 }
 
 impl<'query, 'html> FsmManager<'query, 'html> {

@@ -34,7 +34,6 @@ impl Combinator {
     }
 }
 
-
 impl<'a> Combinator {
     pub fn try_from(reader: &mut Reader<'a>) -> Option<Self> {
         let mut combinator: Option<Self> = None;
@@ -44,7 +43,7 @@ impl<'a> Combinator {
                 Some(c) if c == Self::Descendant && next_combinator != Self::Descendant => {
                     combinator = Some(next_combinator);
                 }
-                _ => ()
+                _ => (),
             }
         }
 
@@ -52,22 +51,24 @@ impl<'a> Combinator {
     }
 }
 
-
 pub struct Lexer {}
 impl Lexer {
-    pub fn next<'query>(reader: &mut Reader<'query>) -> (Combinator, QueryElement<'query>) {
+    pub fn next<'query>(reader: &mut Reader<'query>) -> Option<(Combinator, QueryElement<'query>)> {
+        if reader.eof() {
+            return None;
+        }
+
         // if it doesn't start with a Combinator the default is Combinator:Descendant,
-        // since a selector like `p` is technically a descendant search from the root, 
+        // since a selector like `p` is technically a descendant search from the root,
         // thus the actual query look like `%root% p`
 
         let combinator = Combinator::try_from(reader).unwrap_or(Combinator::Descendant);
 
         let element = QueryElement::from(reader);
 
-        return (combinator, element);
+        return Some((combinator, element));
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -76,8 +77,8 @@ mod tests {
     #[test]
     fn test_basic_element_selection_with_combinator() {
         let mut reader = Reader::new("element#id.class > other#other_id.other_class");
-        let (first_combinator, first_element) = Lexer::next(&mut reader);
-        let (second_combinator, second_element) = Lexer::next(&mut reader);
+        let (first_combinator, first_element) = Lexer::next(&mut reader).unwrap();
+        let (second_combinator, second_element) = Lexer::next(&mut reader).unwrap();
 
         assert_eq!(first_combinator, Combinator::Descendant);
 
@@ -102,8 +103,8 @@ mod tests {
     #[test]
     fn test_combinator_leading_selector() {
         let mut reader = Reader::new("~ element#id.class > other#other_id.other_class");
-        let (first_combinator, first_element) = Lexer::next(&mut reader);
-        let (second_combinator, second_element) = Lexer::next(&mut reader);
+        let (first_combinator, first_element) = Lexer::next(&mut reader).unwrap();
+        let (second_combinator, second_element) = Lexer::next(&mut reader).unwrap();
 
         assert_eq!(first_combinator, Combinator::SubsequentSibling);
 
