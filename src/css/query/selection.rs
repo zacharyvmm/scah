@@ -1,5 +1,6 @@
+use super::manager::DocumentPosition;
 use super::task::Task;
-use super::tree::Tree;
+use super::tree::MatchTree;
 use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{SelectionKind, SelectionTree};
@@ -8,7 +9,7 @@ pub struct Selection<'query, 'html> {
     selection_tree: &'query SelectionTree<'query>,
     tasks: Vec<Task>,
     retry_points: Vec<Task>,
-    tree: Tree<'html>,
+    tree: MatchTree<'html>,
 }
 
 impl<'query, 'html> Selection<'query, 'html> {
@@ -17,11 +18,11 @@ impl<'query, 'html> Selection<'query, 'html> {
             selection_tree,
             tasks: vec![Task::new()],
             retry_points: Vec::new(),
-            tree: Tree::new(),
+            tree: MatchTree::new(),
         }
     }
 
-    pub fn next(&mut self, element: &XHtmlElement<'html>, depth: usize) {
+    pub fn next(&mut self, element: &XHtmlElement<'html>, document_position: &DocumentPosition) {
         assert_ne!(self.tasks.len(), 0);
 
         let mut new_tasks: Vec<Task> = vec![];
@@ -29,7 +30,11 @@ impl<'query, 'html> Selection<'query, 'html> {
         for i in 0..self.tasks.len() {
             let ref mut task = self.tasks[i];
 
-            if task.next(self.selection_tree, depth, element) {
+            if task.next(
+                self.selection_tree,
+                document_position.element_depth,
+                element,
+            ) {
                 let kind = self
                     .selection_tree
                     .get_section_selection_kind(task.position.section);
@@ -38,13 +43,13 @@ impl<'query, 'html> Selection<'query, 'html> {
                     self.retry_points.push(task.clone());
                 }
 
-                task.parent_tree_position =
-                    self.tree.push(task.parent_tree_position, element.clone());
-
-                let next_tasks = task.move_foward(self.selection_tree, depth);
-                if let Some(next_tasks) = next_tasks {
+                // TODO: move `move_foward` inside the task next
+                // Selection should be able to know if their is a EndOfBranch or not
+                let new_branch_tasks =
+                    task.move_foward(self.selection_tree, document_position.element_depth);
+                if let Some(new_branch_tasks) = new_branch_tasks {
                     new_tasks.append(
-                        &mut next_tasks
+                        &mut new_branch_tasks
                             .into_iter()
                             .map(|pos| Task {
                                 parent_tree_position: task.parent_tree_position,
@@ -54,6 +59,11 @@ impl<'query, 'html> Selection<'query, 'html> {
                             .collect(),
                     );
                 }
+
+                task.parent_tree_position =
+                    self.tree
+                        .push(task.parent_tree_position, element.clone(), None, None);
+
                 if matches!(kind, SelectionKind::All(..)) {
                     continue;
                 }
@@ -79,7 +89,7 @@ impl<'query, 'html> Selection<'query, 'html> {
         }
     }
 
-    pub fn back(&mut self, element: &'html str, depth: usize) {
+    pub fn back(&mut self, element: &'html str, document_position: &DocumentPosition) {
         assert_ne!(self.tasks.len(), 0);
 
         let mut patterns_to_remove: Vec<usize> = vec![];
@@ -87,13 +97,17 @@ impl<'query, 'html> Selection<'query, 'html> {
         for i in 0..self.tasks.len() {
             let ref mut task = self.tasks[i];
 
-            if task.back(self.selection_tree, depth, element) {
+            if task.back(
+                self.selection_tree,
+                document_position.element_depth,
+                element,
+            ) {
                 let kind = self
                     .selection_tree
                     .get_section_selection_kind(task.position.section);
                 if self.selection_tree.is_save_point(&task.position) {
                     // TODO: Add real Content
-                    self.tree.set_content(task.parent_tree_position, None, None);
+                    self.tree.set_content(task.parent_tree_position, 0, 0);
                 }
 
                 task.move_backward(self.selection_tree);
@@ -112,7 +126,7 @@ impl<'query, 'html> Selection<'query, 'html> {
 }
 
 mod tests {
-    use super::super::tree::Node;
+    use super::super::tree::{ContentRange, Node};
     use crate::XHtmlElement;
     use crate::css::parser::element::QueryElement;
     use crate::css::parser::fsm::Fsm;
@@ -143,28 +157,45 @@ mod tests {
                 class: None,
                 attributes: vec![],
             },
-            0,
+            &DocumentPosition {
+                reader_position: 0,
+                text_content_position: 0,
+                element_depth: 0,
+            },
         );
 
         assert_eq!(
             selection.tree.list,
-            vec![Node {
-                value: XHtmlElement {
-                    name: "div",
-                    id: None,
-                    class: None,
-                    attributes: vec![],
+            vec![
+                Node {
+                    value: XHtmlElement {
+                        name: "root",
+                        class: None,
+                        id: None,
+                        attributes: Vec::new()
+                    },
+                    children: vec![1],
+                    inner_html: ContentRange::Empty,
+                    text_content: ContentRange::Empty,
                 },
-                inner_html: Option::None,
-                text_content: Option::None,
-                children: vec![],
-            }]
+                Node {
+                    value: XHtmlElement {
+                        name: "div",
+                        id: None,
+                        class: None,
+                        attributes: vec![],
+                    },
+                    inner_html: ContentRange::Empty,
+                    text_content: ContentRange::Empty,
+                    children: vec![],
+                }
+            ]
         );
 
         assert_eq!(
             selection.tasks,
             vec![Task {
-                parent_tree_position: 0,
+                parent_tree_position: 1,
                 position: Position { section: 0, fsm: 1 },
                 depths: vec![0]
             }]
@@ -186,7 +217,11 @@ mod tests {
                 class: None,
                 attributes: vec![],
             },
-            1,
+            &DocumentPosition {
+                reader_position: 0,
+                text_content_position: 0,
+                element_depth: 1,
+            },
         );
 
         assert_eq!(
@@ -194,14 +229,25 @@ mod tests {
             vec![
                 Node {
                     value: XHtmlElement {
+                        name: "root",
+                        class: None,
+                        id: None,
+                        attributes: Vec::new()
+                    },
+                    children: vec![1],
+                    inner_html: ContentRange::Empty,
+                    text_content: ContentRange::Empty,
+                },
+                Node {
+                    value: XHtmlElement {
                         name: "div",
                         id: None,
                         class: None,
                         attributes: vec![],
                     },
-                    inner_html: Option::None,
-                    text_content: Option::None,
-                    children: vec![1],
+                    inner_html: ContentRange::Empty,
+                    text_content: ContentRange::Empty,
+                    children: vec![2],
                 },
                 Node {
                     value: XHtmlElement {
@@ -210,8 +256,8 @@ mod tests {
                         class: None,
                         attributes: vec![],
                     },
-                    inner_html: Option::None,
-                    text_content: Option::None,
+                    inner_html: ContentRange::Empty,
+                    text_content: ContentRange::Empty,
                     children: vec![],
                 }
             ]
@@ -219,11 +265,7 @@ mod tests {
 
         assert_eq!(
             selection.tasks,
-            vec![Task {
-                parent_tree_position: 1,
-                position: Position { section: 0, fsm: 1 },
-                depths: vec![0, 1]
-            }]
+            vec![], // Should be empty as the selection is complete, thus the retry points are used for start up of the next ALL selection
         );
 
         assert_eq!(
@@ -235,7 +277,7 @@ mod tests {
                     depths: vec![]
                 },
                 Task {
-                    parent_tree_position: 0,
+                    parent_tree_position: 1,
                     position: Position { section: 0, fsm: 1 },
                     depths: vec![0]
                 }
