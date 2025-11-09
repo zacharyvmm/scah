@@ -61,7 +61,7 @@ impl<'query> FsmState {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Task {
     pub retry_from: Option<FsmState>,
     pub state: FsmState,
@@ -96,17 +96,16 @@ impl<'query> Task {
 
         return None;
     }
-
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct ScopedTask {
     pub scope_depth: usize,
     pub task: Task,
 }
 
 impl ScopedTask {
-    pub fn new(depth: usize, tree_position:usize, position: Position) -> Self {
+    pub fn new(depth: usize, tree_position: usize, position: Position) -> Self {
         Self {
             scope_depth: depth,
             task: Task {
@@ -120,7 +119,7 @@ impl ScopedTask {
         }
     }
 
-    fn in_scope(&self, current_depth: usize) -> bool {
+    pub fn in_scope(&self, current_depth: usize) -> bool {
         self.scope_depth > current_depth
     }
 }

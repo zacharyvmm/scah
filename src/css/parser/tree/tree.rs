@@ -44,7 +44,7 @@ impl<'query> SelectionTree<'query> {
             for index in 0..sections.len() {
                 if sections[index].parent == Option::None {
                     sections[index].parent = Some(last_element_index);
-                    last.children.push(index+1);
+                    last.children.push(index + 1);
                 }
             }
         }

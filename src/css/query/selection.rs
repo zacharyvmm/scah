@@ -32,6 +32,77 @@ impl<'query, 'html> Selection<'query, 'html> {
     pub fn next(&mut self, element: &XHtmlElement<'html>, document_position: &DocumentPosition) {
         assert_ne!(self.tasks.len(), 0);
 
+        // STEP 1: check scoped tasks
+
+        let mut remove_scoped_at_index: Vec<usize> = vec![];
+        let mut new_scoped_tasks: Vec<ScopedTask> = vec![];
+
+        for i in 0..self.scoped_tasks.len() {
+            let ref mut scoped_task = self.scoped_tasks[i];
+            if !scoped_task.in_scope(document_position.element_depth) {
+                remove_scoped_at_index.push(i);
+                continue;
+            }
+
+            let task = &scoped_task.task;
+
+            if task.state.next(
+                self.selection_tree,
+                document_position.element_depth,
+                element,
+            ) {
+                let mut new_scoped_task = scoped_task.clone();
+                let new_task = &mut new_scoped_task.task;
+
+                if self.selection_tree.get(&task.state.position).transition
+                    == Combinator::Descendant
+                {
+                    // This should only be done if the task is not done (meaning it will move forward)
+                    new_scoped_tasks.push(ScopedTask::new(
+                        document_position.element_depth,
+                        task.state.parent_tree_position,
+                        task.state.position.clone(),
+                    ));
+                }
+
+                new_task.state.parent_tree_position = self.tree.push(
+                    new_task.state.parent_tree_position,
+                    element.clone(),
+                    None,
+                    None,
+                );
+
+                // TODO: move `move_foward` inside the task next
+                // Selection should be able to know if their is a EndOfBranch or not
+                let new_branch_tasks = new_task
+                    .state
+                    .move_foward(self.selection_tree, document_position.element_depth);
+                if let Some(new_branch_tasks) = new_branch_tasks {
+                    new_scoped_tasks.append(
+                        &mut new_branch_tasks
+                            .into_iter()
+                            .map(|pos| {
+                                ScopedTask::new(
+                                    document_position.element_depth,
+                                    task.state.parent_tree_position,
+                                    pos,
+                                )
+                            })
+                            .collect(),
+                    );
+                }
+
+                new_scoped_tasks.push(new_scoped_task);
+                // if position is end of fsm SelectionTree and all Selection are First Selection, then
+            }
+        }
+        for remove_index in remove_scoped_at_index.iter() {
+            self.scoped_tasks.remove(*remove_index);
+        }
+        self.scoped_tasks.append(&mut new_scoped_tasks);
+
+        // STEP 2: check tasks
+
         for i in 0..self.tasks.len() {
             let ref mut task = self.tasks[i];
 
@@ -40,10 +111,6 @@ impl<'query, 'html> Selection<'query, 'html> {
                 document_position.element_depth,
                 element,
             ) {
-                let kind = self
-                    .selection_tree
-                    .get_section_selection_kind(task.state.position.section);
-
                 if self.selection_tree.get(&task.state.position).transition
                     == Combinator::Descendant
                 {
@@ -54,7 +121,6 @@ impl<'query, 'html> Selection<'query, 'html> {
                         task.state.position.clone(),
                     ));
                 }
-
 
                 task.state.parent_tree_position =
                     self.tree
