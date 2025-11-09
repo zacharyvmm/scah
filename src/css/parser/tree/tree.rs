@@ -25,6 +25,7 @@ impl NextPosition {
     }
 }
 
+#[derive(Debug)]
 pub struct SelectionTree<'query> {
     pub list: Vec<SelectionPart<'query>>,
 }
@@ -37,12 +38,13 @@ impl<'query> SelectionTree<'query> {
     pub fn append(&mut self, mut sections: Vec<SelectionPart<'query>>) -> () {
         let list_len = self.list.len();
         if list_len > 0 && sections.len() > 1 {
-            let ref mut last = self.list[list_len - 1];
+            let last_element_index = list_len - 1;
+            let ref mut last = self.list[last_element_index];
 
             for index in 0..sections.len() {
                 if sections[index].parent == Option::None {
-                    sections[index].parent = Some(list_len - 1);
-                    last.children.push(index);
+                    sections[index].parent = Some(last_element_index);
+                    last.children.push(index+1);
                 }
             }
         }
@@ -86,8 +88,8 @@ impl<'query> SelectionTree<'query> {
                 section
                     .children
                     .iter()
-                    .map(|child_index| Position {
-                        section: *child_index,
+                    .map(|child_offset| Position {
+                        section: *child_offset + position.section,
                         fsm: 0,
                     })
                     .collect(),

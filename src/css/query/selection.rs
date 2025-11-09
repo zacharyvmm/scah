@@ -1,5 +1,5 @@
 use super::manager::DocumentPosition;
-use super::task::{FsmState, Task, ScopedTask};
+use super::task::{FsmState, ScopedTask, Task};
 use super::tree::MatchTree;
 use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
@@ -7,14 +7,15 @@ use crate::css::parser::tree::{SelectionKind, SelectionTree};
 
 /*
  * A Selection works runs the fsm's using 2 types of tasks:
- * 1) the cursor tasks; this is a task that starts in the begining and always picks the first path.
+ * 1) the cursor tasks; this is a task that starts in the begining and always picks the last path.
  * 2) the scoped tasks; this is a task that is triggered by the cursor task of an other scoped task.
  *  The important distinction is that the scoped task terminates at a set scope depth (when <= to current depth: terminate).
  */
 
 pub struct Selection<'query, 'html> {
     selection_tree: &'query SelectionTree<'query>,
-    tasks: Vec<FsmState>,
+    tasks: Vec<Task>,
+    scoped_tasks: Vec<ScopedTask>,
     tree: MatchTree<'html>,
 }
 
@@ -22,7 +23,8 @@ impl<'query, 'html> Selection<'query, 'html> {
     pub fn new(selection_tree: &'query SelectionTree<'query>) -> Self {
         Self {
             selection_tree,
-            tasks: vec![FsmState::new()],
+            tasks: vec![Task::new(FsmState::new())],
+            scoped_tasks: vec![],
             tree: MatchTree::new(),
         }
     }
@@ -30,68 +32,56 @@ impl<'query, 'html> Selection<'query, 'html> {
     pub fn next(&mut self, element: &XHtmlElement<'html>, document_position: &DocumentPosition) {
         assert_ne!(self.tasks.len(), 0);
 
-        let mut new_tasks: Vec<FsmState> = vec![];
-
         for i in 0..self.tasks.len() {
             let ref mut task = self.tasks[i];
 
-            if task.next(
+            if task.state.next(
                 self.selection_tree,
                 document_position.element_depth,
                 element,
             ) {
                 let kind = self
                     .selection_tree
-                    .get_section_selection_kind(task.position.section);
+                    .get_section_selection_kind(task.state.position.section);
 
-                if self.selection_tree.get(&task.position).transition == Combinator::Descendant {
+                if self.selection_tree.get(&task.state.position).transition
+                    == Combinator::Descendant
+                {
                     // This should only be done if the task is not done (meaning it will move forward)
-                    //self.retry_points.push(task.clone());
+                    self.scoped_tasks.push(ScopedTask::new(
+                        document_position.element_depth,
+                        task.state.parent_tree_position,
+                        task.state.position.clone(),
+                    ));
                 }
+
+
+                task.state.parent_tree_position =
+                    self.tree
+                        .push(task.state.parent_tree_position, element.clone(), None, None);
 
                 // TODO: move `move_foward` inside the task next
                 // Selection should be able to know if their is a EndOfBranch or not
-                let new_branch_tasks =
-                    task.move_foward(self.selection_tree, document_position.element_depth);
+                let new_branch_tasks = task
+                    .state
+                    .move_foward(self.selection_tree, document_position.element_depth);
                 if let Some(new_branch_tasks) = new_branch_tasks {
-                    new_tasks.append(
+                    self.scoped_tasks.append(
                         &mut new_branch_tasks
                             .into_iter()
-                            .map(|pos| FsmState {
-                                parent_tree_position: task.parent_tree_position,
-                                position: pos,
-                                depths: task.depths.clone(),
+                            .map(|pos| {
+                                ScopedTask::new(
+                                    document_position.element_depth,
+                                    task.state.parent_tree_position,
+                                    pos,
+                                )
                             })
                             .collect(),
                     );
                 }
 
-                task.parent_tree_position =
-                    self.tree
-                        .push(task.parent_tree_position, element.clone(), None, None);
-
-                if matches!(kind, SelectionKind::All(..)) {
-                    continue;
-                }
-
-                // Step 3: Remove the pattern (if no textContent/innerHtml is needed)
-                // Go back to the last ALL selection in the fsms list
-                // If their are none then the whole selection is done
-            } /*else if depth == *task.depths.last().unwrap()
-            && (self.selection_tree.get(&task.position).transition == Combinator::NextSibling
-            || (self.selection_tree.get(&task.position).transition == Combinator::SubsequentSibling)
-            && matches!(
-            self.selection_tree.get(&task.position).state_kind,
-            SelectionKind::First(..)
-            ))
-            {
-            task.move_backward();
-            assert!(!task.is_reset());
-            }*/
-        }
-
-        if new_tasks.len() > 0 {
-            self.tasks.append(&mut new_tasks);
+                // if position is end of fsm SelectionTree and all Selection are First Selection, then
+            }
         }
     }
 
@@ -103,20 +93,20 @@ impl<'query, 'html> Selection<'query, 'html> {
         for i in 0..self.tasks.len() {
             let ref mut task = self.tasks[i];
 
-            if task.back(
+            if task.state.back(
                 self.selection_tree,
                 document_position.element_depth,
                 element,
             ) {
                 let kind = self
                     .selection_tree
-                    .get_section_selection_kind(task.position.section);
-                if self.selection_tree.is_save_point(&task.position) {
+                    .get_section_selection_kind(task.state.position.section);
+                if self.selection_tree.is_save_point(&task.state.position) {
                     // TODO: Add real Content
-                    self.tree.set_content(task.parent_tree_position, 0, 0);
+                    self.tree.set_content(task.state.parent_tree_position, 0, 0);
                 }
 
-                task.move_backward(self.selection_tree);
+                task.state.move_backward(self.selection_tree);
                 /*if task.is_reset() {
                     // TODO: Remove the pattern
                     patterns_to_remove.push(i);
@@ -200,21 +190,30 @@ mod tests {
 
         assert_eq!(
             selection.tasks,
-            vec![FsmState {
-                parent_tree_position: 1,
-                position: Position { section: 0, fsm: 1 },
-                depths: vec![0]
+            vec![Task {
+                retry_from: None,
+                state: FsmState {
+                    parent_tree_position: 1,
+                    position: Position { section: 0, fsm: 1 },
+                    depths: vec![0]
+                }
             }]
         );
 
-        // assert_eq!(
-        //     selection.retry_points,
-        //     vec![Task {
-        //         parent_tree_position: 0,
-        //         position: Position { section: 0, fsm: 0 },
-        //         depths: vec![]
-        //     }]
-        // );
+        assert_eq!(
+            selection.scoped_tasks,
+            vec![ScopedTask {
+                scope_depth: 0,
+                task: Task {
+                    retry_from: None,
+                    state: FsmState {
+                        parent_tree_position: 0,
+                        position: Position { section: 0, fsm: 0 },
+                        depths: vec![]
+                    },
+                },
+            }]
+        );
 
         selection.next(
             &XHtmlElement {
@@ -269,25 +268,244 @@ mod tests {
             ]
         );
 
+        // assert_eq!(
+        //     selection.tasks,
+        //     vec![], // After First Selection, their is no other information to gather, thus the task is removed.
+        // );
+
         assert_eq!(
-            selection.tasks,
-            vec![], // Should be empty as the selection is complete, thus the retry points are used for start up of the next ALL selection
+            selection.scoped_tasks,
+            vec![
+                ScopedTask {
+                    scope_depth: 0,
+                    task: Task {
+                        retry_from: None,
+                        state: FsmState {
+                            parent_tree_position: 0,
+                            position: Position { section: 0, fsm: 0 },
+                            depths: vec![]
+                        },
+                    },
+                },
+                ScopedTask {
+                    scope_depth: 1,
+                    task: Task {
+                        retry_from: None,
+                        state: FsmState {
+                            parent_tree_position: 1,
+                            position: Position { section: 0, fsm: 1 },
+                            depths: vec![]
+                        },
+                    },
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_complex_fsm_query() {
+        let mut first = Reader::new("div p.class");
+        let mut second = Reader::new("span");
+        let mut second_alternate = Reader::new("a");
+
+        let mut selection_tree = SelectionTree::new(Vec::from([SelectionPart::new(
+            &mut first,
+            SelectionKind::First(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        )]));
+
+        selection_tree.append(Vec::from([
+            SelectionPart::new(
+                &mut second,
+                SelectionKind::First(Save {
+                    inner_html: false,
+                    text_content: false,
+                }),
+            ),
+            SelectionPart::new(
+                &mut second_alternate,
+                SelectionKind::First(Save {
+                    inner_html: false,
+                    text_content: false,
+                }),
+            ),
+        ]));
+
+        let mut selection = Selection::new(&selection_tree);
+
+        selection.next(
+            &XHtmlElement {
+                name: "div",
+                id: None,
+                class: None,
+                attributes: vec![],
+            },
+            &DocumentPosition {
+                reader_position: 0,
+                text_content_position: 0,
+                element_depth: 0,
+            },
         );
 
-        // assert_eq!(
-        //     selection.retry_points,
-        //     vec![
-        //         Task {
-        //             parent_tree_position: 0,
-        //             position: Position { section: 0, fsm: 0 },
-        //             depths: vec![]
-        //         },
-        //         Task {
-        //             parent_tree_position: 1,
-        //             position: Position { section: 0, fsm: 1 },
-        //             depths: vec![0]
-        //         }
-        //     ]
-        // );
+        assert_eq!(
+            selection.tree.list,
+            vec![
+                Node {
+                    value: XHtmlElement {
+                        name: "root",
+                        class: None,
+                        id: None,
+                        attributes: Vec::new()
+                    },
+                    children: vec![1],
+                    inner_html: ContentRange::Empty,
+                    text_content: ContentRange::Empty,
+                },
+                Node {
+                    value: XHtmlElement {
+                        name: "div",
+                        id: None,
+                        class: None,
+                        attributes: vec![],
+                    },
+                    inner_html: ContentRange::Empty,
+                    text_content: ContentRange::Empty,
+                    children: vec![],
+                }
+            ]
+        );
+
+        assert_eq!(
+            selection.tasks,
+            vec![Task {
+                retry_from: None,
+                state: FsmState {
+                    parent_tree_position: 1,
+                    position: Position { section: 0, fsm: 1 },
+                    depths: vec![0]
+                }
+            }]
+        );
+
+        assert_eq!(
+            selection.scoped_tasks,
+            vec![ScopedTask {
+                scope_depth: 0,
+                task: Task {
+                    retry_from: None,
+                    state: FsmState {
+                        parent_tree_position: 0,
+                        position: Position { section: 0, fsm: 0 },
+                        depths: vec![]
+                    },
+                },
+            }]
+        );
+
+        selection.next(
+            &XHtmlElement {
+                name: "p",
+                id: None,
+                class: Some("class"),
+                attributes: vec![],
+            },
+            &DocumentPosition {
+                reader_position: 0,
+                text_content_position: 0,
+                element_depth: 1,
+            },
+        );
+
+        assert_eq!(
+            selection.tree.list,
+            vec![
+                Node {
+                    value: XHtmlElement {
+                        name: "root",
+                        class: None,
+                        id: None,
+                        attributes: Vec::new()
+                    },
+                    children: vec![1],
+                    inner_html: ContentRange::Empty,
+                    text_content: ContentRange::Empty,
+                },
+                Node {
+                    value: XHtmlElement {
+                        name: "div",
+                        id: None,
+                        class: None,
+                        attributes: vec![],
+                    },
+                    inner_html: ContentRange::Empty,
+                    text_content: ContentRange::Empty,
+                    children: vec![2],
+                },
+                Node {
+                    value: XHtmlElement {
+                        name: "p",
+                        id: None,
+                        class: Some("class"),
+                        attributes: vec![],
+                    },
+                    inner_html: ContentRange::Empty,
+                    text_content: ContentRange::Empty,
+                    children: vec![],
+                }
+            ]
+        );
+
+        assert_eq!(
+            selection.tasks,
+            vec![Task {
+                retry_from: None,
+                state: FsmState {
+                    parent_tree_position: 2,
+                    position: Position { section: 2, fsm: 0 },
+                    depths: vec![0, 1]
+                }
+            }]
+        );
+
+        assert_eq!(
+            selection.scoped_tasks,
+            vec![
+                ScopedTask {
+                    scope_depth: 0,
+                    task: Task {
+                        retry_from: None,
+                        state: FsmState {
+                            parent_tree_position: 0,
+                            position: Position { section: 0, fsm: 0 },
+                            depths: vec![]
+                        },
+                    },
+                },
+                ScopedTask {
+                    scope_depth: 1,
+                    task: Task {
+                        retry_from: None,
+                        state: FsmState {
+                            parent_tree_position: 1,
+                            position: Position { section: 0, fsm: 1 },
+                            depths: vec![]
+                        },
+                    },
+                },
+                ScopedTask {
+                    scope_depth: 1,
+                    task: Task {
+                        retry_from: None,
+                        state: FsmState {
+                            parent_tree_position: 2,
+                            position: Position { section: 1, fsm: 0 },
+                            depths: vec![]
+                        }
+                    }
+                },
+            ]
+        );
     }
 }

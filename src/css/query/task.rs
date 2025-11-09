@@ -42,9 +42,7 @@ impl<'query> FsmState {
                 None
             }
             NextPosition::Fork(mut pos_list) => {
-                if pos_list.len() == 0 {
-                    panic!("Fork with no positions");
-                }
+                assert_ne!(pos_list.len(), 0, "Fork with no positions");
 
                 self.position = pos_list.pop()?;
 
@@ -63,9 +61,10 @@ impl<'query> FsmState {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct Task {
-    retry_from: Option<FsmState>,
-    state: FsmState,
+    pub retry_from: Option<FsmState>,
+    pub state: FsmState,
 }
 
 impl<'query> Task {
@@ -97,22 +96,24 @@ impl<'query> Task {
 
         return None;
     }
+
 }
 
+#[derive(PartialEq, Debug)]
 pub struct ScopedTask {
-    scope_depth: usize,
-    task: Task,
+    pub scope_depth: usize,
+    pub task: Task,
 }
 
 impl ScopedTask {
-    fn new(depth: usize, origin_state: &FsmState) -> Self {
+    pub fn new(depth: usize, tree_position:usize, position: Position) -> Self {
         Self {
             scope_depth: depth,
             task: Task {
                 retry_from: None,
                 state: FsmState {
-                    parent_tree_position: origin_state.parent_tree_position,
-                    position: origin_state.position.clone(),
+                    parent_tree_position: tree_position,
+                    position: position,
                     depths: vec![],
                 },
             },
