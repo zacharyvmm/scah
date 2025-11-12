@@ -1,4 +1,5 @@
 use super::super::fsm::Fsm;
+use super::super::lexer::Combinator;
 use super::selection::SelectionKind;
 use super::selection::SelectionPart;
 use crate::css::parser::element::QueryElement;
@@ -59,6 +60,10 @@ impl<'query> SelectionTree<'query> {
     pub fn get_section_selection_kind(&self, section_index: usize) -> &SelectionKind {
         assert!(section_index < self.list.len());
         return &self.list[section_index].kind;
+    }
+
+    pub fn is_descendant(&self, position: &Position) -> bool {
+        self.get(position).transition == Combinator::Descendant
     }
 
     pub fn is_save_point(&self, position: &Position) -> bool {
@@ -260,7 +265,7 @@ mod tests {
                         text_content: false
                     }),
                     parent: Option::None,
-                    children: Vec::from([0, 1]),
+                    children: Vec::from([1, 2]),
                 },
                 SelectionPart {
                     fsms: Vec::from([Fsm {
