@@ -20,7 +20,7 @@ impl ContentRange {
 // This is essentially a Selection DOM or Selection Object Model
 #[derive(PartialEq, Debug)]
 pub struct MatchTree<'html> {
-    pub(super) list: Vec<Node<'html>>,
+    pub(crate) list: Vec<Node<'html>>,
 }
 
 #[derive(PartialEq, Debug)]

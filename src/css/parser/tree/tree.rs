@@ -32,8 +32,8 @@ pub struct SelectionTree<'query> {
 }
 
 impl<'query> SelectionTree<'query> {
-    pub fn new(list: Vec<SelectionPart<'query>>) -> Self {
-        Self { list: list }
+    pub fn new(root_element: SelectionPart<'query>) -> Self {
+        Self { list: vec![root_element] }
     }
 
     pub fn append(&mut self, mut sections: Vec<SelectionPart<'query>>) -> () {
@@ -143,7 +143,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let tree = SelectionTree::new(Vec::from([section]));
+        let tree = SelectionTree::new(section);
 
         assert_eq!(
             tree.list[0].fsms,
@@ -183,7 +183,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let mut selection = SelectionTree::new(Vec::from([section]));
+        let mut selection = SelectionTree::new(section);
 
         assert_eq!(
             selection.list,

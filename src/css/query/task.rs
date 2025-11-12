@@ -141,7 +141,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let selection_tree = SelectionTree::new(Vec::from([section]));
+        let selection_tree = SelectionTree::new(section);
 
         let mut state = FsmState::new();
         let mut next: bool = false;

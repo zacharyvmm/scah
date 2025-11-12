@@ -1,30 +1,39 @@
 use super::selection::Selection;
 use crate::XHtmlElement;
+use crate::css::parser::tree::SelectionTree;
+use crate::css::query::tree::MatchTree;
 
-pub struct DocumentPosition {
+pub(crate) struct DocumentPosition {
     pub reader_position: usize,
     pub text_content_position: usize,
     pub element_depth: usize,
 }
 
-struct FsmManager<'query, 'html> {
-    list: Vec<XHtmlElement<'html>>,
+#[derive(Debug)]
+pub struct FsmManager<'html, 'query:'html> {
     sessions: Vec<Selection<'query, 'html>>,
 }
 
-impl<'query, 'html> FsmManager<'query, 'html> {
-    fn new() -> Self {
+impl<'html, 'query:'html> FsmManager<'html, 'query> {
+    pub fn new(queries: &'query Vec<SelectionTree<'query>>) -> Self {
         Self {
-            list: Vec::new(),
-            sessions: Vec::new(),
+            sessions: queries.iter().map(|query| Selection::new(query)).collect(),
         }
     }
 
-    fn next(&'html mut self, xhtml_element: XHtmlElement<'html>, position: DocumentPosition) {
+    pub fn next(&mut self, xhtml_element: XHtmlElement<'html>, position: &DocumentPosition) {
         for session in self.sessions.iter_mut() {
-            session.next(&xhtml_element, &position);
+            session.next(&xhtml_element, position);
         }
     }
 
-    fn step_back(depth: usize) {}
+    pub fn back(&mut self, xhtml_element: &'html str, position: &DocumentPosition) {
+        for session in self.sessions.iter_mut() {
+            session.back(&xhtml_element, position);
+        }
+    }
+
+    pub fn matches(self) -> Vec<MatchTree<'html>> {
+        self.sessions.into_iter().map(|selection| selection.matches()).collect()
+    }
 }

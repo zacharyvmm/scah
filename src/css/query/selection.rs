@@ -12,6 +12,7 @@ use crate::css::parser::tree::{SelectionKind, SelectionTree};
  *  The important distinction is that the scoped task terminates at a set scope depth (when <= to current depth: terminate).
  */
 
+#[derive(Debug)]
 pub struct Selection<'query, 'html> {
     selection_tree: &'query SelectionTree<'query>,
     tasks: Vec<Task>,
@@ -48,6 +49,8 @@ impl<'query, 'html> Selection<'query, 'html> {
                 continue;
             }
 
+            println!("Scope Match with `{:?}`", element);
+
             if self.selection_tree.get(&task.state.position).transition == Combinator::Descendant {
                 // This should only be done if the task is not done (meaning it will move forward)
                 new_scoped_tasks.push(ScopedTask::new(
@@ -60,13 +63,14 @@ impl<'query, 'html> Selection<'query, 'html> {
             let mut new_scoped_task = scoped_task.clone();
             let new_task = &mut new_scoped_task.task;
 
-
-            new_task.state.parent_tree_position = self.tree.push(
-                new_task.state.parent_tree_position,
-                element.clone(),
-                None,
-                None,
-            );
+            if self.selection_tree.is_save_point(&task.state.position) {
+                new_task.state.parent_tree_position = self.tree.push(
+                    new_task.state.parent_tree_position,
+                    element.clone(),
+                    None,
+                    None,
+                );
+            }
 
             // TODO: move `move_foward` inside the task next
             // Selection should be able to know if their is a EndOfBranch or not
@@ -102,8 +106,10 @@ impl<'query, 'html> Selection<'query, 'html> {
                 document_position.element_depth,
                 element,
             ) {
+                println!("(depth: {}) NO Match  `{:?}`", document_position.element_depth, task);
                 continue;
             }
+            println!("Match with `{:?}`", element);
             if self.selection_tree.get(&task.state.position).transition == Combinator::Descendant {
                 // This should only be done if the task is not done (meaning it will move forward)
                 self.scoped_tasks.push(ScopedTask::new(
@@ -113,9 +119,11 @@ impl<'query, 'html> Selection<'query, 'html> {
                 ));
             }
 
-            task.state.parent_tree_position =
-                self.tree
-                    .push(task.state.parent_tree_position, element.clone(), None, None);
+            if self.selection_tree.is_save_point(&task.state.position) {
+                task.state.parent_tree_position =
+                    self.tree
+                        .push(task.state.parent_tree_position, element.clone(), None, None);
+            }
 
             // TODO: move `move_foward` inside the task next
             // Selection should be able to know if their is a EndOfBranch or not
@@ -180,6 +188,10 @@ impl<'query, 'html> Selection<'query, 'html> {
 
         //self.patterns.remove
     }
+
+    pub(super) fn matches(self) -> MatchTree<'html> {
+        self.tree
+    }
 }
 
 mod tests {
@@ -203,7 +215,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let selection_tree = SelectionTree::new(Vec::from([section]));
+        let selection_tree = SelectionTree::new(section);
 
         let mut selection = Selection::new(&selection_tree);
 
@@ -223,30 +235,17 @@ mod tests {
 
         assert_eq!(
             selection.tree.list,
-            vec![
-                Node {
-                    value: XHtmlElement {
-                        name: "root",
-                        class: None,
-                        id: None,
-                        attributes: Vec::new()
-                    },
-                    children: vec![1],
-                    inner_html: ContentRange::Empty,
-                    text_content: ContentRange::Empty,
+            vec![Node {
+                value: XHtmlElement {
+                    name: "root",
+                    class: None,
+                    id: None,
+                    attributes: Vec::new()
                 },
-                Node {
-                    value: XHtmlElement {
-                        name: "div",
-                        id: None,
-                        class: None,
-                        attributes: vec![],
-                    },
-                    inner_html: ContentRange::Empty,
-                    text_content: ContentRange::Empty,
-                    children: vec![],
-                }
-            ]
+                children: vec![],
+                inner_html: ContentRange::Empty,
+                text_content: ContentRange::Empty,
+            },]
         );
 
         assert_eq!(
@@ -254,7 +253,7 @@ mod tests {
             vec![Task {
                 retry_from: None,
                 state: FsmState {
-                    parent_tree_position: 1,
+                    parent_tree_position: 0,
                     position: Position { section: 0, fsm: 1 },
                     depths: vec![0]
                 }
@@ -306,17 +305,6 @@ mod tests {
                 },
                 Node {
                     value: XHtmlElement {
-                        name: "div",
-                        id: None,
-                        class: None,
-                        attributes: vec![],
-                    },
-                    inner_html: ContentRange::Empty,
-                    text_content: ContentRange::Empty,
-                    children: vec![2],
-                },
-                Node {
-                    value: XHtmlElement {
                         name: "a",
                         id: None,
                         class: None,
@@ -353,7 +341,7 @@ mod tests {
                     task: Task {
                         retry_from: None,
                         state: FsmState {
-                            parent_tree_position: 1,
+                            parent_tree_position: 0,
                             position: Position { section: 0, fsm: 1 },
                             depths: vec![]
                         },
@@ -369,13 +357,13 @@ mod tests {
         let mut second = Reader::new("span");
         let mut second_alternate = Reader::new("a");
 
-        let mut selection_tree = SelectionTree::new(Vec::from([SelectionPart::new(
+        let mut selection_tree = SelectionTree::new(SelectionPart::new(
             &mut first,
             SelectionKind::First(Save {
                 inner_html: false,
                 text_content: false,
             }),
-        )]));
+        ));
 
         selection_tree.append(Vec::from([
             SelectionPart::new(
@@ -412,30 +400,17 @@ mod tests {
 
         assert_eq!(
             selection.tree.list,
-            vec![
-                Node {
-                    value: XHtmlElement {
-                        name: "root",
-                        class: None,
-                        id: None,
-                        attributes: Vec::new()
-                    },
-                    children: vec![1],
-                    inner_html: ContentRange::Empty,
-                    text_content: ContentRange::Empty,
+            vec![Node {
+                value: XHtmlElement {
+                    name: "root",
+                    class: None,
+                    id: None,
+                    attributes: Vec::new()
                 },
-                Node {
-                    value: XHtmlElement {
-                        name: "div",
-                        id: None,
-                        class: None,
-                        attributes: vec![],
-                    },
-                    inner_html: ContentRange::Empty,
-                    text_content: ContentRange::Empty,
-                    children: vec![],
-                }
-            ]
+                children: vec![],
+                inner_html: ContentRange::Empty,
+                text_content: ContentRange::Empty,
+            },]
         );
 
         assert_eq!(
@@ -443,7 +418,7 @@ mod tests {
             vec![Task {
                 retry_from: None,
                 state: FsmState {
-                    parent_tree_position: 1,
+                    parent_tree_position: 0,
                     position: Position { section: 0, fsm: 1 },
                     depths: vec![0]
                 }
@@ -495,17 +470,6 @@ mod tests {
                 },
                 Node {
                     value: XHtmlElement {
-                        name: "div",
-                        id: None,
-                        class: None,
-                        attributes: vec![],
-                    },
-                    inner_html: ContentRange::Empty,
-                    text_content: ContentRange::Empty,
-                    children: vec![2],
-                },
-                Node {
-                    value: XHtmlElement {
                         name: "p",
                         id: None,
                         class: Some("class"),
@@ -523,7 +487,7 @@ mod tests {
             vec![Task {
                 retry_from: None,
                 state: FsmState {
-                    parent_tree_position: 2,
+                    parent_tree_position: 1,
                     position: Position { section: 2, fsm: 0 },
                     depths: vec![0, 1]
                 }
@@ -549,7 +513,7 @@ mod tests {
                     task: Task {
                         retry_from: None,
                         state: FsmState {
-                            parent_tree_position: 1,
+                            parent_tree_position: 0,
                             position: Position { section: 0, fsm: 1 },
                             depths: vec![]
                         },
@@ -560,7 +524,7 @@ mod tests {
                     task: Task {
                         retry_from: None,
                         state: FsmState {
-                            parent_tree_position: 2,
+                            parent_tree_position: 1,
                             position: Position { section: 1, fsm: 0 },
                             depths: vec![]
                         }

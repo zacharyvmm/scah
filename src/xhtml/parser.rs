@@ -1,35 +1,29 @@
 use super::element::element::XHtmlTag;
 use super::text_content::TextContent;
-use crate::css::selectors::{Body, Selectors};
-use crate::utils::reader::Reader;
-use std::ops::Range;
+use crate::css::FsmManager;
+use crate::css::DocumentPosition;
+use crate::utils::Reader;
 
-#[derive(Debug, PartialEq)]
-struct StackItem<'a> {
-    name: &'a str,
-    body: Option<Body<'a>>,
+pub struct XHtmlParser<'html, 'query> {
+    position: DocumentPosition,
+    pub content: TextContent<'html>,
+    pub selectors: FsmManager<'html, 'query>,
 }
 
-pub struct XHtmlParser<'a, 'query> {
-    stack: Vec<StackItem<'a>>,
-    pub content: TextContent<'a>,
-    pub selectors: Selectors<'query, 'a>,
-}
-
-impl<'a, 'query> XHtmlParser<'a, 'query> {
-    pub fn new(selectors: Selectors<'query, 'a>) -> Self {
+impl<'html, 'query> XHtmlParser<'html, 'query> {
+    pub fn new(selectors: FsmManager<'query, 'html>) -> Self {
         return Self {
-            stack: Vec::new(),
+            position: DocumentPosition {
+                element_depth: 0,
+                reader_position: 0, // for inner_html
+                text_content_position: 0,
+            },
             content: TextContent::new(),
             selectors: selectors,
         };
     }
 
-    fn depth(&self) -> u8 {
-        self.stack.len() as u8
-    }
-
-    pub fn next(&mut self, reader: &mut Reader<'a>) -> bool {
+    pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
         // move until it finds the first `<`
         reader.next_while(|c| c != '<');
 
@@ -40,11 +34,14 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
 
         self.content.push(reader, before_element_position);
         //self.content.set_start(reader.get_position());
+
         let tag = {
             let mut tag: Option<XHtmlTag> = None;
 
             while tag.is_none() {
+                self.position.reader_position = reader.get_position();
                 tag = XHtmlTag::from(&mut *reader);
+                self.content.set_start(reader.get_position());
             }
 
             tag.unwrap()
@@ -55,84 +52,30 @@ impl<'a, 'query> XHtmlParser<'a, 'query> {
 
         match tag {
             XHtmlTag::Open(element) => {
-                self.content.set_start(reader.get_position());
-
-                // TODO: if conforms a FSM end then add the optional body
-
-                // Check already created FSM's list
-                // Check new FSM list
-
-                let name = element.name;
-
-                let need_more_info = self.selectors.feed(element, self.depth());
-
-                if need_more_info.is_none() {
-                    self.stack.push(StackItem {
-                        name: name,
-                        body: None,
-                    });
-
-                    return true;
-                }
-
-                let (wait, mut body) = need_more_info.unwrap();
-                assert!(wait.text_content | wait.inner_html);
-
-                if wait.text_content {
-                    body.content.text_content = Some(Range {
-                        start: self.content.get_position(),
-                        end: self.content.get_position(),
-                    })
-                }
-
-                if wait.inner_html {
-                    body.content.inner_html = Some(Range {
-                        start: reader.get_position(),
-                        end: reader.get_position(),
-                    })
-                }
-                self.stack.push(StackItem {
-                    name: name,
-                    body: Some(body),
-                });
-
-                return true;
+                println!("opened: `{}`", element.name);
+                self.position.element_depth += 1;
+                self.position.reader_position = reader.get_position();
+                self.selectors.next(element, &self.position);
             }
             XHtmlTag::Close(closing_tag) => {
-                self.content.set_start(reader.get_position());
-                while let Some(item) = self.stack.pop() {
-                    if let Some(mut body) = item.body {
-                        if let Some(ref mut range) = body.content.inner_html {
-                            range.end = before_element_position;
-                        }
-
-                        if let Some(ref mut range) = body.content.text_content {
-                            range.end = self.content.get_position();
-                        }
-
-                        self.selectors.on_stack_pop(body);
-                    }
-
-                    self.selectors.back(self.depth());
-
-                    if item.name == closing_tag {
-                        break;
-                    }
-                }
-                return self.stack.len() != 0;
+                println!("closed: `{closing_tag}`");
+                self.position.element_depth -= 1;
+                self.selectors.back(closing_tag, &self.position);
             }
         }
+
+        !reader.eof()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::css::selection_map::{BodyContent, Select, SelectionMap};
-    use crate::css::selectors::{InnerContent, SelectorQuery, SelectorQueryKind, Selectors};
-    use crate::xhtml::element::element::XHtmlElement;
+    use crate::utils::Reader;
+    use crate::css::{Save, SelectionKind, SelectionPart, SelectionTree, FsmManager, MatchTree, Node};
+    use crate::xhtml::element::element::{Attribute, XHtmlElement};
 
-    const basic_html: &str = r#"
+    const BASIC_HTML: &str = r#"
         <html>
             <h1>Hello World</h1>
             <p class="indent">
@@ -143,185 +86,56 @@ mod tests {
 
     #[test]
     fn test_basic_html() {
-        let mut reader = Reader::new(basic_html);
+        let mut reader = Reader::new(BASIC_HTML);
 
-        let mut parser = XHtmlParser::new(Selectors::new(Vec::new()));
+        let mut query = Reader::new("p.indent > .bold");
 
-        // STEP 1
-        let mut continue_parser = parser.next(&mut reader);
-        assert!(continue_parser);
-        assert_eq!(
-            parser.stack,
-            Vec::from([StackItem {
-                name: "html",
-                body: None
-            }])
-        );
-
-        // STEP 2
-        continue_parser = parser.next(&mut reader);
-        assert!(continue_parser);
-        assert_eq!(
-            parser.stack,
-            Vec::from([
-                StackItem {
-                    name: "html",
-                    body: None
-                },
-                StackItem {
-                    name: "h1",
-                    body: None
-                }
-            ])
-        );
-
-        // STEP 3
-        continue_parser = parser.next(&mut reader);
-        assert!(continue_parser);
-
-        // STEP 4
-        continue_parser = parser.next(&mut reader);
-        assert!(continue_parser);
-        assert_eq!(
-            parser.stack,
-            Vec::from([
-                StackItem {
-                    name: "html",
-                    body: None
-                },
-                StackItem {
-                    name: "p",
-                    body: None
-                }
-            ])
-        );
-
-        // STEP 5
-        continue_parser = parser.next(&mut reader);
-        assert!(continue_parser);
-        assert_eq!(
-            parser.stack,
-            Vec::from([
-                StackItem {
-                    name: "html",
-                    body: None
-                },
-                StackItem {
-                    name: "p",
-                    body: None
-                },
-                StackItem {
-                    name: "span",
-                    body: None
-                }
-            ])
-        );
-
-        // STEP 6
-        continue_parser = parser.next(&mut reader);
-        assert!(continue_parser);
-        assert_eq!(
-            parser.stack,
-            Vec::from([
-                StackItem {
-                    name: "html",
-                    body: None
-                },
-                StackItem {
-                    name: "p",
-                    body: None
-                }
-            ])
-        );
-
-        // STEP 7
-        continue_parser = parser.next(&mut reader);
-        assert!(continue_parser);
-
-        // STEP 8
-        continue_parser = parser.next(&mut reader);
-        assert!(!continue_parser);
-        assert_eq!(parser.stack.len(), 0);
-    }
-
-    #[test]
-    fn test_basic_html_with_selection() {
-        let mut reader = Reader::new(basic_html);
-        let queries = Vec::from([SelectorQuery {
-            kind: SelectorQueryKind::All,
-            query: "p.indent > .bold",
-            data: InnerContent {
+        let section = SelectionPart::new(
+            &mut query,
+            SelectionKind::All(Save {
                 inner_html: false,
                 text_content: false,
-                //attributes: Vec::new(),
-            },
-        }]);
-
-        let mut parser = XHtmlParser::new(Selectors::new(queries));
-
-        while parser.next(&mut reader) {}
-
-        assert_eq!(
-            parser.selectors.map,
-            SelectionMap {
-                elements: Vec::from([BodyContent {
-                    element: XHtmlElement {
-                        name: "span",
-                        id: Some("name"),
-                        class: Some("bold"),
-                        attributes: Vec::new()
-                    },
-                    text_content: None,
-                    inner_html: None
-                }]),
-                mappings: Vec::from([Select::All("p.indent > .bold", Vec::from([0]))]),
-            }
+            }),
         );
-    }
+        let selection_tree = SelectionTree::new(section);
 
-    #[test]
-    fn test_basic_html_with_selection_with_text_content_and_inner_html() {
-        let mut reader = Reader::new(basic_html);
-        let queries = Vec::from([SelectorQuery {
-            kind: SelectorQueryKind::First,
-            query: "p.indent > .bold",
-            data: InnerContent {
-                inner_html: true,
-                text_content: true,
-                //attributes: Vec::new(),
-            },
-        }]);
+        let queries = vec![selection_tree];
+        let manager = FsmManager::new(&queries);
 
-        let mut parser = XHtmlParser::new(Selectors::new(queries));
+        let mut parser = XHtmlParser::new(manager);
 
-        while parser.next(&mut reader) {}
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
 
-        assert_eq!(
-            parser.content.join(
-                parser.selectors.map.elements[0]
-                    .text_content
-                    .clone()
-                    .unwrap()
-            ),
-            "Zachary"
-        );
-        assert_eq!(
-            reader.slice(parser.selectors.map.elements[0].inner_html.clone().unwrap()),
-            "Zachary"
-        );
+        println!("{:?}", queries);
 
-        assert_eq!(
-            parser.selectors.map.mappings,
-            Vec::from([Select::One("p.indent > .bold", Some(0))]),
-        );
+        while parser.next(&mut reader) {
+            println!("{:?}", parser.selectors);
+        }
+
+        assert_eq!(parser.selectors.matches()[0].list[1].value, 
+                        XHtmlElement { name: "span", id: Some("name"), class: Some("bold"), attributes: vec![] })
     }
 
     #[test]
     fn test_text_content() {
-        let mut reader = Reader::new(basic_html);
-        let queries = Vec::from([]);
+        let mut reader = Reader::new(BASIC_HTML);
 
-        let mut parser = XHtmlParser::new(Selectors::new(queries));
+        let mut query = Reader::new("p.indent > .bold");
+
+        let section = SelectionPart::new(
+            &mut query,
+            SelectionKind::All(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        );
+        let selection_tree = SelectionTree::new(section);
+
+        let queries = vec![selection_tree];
+        let manager = FsmManager::new(&queries);
+
+        let mut parser = XHtmlParser::new(manager);
 
         let mut continue_parser = parser.next(&mut reader); // <html>
         assert!(continue_parser);
@@ -367,20 +181,46 @@ mod tests {
     }
 
     #[test]
-    fn test_fsm_states() {
-        let mut reader = Reader::new(basic_html);
-        let queries = Vec::from([SelectorQuery {
-            kind: SelectorQueryKind::All,
-            query: "p.indent > .bold",
-            data: InnerContent {
+    fn test_top_level_multi_selection() {
+        let mut reader = Reader::new(BASIC_HTML);
+
+        let mut query_1 = Reader::new("p.indent > .bold");
+        let mut query_2 = Reader::new("h1 + .indent #name");
+
+        let selection_tree_1 = SelectionTree::new(SelectionPart::new(
+            &mut query_1,
+            SelectionKind::All(Save {
                 inner_html: false,
                 text_content: false,
-                //attributes: Vec::new(),
-            },
-        }]);
+            }),
+        ));
 
-        let mut parser = XHtmlParser::new(Selectors::new(queries));
+        let selection_tree_2 = SelectionTree::new(SelectionPart::new(
+            &mut query_2,
+            SelectionKind::All(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        ));
 
-        while parser.next(&mut reader) {}
+        let queries = vec![selection_tree_1, selection_tree_2];
+        let manager = FsmManager::new(&queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
+
+        println!("{:?}", queries);
+
+        while parser.next(&mut reader) {
+            println!("{:?}", parser.selectors);
+        }
+
+        let matches = parser.selectors.matches();
+        assert_eq!(matches[0].list[1].value, 
+                        XHtmlElement { name: "span", id: Some("name"), class: Some("bold"), attributes: vec![] });
+        assert_eq!(matches[1].list[1].value, 
+                        XHtmlElement { name: "span", id: Some("name"), class: Some("bold"), attributes: vec![] });
     }
 }
