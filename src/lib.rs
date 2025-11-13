@@ -2,6 +2,8 @@ mod css;
 mod utils;
 mod xhtml;
 
+pub use xhtml::element::element::{Attribute, XHtmlElement};
+/*
 pub use css::selection_map::{BodyContent, SelectionMap};
 use css::selectors::Selectors;
 pub use css::selectors::{InnerContent, SelectorQuery, SelectorQueryKind};
@@ -22,3 +24,4 @@ pub fn parse<'html, 'query>(
 
     return (parser.selectors.map, parser.content);
 }
+*/

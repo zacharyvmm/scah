@@ -1,5 +1,5 @@
-use super::element::element::QueryElement;
-use crate::utils::reader::Reader;
+use super::element::QueryElement;
+use crate::utils::Reader;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Combinator {
@@ -34,8 +34,8 @@ impl Combinator {
     }
 }
 
-impl<'a> From<&mut Reader<'a>> for Combinator {
-    fn from(reader: &mut Reader<'a>) -> Self {
+impl<'a> Combinator {
+    pub fn try_from(reader: &mut Reader<'a>) -> Option<Self> {
         let mut combinator: Option<Self> = None;
         while let Some(next_combinator) = Combinator::next(reader) {
             match combinator {
@@ -43,56 +43,30 @@ impl<'a> From<&mut Reader<'a>> for Combinator {
                 Some(c) if c == Self::Descendant && next_combinator != Self::Descendant => {
                     combinator = Some(next_combinator);
                 }
-                _ => {}
+                _ => (),
             }
         }
 
-        return combinator.expect("A combinator should be here");
+        return combinator;
     }
 }
 
-/*#[derive(Debug, PartialEq, Clone)]
-pub enum ChainKind {
-    And,
-    Or,
-    Xor,
-    Not,
-    Nand,
-    Nor,
-}
-*/
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum PatternStep<'a> {
-    Element(QueryElement<'a>),
-
-    Combinator(Combinator),
-
-    Has(QueryElement<'a>), // `:has()`
-    Not(QueryElement<'a>), // `:not()`
-
-    // TODO: I will need to optimize away inoficient `Any` usage, ex: `p > * a` to `p  a`
-    // Valid usage: `p > * > a`
-    Any,  // `*`
-    Save, // The previous Element is saved
-}
-
-impl<'a> PatternStep<'a> {
-    pub fn next(reader: &mut Reader<'a>, last: Option<&Self>) -> Option<Self> {
-        match last {
-            Option::None | Some(Self::Combinator(_)) => {
-                Some(Self::Element(QueryElement::from(reader)))
-            }
-            Some(_) => {
-                if let Some(token) = reader.peek() {
-                    if matches!(token, '>' | ' ' | '+' | '~' | '|') {
-                        return Some(Self::Combinator(Combinator::from(reader)));
-                    };
-                }
-
-                return None;
-            }
+pub struct Lexer {}
+impl Lexer {
+    pub fn next<'query>(reader: &mut Reader<'query>) -> Option<(Combinator, QueryElement<'query>)> {
+        if reader.eof() {
+            return None;
         }
+
+        // if it doesn't start with a Combinator the default is Combinator:Descendant,
+        // since a selector like `p` is technically a descendant search from the root,
+        // thus the actual query look like `%root% p`
+
+        let combinator = Combinator::try_from(reader).unwrap_or(Combinator::Descendant);
+
+        let element = QueryElement::from(reader);
+
+        return Some((combinator, element));
     }
 }
 
@@ -103,18 +77,43 @@ mod tests {
     #[test]
     fn test_basic_element_selection_with_combinator() {
         let mut reader = Reader::new("element#id.class > other#other_id.other_class");
-        let first_element = QueryElement::from(&mut reader);
+        let (first_combinator, first_element) = Lexer::next(&mut reader).unwrap();
+        let (second_combinator, second_element) = Lexer::next(&mut reader).unwrap();
 
-        let combinator = Combinator::from(&mut reader);
-
-        let second_element = QueryElement::from(&mut reader);
+        assert_eq!(first_combinator, Combinator::Descendant);
 
         assert_eq!(
             first_element,
             QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
         );
 
-        assert_eq!(combinator, Combinator::Child);
+        assert_eq!(second_combinator, Combinator::Child);
+
+        assert_eq!(
+            second_element,
+            QueryElement::new(
+                Some("other"),
+                Some("other_id"),
+                Some("other_class"),
+                Vec::new(),
+            )
+        );
+    }
+
+    #[test]
+    fn test_combinator_leading_selector() {
+        let mut reader = Reader::new("~ element#id.class > other#other_id.other_class");
+        let (first_combinator, first_element) = Lexer::next(&mut reader).unwrap();
+        let (second_combinator, second_element) = Lexer::next(&mut reader).unwrap();
+
+        assert_eq!(first_combinator, Combinator::SubsequentSibling);
+
+        assert_eq!(
+            first_element,
+            QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
+        );
+
+        assert_eq!(second_combinator, Combinator::Child);
 
         assert_eq!(
             second_element,

@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::utils::reader::Reader;
+use crate::utils::Reader;
 
 #[derive(Debug)]
 pub struct TextContent<'html> {

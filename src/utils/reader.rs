@@ -1,10 +1,10 @@
 use std::iter::Peekable;
 use std::ops::Range;
-use std::str::Chars;
+use std::str::CharIndices;
 
 pub struct Reader<'a> {
     source: &'a str,
-    iter: Peekable<Chars<'a>>,
+    iter: Peekable<CharIndices<'a>>,
     position: usize,
 }
 
@@ -12,13 +12,15 @@ impl<'a> Reader<'a> {
     pub fn new(input: &'a str) -> Self {
         return Self {
             source: input,
-            iter: input.chars().peekable(),
+            iter: input.char_indices().peekable(),
             position: 0,
         };
     }
 
     #[inline]
     pub fn get_position(&self) -> usize {
+        // dynamicly determine the position
+        // self.position = self.iter.peek().map(|(p, _)| *p).unwrap_or(self.source.len());
         return self.position;
     }
 
@@ -30,9 +32,43 @@ impl<'a> Reader<'a> {
     #[inline]
     pub fn peek(&mut self) -> Option<char> {
         return match self.iter.peek() {
-            Some(peek) => Some(*peek),
-            _ => None,
+            Some((_, peek)) => Some(*peek),
+            None => None,
         };
+    }
+
+    #[inline]
+    pub fn next_while(&mut self, condition: fn(char) -> bool) {
+        while let Some(_) = self.iter.next_if(|(_, c)| condition(*c)) {}
+        self.position = self
+            .iter
+            .peek()
+            .map(|(p, _)| *p)
+            .unwrap_or(self.source.len());
+    }
+
+    pub fn skip(&mut self) {
+        _ = self.iter.next();
+        self.position = self
+            .iter
+            .peek()
+            .map(|(p, _)| *p)
+            .unwrap_or(self.source.len());
+    }
+
+    pub fn eof(&mut self) -> bool {
+        if self.iter.peek().is_none() {
+            return true;
+        }
+
+        if self.source[self.get_position()..]
+            .chars()
+            .all(|c| c.is_whitespace())
+        {
+            return true;
+        }
+
+        return false;
     }
 }
 
@@ -41,30 +77,16 @@ impl<'a> Iterator for Reader<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.position += 1;
-        return self.iter.next();
-    }
-}
-
-impl<'a> Reader<'a> {
-    #[inline]
-    pub fn next_while(&mut self, condition: fn(char) -> bool) {
-        while let Some(character) = self.peek() {
-            if condition(character) {
-                self.next();
-            } else {
-                break;
+        match self.iter.next() {
+            Some((_, c)) => {
+                self.position = self
+                    .iter
+                    .peek()
+                    .map(|(p, _)| *p)
+                    .unwrap_or(self.source.len());
+                Some(c)
             }
-        }
-    }
-
-    // NOTE: next_while, but it consumes the character
-    #[inline]
-    pub fn next_upto(&mut self, condition: fn(char) -> bool) {
-        while let Some(character) = self.next() {
-            if !condition(character) {
-                break;
-            }
+            None => None,
         }
     }
 }

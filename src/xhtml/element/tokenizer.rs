@@ -1,5 +1,5 @@
-use crate::utils::reader::Reader;
-use crate::utils::token::QuoteKind;
+use crate::utils::QuoteKind;
+use crate::utils::Reader;
 
 #[derive(Debug, PartialEq)]
 pub enum ElementAttributeToken<'a> {
