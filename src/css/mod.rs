@@ -1,5 +1,8 @@
-pub mod fsm;
-pub mod fsm_manager;
-pub mod fsm_session;
 mod parser;
-mod tree;
+mod query;
+
+pub(crate) use query::tree::MatchTree;
+pub(crate) use query::manager::DocumentPosition;
+pub use query::tree::Node;
+pub use query::manager::FsmManager;
+pub use parser::tree::{SelectionPart, SelectionTree, SelectionKind, Save};

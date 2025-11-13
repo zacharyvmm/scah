@@ -55,6 +55,21 @@ impl<'a> Reader<'a> {
             .map(|(p, _)| *p)
             .unwrap_or(self.source.len());
     }
+
+    pub fn eof(&mut self) -> bool {
+        if self.iter.peek().is_none() {
+            return true;
+        }
+
+        if self.source[self.get_position()..]
+            .chars()
+            .all(|c| c.is_whitespace())
+        {
+            return true;
+        }
+
+        return false;
+    }
 }
 
 impl<'a> Iterator for Reader<'a> {
