@@ -10,11 +10,11 @@ pub(crate) struct DocumentPosition {
 }
 
 #[derive(Debug)]
-pub struct FsmManager<'html, 'query:'html> {
+pub struct FsmManager<'html, 'query: 'html> {
     sessions: Vec<Selection<'query, 'html>>,
 }
 
-impl<'html, 'query:'html> FsmManager<'html, 'query> {
+impl<'html, 'query: 'html> FsmManager<'html, 'query> {
     pub fn new(queries: &'query Vec<SelectionTree<'query>>) -> Self {
         Self {
             sessions: queries.iter().map(|query| Selection::new(query)).collect(),
@@ -34,6 +34,9 @@ impl<'html, 'query:'html> FsmManager<'html, 'query> {
     }
 
     pub fn matches(self) -> Vec<MatchTree<'html>> {
-        self.sessions.into_iter().map(|selection| selection.matches()).collect()
+        self.sessions
+            .into_iter()
+            .map(|selection| selection.matches())
+            .collect()
     }
 }

@@ -132,10 +132,8 @@ mod tests {
 
     #[test]
     fn test_fsm_next_descendant() {
-        let mut reader = Reader::new("div a");
-
         let section = SelectionPart::new(
-            &mut reader,
+            "div a",
             SelectionKind::All(Save {
                 inner_html: false,
                 text_content: false,

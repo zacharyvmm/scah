@@ -1,8 +1,8 @@
 mod parser;
 mod query;
 
-pub(crate) use query::tree::MatchTree;
+pub use parser::tree::{Save, SelectionKind, SelectionPart, SelectionTree};
 pub(crate) use query::manager::DocumentPosition;
-pub use query::tree::Node;
 pub use query::manager::FsmManager;
-pub use parser::tree::{SelectionPart, SelectionTree, SelectionKind, Save};
+pub(crate) use query::tree::MatchTree;
+pub use query::tree::Node;

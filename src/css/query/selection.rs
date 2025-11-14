@@ -106,7 +106,10 @@ impl<'query, 'html> Selection<'query, 'html> {
                 document_position.element_depth,
                 element,
             ) {
-                println!("(depth: {}) NO Match  `{:?}`", document_position.element_depth, task);
+                println!(
+                    "(depth: {}) NO Match  `{:?}`",
+                    document_position.element_depth, task
+                );
                 continue;
             }
             println!("Match with `{:?}`", element);
@@ -206,10 +209,8 @@ mod tests {
 
     #[test]
     fn test_fsm_next_descendant() {
-        let mut reader = Reader::new("div a");
-
         let section = SelectionPart::new(
-            &mut reader,
+            "div a",
             SelectionKind::All(Save {
                 inner_html: false,
                 text_content: false,
@@ -353,12 +354,8 @@ mod tests {
 
     #[test]
     fn test_complex_fsm_query() {
-        let mut first = Reader::new("div p.class");
-        let mut second = Reader::new("span");
-        let mut second_alternate = Reader::new("a");
-
         let mut selection_tree = SelectionTree::new(SelectionPart::new(
-            &mut first,
+            "div p.class",
             SelectionKind::First(Save {
                 inner_html: false,
                 text_content: false,
@@ -367,14 +364,14 @@ mod tests {
 
         selection_tree.append(Vec::from([
             SelectionPart::new(
-                &mut second,
+                "span",
                 SelectionKind::First(Save {
                     inner_html: false,
                     text_content: false,
                 }),
             ),
             SelectionPart::new(
-                &mut second_alternate,
+                "a",
                 SelectionKind::First(Save {
                     inner_html: false,
                     text_content: false,

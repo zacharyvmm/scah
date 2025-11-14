@@ -26,7 +26,8 @@ pub struct SelectionPart<'a> {
 }
 
 impl<'a> SelectionPart<'a> {
-    pub fn new(reader: &mut Reader<'a>, mode: SelectionKind) -> Self {
+    pub fn new(input: &'a str, mode: SelectionKind) -> Self {
+        let reader = &mut Reader::new(input);
         let mut selection = Self {
             fsms: Vec::new(),
             descendants: Vec::new(),

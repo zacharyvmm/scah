@@ -33,7 +33,9 @@ pub struct SelectionTree<'query> {
 
 impl<'query> SelectionTree<'query> {
     pub fn new(root_element: SelectionPart<'query>) -> Self {
-        Self { list: vec![root_element] }
+        Self {
+            list: vec![root_element],
+        }
     }
 
     pub fn append(&mut self, mut sections: Vec<SelectionPart<'query>>) -> () {
@@ -135,9 +137,8 @@ mod tests {
 
     #[test]
     fn test_selection_on_basic_query() {
-        let mut reader = Reader::new("element#id.class > other#other_id.other_class");
         let section = SelectionPart::new(
-            &mut reader,
+            "element#id.class > other#other_id.other_class",
             SelectionKind::All(Save {
                 inner_html: false,
                 text_content: false,
@@ -172,12 +173,8 @@ mod tests {
 
     #[test]
     fn test_selection_on_complex_query() {
-        let mut reader = Reader::new("element#id.class > other#other_id.other_class");
-        let mut then_a_reader = Reader::new("> a");
-        let mut then_p_reader = Reader::new(" p");
-
         let section = SelectionPart::new(
-            &mut reader,
+            "element#id.class > other#other_id.other_class",
             SelectionKind::All(Save {
                 inner_html: false,
                 text_content: false,
@@ -220,14 +217,14 @@ mod tests {
 
         selection.append(Vec::from([
             SelectionPart::new(
-                &mut then_a_reader,
+                "> a",
                 SelectionKind::All(Save {
                     inner_html: false,
                     text_content: false,
                 }),
             ),
             SelectionPart::new(
-                &mut then_p_reader,
+                " p",
                 SelectionKind::All(Save {
                     inner_html: false,
                     text_content: false,

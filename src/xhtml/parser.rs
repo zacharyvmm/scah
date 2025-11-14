@@ -1,7 +1,7 @@
 use super::element::element::XHtmlTag;
 use super::text_content::TextContent;
-use crate::css::FsmManager;
 use crate::css::DocumentPosition;
+use crate::css::FsmManager;
 use crate::utils::Reader;
 
 pub struct XHtmlParser<'html, 'query> {
@@ -71,8 +71,10 @@ impl<'html, 'query> XHtmlParser<'html, 'query> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::css::{
+        FsmManager, MatchTree, Node, Save, SelectionKind, SelectionPart, SelectionTree,
+    };
     use crate::utils::Reader;
-    use crate::css::{Save, SelectionKind, SelectionPart, SelectionTree, FsmManager, MatchTree, Node};
     use crate::xhtml::element::element::{Attribute, XHtmlElement};
 
     const BASIC_HTML: &str = r#"
@@ -88,10 +90,8 @@ mod tests {
     fn test_basic_html() {
         let mut reader = Reader::new(BASIC_HTML);
 
-        let mut query = Reader::new("p.indent > .bold");
-
         let section = SelectionPart::new(
-            &mut query,
+            "p.indent > .bold",
             SelectionKind::All(Save {
                 inner_html: false,
                 text_content: false,
@@ -113,18 +113,23 @@ mod tests {
             println!("{:?}", parser.selectors);
         }
 
-        assert_eq!(parser.selectors.matches()[0].list[1].value, 
-                        XHtmlElement { name: "span", id: Some("name"), class: Some("bold"), attributes: vec![] })
+        assert_eq!(
+            parser.selectors.matches()[0].list[1].value,
+            XHtmlElement {
+                name: "span",
+                id: Some("name"),
+                class: Some("bold"),
+                attributes: vec![]
+            }
+        )
     }
 
     #[test]
     fn test_text_content() {
         let mut reader = Reader::new(BASIC_HTML);
 
-        let mut query = Reader::new("p.indent > .bold");
-
         let section = SelectionPart::new(
-            &mut query,
+            "p.indent > .bold",
             SelectionKind::All(Save {
                 inner_html: false,
                 text_content: false,
@@ -184,11 +189,8 @@ mod tests {
     fn test_top_level_multi_selection() {
         let mut reader = Reader::new(BASIC_HTML);
 
-        let mut query_1 = Reader::new("p.indent > .bold");
-        let mut query_2 = Reader::new("h1 + .indent #name");
-
         let selection_tree_1 = SelectionTree::new(SelectionPart::new(
-            &mut query_1,
+            "p.indent > .bold",
             SelectionKind::All(Save {
                 inner_html: false,
                 text_content: false,
@@ -196,7 +198,7 @@ mod tests {
         ));
 
         let selection_tree_2 = SelectionTree::new(SelectionPart::new(
-            &mut query_2,
+            "h1 + .indent #name",
             SelectionKind::All(Save {
                 inner_html: false,
                 text_content: false,
@@ -218,9 +220,23 @@ mod tests {
         }
 
         let matches = parser.selectors.matches();
-        assert_eq!(matches[0].list[1].value, 
-                        XHtmlElement { name: "span", id: Some("name"), class: Some("bold"), attributes: vec![] });
-        assert_eq!(matches[1].list[1].value, 
-                        XHtmlElement { name: "span", id: Some("name"), class: Some("bold"), attributes: vec![] });
+        assert_eq!(
+            matches[0].list[1].value,
+            XHtmlElement {
+                name: "span",
+                id: Some("name"),
+                class: Some("bold"),
+                attributes: vec![]
+            }
+        );
+        assert_eq!(
+            matches[1].list[1].value,
+            XHtmlElement {
+                name: "span",
+                id: Some("name"),
+                class: Some("bold"),
+                attributes: vec![]
+            }
+        );
     }
 }
