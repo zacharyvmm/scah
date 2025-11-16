@@ -17,7 +17,10 @@ pub struct FsmManager<'html, 'query: 'html> {
 impl<'html, 'query: 'html> FsmManager<'html, 'query> {
     pub fn new(queries: &'query Vec<Selection<'query>>) -> Self {
         Self {
-            sessions: queries.iter().map(|query| SelectionRunner::new(query)).collect(),
+            sessions: queries
+                .iter()
+                .map(|query| SelectionRunner::new(query))
+                .collect(),
         }
     }
 

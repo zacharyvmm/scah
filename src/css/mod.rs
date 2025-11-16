@@ -1,7 +1,7 @@
 mod parser;
 mod query;
 
-pub use parser::tree::{Save, SelectionKind, SelectionPart, Selection};
+pub use parser::tree::{Save, Selection, SelectionKind, SelectionPart};
 pub(crate) use query::manager::DocumentPosition;
 pub use query::manager::FsmManager;
 pub(crate) use query::tree::MatchTree;

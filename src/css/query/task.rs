@@ -28,11 +28,7 @@ impl<'query> FsmState {
         fsm.back(element, depth, *self.depths.last().unwrap_or(&0))
     }
 
-    pub fn move_foward(
-        &mut self,
-        tree: &Selection<'query>,
-        depth: usize,
-    ) -> Option<Vec<Position>> {
+    pub fn move_foward(&mut self, tree: &Selection<'query>, depth: usize) -> Option<Vec<Position>> {
         let positions = tree.next(&self.position);
         self.depths.push(depth);
 

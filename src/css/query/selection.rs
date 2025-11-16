@@ -3,7 +3,7 @@ use super::task::{FsmState, ScopedTask, Task};
 use super::tree::MatchTree;
 use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
-use crate::css::parser::tree::{SelectionKind, Selection};
+use crate::css::parser::tree::{Selection, SelectionKind};
 
 /*
  * A Selection works runs the fsm's using 2 types of tasks:

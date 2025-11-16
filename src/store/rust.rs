@@ -1,3 +1,4 @@
+use super::traits::Store;
 use std::collections::HashMap;
 use std::ops::Index;
 
@@ -10,23 +11,23 @@ pub enum QueryError<'queryuery> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Selection<'html, 'query> {
+pub enum SelectionValue<'html, 'query> {
     One(Box<Element<'html, 'query>>),
     Many(Vec<Element<'html, 'query>>),
 }
 
-impl<'html, 'query> Selection<'html, 'query> {
+impl<'html, 'query> SelectionValue<'html, 'query> {
     fn one(&self) -> Result<&Element<'html, 'query>, QueryError<'query>> {
         match self {
-            Selection::One(el) => Ok(el),
-            Selection::Many(_) => Err(QueryError::NotASingleElement),
+            SelectionValue::One(el) => Ok(el),
+            SelectionValue::Many(_) => Err(QueryError::NotASingleElement),
         }
     }
 
     fn list(&'html self) -> Result<&'html [Element<'html, 'query>], QueryError<'query>> {
         match self {
-            Selection::Many(vec) => Ok(vec),
-            Selection::One(_) => Err(QueryError::NotAList),
+            SelectionValue::Many(vec) => Ok(vec),
+            SelectionValue::One(_) => Err(QueryError::NotAList),
         }
     }
 
@@ -44,7 +45,9 @@ impl<'html, 'query> Selection<'html, 'query> {
         self.one().map(|el| el.id)
     }
 
-    pub fn attributes(&'html self) -> Result<&'html [(&'html str, &'html str)], QueryError<'query>> {
+    pub fn attributes(
+        &'html self,
+    ) -> Result<&'html [(&'html str, &'html str)], QueryError<'query>> {
         self.one().map(|el| el.attributes.as_slice())
     }
 
@@ -63,7 +66,9 @@ impl<'html, 'query> Selection<'html, 'query> {
     }
 
     /// List operations
-    pub fn iter(&'html self) -> Result<impl Iterator<Item = &'html Element<'html, 'query>>, QueryError<'query>> {
+    pub fn iter(
+        &'html self,
+    ) -> Result<impl Iterator<Item = &'html Element<'html, 'query>>, QueryError<'query>> {
         self.list().map(|vec| vec.iter())
     }
 
@@ -71,7 +76,10 @@ impl<'html, 'query> Selection<'html, 'query> {
         self.list().map(|vec| vec.len())
     }
 
-    pub fn get(&'html self, index: usize) -> Result<&'html Element<'html, 'query>, QueryError<'query>> {
+    pub fn get(
+        &'html self,
+        index: usize,
+    ) -> Result<&'html Element<'html, 'query>, QueryError<'query>> {
         self.list()?
             .get(index)
             .ok_or_else(|| QueryError::IndexOutOfBounds {
@@ -90,17 +98,20 @@ pub struct Element<'html, 'query> {
     pub inner_html: Option<&'html str>,
     pub text_content: Option<&'html str>,
     // Store Selection directly to enable Index trait
-    children: HashMap<&'query str, Selection<'html, 'query>>,
+    children: HashMap<&'query str, SelectionValue<'html, 'query>>,
 }
 
 impl<'html, 'query> Element<'html, 'query> {
     /// Safe primary access method
-    pub fn get(&'html self, key: &'query str) -> Result<&'html Selection<'html, 'query>, QueryError<'query>> {
+    pub fn get(
+        &'html self,
+        key: &'query str,
+    ) -> Result<&'html SelectionValue<'html, 'query>, QueryError<'query>> {
         self.children.get(key).ok_or(QueryError::KeyNotFound(key))
     }
 
     /// Panicking accessor for known keys
-    pub fn select(&'html self, key: &'query str) -> &'html Selection<'html, 'query> {
+    pub fn select(&'html self, key: &'query str) -> &'html SelectionValue<'html, 'query> {
         self.get(key).unwrap()
     }
 
@@ -111,35 +122,34 @@ impl<'html, 'query> Element<'html, 'query> {
 }
 
 impl<'html, 'query> Index<&'query str> for Element<'html, 'query> {
-    type Output = Selection<'html, 'query>;
+    type Output = SelectionValue<'html, 'query>;
 
     fn index(&self, key: &'query str) -> &Self::Output {
         &self.children[key] // Panics if key not found
     }
 }
 
-impl<'html, 'query> Index<usize> for Selection<'html, 'query> {
+impl<'html, 'query> Index<usize> for SelectionValue<'html, 'query> {
     type Output = Element<'html, 'query>;
 
     fn index(&self, index: usize) -> &Self::Output {
         match self {
-            Selection::Many(vec) => &vec[index], // Panics if out of bounds
-            Selection::One(_) => panic!("Cannot use usize index on single element"),
+            SelectionValue::Many(vec) => &vec[index], // Panics if out of bounds
+            SelectionValue::One(_) => panic!("Cannot use usize index on single element"),
         }
     }
 }
 
-impl<'html, 'query> Index<&'query str> for Selection<'html, 'query> {
-    type Output = Selection<'html, 'query>;
+impl<'html, 'query> Index<&'query str> for SelectionValue<'html, 'query> {
+    type Output = SelectionValue<'html, 'query>;
 
     fn index(&self, key: &'query str) -> &Self::Output {
         match self {
-            Selection::One(boxed_el) => &boxed_el[key], // Panics if key not found
-            Selection::Many(_) => panic!("Cannot chain string index on list selection"),
+            SelectionValue::One(boxed_el) => &boxed_el[key], // Panics if key not found
+            SelectionValue::Many(_) => panic!("Cannot chain string index on list selection"),
         }
     }
 }
-
 
 pub struct ElementBuilder<'html, 'query> {
     name: &'html str,
@@ -148,7 +158,7 @@ pub struct ElementBuilder<'html, 'query> {
     attributes: Vec<(&'html str, &'html str)>,
     inner_html: Option<&'html str>,
     text_content: Option<&'html str>,
-    children: HashMap<&'query str, Selection<'html, 'query>>,
+    children: HashMap<&'query str, SelectionValue<'html, 'query>>,
 }
 
 impl<'html, 'query> ElementBuilder<'html, 'query> {
@@ -191,13 +201,14 @@ impl<'html, 'query> ElementBuilder<'html, 'query> {
 
     /// Add a single child
     pub fn child(mut self, key: &'query str, element: Element<'html, 'query>) -> Self {
-        self.children.insert(key, Selection::One(Box::new(element)));
+        self.children
+            .insert(key, SelectionValue::One(Box::new(element)));
         self
     }
 
     /// Add multiple children
     pub fn children(mut self, key: &'query str, elements: Vec<Element<'html, 'query>>) -> Self {
-        self.children.insert(key, Selection::Many(elements));
+        self.children.insert(key, SelectionValue::Many(elements));
         self
     }
 
@@ -214,6 +225,34 @@ impl<'html, 'query> ElementBuilder<'html, 'query> {
     }
 }
 
+struct RustStore<'html, 'query> {
+    list: Vec<Element<'html, 'query>>,
+}
+
+impl<'html, 'query> Store<'html, Element<'html, 'query>> for RustStore<'html, 'query> {
+    fn push(
+        &mut self,
+        from: &'html Element<'html, 'query>,
+        element: crate::XHtmlElement<'html>,
+    ) -> &Element<'html, 'query> {
+        self.list.push(Element {
+            name: element.name,
+            class: element.class,
+            id: element.id,
+            attributes: vec![],
+            inner_html: None,
+            text_content: None,
+            children: HashMap::new(),
+        });
+        let new_element_ref = self.list.last().unwrap();
+
+        // attache new element to from element
+        // from.children.insert(k, v)
+
+        return new_element_ref;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,16 +261,23 @@ mod tests {
     fn test_element_access() -> Result<(), QueryError<'static>> {
         // Build a tree
         let doc = ElementBuilder::new("html")
-            .child("title", ElementBuilder::new("h1").text_content("Hello").build())
-            .children("items", vec![
-                ElementBuilder::new("li").text_content("First").build(),
-                ElementBuilder::new("li").text_content("Second").build(),
-            ])
+            .child(
+                "title",
+                ElementBuilder::new("h1").text_content("Hello").build(),
+            )
+            .children(
+                "items",
+                vec![
+                    ElementBuilder::new("li").text_content("First").build(),
+                    ElementBuilder::new("li").text_content("Second").build(),
+                ],
+            )
             .build();
 
         // Different ways of acessing fields
         assert_eq!(doc.get("title")?.name()?, "h1");
         assert_eq!(doc["title"].name()?, "h1");
+        assert_eq!(doc.get("title")?.value()?.name, "h1");
         assert_eq!(doc["title"].value()?.name, "h1");
 
         assert_eq!(doc.get("items")?.len()?, 2);
@@ -242,21 +288,29 @@ mod tests {
 
         // Iterators for All Selections
         let items_iter1 = doc.get("items")?.iter()?;
-        assert_eq!(items_iter1.collect::<Vec<&Element>>(), vec![
+        assert_eq!(
+            items_iter1.collect::<Vec<&Element>>(),
+            vec![
                 &ElementBuilder::new("li").text_content("First").build(),
                 &ElementBuilder::new("li").text_content("Second").build(),
-            ]);
-            
-        let items_iter2 = doc["items"].iter()?;
-        assert_eq!(items_iter2.collect::<Vec<&Element>>(), vec![
-                &ElementBuilder::new("li").text_content("First").build(),
-                &ElementBuilder::new("li").text_content("Second").build(),
-            ]);
+            ]
+        );
 
+        let items_iter2 = doc["items"].iter()?;
+        assert_eq!(
+            items_iter2.collect::<Vec<&Element>>(),
+            vec![
+                &ElementBuilder::new("li").text_content("First").build(),
+                &ElementBuilder::new("li").text_content("Second").build(),
+            ]
+        );
 
         assert!(!doc.contains_key("optional"));
 
-        assert_eq!(doc.get("optional"), Err(QueryError::KeyNotFound("optional")));
+        assert_eq!(
+            doc.get("optional"),
+            Err(QueryError::KeyNotFound("optional"))
+        );
 
         Ok(())
     }
@@ -266,15 +320,24 @@ mod tests {
     fn test_non_existing_key_element_access() {
         // Build a tree
         let doc = ElementBuilder::new("html")
-            .child("title", ElementBuilder::new("h1").text_content("Hello").build())
-            .children("items", vec![
-                ElementBuilder::new("li").text_content("First").build(),
-                ElementBuilder::new("li").text_content("Second").build(),
-            ])
+            .child(
+                "title",
+                ElementBuilder::new("h1").text_content("Hello").build(),
+            )
+            .children(
+                "items",
+                vec![
+                    ElementBuilder::new("li").text_content("First").build(),
+                    ElementBuilder::new("li").text_content("Second").build(),
+                ],
+            )
             .build();
 
         assert!(!doc.contains_key("non-existing"));
-        assert_eq!(doc.get("non-existing"), Err(QueryError::KeyNotFound("non-existing")));
+        assert_eq!(
+            doc.get("non-existing"),
+            Err(QueryError::KeyNotFound("non-existing"))
+        );
 
         let non_existing = &doc["non-existing"];
     }
@@ -284,11 +347,17 @@ mod tests {
     fn test_index_on_single_element_access() {
         // Build a tree
         let doc = ElementBuilder::new("html")
-            .child("title", ElementBuilder::new("h1").text_content("Hello").build())
-            .children("items", vec![
-                ElementBuilder::new("li").text_content("First").build(),
-                ElementBuilder::new("li").text_content("Second").build(),
-            ])
+            .child(
+                "title",
+                ElementBuilder::new("h1").text_content("Hello").build(),
+            )
+            .children(
+                "items",
+                vec![
+                    ElementBuilder::new("li").text_content("First").build(),
+                    ElementBuilder::new("li").text_content("Second").build(),
+                ],
+            )
             .build();
 
         assert_eq!(doc.get("title").unwrap().get(0), Err(QueryError::NotAList));
@@ -301,11 +370,17 @@ mod tests {
     fn test_key_on_vec_element_access() {
         // Build a tree
         let doc = ElementBuilder::new("html")
-            .child("title", ElementBuilder::new("h1").text_content("Hello").build())
-            .children("items", vec![
-                ElementBuilder::new("li").text_content("First").build(),
-                ElementBuilder::new("li").text_content("Second").build(),
-            ])
+            .child(
+                "title",
+                ElementBuilder::new("h1").text_content("Hello").build(),
+            )
+            .children(
+                "items",
+                vec![
+                    ElementBuilder::new("li").text_content("First").build(),
+                    ElementBuilder::new("li").text_content("Second").build(),
+                ],
+            )
             .build();
 
         // No Safe equivalent because of the types

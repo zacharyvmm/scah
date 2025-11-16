@@ -121,8 +121,6 @@ impl<'html> MatchTree<'html> {
             (self.list.len() == 1 && self.list[0].children.len() == 0)
                 || (self.list.len() > 1 && self.list[0].children.len() >= 1)
         );
-
-
     }
 }
 
@@ -130,7 +128,7 @@ pub trait Export {
     fn export() -> ();
 }
 
-struct RustExport{}
+struct RustExport {}
 
 #[cfg(test)]
 mod tests {

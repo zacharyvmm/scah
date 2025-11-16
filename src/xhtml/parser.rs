@@ -71,9 +71,7 @@ impl<'html, 'query> XHtmlParser<'html, 'query> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::css::{
-        FsmManager, MatchTree, Node, Save, SelectionKind, SelectionPart, Selection,
-    };
+    use crate::css::{FsmManager, MatchTree, Node, Save, Selection, SelectionKind, SelectionPart};
     use crate::utils::Reader;
     use crate::xhtml::element::element::{Attribute, XHtmlElement};
 
