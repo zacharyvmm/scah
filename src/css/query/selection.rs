@@ -3,7 +3,7 @@ use super::task::{FsmState, ScopedTask, Task};
 use super::tree::MatchTree;
 use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
-use crate::css::parser::tree::{SelectionKind, SelectionTree};
+use crate::css::parser::tree::{SelectionKind, Selection};
 
 /*
  * A Selection works runs the fsm's using 2 types of tasks:
@@ -13,15 +13,15 @@ use crate::css::parser::tree::{SelectionKind, SelectionTree};
  */
 
 #[derive(Debug)]
-pub struct Selection<'query, 'html> {
-    selection_tree: &'query SelectionTree<'query>,
+pub struct SelectionRunner<'query, 'html> {
+    selection_tree: &'query Selection<'query>,
     tasks: Vec<Task>,
     scoped_tasks: Vec<ScopedTask>,
     tree: MatchTree<'html>,
 }
 
-impl<'query, 'html> Selection<'query, 'html> {
-    pub fn new(selection_tree: &'query SelectionTree<'query>) -> Self {
+impl<'query, 'html> SelectionRunner<'query, 'html> {
+    pub fn new(selection_tree: &'query Selection<'query>) -> Self {
         Self {
             selection_tree,
             tasks: vec![Task::new(FsmState::new())],
@@ -216,9 +216,9 @@ mod tests {
                 text_content: false,
             }),
         );
-        let selection_tree = SelectionTree::new(section);
+        let selection_tree = Selection::new(section);
 
-        let mut selection = Selection::new(&selection_tree);
+        let mut selection = SelectionRunner::new(&selection_tree);
 
         selection.next(
             &XHtmlElement {
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_complex_fsm_query() {
-        let mut selection_tree = SelectionTree::new(SelectionPart::new(
+        let mut selection_tree = Selection::new(SelectionPart::new(
             "div p.class",
             SelectionKind::First(Save {
                 inner_html: false,
@@ -379,7 +379,7 @@ mod tests {
             ),
         ]));
 
-        let mut selection = Selection::new(&selection_tree);
+        let mut selection = SelectionRunner::new(&selection_tree);
 
         selection.next(
             &XHtmlElement {

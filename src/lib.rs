@@ -2,19 +2,19 @@ mod css;
 mod utils;
 mod xhtml;
 
-pub use xhtml::element::element::{Attribute, XHtmlElement};
-/*
-pub use css::selection_map::{BodyContent, SelectionMap};
-use css::selectors::Selectors;
-pub use css::selectors::{InnerContent, SelectorQuery, SelectorQueryKind};
-use utils::reader::Reader;
+use utils::Reader;
 pub use xhtml::element::element::{Attribute, XHtmlElement};
 use xhtml::parser::XHtmlParser;
 pub use xhtml::text_content::TextContent;
 
+use crate::css::{FsmManager, Node};
+
+/*
+pub use crate::css::{MatchTree, Save, SelectionKind, SelectionPart, Selection};
+
 pub fn parse<'html, 'query>(
     html: &'html str,
-    queries: Vec<SelectorQuery<'query>>,
+    queries: Vec<Selection<'query>>,
 ) -> (SelectionMap<'query, 'html>, TextContent<'html>) {
     let selectors = Selectors::new(queries);
     let mut parser = XHtmlParser::new(selectors);

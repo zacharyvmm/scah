@@ -27,11 +27,11 @@ impl NextPosition {
 }
 
 #[derive(Debug)]
-pub struct SelectionTree<'query> {
+pub struct Selection<'query> {
     pub list: Vec<SelectionPart<'query>>,
 }
 
-impl<'query> SelectionTree<'query> {
+impl<'query> Selection<'query> {
     pub fn new(root_element: SelectionPart<'query>) -> Self {
         Self {
             list: vec![root_element],
@@ -144,7 +144,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let tree = SelectionTree::new(section);
+        let tree = Selection::new(section);
 
         assert_eq!(
             tree.list[0].fsms,
@@ -180,7 +180,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let mut selection = SelectionTree::new(section);
+        let mut selection = Selection::new(section);
 
         assert_eq!(
             selection.list,

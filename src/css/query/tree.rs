@@ -111,7 +111,26 @@ impl<'html> MatchTree<'html> {
                 ContentRange::Complete(start..end_position_text_content);
         }
     }
+
+    pub fn export(self) {
+        assert!(self.list.len() != 0);
+
+        // If a list has a len of 1 (!p) and the children list must have a len of 0 (!q)
+        // IF the list has a len greater than 1 (p) than the children list len must be as least of 1 (q)
+        assert!(
+            (self.list.len() == 1 && self.list[0].children.len() == 0)
+                || (self.list.len() > 1 && self.list[0].children.len() >= 1)
+        );
+
+
+    }
 }
+
+pub trait Export {
+    fn export() -> ();
+}
+
+struct RustExport{}
 
 #[cfg(test)]
 mod tests {

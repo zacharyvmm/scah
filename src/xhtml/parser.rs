@@ -72,7 +72,7 @@ impl<'html, 'query> XHtmlParser<'html, 'query> {
 mod tests {
     use super::*;
     use crate::css::{
-        FsmManager, MatchTree, Node, Save, SelectionKind, SelectionPart, SelectionTree,
+        FsmManager, MatchTree, Node, Save, SelectionKind, SelectionPart, Selection,
     };
     use crate::utils::Reader;
     use crate::xhtml::element::element::{Attribute, XHtmlElement};
@@ -97,7 +97,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let selection_tree = SelectionTree::new(section);
+        let selection_tree = Selection::new(section);
 
         let queries = vec![selection_tree];
         let manager = FsmManager::new(&queries);
@@ -135,7 +135,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let selection_tree = SelectionTree::new(section);
+        let selection_tree = Selection::new(section);
 
         let queries = vec![selection_tree];
         let manager = FsmManager::new(&queries);
@@ -189,7 +189,7 @@ mod tests {
     fn test_top_level_multi_selection() {
         let mut reader = Reader::new(BASIC_HTML);
 
-        let selection_tree_1 = SelectionTree::new(SelectionPart::new(
+        let selection_tree_1 = Selection::new(SelectionPart::new(
             "p.indent > .bold",
             SelectionKind::All(Save {
                 inner_html: false,
@@ -197,7 +197,7 @@ mod tests {
             }),
         ));
 
-        let selection_tree_2 = SelectionTree::new(SelectionPart::new(
+        let selection_tree_2 = Selection::new(SelectionPart::new(
             "h1 + .indent #name",
             SelectionKind::All(Save {
                 inner_html: false,

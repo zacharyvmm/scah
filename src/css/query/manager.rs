@@ -1,6 +1,6 @@
-use super::selection::Selection;
+use super::selection::SelectionRunner;
 use crate::XHtmlElement;
-use crate::css::parser::tree::SelectionTree;
+use crate::css::parser::tree::Selection;
 use crate::css::query::tree::MatchTree;
 
 pub(crate) struct DocumentPosition {
@@ -11,13 +11,13 @@ pub(crate) struct DocumentPosition {
 
 #[derive(Debug)]
 pub struct FsmManager<'html, 'query: 'html> {
-    sessions: Vec<Selection<'query, 'html>>,
+    sessions: Vec<SelectionRunner<'query, 'html>>,
 }
 
 impl<'html, 'query: 'html> FsmManager<'html, 'query> {
-    pub fn new(queries: &'query Vec<SelectionTree<'query>>) -> Self {
+    pub fn new(queries: &'query Vec<Selection<'query>>) -> Self {
         Self {
-            sessions: queries.iter().map(|query| Selection::new(query)).collect(),
+            sessions: queries.iter().map(|query| SelectionRunner::new(query)).collect(),
         }
     }
 

@@ -1,6 +1,6 @@
 // A Selection Runner
 use crate::XHtmlElement;
-use crate::css::parser::tree::{NextPosition, Position, SelectionTree};
+use crate::css::parser::tree::{NextPosition, Position, Selection};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct FsmState {
@@ -18,19 +18,19 @@ impl<'query> FsmState {
         }
     }
 
-    pub fn next(&self, tree: &SelectionTree<'query>, depth: usize, element: &XHtmlElement) -> bool {
+    pub fn next(&self, tree: &Selection<'query>, depth: usize, element: &XHtmlElement) -> bool {
         let fsm = tree.get(&self.position);
         fsm.next(element, depth, *self.depths.last().unwrap_or(&0))
     }
 
-    pub fn back(&self, tree: &SelectionTree<'query>, depth: usize, element: &str) -> bool {
+    pub fn back(&self, tree: &Selection<'query>, depth: usize, element: &str) -> bool {
         let fsm = tree.get(&self.position);
         fsm.back(element, depth, *self.depths.last().unwrap_or(&0))
     }
 
     pub fn move_foward(
         &mut self,
-        tree: &SelectionTree<'query>,
+        tree: &Selection<'query>,
         depth: usize,
     ) -> Option<Vec<Position>> {
         let positions = tree.next(&self.position);
@@ -53,7 +53,7 @@ impl<'query> FsmState {
         }
     }
 
-    pub fn move_backward(&mut self, tree: &SelectionTree<'query>) {
+    pub fn move_backward(&mut self, tree: &Selection<'query>) {
         assert!(self.depths.len() > 0);
         self.depths.pop();
 
@@ -81,7 +81,7 @@ impl<'query> Task {
 
     pub fn retry(
         &mut self,
-        tree: &SelectionTree<'query>,
+        tree: &Selection<'query>,
         depth: usize,
         element: &XHtmlElement,
     ) -> Option<FsmState> {
@@ -139,7 +139,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let selection_tree = SelectionTree::new(section);
+        let selection_tree = Selection::new(section);
 
         let mut state = FsmState::new();
         let mut next: bool = false;
