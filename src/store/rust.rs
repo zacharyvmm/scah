@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::ops::Index;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum QueryError<'queryuery> {
-    KeyNotFound(&'queryuery str),
+pub enum QueryError<'key> {
+    KeyNotFound(&'key str),
     NotASingleElement,
     NotAList,
     IndexOutOfBounds { index: usize, len: usize },
@@ -16,15 +16,15 @@ pub enum SelectionValue<'html, 'query> {
     Many(Vec<Element<'html, 'query>>),
 }
 
-impl<'html, 'query> SelectionValue<'html, 'query> {
-    fn one(&self) -> Result<&Element<'html, 'query>, QueryError<'query>> {
+impl<'html, 'query, 'key> SelectionValue<'html, 'query> {
+    fn one(&self) -> Result<&Element<'html, 'query>, QueryError<'key>> {
         match self {
             SelectionValue::One(el) => Ok(el),
             SelectionValue::Many(_) => Err(QueryError::NotASingleElement),
         }
     }
 
-    fn list(&'html self) -> Result<&'html [Element<'html, 'query>], QueryError<'query>> {
+    fn list(&'html self) -> Result<&'html [Element<'html, 'query>], QueryError<'key>> {
         match self {
             SelectionValue::Many(vec) => Ok(vec),
             SelectionValue::One(_) => Err(QueryError::NotAList),
@@ -33,53 +33,51 @@ impl<'html, 'query> SelectionValue<'html, 'query> {
 
     /// Field accessors (only work on single elements)
     /// I don't know how I feel about this; it could this cause confusion.
-    pub fn name(&'html self) -> Result<&'html str, QueryError<'query>> {
+    pub fn name(&'html self) -> Result<&'html str, QueryError<'key>> {
         self.one().map(|el| el.name)
     }
 
-    pub fn class(&'html self) -> Result<Option<&'html str>, QueryError<'query>> {
+    pub fn class(&'html self) -> Result<Option<&'html str>, QueryError<'key>> {
         self.one().map(|el| el.class)
     }
 
-    pub fn id(&'html self) -> Result<Option<&'html str>, QueryError<'query>> {
+    pub fn id(&'html self) -> Result<Option<&'html str>, QueryError<'key>> {
         self.one().map(|el| el.id)
     }
 
-    pub fn attributes(
-        &'html self,
-    ) -> Result<&'html [(&'html str, &'html str)], QueryError<'query>> {
+    pub fn attributes(&'html self) -> Result<&'html [(&'html str, &'html str)], QueryError<'key>> {
         self.one().map(|el| el.attributes.as_slice())
     }
 
-    pub fn inner_html(&'html self) -> Result<Option<&'html str>, QueryError<'query>> {
+    pub fn inner_html(&'html self) -> Result<Option<&'html str>, QueryError<'key>> {
         self.one().map(|el| el.inner_html)
     }
 
-    pub fn text_content(&'html self) -> Result<Option<&'html str>, QueryError<'query>> {
+    pub fn text_content(&'html self) -> Result<Option<&'html str>, QueryError<'key>> {
         self.one().map(|el| el.text_content)
     }
 
     // Solution to field accessor confusion
     #[inline]
-    pub fn value(&self) -> Result<&Element<'html, 'query>, QueryError<'query>> {
+    pub fn value(&self) -> Result<&Element<'html, 'query>, QueryError<'key>> {
         self.one()
     }
 
     /// List operations
     pub fn iter(
         &'html self,
-    ) -> Result<impl Iterator<Item = &'html Element<'html, 'query>>, QueryError<'query>> {
+    ) -> Result<impl Iterator<Item = &'html Element<'html, 'query>>, QueryError<'key>> {
         self.list().map(|vec| vec.iter())
     }
 
-    pub fn len(&'html self) -> Result<usize, QueryError<'query>> {
+    pub fn len(&'html self) -> Result<usize, QueryError<'key>> {
         self.list().map(|vec| vec.len())
     }
 
     pub fn get(
         &'html self,
         index: usize,
-    ) -> Result<&'html Element<'html, 'query>, QueryError<'query>> {
+    ) -> Result<&'html Element<'html, 'query>, QueryError<'key>> {
         self.list()?
             .get(index)
             .ok_or_else(|| QueryError::IndexOutOfBounds {
@@ -101,22 +99,22 @@ pub struct Element<'html, 'query> {
     children: HashMap<&'query str, SelectionValue<'html, 'query>>,
 }
 
-impl<'html, 'query> Element<'html, 'query> {
+impl<'html, 'query, 'key> Element<'html, 'query> {
     /// Safe primary access method
     pub fn get(
         &'html self,
-        key: &'query str,
-    ) -> Result<&'html SelectionValue<'html, 'query>, QueryError<'query>> {
+        key: &'key str,
+    ) -> Result<&'html SelectionValue<'html, 'query>, QueryError<'key>> {
         self.children.get(key).ok_or(QueryError::KeyNotFound(key))
     }
 
     /// Panicking accessor for known keys
-    pub fn select(&'html self, key: &'query str) -> &'html SelectionValue<'html, 'query> {
+    pub fn select(&'html self, key: &'key str) -> &'html SelectionValue<'html, 'query> {
         self.get(key).unwrap()
     }
 
     /// Check existence without error
-    pub fn contains_key(&self, key: &'query str) -> bool {
+    pub fn contains_key(&self, key: &'key str) -> bool {
         self.children.contains_key(key)
     }
 }

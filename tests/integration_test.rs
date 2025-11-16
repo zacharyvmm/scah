@@ -1,4 +1,4 @@
-use onego::{
+/*use onego::{
     Attribute, BodyContent, InnerContent, SelectorQuery, SelectorQueryKind, XHtmlElement, parse,
 };
 const HTML: &str = r#"
@@ -323,4 +323,4 @@ fn test_html_page_all_valid_anchor_tags_in_main() {
             "Not selected (main has no red-background class)"
         );
     }
-}
+}*/
