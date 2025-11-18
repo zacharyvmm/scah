@@ -96,71 +96,71 @@ fn test_html_page<'key>() -> Result<(), QueryError<'key>>{
 
     Ok(())
 }
+#[test]
+fn test_html_page_single_main<'key>() -> Result<(), QueryError<'key>> {
+    let section = SelectionPart::new(
+        "main.red-background > section#id",
+        SelectionKind::All(Save {
+            inner_html: true,
+            text_content: true,
+        }),
+    );
+
+    let selection_tree = Selection::new(section);
+
+    let queries = &vec![selection_tree];
+    let map = parse(HTML, queries);
+
+    assert_eq!(map["main.red-background > section#id"].len()?, 1);
+    Ok(())
+}
+
+#[test]
+fn test_html_page_all_anchor_tag_selection<'key>() -> Result<(), QueryError<'key>> {
+    let queries = &vec![Selection::new(SelectionPart::new(
+        "a",
+        SelectionKind::All(Save {
+            inner_html: true,
+            text_content: true,
+        }),
+    ))];
+    let map = parse(HTML, queries);
+
+    assert_eq!(map["a"].len()?, 7);
+    Ok(())
+}
+
+#[test]
+fn test_html_page_all_anchor_tag_starting_with_link_selection<'key>() -> Result<(), QueryError<'key>> {
+    let queries = &vec![Selection::new(SelectionPart::new(
+        "a[href^=link]",
+        SelectionKind::All(Save {
+            inner_html: true,
+            text_content: true,
+        }),
+    ))];
+    let map = parse(HTML, queries);
+
+    assert_eq!(map["a[href^=link]"].len()?, 3);
+    Ok(())
+}
+
+#[test]
+fn test_html_page_children_valid_anchor_tags_in_main<'key>() -> Result<(), QueryError<'key>> {
+    let queries = &vec![Selection::new(SelectionPart::new(
+        "main > section > a[href]",
+        SelectionKind::All(Save {
+            inner_html: true,
+            text_content: true,
+        }),
+    ))];
+    let map = parse(HTML, queries);
+
+    assert_eq!(map["main > section > a[href]"].len()?, 5);
+    Ok(())
+}
+
 /*
-#[test]
-fn test_html_page_single_main() {
-    let queries = Vec::from([SelectorQuery {
-        kind: SelectorQueryKind::All,
-        query: "main.red-background > section#id",
-        data: InnerContent {
-            inner_html: true,
-            text_content: true,
-        },
-    }]);
-
-    let (map, _) = parse(HTML, queries);
-
-    assert_eq!(map.elements.len(), 1);
-}
-
-#[test]
-fn test_html_page_all_anchor_tag_selection() {
-    let queries = Vec::from([SelectorQuery {
-        kind: SelectorQueryKind::All,
-        query: "a",
-        data: InnerContent {
-            inner_html: true,
-            text_content: true,
-        },
-    }]);
-
-    let (map, _) = parse(HTML, queries);
-
-    assert_eq!(map.elements.len(), 7);
-}
-
-#[test]
-fn test_html_page_all_anchor_tag_starting_with_link_selection() {
-    let queries = Vec::from([SelectorQuery {
-        kind: SelectorQueryKind::All,
-        query: "a[href^=link]",
-        data: InnerContent {
-            inner_html: true,
-            text_content: true,
-        },
-    }]);
-
-    let (map, _) = parse(HTML, queries);
-
-    assert_eq!(map.elements.len(), 3);
-}
-
-#[test]
-fn test_html_page_children_valid_anchor_tags_in_main() {
-    let queries = Vec::from([SelectorQuery {
-        kind: SelectorQueryKind::All,
-        query: "main > section > a[href]",
-        data: InnerContent {
-            inner_html: true,
-            text_content: true,
-        },
-    }]);
-
-    let (map, _) = parse(HTML, queries);
-
-    assert_eq!(map.elements.len(), 5);
-}
-
 #[test]
 fn test_html_page_all_valid_anchor_tags_in_main() {
     let queries = Vec::from([SelectorQuery {
