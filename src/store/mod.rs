@@ -1,2 +1,5 @@
-pub(crate) mod rust;
-mod traits;
+mod header;
+mod rust;
+pub use header::QueryError;
+pub(crate) use header::Store;
+pub(crate) use rust::{Element, ElementBuilder, RustStore};

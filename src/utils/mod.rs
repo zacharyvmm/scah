@@ -1,4 +1,5 @@
 mod reader;
+pub mod ref_unsafe;
 mod token;
 
 pub(crate) use reader::Reader;

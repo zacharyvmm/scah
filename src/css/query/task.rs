@@ -1,18 +1,30 @@
 // A Selection Runner
 use crate::XHtmlElement;
 use crate::css::parser::tree::{NextPosition, Position, Selection};
+use crate::store::Store;
+use std::ptr;
 
-#[derive(PartialEq, Debug, Clone)]
-pub struct FsmState {
-    pub(super) parent_tree_position: usize,
+#[derive(PartialEq, Debug)]
+pub struct FsmState<E> {
+    pub(super) parent: *mut E,
     pub(super) position: Position,
     pub(super) depths: Vec<usize>,
 }
 
-impl<'query> FsmState {
+impl<E> Clone for FsmState<E> {
+    fn clone(&self) -> Self {
+        Self {
+            parent: self.parent,
+            position: self.position.clone(),
+            depths: self.depths.clone(),
+        }
+    }
+}
+
+impl<'query, E> FsmState<E> {
     pub fn new() -> Self {
         Self {
-            parent_tree_position: 0,
+            parent: ptr::null_mut(),
             position: Position { section: 0, fsm: 0 },
             depths: vec![],
         }
@@ -57,21 +69,30 @@ impl<'query> FsmState {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
-pub struct Task {
-    pub retry_from: Option<FsmState>,
-    pub state: FsmState,
+#[derive(PartialEq, Debug)]
+pub struct Task<E> {
+    pub retry_from: Option<FsmState<E>>,
+    pub state: FsmState<E>,
 }
 
-impl<'query> Task {
-    pub fn new(task: FsmState) -> Self {
+impl<E> Clone for Task<E> {
+    fn clone(&self) -> Self {
+        Self {
+            retry_from: self.retry_from.clone(),
+            state: self.state.clone(),
+        }
+    }
+}
+
+impl<'query, E> Task<E> {
+    pub fn new(task: FsmState<E>) -> Self {
         Self {
             retry_from: None,
             state: task,
         }
     }
 
-    pub fn set_retry(&mut self, retry_task: FsmState) {
+    pub fn set_retry(&mut self, retry_task: FsmState<E>) {
         self.retry_from = Some(retry_task);
     }
 
@@ -80,7 +101,7 @@ impl<'query> Task {
         tree: &Selection<'query>,
         depth: usize,
         element: &XHtmlElement,
-    ) -> Option<FsmState> {
+    ) -> Option<FsmState<E>> {
         //let old_task: Option<Task> = self.retry_from.take();
         let mut retry_task = false;
         if let Some(task) = &self.retry_from {
@@ -94,20 +115,29 @@ impl<'query> Task {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
-pub struct ScopedTask {
+#[derive(PartialEq, Debug)]
+pub struct ScopedTask<E> {
     pub scope_depth: usize,
-    pub task: Task,
+    pub task: Task<E>,
 }
 
-impl ScopedTask {
-    pub fn new(depth: usize, tree_position: usize, position: Position) -> Self {
+impl<E> Clone for ScopedTask<E> {
+    fn clone(&self) -> Self {
+        Self {
+            scope_depth: self.scope_depth,
+            task: self.task.clone(),
+        }
+    }
+}
+
+impl<E> ScopedTask<E> {
+    pub fn new(depth: usize, parent: *mut E, position: Position) -> Self {
         Self {
             scope_depth: depth,
             task: Task {
                 retry_from: None,
                 state: FsmState {
-                    parent_tree_position: tree_position,
+                    parent: parent,
                     position: position,
                     depths: vec![],
                 },
@@ -122,6 +152,7 @@ impl ScopedTask {
 
 mod tests {
     use crate::css::parser::tree::{Save, SelectionKind, SelectionPart};
+    use crate::store::Element;
     use crate::utils::Reader;
 
     use super::*;
@@ -137,7 +168,7 @@ mod tests {
         );
         let selection_tree = Selection::new(section);
 
-        let mut state = FsmState::new();
+        let mut state = FsmState::<Element>::new();
         let mut next: bool = false;
 
         next = state.next(

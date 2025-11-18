@@ -1,14 +1,10 @@
-use super::traits::Store;
+use crate::css::{SelectionKind, SelectionPart};
+
+use super::header::{QueryError, Store};
+use crate::mut_prt_unchecked;
 use std::collections::HashMap;
 use std::ops::Index;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum QueryError<'key> {
-    KeyNotFound(&'key str),
-    NotASingleElement,
-    NotAList,
-    IndexOutOfBounds { index: usize, len: usize },
-}
+use std::ptr;
 
 #[derive(Debug, PartialEq)]
 pub enum SelectionValue<'html, 'query> {
@@ -16,7 +12,7 @@ pub enum SelectionValue<'html, 'query> {
     Many(Vec<Element<'html, 'query>>),
 }
 
-impl<'html, 'query, 'key> SelectionValue<'html, 'query> {
+impl<'html, 'query: 'html, 'key> SelectionValue<'html, 'query> {
     fn one(&self) -> Result<&Element<'html, 'query>, QueryError<'key>> {
         match self {
             SelectionValue::One(el) => Ok(el),
@@ -31,33 +27,6 @@ impl<'html, 'query, 'key> SelectionValue<'html, 'query> {
         }
     }
 
-    /// Field accessors (only work on single elements)
-    /// I don't know how I feel about this; it could this cause confusion.
-    pub fn name(&'html self) -> Result<&'html str, QueryError<'key>> {
-        self.one().map(|el| el.name)
-    }
-
-    pub fn class(&'html self) -> Result<Option<&'html str>, QueryError<'key>> {
-        self.one().map(|el| el.class)
-    }
-
-    pub fn id(&'html self) -> Result<Option<&'html str>, QueryError<'key>> {
-        self.one().map(|el| el.id)
-    }
-
-    pub fn attributes(&'html self) -> Result<&'html [(&'html str, &'html str)], QueryError<'key>> {
-        self.one().map(|el| el.attributes.as_slice())
-    }
-
-    pub fn inner_html(&'html self) -> Result<Option<&'html str>, QueryError<'key>> {
-        self.one().map(|el| el.inner_html)
-    }
-
-    pub fn text_content(&'html self) -> Result<Option<&'html str>, QueryError<'key>> {
-        self.one().map(|el| el.text_content)
-    }
-
-    // Solution to field accessor confusion
     #[inline]
     pub fn value(&self) -> Result<&Element<'html, 'query>, QueryError<'key>> {
         self.one()
@@ -68,6 +37,23 @@ impl<'html, 'query, 'key> SelectionValue<'html, 'query> {
         &'html self,
     ) -> Result<impl Iterator<Item = &'html Element<'html, 'query>>, QueryError<'key>> {
         self.list().map(|vec| vec.iter())
+    }
+
+    pub fn push(
+        &'html mut self,
+        element: Element<'html, 'query>,
+    ) -> Result<*mut Element<'html, 'query>, QueryError<'key>> {
+        match self {
+            SelectionValue::One(_) => Err(QueryError::NotAList),
+            SelectionValue::Many(vec) => {
+                let index = vec.len() - 1;
+                vec.push(element);
+                let last_element = &mut vec[index];
+                let pointer = ptr::from_mut(last_element);
+
+                Ok(pointer)
+            }
+        }
     }
 
     pub fn len(&'html self) -> Result<usize, QueryError<'key>> {
@@ -92,11 +78,11 @@ pub struct Element<'html, 'query> {
     pub name: &'html str,
     pub class: Option<&'html str>,
     pub id: Option<&'html str>,
-    pub attributes: Vec<(&'html str, &'html str)>,
+    pub attributes: Vec<(&'html str, Option<&'html str>)>,
     pub inner_html: Option<&'html str>,
     pub text_content: Option<&'html str>,
     // Store Selection directly to enable Index trait
-    children: HashMap<&'query str, SelectionValue<'html, 'query>>,
+    pub(crate) children: HashMap<&'query str, SelectionValue<'html, 'query>>,
 }
 
 impl<'html, 'query, 'key> Element<'html, 'query> {
@@ -153,7 +139,7 @@ pub struct ElementBuilder<'html, 'query> {
     name: &'html str,
     class: Option<&'html str>,
     id: Option<&'html str>,
-    attributes: Vec<(&'html str, &'html str)>,
+    attributes: Vec<(&'html str, Option<&'html str>)>,
     inner_html: Option<&'html str>,
     text_content: Option<&'html str>,
     children: HashMap<&'query str, SelectionValue<'html, 'query>>,
@@ -182,7 +168,7 @@ impl<'html, 'query> ElementBuilder<'html, 'query> {
         self
     }
 
-    pub fn attribute(mut self, name: &'html str, value: &'html str) -> Self {
+    pub fn attribute(mut self, name: &'html str, value: Option<&'html str>) -> Self {
         self.attributes.push((name, value));
         self
     }
@@ -223,31 +209,100 @@ impl<'html, 'query> ElementBuilder<'html, 'query> {
     }
 }
 
-struct RustStore<'html, 'query> {
-    list: Vec<Element<'html, 'query>>,
+#[derive(Debug, PartialEq)]
+pub struct RustStore<'html, 'query> {
+    root: Box<Element<'html, 'query>>,
 }
 
-impl<'html, 'query> Store<'html, Element<'html, 'query>> for RustStore<'html, 'query> {
-    fn push(
+impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
+    type E = Element<'html, 'query>;
+
+    fn new() -> Self {
+        Self {
+            root: Box::new(Element {
+                name: "root",
+                class: None,
+                id: None,
+                attributes: vec![],
+                inner_html: None,
+                text_content: None,
+                children: HashMap::new(),
+            }),
+        }
+    }
+
+    fn root(&mut self) -> *mut Element<'html, 'query> {
+        mut_prt_unchecked!(self.root.as_ref())
+    }
+
+    fn push<'key>(
         &mut self,
-        from: &'html Element<'html, 'query>,
+        selection: &SelectionPart<'query>,
+        mut from: *mut Element<'html, 'query>,
         element: crate::XHtmlElement<'html>,
-    ) -> &Element<'html, 'query> {
-        self.list.push(Element {
+    ) -> Result<*mut Element<'html, 'query>, QueryError<'key>> {
+        if from.is_null() {
+            from = mut_prt_unchecked!(&self.root);
+        }
+        let new_element: Element<'html, 'query> = Element {
             name: element.name,
             class: element.class,
             id: element.id,
-            attributes: vec![],
+            attributes: element
+                .attributes
+                .iter()
+                .map(|a| (a.name, a.value))
+                .collect(),
             inner_html: None,
             text_content: None,
             children: HashMap::new(),
-        });
-        let new_element_ref = self.list.last().unwrap();
+        };
 
         // attache new element to from element
         // from.children.insert(k, v)
+        let from_element = unsafe { from.as_mut() }.unwrap();
+        let children_map = &mut from_element.children;
 
-        return new_element_ref;
+        if children_map.contains_key(selection.source) {
+            match selection.kind {
+                SelectionKind::First(_) => panic!(
+                    "It is not possible to add a single item to the store when it already exists."
+                ),
+                SelectionKind::All(_) => {
+                    assert!(matches!(
+                        children_map[selection.source],
+                        SelectionValue::Many(..)
+                    ));
+                    //assert!(from.children[selection.source].iter()?.collect().len() > 0);
+                    let const_list = &children_map[selection.source];
+                    let list = unsafe { mut_prt_unchecked!(const_list).as_mut() }.unwrap();
+
+                    return list.push(new_element);
+                }
+            }
+        }
+        children_map.insert(
+            selection.source,
+            match selection.kind {
+                SelectionKind::First(_) => SelectionValue::One(Box::new(new_element)),
+                SelectionKind::All(_) => SelectionValue::Many(vec![new_element]),
+            },
+        );
+
+        return match &children_map[selection.source] {
+            SelectionValue::One(element_box) => {
+                let mut_element: *mut Element<'html, 'query> =
+                    mut_prt_unchecked!(element_box.as_ref());
+                return Ok(mut_element);
+            }
+            SelectionValue::Many(vec) => {
+                let index = vec.len() - 1;
+                let last_element = &vec[index];
+
+                let mut_element = mut_prt_unchecked!(last_element);
+                Ok(mut_element)
+            }
+        };
     }
 }
 
@@ -273,8 +328,6 @@ mod tests {
             .build();
 
         // Different ways of acessing fields
-        assert_eq!(doc.get("title")?.name()?, "h1");
-        assert_eq!(doc["title"].name()?, "h1");
         assert_eq!(doc.get("title")?.value()?.name, "h1");
         assert_eq!(doc["title"].value()?.name, "h1");
 

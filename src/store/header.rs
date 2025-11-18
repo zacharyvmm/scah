@@ -1,0 +1,22 @@
+use crate::XHtmlElement;
+use crate::css::SelectionPart;
+
+pub trait Store<'html, 'query> {
+    type E;
+    fn new() -> Self;
+    fn root(&mut self) -> *mut Self::E;
+    fn push<'key>(
+        &mut self,
+        selection: &SelectionPart<'query>,
+        from: *mut Self::E,
+        element: XHtmlElement<'html>,
+    ) -> Result<*mut Self::E, QueryError<'key>>;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum QueryError<'key> {
+    KeyNotFound(&'key str),
+    NotASingleElement,
+    NotAList,
+    IndexOutOfBounds { index: usize, len: usize },
+}

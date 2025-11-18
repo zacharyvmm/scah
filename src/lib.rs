@@ -8,7 +8,7 @@ pub use xhtml::element::element::{Attribute, XHtmlElement};
 use xhtml::parser::XHtmlParser;
 pub use xhtml::text_content::TextContent;
 
-use crate::css::{FsmManager, Node};
+use crate::css::FsmManager;
 
 /*
 pub use crate::css::{MatchTree, Save, SelectionKind, SelectionPart, Selection};

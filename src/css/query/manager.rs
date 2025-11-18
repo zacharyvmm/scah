@@ -1,7 +1,8 @@
 use super::selection::SelectionRunner;
 use crate::XHtmlElement;
 use crate::css::parser::tree::Selection;
-use crate::css::query::tree::MatchTree;
+//use crate::css::query::tree::MatchTree;
+use crate::store::Store;
 
 pub(crate) struct DocumentPosition {
     pub reader_position: usize,
@@ -10,36 +11,46 @@ pub(crate) struct DocumentPosition {
 }
 
 #[derive(Debug)]
-pub struct FsmManager<'html, 'query: 'html> {
-    sessions: Vec<SelectionRunner<'query, 'html>>,
+pub struct FsmManager<'html, 'query: 'html, S>
+where
+    S: Store<'html, 'query>,
+{
+    store: S,
+    sessions: Vec<SelectionRunner<'query, S::E>>,
 }
 
-impl<'html, 'query: 'html> FsmManager<'html, 'query> {
+impl<'html, 'query: 'html, S, E> FsmManager<'html, 'query, S>
+where
+    S: Store<'html, 'query, E = E>,
+{
     pub fn new(queries: &'query Vec<Selection<'query>>) -> Self {
+        // BUG: the memory moves afterwards
+        let mut s = S::new();
         Self {
             sessions: queries
                 .iter()
-                .map(|query| SelectionRunner::new(query))
+                .map(|query| SelectionRunner::new(s.root(), query))
                 .collect(),
+            store: s,
         }
     }
 
     pub fn next(&mut self, xhtml_element: XHtmlElement<'html>, position: &DocumentPosition) {
         for session in self.sessions.iter_mut() {
-            session.next(&xhtml_element, position);
+            session.next(&mut self.store, &xhtml_element, position);
         }
     }
 
     pub fn back(&mut self, xhtml_element: &'html str, position: &DocumentPosition) {
         for session in self.sessions.iter_mut() {
-            session.back(&xhtml_element, position);
+            session.back(&mut self.store, &xhtml_element, position);
         }
     }
 
-    pub fn matches(self) -> Vec<MatchTree<'html>> {
-        self.sessions
-            .into_iter()
-            .map(|selection| selection.matches())
-            .collect()
-    }
+    // pub fn matches(self) -> Vec<MatchTree<'html>> {
+    //     self.sessions
+    //         .into_iter()
+    //         .map(|selection| selection.matches())
+    //         .collect()
+    // }
 }

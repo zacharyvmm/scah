@@ -16,8 +16,9 @@ pub enum SelectionKind {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct SelectionPart<'a> {
-    pub(crate) fsms: Vec<Fsm<'a>>,
+pub struct SelectionPart<'query> {
+    pub(crate) source: &'query str,
+    pub(crate) fsms: Vec<Fsm<'query>>,
     pub descendants: Vec<usize>,
     pub(crate) kind: SelectionKind,
 
@@ -25,10 +26,11 @@ pub struct SelectionPart<'a> {
     pub(crate) children: Vec<usize>,  // offset
 }
 
-impl<'a> SelectionPart<'a> {
-    pub fn new(query: &'a str, mode: SelectionKind) -> Self {
+impl<'query> SelectionPart<'query> {
+    pub fn new(query: &'query str, mode: SelectionKind) -> Self {
         let reader = &mut Reader::new(query);
         let mut selection = Self {
+            source: query,
             fsms: Vec::new(),
             descendants: Vec::new(),
             kind: mode,

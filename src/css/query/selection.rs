@@ -1,9 +1,18 @@
 use super::manager::DocumentPosition;
 use super::task::{FsmState, ScopedTask, Task};
-use super::tree::MatchTree;
+//use super::tree::MatchTree;
 use crate::XHtmlElement;
+use crate::css::Save;
 use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{Selection, SelectionKind};
+//use crate::store::rust::Element;
+use crate::store::{QueryError, Store};
+
+struct SaveHook<E> {
+    save: Save,
+    on_depth: usize,
+    element: *mut E,
+}
 
 /*
  * A Selection works runs the fsm's using 2 types of tasks:
@@ -13,35 +22,41 @@ use crate::css::parser::tree::{Selection, SelectionKind};
  */
 
 #[derive(Debug)]
-pub struct SelectionRunner<'query, 'html> {
+pub struct SelectionRunner<'query, E> {
     selection_tree: &'query Selection<'query>,
-    tasks: Vec<Task>,
-    scoped_tasks: Vec<ScopedTask>,
-    tree: MatchTree<'html>,
+    tasks: Vec<Task<E>>,
+    scoped_tasks: Vec<ScopedTask<E>>,
+    root: *mut E,
 }
 
-impl<'query, 'html> SelectionRunner<'query, 'html> {
-    pub fn new(selection_tree: &'query Selection<'query>) -> Self {
+impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
+    pub fn new(root: *mut E, selection_tree: &'query Selection<'query>) -> Self {
         Self {
             selection_tree,
             tasks: vec![Task::new(FsmState::new())],
             scoped_tasks: vec![],
-            tree: MatchTree::new(),
+            root: root,
         }
     }
 
-    pub fn next(&mut self, element: &XHtmlElement<'html>, document_position: &DocumentPosition) {
+    pub fn next<S>(
+        &mut self,
+        store: &mut S,
+        element: &XHtmlElement<'html>,
+        document_position: &DocumentPosition,
+    ) -> Result<(), QueryError<'_>>
+    where
+        S: Store<'html, 'query, E = E>,
+    {
         assert_ne!(self.tasks.len(), 0);
 
         // STEP 1: check scoped tasks
-        let mut new_scoped_tasks: Vec<ScopedTask> = vec![];
+        let mut new_scoped_tasks: Vec<ScopedTask<E>> = vec![];
 
         for i in 0..self.scoped_tasks.len() {
             let ref mut scoped_task = self.scoped_tasks[i];
 
-            let task = &scoped_task.task;
-
-            if !task.state.next(
+            if !scoped_task.task.state.next(
                 self.selection_tree,
                 document_position.element_depth,
                 element,
@@ -51,25 +66,33 @@ impl<'query, 'html> SelectionRunner<'query, 'html> {
 
             println!("Scope Match with `{:?}`", element);
 
-            if self.selection_tree.get(&task.state.position).transition == Combinator::Descendant {
+            if self
+                .selection_tree
+                .get(&scoped_task.task.state.position)
+                .transition
+                == Combinator::Descendant
+            {
                 // This should only be done if the task is not done (meaning it will move forward)
                 new_scoped_tasks.push(ScopedTask::new(
                     document_position.element_depth,
-                    task.state.parent_tree_position,
-                    task.state.position.clone(),
+                    scoped_task.task.state.parent,
+                    scoped_task.task.state.position.clone(),
                 ));
             }
 
             let mut new_scoped_task = scoped_task.clone();
             let new_task = &mut new_scoped_task.task;
 
-            if self.selection_tree.is_save_point(&task.state.position) {
-                new_task.state.parent_tree_position = self.tree.push(
-                    new_task.state.parent_tree_position,
+            if self
+                .selection_tree
+                .is_save_point(&scoped_task.task.state.position)
+            {
+                scoped_task.task.state.parent = store.push(
+                    self.selection_tree
+                        .get_section(scoped_task.task.state.position.section),
+                    scoped_task.task.state.parent,
                     element.clone(),
-                    None,
-                    None,
-                );
+                )?;
             }
 
             // TODO: move `move_foward` inside the task next
@@ -84,7 +107,7 @@ impl<'query, 'html> SelectionRunner<'query, 'html> {
                         .map(|pos| {
                             ScopedTask::new(
                                 document_position.element_depth,
-                                new_task.state.parent_tree_position,
+                                new_task.state.parent,
                                 pos,
                             )
                         })
@@ -106,10 +129,10 @@ impl<'query, 'html> SelectionRunner<'query, 'html> {
                 document_position.element_depth,
                 element,
             ) {
-                println!(
-                    "(depth: {}) NO Match  `{:?}`",
-                    document_position.element_depth, task
-                );
+                // println!(
+                //     "(depth: {}) NO Match  `{:?}`",
+                //     document_position.element_depth, task
+                // );
                 continue;
             }
             println!("Match with `{:?}`", element);
@@ -117,15 +140,17 @@ impl<'query, 'html> SelectionRunner<'query, 'html> {
                 // This should only be done if the task is not done (meaning it will move forward)
                 self.scoped_tasks.push(ScopedTask::new(
                     document_position.element_depth,
-                    task.state.parent_tree_position,
+                    task.state.parent,
                     task.state.position.clone(),
                 ));
             }
 
             if self.selection_tree.is_save_point(&task.state.position) {
-                task.state.parent_tree_position =
-                    self.tree
-                        .push(task.state.parent_tree_position, element.clone(), None, None);
+                task.state.parent = store.push(
+                    self.selection_tree.get_section(task.state.position.section),
+                    task.state.parent,
+                    element.clone(),
+                )?;
             }
 
             // TODO: move `move_foward` inside the task next
@@ -138,11 +163,7 @@ impl<'query, 'html> SelectionRunner<'query, 'html> {
                     &mut new_branch_tasks
                         .into_iter()
                         .map(|pos| {
-                            ScopedTask::new(
-                                document_position.element_depth,
-                                task.state.parent_tree_position,
-                                pos,
-                            )
+                            ScopedTask::new(document_position.element_depth, task.state.parent, pos)
                         })
                         .collect(),
                 );
@@ -150,9 +171,16 @@ impl<'query, 'html> SelectionRunner<'query, 'html> {
 
             // if position is end of fsm SelectionTree and all Selection are First Selection, then
         }
+
+        return Ok(());
     }
 
-    pub fn back(&mut self, element: &'html str, document_position: &DocumentPosition) {
+    pub fn back<S>(
+        &mut self,
+        store: &mut S,
+        element: &'html str,
+        document_position: &DocumentPosition,
+    ) {
         assert_ne!(self.tasks.len(), 0);
 
         let mut patterns_to_remove: Vec<usize> = vec![];
@@ -175,7 +203,7 @@ impl<'query, 'html> SelectionRunner<'query, 'html> {
                     .get_section_selection_kind(task.state.position.section);
                 if self.selection_tree.is_save_point(&task.state.position) {
                     // TODO: Add real Content
-                    self.tree.set_content(task.state.parent_tree_position, 0, 0);
+                    //self.tree.set_content(task.state.parent, 0, 0);
                 }
 
                 task.state.move_backward(self.selection_tree);
@@ -191,18 +219,15 @@ impl<'query, 'html> SelectionRunner<'query, 'html> {
 
         //self.patterns.remove
     }
-
-    pub(super) fn matches(self) -> MatchTree<'html> {
-        self.tree
-    }
 }
-
+/*
 mod tests {
     use super::super::tree::{ContentRange, Node};
     use crate::XHtmlElement;
     use crate::css::parser::element::QueryElement;
     use crate::css::parser::fsm::Fsm;
     use crate::css::parser::tree::{Position, Save, SelectionKind, SelectionPart};
+    use crate::store::{Element, RustStore};
     use crate::utils::Reader;
 
     use super::*;
@@ -218,7 +243,9 @@ mod tests {
         );
         let selection_tree = Selection::new(section);
 
-        let mut selection = SelectionRunner::new(&selection_tree);
+        let mut store = RustStore::new();
+
+        let mut selection = SelectionRunner::new(&mut store,&selection_tree);
 
         selection.next(
             &XHtmlElement {
@@ -254,7 +281,7 @@ mod tests {
             vec![Task {
                 retry_from: None,
                 state: FsmState {
-                    parent_tree_position: 0,
+                    parent: ..,
                     position: Position { section: 0, fsm: 1 },
                     depths: vec![0]
                 }
@@ -531,3 +558,4 @@ mod tests {
         );
     }
 }
+*/

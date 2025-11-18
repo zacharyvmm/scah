@@ -64,6 +64,11 @@ impl<'query> Selection<'query> {
         return &self.list[section_index].kind;
     }
 
+    pub fn get_section(&self, section_index: usize) -> &SelectionPart<'query> {
+        assert!(section_index < self.list.len());
+        return &self.list[section_index];
+    }
+
     pub fn is_descendant(&self, position: &Position) -> bool {
         self.get(position).transition == Combinator::Descendant
     }
@@ -185,6 +190,7 @@ mod tests {
         assert_eq!(
             selection.list,
             Vec::from([SelectionPart {
+                source: "element#id.class > other#other_id.other_class",
                 fsms: Vec::from([
                     Fsm {
                         state: QueryElement::new(
@@ -236,6 +242,7 @@ mod tests {
             selection.list,
             Vec::from([
                 SelectionPart {
+                    source: "element#id.class > other#other_id.other_class",
                     fsms: Vec::from([
                         Fsm {
                             state: QueryElement::new(
@@ -265,6 +272,7 @@ mod tests {
                     children: Vec::from([1, 2]),
                 },
                 SelectionPart {
+                    source: "> a",
                     fsms: Vec::from([Fsm {
                         state: QueryElement::new(Some("a"), None, None, Vec::new(),),
                         transition: Combinator::Child
@@ -278,6 +286,7 @@ mod tests {
                     children: Vec::new(),
                 },
                 SelectionPart {
+                    source: " p",
                     fsms: Vec::from([Fsm {
                         state: QueryElement::new(Some("p"), None, None, Vec::new(),),
                         transition: Combinator::Descendant
