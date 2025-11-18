@@ -59,27 +59,33 @@ where
 
         match tag {
             XHtmlTag::Open(element) => {
-                println!("opened: `{}`", element.name);
+                println!("opening: `{}`", element.name);
                 self.position.element_depth += 1;
                 self.position.reader_position = reader.get_position();
                 self.selectors.next(element, &self.position);
             }
             XHtmlTag::Close(closing_tag) => {
-                println!("closed: `{closing_tag}`");
-                self.position.element_depth -= 1;
+                println!("closing: `{closing_tag}`");
                 self.selectors.back(closing_tag, &self.position);
+                self.position.element_depth -= 1;
             }
         }
 
         !reader.eof()
     }
+
+    pub fn matches(self) -> S {
+        self.selectors.matches()
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::css::{FsmManager, Save, Selection, SelectionKind, SelectionPart};
-    use crate::store::{Element, RustStore};
+    use crate::store::{Element, RustStore, SelectionValue, ValueKind};
     use crate::utils::Reader;
     use crate::xhtml::element::element::{Attribute, XHtmlElement};
 
@@ -117,18 +123,37 @@ mod tests {
         println!("{:?}", queries);
 
         while parser.next(&mut reader) {
-            println!("{:?}", parser.selectors);
+            // println!("{:?}", parser.selectors);
         }
 
-        // assert_eq!(
-        //     parser.selectors.matches()[0].list[1].value,
-        //     XHtmlElement {
-        //         name: "span",
-        //         id: Some("name"),
-        //         class: Some("bold"),
-        //         attributes: vec![]
-        //     }
-        // )
+        let root = *parser.selectors.matches().root;
+
+        assert_eq!(
+            root,
+            Element {
+                name: "root",
+                id: None,
+                class: None,
+                attributes: vec![],
+                inner_html: None,
+                text_content: None,
+                children: HashMap::from([(
+                    "p.indent > .bold",
+                    SelectionValue {
+                        kind: ValueKind::List,
+                        list: vec![Element {
+                            name: "span",
+                            id: Some("name"),
+                            class: Some("bold"),
+                            attributes: vec![],
+                            inner_html: None,
+                            text_content: None,
+                            children: HashMap::new(),
+                        }]
+                    }
+                )])
+            }
+        )
     }
 
     #[test]

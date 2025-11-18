@@ -220,15 +220,15 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         //self.patterns.remove
     }
 }
-/*
 mod tests {
-    use super::super::tree::{ContentRange, Node};
-    use crate::XHtmlElement;
+    use std::collections::HashMap;
+
     use crate::css::parser::element::QueryElement;
     use crate::css::parser::fsm::Fsm;
     use crate::css::parser::tree::{Position, Save, SelectionKind, SelectionPart};
-    use crate::store::{Element, RustStore};
+    use crate::store::{Element, RustStore, SelectionValue, ValueKind};
     use crate::utils::Reader;
+    use crate::{XHtmlElement, mut_prt_unchecked};
 
     use super::*;
 
@@ -245,9 +245,10 @@ mod tests {
 
         let mut store = RustStore::new();
 
-        let mut selection = SelectionRunner::new(&mut store,&selection_tree);
+        let mut selection = SelectionRunner::new(store.root(), &selection_tree);
 
-        selection.next(
+        let _ = selection.next(
+            &mut store,
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -261,27 +262,14 @@ mod tests {
             },
         );
 
-        assert_eq!(
-            selection.tree.list,
-            vec![Node {
-                value: XHtmlElement {
-                    name: "root",
-                    class: None,
-                    id: None,
-                    attributes: Vec::new()
-                },
-                children: vec![],
-                inner_html: ContentRange::Empty,
-                text_content: ContentRange::Empty,
-            },]
-        );
+        assert_eq!(store.root.children, HashMap::new());
 
         assert_eq!(
             selection.tasks,
             vec![Task {
                 retry_from: None,
                 state: FsmState {
-                    parent: ..,
+                    parent: std::ptr::null_mut(),
                     position: Position { section: 0, fsm: 1 },
                     depths: vec![0]
                 }
@@ -295,7 +283,7 @@ mod tests {
                 task: Task {
                     retry_from: None,
                     state: FsmState {
-                        parent_tree_position: 0,
+                        parent: std::ptr::null_mut(),
                         position: Position { section: 0, fsm: 0 },
                         depths: vec![]
                     },
@@ -303,7 +291,8 @@ mod tests {
             }]
         );
 
-        selection.next(
+        let _ = selection.next(
+            &mut store,
             &XHtmlElement {
                 name: "a",
                 id: None,
@@ -318,31 +307,22 @@ mod tests {
         );
 
         assert_eq!(
-            selection.tree.list,
-            vec![
-                Node {
-                    value: XHtmlElement {
-                        name: "root",
-                        class: None,
-                        id: None,
-                        attributes: Vec::new()
-                    },
-                    children: vec![1],
-                    inner_html: ContentRange::Empty,
-                    text_content: ContentRange::Empty,
-                },
-                Node {
-                    value: XHtmlElement {
+            store.root.children,
+            HashMap::from([(
+                "div a",
+                SelectionValue {
+                    kind: ValueKind::List,
+                    list: vec![Element {
                         name: "a",
                         id: None,
                         class: None,
                         attributes: vec![],
-                    },
-                    inner_html: ContentRange::Empty,
-                    text_content: ContentRange::Empty,
-                    children: vec![],
+                        inner_html: None,
+                        text_content: None,
+                        children: HashMap::new(),
+                    },]
                 }
-            ]
+            )])
         );
 
         // assert_eq!(
@@ -358,7 +338,7 @@ mod tests {
                     task: Task {
                         retry_from: None,
                         state: FsmState {
-                            parent_tree_position: 0,
+                            parent: std::ptr::null_mut(),
                             position: Position { section: 0, fsm: 0 },
                             depths: vec![]
                         },
@@ -369,7 +349,7 @@ mod tests {
                     task: Task {
                         retry_from: None,
                         state: FsmState {
-                            parent_tree_position: 0,
+                            parent: std::ptr::null_mut(),
                             position: Position { section: 0, fsm: 1 },
                             depths: vec![]
                         },
@@ -406,9 +386,11 @@ mod tests {
             ),
         ]));
 
-        let mut selection = SelectionRunner::new(&selection_tree);
+        let mut store = RustStore::new();
+        let mut selection = SelectionRunner::new(store.root(), &selection_tree);
 
-        selection.next(
+        let _ = selection.next(
+            &mut store,
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -422,27 +404,14 @@ mod tests {
             },
         );
 
-        assert_eq!(
-            selection.tree.list,
-            vec![Node {
-                value: XHtmlElement {
-                    name: "root",
-                    class: None,
-                    id: None,
-                    attributes: Vec::new()
-                },
-                children: vec![],
-                inner_html: ContentRange::Empty,
-                text_content: ContentRange::Empty,
-            },]
-        );
+        assert_eq!(store.root.children, HashMap::new());
 
         assert_eq!(
             selection.tasks,
             vec![Task {
                 retry_from: None,
                 state: FsmState {
-                    parent_tree_position: 0,
+                    parent: std::ptr::null_mut(),
                     position: Position { section: 0, fsm: 1 },
                     depths: vec![0]
                 }
@@ -456,7 +425,7 @@ mod tests {
                 task: Task {
                     retry_from: None,
                     state: FsmState {
-                        parent_tree_position: 0,
+                        parent: std::ptr::null_mut(),
                         position: Position { section: 0, fsm: 0 },
                         depths: vec![]
                     },
@@ -464,7 +433,8 @@ mod tests {
             }]
         );
 
-        selection.next(
+        let _ = selection.next(
+            &mut store,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -479,31 +449,22 @@ mod tests {
         );
 
         assert_eq!(
-            selection.tree.list,
-            vec![
-                Node {
-                    value: XHtmlElement {
-                        name: "root",
-                        class: None,
-                        id: None,
-                        attributes: Vec::new()
-                    },
-                    children: vec![1],
-                    inner_html: ContentRange::Empty,
-                    text_content: ContentRange::Empty,
-                },
-                Node {
-                    value: XHtmlElement {
+            store.root.children,
+            HashMap::from([(
+                "div p.class",
+                SelectionValue {
+                    kind: ValueKind::SingleItem,
+                    list: vec![Element {
                         name: "p",
                         id: None,
                         class: Some("class"),
                         attributes: vec![],
-                    },
-                    inner_html: ContentRange::Empty,
-                    text_content: ContentRange::Empty,
-                    children: vec![],
+                        inner_html: None,
+                        text_content: None,
+                        children: HashMap::new(),
+                    },]
                 }
-            ]
+            )])
         );
 
         assert_eq!(
@@ -511,7 +472,7 @@ mod tests {
             vec![Task {
                 retry_from: None,
                 state: FsmState {
-                    parent_tree_position: 1,
+                    parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
                     position: Position { section: 2, fsm: 0 },
                     depths: vec![0, 1]
                 }
@@ -526,7 +487,7 @@ mod tests {
                     task: Task {
                         retry_from: None,
                         state: FsmState {
-                            parent_tree_position: 0,
+                            parent: std::ptr::null_mut(),
                             position: Position { section: 0, fsm: 0 },
                             depths: vec![]
                         },
@@ -537,7 +498,7 @@ mod tests {
                     task: Task {
                         retry_from: None,
                         state: FsmState {
-                            parent_tree_position: 0,
+                            parent: std::ptr::null_mut(),
                             position: Position { section: 0, fsm: 1 },
                             depths: vec![]
                         },
@@ -548,7 +509,7 @@ mod tests {
                     task: Task {
                         retry_from: None,
                         state: FsmState {
-                            parent_tree_position: 1,
+                            parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
                             position: Position { section: 1, fsm: 0 },
                             depths: vec![]
                         }
@@ -558,4 +519,3 @@ mod tests {
         );
     }
 }
-*/

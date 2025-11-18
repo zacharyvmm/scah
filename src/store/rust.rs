@@ -7,15 +7,15 @@ use std::ops::Index;
 use std::ptr;
 
 #[derive(Debug, PartialEq)]
-enum ValueKind {
+pub enum ValueKind {
     SingleItem,
     List,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct SelectionValue<'html, 'query> {
-    kind: ValueKind,
-    list: Vec<Element<'html, 'query>>,
+    pub(crate) kind: ValueKind,
+    pub(crate) list: Vec<Element<'html, 'query>>,
 }
 
 impl<'html, 'query: 'html, 'key> SelectionValue<'html, 'query> {
@@ -231,7 +231,7 @@ impl<'html, 'query> ElementBuilder<'html, 'query> {
 
 #[derive(Debug, PartialEq)]
 pub struct RustStore<'html, 'query> {
-    root: Box<Element<'html, 'query>>,
+    pub(crate) root: Box<Element<'html, 'query>>,
 }
 
 impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {

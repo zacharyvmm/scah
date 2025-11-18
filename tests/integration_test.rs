@@ -1,5 +1,5 @@
-/*use onego::{
-    Attribute, BodyContent, InnerContent, SelectorQuery, SelectorQueryKind, XHtmlElement, parse,
+use onego::{
+    parse, QueryError, SelectionValue, Element, Selection, SelectionKind, SelectionPart, Save
 };
 const HTML: &str = r#"
 <!DOCTYPE html>
@@ -45,50 +45,58 @@ const HTML: &str = r#"
 "#;
 
 #[test]
-fn test_html_page() {
-    let queries = Vec::from([SelectorQuery {
-        kind: SelectorQueryKind::All,
-        query: "main > section#id",
-        data: InnerContent {
+fn test_html_page<'key>() -> Result<(), QueryError<'key>>{        
+    let section = SelectionPart::new(
+        "main > section#id",
+        SelectionKind::All(Save {
             inner_html: true,
             text_content: true,
-        },
-    }]);
-
-    let (mut map, content) = parse(HTML, queries);
-
-    let last = map.elements.pop().unwrap();
-    assert_eq!(
-        HTML[last.inner_html.unwrap()].trim(),
-        r#"<a href="wrong-main">Not selected (main has no red-background class)</a>"#
+        }),
     );
+    let selection_tree = Selection::new(section);
 
-    assert_eq!(
-        content.join(last.text_content.unwrap()).trim(),
-        r#"Not selected (main has no red-background class)"#
-    );
+    let queries = &vec![selection_tree];
+    let map = parse(HTML, queries);
 
-    let first = map.elements.pop().unwrap();
-    assert_eq!(
-        HTML[first.inner_html.unwrap()].trim(),
-        r#"<!-- These 3 links will be selected by the selector -->
-            <a href="link1">Link 1</a>
-            <a href="link2">Link 2</a>
-            <a href="link3">Link 3</a>
+    let list = &map["main > section#id"];
+
+    let last = &list[list.len()? - 1];
+
+    // assert!(last.inner_html.is_some());
+    // assert_eq!(
+    //     last.inner_html.unwrap().trim(),
+    //     r#"<a href="wrong-main">Not selected (main has no red-background class)</a>"#
+    // );
+
+    // assert!(last.text_content.is_some());
+    // assert_eq!(
+    //     last.text_content.unwrap(),
+    //     r#"Not selected (main has no red-background class)"#
+    // );
+
+    // let first = &list[0];
+    // assert_eq!(
+    //     first.inner_html.unwrap().trim(),
+    //     r#"<!-- These 3 links will be selected by the selector -->
+    //         <a href="link1">Link 1</a>
+    //         <a href="link2">Link 2</a>
+    //         <a href="link3">Link 3</a>
             
-            <!-- These elements won't be selected -->
-            <div>
-                <a href="not-selected">Not selected (nested in div)</a>
-            </div>
-            <span>No link here</span>"#
-    );
+    //         <!-- These elements won't be selected -->
+    //         <div>
+    //             <a href="not-selected">Not selected (nested in div)</a>
+    //         </div>
+    //         <span>No link here</span>"#
+    // );
 
-    assert_eq!(
-        content.join(first.text_content.unwrap()).trim(),
-        r#"Link 1 Link 2 Link 3 Not selected (nested in div) No link here"#
-    );
+    // assert_eq!(
+    //     first.text_content.unwrap(),
+    //     r#"Link 1 Link 2 Link 3 Not selected (nested in div) No link here"#
+    // );
+
+    Ok(())
 }
-
+/*
 #[test]
 fn test_html_page_single_main() {
     let queries = Vec::from([SelectorQuery {
@@ -323,4 +331,4 @@ fn test_html_page_all_valid_anchor_tags_in_main() {
             "Not selected (main has no red-background class)"
         );
     }
-}*/
+} */

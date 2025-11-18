@@ -47,10 +47,7 @@ where
         }
     }
 
-    // pub fn matches(self) -> Vec<MatchTree<'html>> {
-    //     self.sessions
-    //         .into_iter()
-    //         .map(|selection| selection.matches())
-    //         .collect()
-    // }
+    pub fn matches(self) -> S {
+        self.store
+    }
 }
