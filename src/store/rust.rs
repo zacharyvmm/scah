@@ -7,23 +7,31 @@ use std::ops::Index;
 use std::ptr;
 
 #[derive(Debug, PartialEq)]
-pub enum SelectionValue<'html, 'query> {
-    One(Box<Element<'html, 'query>>),
-    Many(Vec<Element<'html, 'query>>),
+enum ValueKind {
+    SingleItem,
+    List,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SelectionValue<'html, 'query> {
+    kind: ValueKind,
+    list: Vec<Element<'html, 'query>>,
 }
 
 impl<'html, 'query: 'html, 'key> SelectionValue<'html, 'query> {
     fn one(&self) -> Result<&Element<'html, 'query>, QueryError<'key>> {
-        match self {
-            SelectionValue::One(el) => Ok(el),
-            SelectionValue::Many(_) => Err(QueryError::NotASingleElement),
+        match self.kind {
+            ValueKind::SingleItem => {
+                return Ok(&self.list[0]);
+            }
+            ValueKind::List => Err(QueryError::NotASingleElement),
         }
     }
 
     fn list(&'html self) -> Result<&'html [Element<'html, 'query>], QueryError<'key>> {
-        match self {
-            SelectionValue::Many(vec) => Ok(vec),
-            SelectionValue::One(_) => Err(QueryError::NotAList),
+        match self.kind {
+            ValueKind::SingleItem => Err(QueryError::NotAList),
+            ValueKind::List => Ok(self.list.as_slice()),
         }
     }
 
@@ -43,9 +51,10 @@ impl<'html, 'query: 'html, 'key> SelectionValue<'html, 'query> {
         &'html mut self,
         element: Element<'html, 'query>,
     ) -> Result<*mut Element<'html, 'query>, QueryError<'key>> {
-        match self {
-            SelectionValue::One(_) => Err(QueryError::NotAList),
-            SelectionValue::Many(vec) => {
+        match self.kind {
+            ValueKind::SingleItem => Err(QueryError::NotAList),
+            ValueKind::List => {
+                let vec = &mut self.list;
                 let index = vec.len() - 1;
                 vec.push(element);
                 let last_element = &mut vec[index];
@@ -117,9 +126,9 @@ impl<'html, 'query> Index<usize> for SelectionValue<'html, 'query> {
     type Output = Element<'html, 'query>;
 
     fn index(&self, index: usize) -> &Self::Output {
-        match self {
-            SelectionValue::Many(vec) => &vec[index], // Panics if out of bounds
-            SelectionValue::One(_) => panic!("Cannot use usize index on single element"),
+        match self.kind {
+            ValueKind::SingleItem => panic!("Cannot use usize index on single element"),
+            ValueKind::List => &self.list[index], // Panics if out of bounds
         }
     }
 }
@@ -128,9 +137,9 @@ impl<'html, 'query> Index<&'query str> for SelectionValue<'html, 'query> {
     type Output = SelectionValue<'html, 'query>;
 
     fn index(&self, key: &'query str) -> &Self::Output {
-        match self {
-            SelectionValue::One(boxed_el) => &boxed_el[key], // Panics if key not found
-            SelectionValue::Many(_) => panic!("Cannot chain string index on list selection"),
+        match self.kind {
+            ValueKind::SingleItem => &self.list[0][key], // Panics if key not found
+            ValueKind::List => panic!("Cannot chain string index on list selection"),
         }
     }
 }
@@ -185,14 +194,25 @@ impl<'html, 'query> ElementBuilder<'html, 'query> {
 
     /// Add a single child
     pub fn child(mut self, key: &'query str, element: Element<'html, 'query>) -> Self {
-        self.children
-            .insert(key, SelectionValue::One(Box::new(element)));
+        self.children.insert(
+            key,
+            SelectionValue {
+                kind: ValueKind::SingleItem,
+                list: vec![element],
+            },
+        );
         self
     }
 
     /// Add multiple children
     pub fn children(mut self, key: &'query str, elements: Vec<Element<'html, 'query>>) -> Self {
-        self.children.insert(key, SelectionValue::Many(elements));
+        self.children.insert(
+            key,
+            SelectionValue {
+                kind: ValueKind::List,
+                list: elements,
+            },
+        );
         self
     }
 
@@ -261,6 +281,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
         // attache new element to from element
         // from.children.insert(k, v)
         let from_element = unsafe { from.as_mut() }.unwrap();
+        //println!("Element: {from_element:?}");
         let children_map = &mut from_element.children;
 
         if children_map.contains_key(selection.source) {
@@ -270,8 +291,8 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
                 ),
                 SelectionKind::All(_) => {
                     assert!(matches!(
-                        children_map[selection.source],
-                        SelectionValue::Many(..)
+                        children_map[selection.source].kind,
+                        ValueKind::List
                     ));
                     //assert!(from.children[selection.source].iter()?.collect().len() > 0);
                     let const_list = &children_map[selection.source];
@@ -284,20 +305,28 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
         children_map.insert(
             selection.source,
             match selection.kind {
-                SelectionKind::First(_) => SelectionValue::One(Box::new(new_element)),
-                SelectionKind::All(_) => SelectionValue::Many(vec![new_element]),
+                SelectionKind::First(_) => SelectionValue {
+                    kind: ValueKind::SingleItem,
+                    list: vec![new_element],
+                },
+                SelectionKind::All(_) => SelectionValue {
+                    kind: ValueKind::List,
+                    list: vec![new_element],
+                },
             },
         );
 
-        return match &children_map[selection.source] {
-            SelectionValue::One(element_box) => {
+        let selection_value = &children_map[selection.source];
+
+        return match selection_value.kind {
+            ValueKind::SingleItem => {
                 let mut_element: *mut Element<'html, 'query> =
-                    mut_prt_unchecked!(element_box.as_ref());
+                    mut_prt_unchecked!(&selection_value.list[0]);
                 return Ok(mut_element);
             }
-            SelectionValue::Many(vec) => {
-                let index = vec.len() - 1;
-                let last_element = &vec[index];
+            ValueKind::List => {
+                let index = selection_value.list.len() - 1;
+                let last_element = &selection_value.list[index];
 
                 let mut_element = mut_prt_unchecked!(last_element);
                 Ok(mut_element)
@@ -308,6 +337,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
 
 #[cfg(test)]
 mod tests {
+
+    use crate::{XHtmlElement, css::Save, utils::Reader};
+
     use super::*;
 
     #[test]
@@ -437,5 +469,178 @@ mod tests {
         // No Safe equivalent because of the types
 
         let non_existing_key = &doc["items"]["li"];
+    }
+
+    #[test]
+    fn test_build_tree() {
+        /*
+         * root -> a.class --> span#id --> p
+         *      |          \-> p
+         *      \-> div
+         */
+        let mut store = RustStore::new();
+
+        // SETUP Elements
+        let first = XHtmlElement::from(&mut Reader::new("a class=\"class\""));
+        let second = XHtmlElement::from(&mut Reader::new("span id=\"id\""));
+        let second_extended = XHtmlElement::from(&mut Reader::new("p"));
+        let second_alternate = XHtmlElement::from(&mut Reader::new("p"));
+        let first_alternate = XHtmlElement::from(&mut Reader::new("div"));
+
+        let selection_first = SelectionPart::new(
+            "a",
+            SelectionKind::All(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        );
+
+        let selection_first_alternate = SelectionPart::new(
+            "div",
+            SelectionKind::All(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        );
+
+        let selection_second_alternate = SelectionPart::new(
+            "p",
+            SelectionKind::All(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        );
+
+        let selection_second = SelectionPart::new(
+            "span",
+            SelectionKind::All(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        );
+
+        let selection_second_extended = SelectionPart::new(
+            "p",
+            SelectionKind::All(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        );
+
+        let mut last_element = store
+            .push(&selection_first, std::ptr::null_mut(), first)
+            .expect("Should be able to add an element");
+        let _ = store
+            .push(
+                &selection_first_alternate,
+                std::ptr::null_mut(),
+                first_alternate,
+            )
+            .expect("Should be able to add an element");
+        let _ = store
+            .push(&selection_second_alternate, last_element, second_alternate)
+            .expect("Should be able to add an element");
+        last_element = store
+            .push(&selection_second, last_element, second)
+            .expect("Should be able to add an element");
+        let _ = store
+            .push(&selection_second_extended, last_element, second_extended)
+            .expect("Should be able to add an element");
+
+        println!("{store:?}");
+
+        /*
+         * root -> a.class --> span#id --> p
+         *      |          \-> p
+         *      \-> div
+         */
+        assert_eq!(
+            *store.root,
+            Element {
+                name: "root",
+                id: None,
+                class: None,
+                attributes: vec![],
+                inner_html: None,
+                text_content: None,
+                children: HashMap::from([
+                    (
+                        "a",
+                        SelectionValue {
+                            kind: ValueKind::List,
+                            list: vec![Element {
+                                name: "a",
+                                id: None,
+                                class: Some("class"),
+                                attributes: vec![],
+                                inner_html: None,
+                                text_content: None,
+                                children: HashMap::from([
+                                    (
+                                        "span",
+                                        SelectionValue {
+                                            kind: ValueKind::List,
+                                            list: vec![Element {
+                                                name: "span",
+                                                class: None,
+                                                id: Some("id"),
+                                                attributes: vec![],
+                                                inner_html: None,
+                                                text_content: None,
+                                                children: HashMap::from([(
+                                                    "p",
+                                                    SelectionValue {
+                                                        kind: ValueKind::List,
+                                                        list: vec![Element {
+                                                            name: "p",
+                                                            class: None,
+                                                            id: None,
+                                                            attributes: vec![],
+                                                            inner_html: None,
+                                                            text_content: None,
+                                                            children: HashMap::new()
+                                                        }]
+                                                    }
+                                                )]),
+                                            }]
+                                        }
+                                    ),
+                                    (
+                                        "p",
+                                        SelectionValue {
+                                            kind: ValueKind::List,
+                                            list: vec![Element {
+                                                name: "p",
+                                                class: None,
+                                                id: None,
+                                                attributes: vec![],
+                                                inner_html: None,
+                                                text_content: None,
+                                                children: HashMap::new(),
+                                            }]
+                                        }
+                                    )
+                                ])
+                            }]
+                        }
+                    ),
+                    (
+                        "div",
+                        SelectionValue {
+                            kind: ValueKind::List,
+                            list: vec![Element {
+                                name: "div",
+                                id: None,
+                                class: None,
+                                attributes: vec![],
+                                inner_html: None,
+                                text_content: None,
+                                children: HashMap::new()
+                            }]
+                        }
+                    )
+                ])
+            }
+        );
     }
 }
