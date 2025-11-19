@@ -11,6 +11,12 @@ pub trait Store<'html, 'query> {
         from: *mut Self::E,
         element: XHtmlElement<'html>,
     ) -> Result<*mut Self::E, QueryError<'key>>;
+    fn set_content(
+        &mut self,
+        element: *mut Self::E,
+        inner_html: Option<&'html str>,
+        text_content: Option<&'html str>,
+    ) -> ();
 }
 
 #[derive(Debug, Clone, PartialEq)]

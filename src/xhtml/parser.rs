@@ -59,13 +59,16 @@ where
 
         match tag {
             XHtmlTag::Open(element) => {
-                println!("opening: `{}`", element.name);
                 self.position.element_depth += 1;
                 self.position.reader_position = reader.get_position();
+                println!(
+                    "opening: `{}` ({})",
+                    element.name, self.position.element_depth
+                );
                 self.selectors.next(element, &self.position);
             }
             XHtmlTag::Close(closing_tag) => {
-                println!("closing: `{closing_tag}`");
+                println!("closing: `{closing_tag}` ({})", self.position.element_depth);
                 self.selectors.back(closing_tag, &self.position);
                 self.position.element_depth -= 1;
             }

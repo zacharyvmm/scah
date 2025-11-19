@@ -15,6 +15,15 @@ pub enum SelectionKind {
     All(Save),
 }
 
+impl SelectionKind {
+    pub fn save(&self) -> &Save {
+        match self {
+            Self::All(save) => save,
+            Self::First(save) => save,
+        }
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub struct SelectionPart<'query> {
     pub(crate) source: &'query str,

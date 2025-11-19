@@ -1,7 +1,6 @@
 // A Selection Runner
 use crate::XHtmlElement;
 use crate::css::parser::tree::{NextPosition, Position, Selection};
-use crate::store::Store;
 use std::ptr;
 
 #[derive(PartialEq, Debug)]
@@ -37,11 +36,13 @@ impl<'query, E> FsmState<E> {
 
     pub fn back(&self, tree: &Selection<'query>, depth: usize, element: &str) -> bool {
         let fsm = tree.get(&self.position);
-        fsm.back(element, depth, *self.depths.last().unwrap_or(&0))
+        let last_depth = *self.depths.last().unwrap_or(&0);
+        fsm.back(element, depth, last_depth)
     }
 
     pub fn move_foward(&mut self, tree: &Selection<'query>, depth: usize) -> Option<Vec<Position>> {
         let positions = tree.next(&self.position);
+        //if tree.is_last_save_point(1)
         self.depths.push(depth);
 
         match positions {
@@ -62,6 +63,8 @@ impl<'query, E> FsmState<E> {
     }
 
     pub fn move_backward(&mut self, tree: &Selection<'query>) {
+        // BUG: Currently this works for opening a closing element's, but if in a ALL selection
+        // The FSM position and make it break
         assert!(self.depths.len() > 0);
         self.depths.pop();
 

@@ -80,6 +80,14 @@ impl<'query> Selection<'query> {
         // if it's the last fsm in the section
         return position.fsm == self.list[position.section].len() - 1;
     }
+    pub fn is_last_save_point(&self, position: &Position) -> bool {
+        assert!(position.section < self.list.len());
+        assert!(position.fsm < self.list[position.section].len());
+
+        // if it's the last fsm in the section
+        return position.section == self.list.len() - 1
+            && position.fsm == self.list[self.list.len() - 1].len() - 1;
+    }
 
     pub fn next(&self, position: &Position) -> NextPosition {
         assert!(position.section < self.list.len());

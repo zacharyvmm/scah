@@ -1,17 +1,36 @@
+use std::ops::Range;
+use std::vec;
+
 use super::manager::DocumentPosition;
 use super::task::{FsmState, ScopedTask, Task};
 //use super::tree::MatchTree;
 use crate::XHtmlElement;
 use crate::css::Save;
 use crate::css::parser::lexer::Combinator;
-use crate::css::parser::tree::{Selection, SelectionKind};
+use crate::css::parser::tree::{Position, Selection, SelectionKind};
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
 
-struct SaveHook<E> {
-    save: Save,
-    on_depth: usize,
+#[derive(Debug)]
+enum ContentRange {
+    None,
+    Start(usize),
+}
+impl ContentRange {
+    pub fn set_end<'html>(self, end: usize) -> Option<Range<usize>> {
+        match self {
+            Self::None => None,
+            Self::Start(start) => Some(start..end),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct EndTagSaveContent<E> {
     element: *mut E,
+    on_depth: usize,
+    inner_html: ContentRange,
+    text_content: ContentRange,
 }
 
 /*
@@ -26,6 +45,7 @@ pub struct SelectionRunner<'query, E> {
     selection_tree: &'query Selection<'query>,
     tasks: Vec<Task<E>>,
     scoped_tasks: Vec<ScopedTask<E>>,
+    on_close_tag_events: Vec<EndTagSaveContent<E>>,
     root: *mut E,
 }
 
@@ -35,6 +55,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             selection_tree,
             tasks: vec![Task::new(FsmState::new())],
             scoped_tasks: vec![],
+            on_close_tag_events: vec![],
             root: root,
         }
     }
@@ -87,12 +108,31 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 .selection_tree
                 .is_save_point(&scoped_task.task.state.position)
             {
-                scoped_task.task.state.parent = store.push(
-                    self.selection_tree
-                        .get_section(scoped_task.task.state.position.section),
-                    scoped_task.task.state.parent,
-                    element.clone(),
-                )?;
+                let section = self
+                    .selection_tree
+                    .get_section(scoped_task.task.state.position.section);
+                scoped_task.task.state.parent =
+                    store.push(section, scoped_task.task.state.parent, element.clone())?;
+
+                let Save {
+                    inner_html,
+                    text_content,
+                } = section.kind.save();
+
+                self.on_close_tag_events.push(EndTagSaveContent {
+                    element: scoped_task.task.state.parent,
+                    on_depth: document_position.element_depth,
+                    inner_html: if *inner_html {
+                        ContentRange::Start(document_position.reader_position)
+                    } else {
+                        ContentRange::None
+                    },
+                    text_content: if *text_content {
+                        ContentRange::Start(document_position.text_content_position)
+                    } else {
+                        ContentRange::None
+                    },
+                });
             }
 
             // TODO: move `move_foward` inside the task next
@@ -136,7 +176,12 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 continue;
             }
             println!("Match with `{:?}`", element);
-            if self.selection_tree.get(&task.state.position).transition == Combinator::Descendant {
+
+            let is_descendant_combinator =
+                self.selection_tree.get(&task.state.position).transition == Combinator::Descendant;
+            let last_save_point = self.selection_tree.is_last_save_point(&task.state.position);
+
+            if is_descendant_combinator && !last_save_point {
                 // This should only be done if the task is not done (meaning it will move forward)
                 self.scoped_tasks.push(ScopedTask::new(
                     document_position.element_depth,
@@ -146,11 +191,31 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             }
 
             if self.selection_tree.is_save_point(&task.state.position) {
-                task.state.parent = store.push(
-                    self.selection_tree.get_section(task.state.position.section),
-                    task.state.parent,
-                    element.clone(),
-                )?;
+                let section = self.selection_tree.get_section(task.state.position.section);
+                let element_pointer = store.push(section, task.state.parent, element.clone())?;
+                if !last_save_point {
+                    task.state.parent = element_pointer;
+                }
+
+                let Save {
+                    inner_html,
+                    text_content,
+                } = section.kind.save();
+
+                self.on_close_tag_events.push(EndTagSaveContent {
+                    element: task.state.parent,
+                    on_depth: document_position.element_depth,
+                    inner_html: if *inner_html {
+                        ContentRange::Start(document_position.reader_position)
+                    } else {
+                        ContentRange::None
+                    },
+                    text_content: if *text_content {
+                        ContentRange::Start(document_position.text_content_position)
+                    } else {
+                        ContentRange::None
+                    },
+                });
             }
 
             // TODO: move `move_foward` inside the task next
@@ -180,7 +245,9 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         store: &mut S,
         element: &'html str,
         document_position: &DocumentPosition,
-    ) {
+    ) where
+        S: Store<'html, 'query, E = E>,
+    {
         assert_ne!(self.tasks.len(), 0);
 
         let mut patterns_to_remove: Vec<usize> = vec![];
@@ -190,6 +257,20 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         //     continue;
         // }
 
+        for i in (0..self.on_close_tag_events.len()).rev() {
+            let content_trigger = &self.on_close_tag_events[i];
+            if content_trigger.on_depth == document_position.element_depth {
+                // TODO: Need to convert this to string
+                // let inner_html_range = content_trigger
+                //     .inner_html
+                //     .set_end(document_position.reader_position);
+                // let text_content_range = content_trigger
+                //     .text_content
+                //     .set_end(document_position.text_content_position);
+                //store.set_content(content_trigger.element, None, None);
+            }
+        }
+
         for i in 0..self.tasks.len() {
             let ref mut task = self.tasks[i];
 
@@ -198,6 +279,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 document_position.element_depth,
                 element,
             ) {
+                println!("Saved `{}`", element);
                 let kind = self
                     .selection_tree
                     .get_section_selection_kind(task.state.position.section);
@@ -207,6 +289,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 }
 
                 task.state.move_backward(self.selection_tree);
+                print!("d")
                 /*if task.is_reset() {
                     // TODO: Remove the pattern
                     patterns_to_remove.push(i);
@@ -332,30 +415,17 @@ mod tests {
 
         assert_eq!(
             selection.scoped_tasks,
-            vec![
-                ScopedTask {
-                    scope_depth: 0,
-                    task: Task {
-                        retry_from: None,
-                        state: FsmState {
-                            parent: std::ptr::null_mut(),
-                            position: Position { section: 0, fsm: 0 },
-                            depths: vec![]
-                        },
+            vec![ScopedTask {
+                scope_depth: 0,
+                task: Task {
+                    retry_from: None,
+                    state: FsmState {
+                        parent: std::ptr::null_mut(),
+                        position: Position { section: 0, fsm: 0 },
+                        depths: vec![]
                     },
                 },
-                ScopedTask {
-                    scope_depth: 1,
-                    task: Task {
-                        retry_from: None,
-                        state: FsmState {
-                            parent: std::ptr::null_mut(),
-                            position: Position { section: 0, fsm: 1 },
-                            depths: vec![]
-                        },
-                    },
-                }
-            ]
+            },]
         );
     }
 

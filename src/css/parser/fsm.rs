@@ -19,7 +19,10 @@ impl<'query> Fsm<'query> {
         current_depth: usize,
         last_depth: usize,
     ) -> bool {
-        assert!(current_depth >= last_depth, "Current depth is smaller than last depth: {current_depth} >= {last_depth}");
+        assert!(
+            current_depth >= last_depth,
+            "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
+        );
 
         if &self.state == element {
             return match self.transition {

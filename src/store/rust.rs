@@ -333,6 +333,17 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
             }
         };
     }
+
+    fn set_content<'key>(
+        &mut self,
+        element: *mut Self::E,
+        inner_html: Option<&'html str>,
+        text_content: Option<&'html str>,
+    ) -> () {
+        let ele = unsafe { element.as_mut() }.unwrap();
+        ele.inner_html = inner_html;
+        ele.text_content = text_content;
+    }
 }
 
 #[cfg(test)]

@@ -7,14 +7,14 @@ use std::collections::HashMap;
 use utils::Reader;
 use xhtml::parser::XHtmlParser;
 
-use crate::store::RustStore;
 use crate::css::FsmManager;
+use crate::store::RustStore;
 
-pub use css::{Save, SelectionKind, SelectionPart, Selection};
+pub use css::{Save, Selection, SelectionKind, SelectionPart};
+pub use store::{Element, QueryError, SelectionValue};
 pub use xhtml::element::element::{Attribute, XHtmlElement};
-pub use store::{QueryError, SelectionValue, Element};
 
-pub fn parse<'html:'query, 'query:'html>(
+pub fn parse<'html: 'query, 'query: 'html>(
     html: &'html str,
     queries: &'query Vec<Selection<'query>>,
 ) -> HashMap<&'query str, SelectionValue<'html, 'query>> {
