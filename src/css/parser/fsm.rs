@@ -39,6 +39,7 @@ impl<'query> Fsm<'query> {
                 Combinator::Namespace => panic!("Why are you using Namespace Selector ???"),
             };
         }
+        println!(">>>>>>>>>>>>>>> '{:?}' != '{:?}'", self.state, element);
 
         return false;
     }

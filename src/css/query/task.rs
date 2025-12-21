@@ -8,6 +8,7 @@ pub struct FsmState<E> {
     pub(super) parent: *mut E,
     pub(super) position: Position,
     pub(super) depths: Vec<usize>,
+    pub(super) end: bool, // This is a flag to say is a save point and this might be the end
 }
 
 impl<E> Clone for FsmState<E> {
@@ -16,6 +17,7 @@ impl<E> Clone for FsmState<E> {
             parent: self.parent,
             position: self.position.clone(),
             depths: self.depths.clone(),
+            end: self.end,
         }
     }
 }
@@ -26,6 +28,7 @@ impl<'query, E> FsmState<E> {
             parent: ptr::null_mut(),
             position: Position { section: 0, fsm: 0 },
             depths: vec![],
+            end: false,
         }
     }
 
@@ -143,6 +146,7 @@ impl<E> ScopedTask<E> {
                     parent: parent,
                     position: position,
                     depths: vec![],
+                    end: false,
                 },
             },
         }

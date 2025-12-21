@@ -99,24 +99,6 @@ mod tests {
 
         Ok(())
     }
-    #[test]
-    fn test_html_page_single_main<'key>() -> Result<(), QueryError<'key>> {
-        let section = SelectionPart::new(
-            "main.red-background > section#id",
-            SelectionKind::All(Save {
-                inner_html: true,
-                text_content: true,
-            }),
-        );
-
-        let selection_tree = Selection::new(section);
-
-        let queries = &vec![selection_tree];
-        let map = parse(HTML, queries);
-
-        assert_eq!(map["main.red-background > section#id"].len()?, 1);
-        Ok(())
-    }
 
     #[test]
     fn test_html_page_all_anchor_tag_selection<'key>() -> Result<(), QueryError<'key>> {
@@ -161,6 +143,25 @@ mod tests {
         let map = parse(HTML, queries);
 
         assert_eq!(map["main > section > a[href]"].len()?, 5);
+        Ok(())
+    }
+
+    #[test]
+    fn test_html_page_single_main<'key>() -> Result<(), QueryError<'key>> {
+        let section = SelectionPart::new(
+            "main.red-background > section#id",
+            SelectionKind::All(Save {
+                inner_html: true,
+                text_content: true,
+            }),
+        );
+
+        let selection_tree = Selection::new(section);
+
+        let queries = &vec![selection_tree];
+        let map = parse(HTML, queries);
+
+        assert_eq!(map["main.red-background > section#id"].len()?, 1);
         Ok(())
     }
 

@@ -7,7 +7,7 @@ use super::task::{FsmState, ScopedTask, Task};
 use crate::XHtmlElement;
 use crate::css::Save;
 use crate::css::parser::lexer::Combinator;
-use crate::css::parser::tree::{Position, Selection, SelectionKind};
+use crate::css::parser::tree::{Position, Selection, NextPosition};
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
 
@@ -75,6 +75,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         let mut new_scoped_tasks: Vec<ScopedTask<E>> = vec![];
 
         for i in 0..self.scoped_tasks.len() {
+            println!("Scoped Task {i}");
             let ref mut scoped_task = self.scoped_tasks[i];
 
             if !scoped_task.task.state.next(
@@ -103,7 +104,6 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
 
             let mut new_scoped_task = scoped_task.clone();
             let new_task = &mut new_scoped_task.task;
-
             if self
                 .selection_tree
                 .is_save_point(&scoped_task.task.state.position)
@@ -162,6 +162,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
 
         // STEP 2: check tasks
         for i in 0..self.tasks.len() {
+            println!("Task {i}");
             let ref mut task = self.tasks[i];
 
             if !task.state.next(
@@ -175,6 +176,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 // );
                 continue;
             }
+            task.state.end = false;
             println!("Match with `{:?}`", element);
 
             let is_descendant_combinator =
@@ -191,6 +193,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             }
 
             if self.selection_tree.is_save_point(&task.state.position) {
+                task.state.end = true;
                 let section = self.selection_tree.get_section(task.state.position.section);
                 let element_pointer = store.push(section, task.state.parent, element.clone())?;
                 if !last_save_point {
@@ -224,6 +227,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 .state
                 .move_foward(self.selection_tree, document_position.element_depth);
             if let Some(new_branch_tasks) = new_branch_tasks {
+                task.state.end = false;
                 self.scoped_tasks.append(
                     &mut new_branch_tasks
                         .into_iter()
@@ -271,33 +275,75 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             }
         }
 
+        self.scoped_tasks
+            .retain(|scoped_task| scoped_task.scope_depth < document_position.element_depth);
+
         for i in 0..self.tasks.len() {
             let ref mut task = self.tasks[i];
 
-            if task.state.back(
+            if !task.state.back(
                 self.selection_tree,
                 document_position.element_depth,
                 element,
             ) {
-                println!("Saved `{}`", element);
-                let kind = self
-                    .selection_tree
-                    .get_section_selection_kind(task.state.position.section);
-                if self.selection_tree.is_save_point(&task.state.position) {
-                    // TODO: Add real Content
-                    //self.tree.set_content(task.state.parent, 0, 0);
-                }
-
-                task.state.move_backward(self.selection_tree);
-                print!("d")
-                /*if task.is_reset() {
-                    // TODO: Remove the pattern
-                    patterns_to_remove.push(i);
-                    continue;
-                }*/
-
-                // TODO: Remove all retry point is it's equal to the current pattern
+                if task.state.end {
+                    task.state.end = false;
+                    // jump backwards twice
+                    // TODO: refactor this, this is super hacky
+                    task.state.position = self.selection_tree.back(&task.state.position);
+                    if !task.state.back(
+                        self.selection_tree,
+                        document_position.element_depth,
+                        element,
+                    ) {
+                        match self.selection_tree.next(&task.state.position) {
+                            NextPosition::EndOfBranch => {
+                                task.state.position = Position { section: 0, fsm: 0 };
+                            },
+                            NextPosition::Link(pos) => {
+                                task.state.position = pos;
+                            },
+                            NextPosition::Fork(pos_list) => {
+                                assert_ne!(pos_list.len(), 0, "Fork with no positions");
+                                task.state.position = pos_list[0].clone();
+                            }
+                        }
+                        continue;
+                    } 
+                }else {continue;}
             }
+            println!("Saved `{}`", element);
+
+
+            let kind = self
+                .selection_tree
+                .get_section_selection_kind(task.state.position.section);
+            if self.selection_tree.is_save_point(&task.state.position) {
+                // TODO: Add real Content
+                //self.tree.set_content(task.state.parent, 0, 0);
+            }
+
+            // if self.selection_tree.is_last_save_point(&task.state.position) {
+            //     // TODO: Add real Content
+            //     //self.tree.set_content(task.state.parent, 0, 0);
+            //     continue;
+            // }
+
+            if self.selection_tree.is_save_point(&task.state.position) && task.state.end {
+                assert!(task.state.depths.len() > 0);
+                task.state.depths.pop();
+                //task.state.end = false;
+                continue;
+            }
+
+            task.state.move_backward(self.selection_tree);
+            /*if task.is_reset() {
+                // TODO: Remove the pattern
+                patterns_to_remove.push(i);
+                continue;
+            }*/
+
+            // TODO: Remove all retry point is it's equal to the current pattern
         }
 
         //self.patterns.remove
@@ -354,7 +400,8 @@ mod tests {
                 state: FsmState {
                     parent: std::ptr::null_mut(),
                     position: Position { section: 0, fsm: 1 },
-                    depths: vec![0]
+                    depths: vec![0],
+                    end: false,
                 }
             }]
         );
@@ -368,7 +415,8 @@ mod tests {
                     state: FsmState {
                         parent: std::ptr::null_mut(),
                         position: Position { section: 0, fsm: 0 },
-                        depths: vec![]
+                        depths: vec![],
+                        end: false,
                     },
                 },
             }]
@@ -422,7 +470,8 @@ mod tests {
                     state: FsmState {
                         parent: std::ptr::null_mut(),
                         position: Position { section: 0, fsm: 0 },
-                        depths: vec![]
+                        depths: vec![],
+                        end: false,
                     },
                 },
             },]
@@ -483,7 +532,8 @@ mod tests {
                 state: FsmState {
                     parent: std::ptr::null_mut(),
                     position: Position { section: 0, fsm: 1 },
-                    depths: vec![0]
+                    depths: vec![0],
+                    end: false,
                 }
             }]
         );
@@ -497,7 +547,8 @@ mod tests {
                     state: FsmState {
                         parent: std::ptr::null_mut(),
                         position: Position { section: 0, fsm: 0 },
-                        depths: vec![]
+                        depths: vec![],
+                        end: false,
                     },
                 },
             }]
@@ -544,7 +595,8 @@ mod tests {
                 state: FsmState {
                     parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
                     position: Position { section: 2, fsm: 0 },
-                    depths: vec![0, 1]
+                    depths: vec![0, 1],
+                    end: false,
                 }
             }]
         );
@@ -559,7 +611,8 @@ mod tests {
                         state: FsmState {
                             parent: std::ptr::null_mut(),
                             position: Position { section: 0, fsm: 0 },
-                            depths: vec![]
+                            depths: vec![],
+                            end: false,
                         },
                     },
                 },
@@ -570,7 +623,8 @@ mod tests {
                         state: FsmState {
                             parent: std::ptr::null_mut(),
                             position: Position { section: 0, fsm: 1 },
-                            depths: vec![]
+                            depths: vec![],
+                            end: false,
                         },
                     },
                 },
@@ -581,11 +635,162 @@ mod tests {
                         state: FsmState {
                             parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
                             position: Position { section: 1, fsm: 0 },
-                            depths: vec![]
+                            depths: vec![],
+                            end: false,
                         }
                     }
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn test_simple_open_close() {
+        let mut selection_tree = Selection::new(SelectionPart::new(
+            "div",
+            SelectionKind::First(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        ));
+
+        let mut store = RustStore::new();
+        let mut selection = SelectionRunner::new(store.root(), &selection_tree);
+
+        let _ = selection.next(
+            &mut store,
+            &XHtmlElement {
+                name: "div",
+                id: None,
+                class: None,
+                attributes: vec![],
+            },
+            &DocumentPosition {
+                reader_position: 0,
+                text_content_position: 0,
+                element_depth: 0,
+            },
+        );
+
+        assert_eq!(
+            selection.scoped_tasks,
+            vec![]
+        );
+
+        assert_eq!(
+            selection.tasks,
+            vec![Task {
+                    retry_from: None,
+                    state: FsmState {
+                        parent: std::ptr::null_mut(),
+                        position: Position { section: 0, fsm: 0 },
+                        depths: vec![0],
+                        end: true,
+                    },
+                },]
+        );
+
+        let _ = selection.back(
+            &mut store,
+            "div",
+            &DocumentPosition {
+                reader_position: 0,
+                text_content_position: 0,
+                element_depth: 0,
+            },
+        );
+
+        assert_eq!(
+            selection.scoped_tasks,
+            vec![]
+        );
+
+        assert_eq!(
+            selection.tasks,
+            vec![Task {
+                    retry_from: None,
+                    state: FsmState {
+                        parent: std::ptr::null_mut(),
+                        position: Position { section: 0, fsm: 0 },
+                        depths: vec![],
+                        end: false,
+                    },
+                },]
+        );
+    }
+
+    #[test]
+    fn test_complext_open_close() {
+        let mut selection_tree = Selection::new(SelectionPart::new(
+            "div",
+            SelectionKind::First(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        ));
+
+        let mut store = RustStore::new();
+        let mut selection = SelectionRunner::new(store.root(), &selection_tree);
+
+        let _ = selection.next(
+            &mut store,
+            &XHtmlElement {
+                name: "div",
+                id: None,
+                class: None,
+                attributes: vec![],
+            },
+            &DocumentPosition {
+                reader_position: 0,
+                text_content_position: 0,
+                element_depth: 0,
+            },
+        );
+
+        assert_eq!(
+            selection.scoped_tasks,
+            vec![]
+        );
+
+        assert_eq!(
+            selection.tasks,
+            vec![Task {
+                    retry_from: None,
+                    state: FsmState {
+                        parent: std::ptr::null_mut(),
+                        position: Position { section: 0, fsm: 0 },
+                        depths: vec![0],
+                        end: true,
+                    },
+                },]
+        );
+
+        let _ = selection.back(
+            &mut store,
+            "div",
+            &DocumentPosition {
+                reader_position: 0,
+                text_content_position: 0,
+                element_depth: 0,
+            },
+        );
+
+        assert_eq!(
+            selection.scoped_tasks,
+            vec![]
+        );
+
+        assert_eq!(
+            selection.tasks,
+            vec![Task {
+                    retry_from: None,
+                    state: FsmState {
+                        parent: std::ptr::null_mut(),
+                        position: Position { section: 0, fsm: 0 },
+                        depths: vec![],
+                        end: false,
+                    },
+                },]
         );
     }
 }
