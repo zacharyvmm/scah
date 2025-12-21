@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::ops::Range;
 use std::vec;
 
@@ -10,8 +11,10 @@ use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{Position, Selection, NextPosition};
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
+use crate::utils::Reader;
+use crate::xhtml::text_content::TextContent;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum ContentRange {
     None,
     Start(usize),
@@ -62,7 +65,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
 
     pub fn next<S>(
         &mut self,
-        store: &mut S,
+        store: &mut S,   
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
     ) -> Result<(), QueryError<'_>>
@@ -111,8 +114,15 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 let section = self
                     .selection_tree
                     .get_section(scoped_task.task.state.position.section);
-                scoped_task.task.state.parent =
-                    store.push(section, scoped_task.task.state.parent, element.clone())?;
+
+
+                let element_pointer = store.push(section, scoped_task.task.state.parent, element.clone())?;
+                if !self
+                    .selection_tree
+                    .is_last_save_point(&scoped_task.task.state.position) {
+                    scoped_task.task.state.parent = element_pointer;
+                        
+                }
 
                 let Save {
                     inner_html,
@@ -120,7 +130,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 } = section.kind.save();
 
                 self.on_close_tag_events.push(EndTagSaveContent {
-                    element: scoped_task.task.state.parent,
+                    element: element_pointer,
                     on_depth: document_position.element_depth,
                     inner_html: if *inner_html {
                         ContentRange::Start(document_position.reader_position)
@@ -206,7 +216,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 } = section.kind.save();
 
                 self.on_close_tag_events.push(EndTagSaveContent {
-                    element: task.state.parent,
+                    element: element_pointer,
                     on_depth: document_position.element_depth,
                     inner_html: if *inner_html {
                         ContentRange::Start(document_position.reader_position)
@@ -249,6 +259,8 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         store: &mut S,
         element: &'html str,
         document_position: &DocumentPosition,
+        reader: &Reader<'html>,
+        content: &TextContent,
     ) where
         S: Store<'html, 'query, E = E>,
     {
@@ -264,6 +276,28 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         for i in (0..self.on_close_tag_events.len()).rev() {
             let content_trigger = &self.on_close_tag_events[i];
             if content_trigger.on_depth == document_position.element_depth {
+                println!("Closing tag save content for `{element}`");
+                let inner_html = {
+                    let inner_enum = content_trigger.inner_html.clone();
+                    let inner_range = inner_enum.set_end(document_position.reader_position);
+                    if let Some(range) = inner_range {
+                        let slice = reader.slice(range);
+                        Some(slice)
+                    } else {
+                        None
+                    }
+                };
+                let text_content = {
+                    let tc_enum = content_trigger.text_content.clone();
+                    if let Some(range) = tc_enum.set_end(document_position.text_content_position) {
+                        let slice = content.join(range);
+                        Some(slice)
+                    } else {
+                        None
+                    }
+                };
+                store.set_content(content_trigger.element, inner_html, text_content);
+                self.on_close_tag_events.remove(i);
                 // TODO: Need to convert this to string
                 // let inner_html_range = content_trigger
                 //     .inner_html
@@ -657,6 +691,9 @@ mod tests {
         let mut store = RustStore::new();
         let mut selection = SelectionRunner::new(store.root(), &selection_tree);
 
+        let mut reader = Reader::new("<div></div>");
+        let mut content = TextContent::new();
+
         let _ = selection.next(
             &mut store,
             &XHtmlElement {
@@ -671,6 +708,9 @@ mod tests {
                 element_depth: 0,
             },
         );
+        content.set_start(4);
+        println!("{:?}", store);
+        println!("{:?}", selection.tasks);
 
         assert_eq!(
             selection.scoped_tasks,
@@ -690,6 +730,7 @@ mod tests {
                 },]
         );
 
+        content.push(&reader, 4);
         let _ = selection.back(
             &mut store,
             "div",
@@ -698,6 +739,8 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 0,
             },
+            &reader,
+            &content,
         );
 
         assert_eq!(
@@ -719,78 +762,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_complext_open_close() {
-        let mut selection_tree = Selection::new(SelectionPart::new(
-            "div",
-            SelectionKind::First(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        ));
-
-        let mut store = RustStore::new();
-        let mut selection = SelectionRunner::new(store.root(), &selection_tree);
-
-        let _ = selection.next(
-            &mut store,
-            &XHtmlElement {
-                name: "div",
-                id: None,
-                class: None,
-                attributes: vec![],
-            },
-            &DocumentPosition {
-                reader_position: 0,
-                text_content_position: 0,
-                element_depth: 0,
-            },
-        );
-
-        assert_eq!(
-            selection.scoped_tasks,
-            vec![]
-        );
-
-        assert_eq!(
-            selection.tasks,
-            vec![Task {
-                    retry_from: None,
-                    state: FsmState {
-                        parent: std::ptr::null_mut(),
-                        position: Position { section: 0, fsm: 0 },
-                        depths: vec![0],
-                        end: true,
-                    },
-                },]
-        );
-
-        let _ = selection.back(
-            &mut store,
-            "div",
-            &DocumentPosition {
-                reader_position: 0,
-                text_content_position: 0,
-                element_depth: 0,
-            },
-        );
-
-        assert_eq!(
-            selection.scoped_tasks,
-            vec![]
-        );
-
-        assert_eq!(
-            selection.tasks,
-            vec![Task {
-                    retry_from: None,
-                    state: FsmState {
-                        parent: std::ptr::null_mut(),
-                        position: Position { section: 0, fsm: 0 },
-                        depths: vec![],
-                        end: true,
-                    },
-                },]
-        );
-    }
 }

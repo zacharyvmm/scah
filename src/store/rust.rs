@@ -89,7 +89,7 @@ pub struct Element<'html, 'query> {
     pub id: Option<&'html str>,
     pub attributes: Vec<(&'html str, Option<&'html str>)>,
     pub inner_html: Option<&'html str>,
-    pub text_content: Option<&'html str>,
+    pub text_content: Option<String>,
     // Store Selection directly to enable Index trait
     pub(crate) children: HashMap<&'query str, SelectionValue<'html, 'query>>,
 }
@@ -150,7 +150,7 @@ pub struct ElementBuilder<'html, 'query> {
     id: Option<&'html str>,
     attributes: Vec<(&'html str, Option<&'html str>)>,
     inner_html: Option<&'html str>,
-    text_content: Option<&'html str>,
+    text_content: Option<String>,
     children: HashMap<&'query str, SelectionValue<'html, 'query>>,
 }
 
@@ -187,7 +187,7 @@ impl<'html, 'query> ElementBuilder<'html, 'query> {
         self
     }
 
-    pub fn text_content(mut self, text: &'html str) -> Self {
+    pub fn text_content(mut self, text: String) -> Self {
         self.text_content = Some(text);
         self
     }
@@ -338,7 +338,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
         &mut self,
         element: *mut Self::E,
         inner_html: Option<&'html str>,
-        text_content: Option<&'html str>,
+        text_content: Option<String>,
     ) -> () {
         let ele = unsafe { element.as_mut() }.unwrap();
         ele.inner_html = inner_html;
@@ -359,13 +359,13 @@ mod tests {
         let doc = ElementBuilder::new("html")
             .child(
                 "title",
-                ElementBuilder::new("h1").text_content("Hello").build(),
+                ElementBuilder::new("h1").text_content("Hello".to_string()).build(),
             )
             .children(
                 "items",
                 vec![
-                    ElementBuilder::new("li").text_content("First").build(),
-                    ElementBuilder::new("li").text_content("Second").build(),
+                    ElementBuilder::new("li").text_content("First".to_string()).build(),
+                    ElementBuilder::new("li").text_content("Second".to_string()).build(),
                 ],
             )
             .build();
@@ -377,16 +377,16 @@ mod tests {
         assert_eq!(doc.get("items")?.len()?, 2);
         assert_eq!(doc["items"].len()?, 2);
 
-        assert_eq!(doc.get("items")?.get(0)?.text_content, Some("First"));
-        assert_eq!(doc["items"][0].text_content, Some("First"));
+        assert_eq!(doc.get("items")?.get(0)?.text_content, Some("First".to_string()));
+        assert_eq!(doc["items"][0].text_content, Some("First".to_string()));
 
         // Iterators for All Selections
         let items_iter1 = doc.get("items")?.iter()?;
         assert_eq!(
             items_iter1.collect::<Vec<&Element>>(),
             vec![
-                &ElementBuilder::new("li").text_content("First").build(),
-                &ElementBuilder::new("li").text_content("Second").build(),
+                &ElementBuilder::new("li").text_content("First".to_string()).build(),
+                &ElementBuilder::new("li").text_content("Second".to_string()).build(),
             ]
         );
 
@@ -394,8 +394,8 @@ mod tests {
         assert_eq!(
             items_iter2.collect::<Vec<&Element>>(),
             vec![
-                &ElementBuilder::new("li").text_content("First").build(),
-                &ElementBuilder::new("li").text_content("Second").build(),
+                &ElementBuilder::new("li").text_content("First".to_string()).build(),
+                &ElementBuilder::new("li").text_content("Second".to_string()).build(),
             ]
         );
 
@@ -416,13 +416,13 @@ mod tests {
         let doc = ElementBuilder::new("html")
             .child(
                 "title",
-                ElementBuilder::new("h1").text_content("Hello").build(),
+                ElementBuilder::new("h1").text_content("Hello".to_string()).build(),
             )
             .children(
                 "items",
                 vec![
-                    ElementBuilder::new("li").text_content("First").build(),
-                    ElementBuilder::new("li").text_content("Second").build(),
+                    ElementBuilder::new("li").text_content("First".to_string()).build(),
+                    ElementBuilder::new("li").text_content("Second".to_string()).build(),
                 ],
             )
             .build();
@@ -443,13 +443,13 @@ mod tests {
         let doc = ElementBuilder::new("html")
             .child(
                 "title",
-                ElementBuilder::new("h1").text_content("Hello").build(),
+                ElementBuilder::new("h1").text_content("Hello".to_string()).build(),
             )
             .children(
                 "items",
                 vec![
-                    ElementBuilder::new("li").text_content("First").build(),
-                    ElementBuilder::new("li").text_content("Second").build(),
+                    ElementBuilder::new("li").text_content("First".to_string()).build(),
+                    ElementBuilder::new("li").text_content("Second".to_string()).build(),
                 ],
             )
             .build();
@@ -466,13 +466,13 @@ mod tests {
         let doc = ElementBuilder::new("html")
             .child(
                 "title",
-                ElementBuilder::new("h1").text_content("Hello").build(),
+                ElementBuilder::new("h1").text_content("Hello".to_string()).build(),
             )
             .children(
                 "items",
                 vec![
-                    ElementBuilder::new("li").text_content("First").build(),
-                    ElementBuilder::new("li").text_content("Second").build(),
+                    ElementBuilder::new("li").text_content("First".to_string()).build(),
+                    ElementBuilder::new("li").text_content("Second".to_string()).build(),
                 ],
             )
             .build();

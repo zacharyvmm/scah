@@ -69,7 +69,7 @@ where
             }
             XHtmlTag::Close(closing_tag) => {
                 println!("closing: `{closing_tag}` ({})", self.position.element_depth);
-                self.selectors.back(closing_tag, &self.position);
+                self.selectors.back(closing_tag, &self.position, reader, &self.content);
                 self.position.element_depth -= 1;
             }
         }

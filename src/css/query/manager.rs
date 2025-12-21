@@ -41,9 +41,9 @@ where
         }
     }
 
-    pub fn back(&mut self, xhtml_element: &'html str, position: &DocumentPosition) {
+    pub fn back(&mut self, xhtml_element: &'html str, position: &DocumentPosition, reader: &crate::utils::Reader<'html>, content: &crate::xhtml::text_content::TextContent) {
         for session in self.sessions.iter_mut() {
-            session.back(&mut self.store, &xhtml_element, position);
+            session.back(&mut self.store, &xhtml_element, position, reader, content);
         }
     }
 

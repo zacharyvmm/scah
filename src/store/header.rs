@@ -15,7 +15,7 @@ pub trait Store<'html, 'query> {
         &mut self,
         element: *mut Self::E,
         inner_html: Option<&'html str>,
-        text_content: Option<&'html str>,
+        text_content: Option<String>,
     ) -> ();
 }
 
