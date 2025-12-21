@@ -713,7 +713,7 @@ mod tests {
                         parent: std::ptr::null_mut(),
                         position: Position { section: 0, fsm: 0 },
                         depths: vec![],
-                        end: false,
+                        end: true,
                     },
                 },]
         );
@@ -788,7 +788,7 @@ mod tests {
                         parent: std::ptr::null_mut(),
                         position: Position { section: 0, fsm: 0 },
                         depths: vec![],
-                        end: false,
+                        end: true,
                     },
                 },]
         );
