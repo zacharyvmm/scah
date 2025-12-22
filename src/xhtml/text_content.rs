@@ -32,7 +32,9 @@ impl<'html> TextContent<'html> {
 
     pub fn push(&mut self, reader: &Reader<'html>, end_position: usize) -> Option<usize> {
         // It has to be inside an element, so this is an impossible case other than at initialization
-        let Some(start_position) = self.text_start else {unreachable!("Their has to be a start position set before pushing text content")};
+        let Some(start_position) = self.text_start else {
+            unreachable!("Their has to be a start position set before pushing text content")
+        };
         let text = reader.slice(start_position..end_position).trim();
 
         // TODO: In browsers `\n` is ignored and multiple ` ` are tretead as one.
@@ -40,7 +42,7 @@ impl<'html> TextContent<'html> {
         // The only free things I can do is trim on both sides on the string
 
         self.text_start = None;
-        
+
         if text.len() > 0 || text.trim().len() > 0 {
             self.list.push(text.trim());
             println!("List: {:#?}", self.list);

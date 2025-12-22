@@ -45,7 +45,8 @@ where
                 self.position.reader_position = reader.get_position();
                 tag = XHtmlTag::from(&mut *reader);
                 if tag.is_none() && self.content.text_start.is_some() {
-                    if let Some(position) = self.content.push(reader, self.position.reader_position) {
+                    if let Some(position) = self.content.push(reader, self.position.reader_position)
+                    {
                         self.position.text_content_position = position;
                         self.content.set_start(reader.get_position());
                     }
@@ -72,7 +73,6 @@ where
             XHtmlTag::Open(element) => {
                 self.position.element_depth += 1;
                 self.position.reader_position = reader.get_position();
-
 
                 println!(
                     "opening: `{}` ({})",

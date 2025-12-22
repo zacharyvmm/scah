@@ -249,6 +249,22 @@ mod tests {
     }
 
     #[test]
+    fn test_key_no_quote_and_escaped_space_value() {
+        let mut reader = Reader::new("p key = hello\\ world");
+        let element = XHtmlElement::from(&mut reader);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                name: "key",
+                value: Some("hello\\ world")
+            }
+        );
+    }
+
+    #[test]
     fn test_long_key_with_spaces() {
         let mut reader = Reader::new("p \"long key with spaces\"=\"value\"");
         let element = XHtmlElement::from(&mut reader);
@@ -282,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_long_key_with_spaces_and_real_same_quote_inside() {
-        let mut reader = Reader::new("p \"long key\\\"s with spaces\"=\"value\"");
+        let mut reader = Reader::new(r#"p "long key\"s with spaces"="value""#);
         let element = XHtmlElement::from(&mut reader);
 
         assert_eq!(element.name, "p");
@@ -290,8 +306,26 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "long key\\\"s with spaces",
+                name: r#"long key\"s with spaces"#,
                 value: Some("value")
+            }
+        );
+    }
+
+    #[test]
+    fn test_long_key_and_value_with_spaces_and_real_same_quote_inside() {
+        let mut reader = Reader::new(
+            r#"p "long key\"s with spaces"="value\"s of an other person \\\\\\ \\\\\ \ \  \"""#,
+        );
+        let element = XHtmlElement::from(&mut reader);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                name: r#"long key\"s with spaces"#,
+                value: Some(r#"value\"s of an other person \\\\\\ \\\\\ \ \  \""#)
             }
         );
     }

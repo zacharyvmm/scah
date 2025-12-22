@@ -239,7 +239,6 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                         .collect(),
                 );
             }
-
         }
 
         return Ok(());
@@ -276,7 +275,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                             None
                         } else {
                             // to skip the text content before the element (When the start was just opened, thus thier was no text content yet)
-                            let slice = content.join((start_idx+1)..);
+                            let slice = content.join((start_idx + 1)..);
                             Some(slice)
                         }
                     } else {
@@ -332,9 +331,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             let kind = self
                 .selection_tree
                 .get_section_selection_kind(task.state.position.section);
-            if self.selection_tree.is_save_point(&task.state.position) {
-            }
-
+            if self.selection_tree.is_save_point(&task.state.position) {}
 
             if self.selection_tree.is_save_point(&task.state.position) && task.state.end {
                 assert!(task.state.depths.len() > 0);
@@ -344,7 +341,6 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
 
             task.state.move_backward(self.selection_tree);
         }
-
     }
 }
 mod tests {

@@ -39,7 +39,19 @@ impl<'a> Reader<'a> {
 
     #[inline]
     pub fn next_while(&mut self, condition: fn(char) -> bool) {
-        while let Some(_) = self.iter.next_if(|(_, c)| condition(*c)) {}
+        let mut last_escape_caracter = false;
+        const ESCAPE_CARACTER: char = '\\';
+        while let Some(_) = self.iter.next_if(|(_, c)| {
+            if last_escape_caracter {
+                last_escape_caracter = false;
+                true
+            } else if *c == ESCAPE_CARACTER {
+                last_escape_caracter = true;
+                true
+            } else {
+                condition(*c)
+            }
+        }) {}
         self.position = self
             .iter
             .peek()
