@@ -55,8 +55,8 @@ impl<'html, 'query: 'html, 'key> SelectionValue<'html, 'query> {
             ValueKind::SingleItem => Err(QueryError::NotAList),
             ValueKind::List => {
                 let vec = &mut self.list;
-                let index = vec.len() - 1;
                 vec.push(element);
+                let index = vec.len() - 1;
                 let last_element = &mut vec[index];
                 let pointer = ptr::from_mut(last_element);
 

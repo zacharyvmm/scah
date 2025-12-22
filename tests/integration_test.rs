@@ -62,40 +62,41 @@ mod tests {
         let map = parse(HTML, queries);
 
         let list = &map["main > section#id"];
+        println!("{:#?}", list);
 
         let last = &list[list.len()? - 1];
 
-        // assert!(last.inner_html.is_some());
-        // assert_eq!(
-        //     last.inner_html.unwrap().trim(),
-        //     r#"<a href="wrong-main">Not selected (main has no red-background class)</a>"#
-        // );
+        assert!(last.inner_html.is_some());
+        assert_eq!(
+            last.inner_html.unwrap().trim(),
+            r#"<a href="wrong-main">Not selected (main has no red-background class)</a>"#
+        );
 
-        // assert!(last.text_content.is_some());
-        // assert_eq!(
-        //     last.text_content.unwrap(),
-        //     r#"Not selected (main has no red-background class)"#
-        // );
+        assert!(last.text_content.is_some());
+        assert_eq!(
+            last.text_content.clone().unwrap(),
+            r#"Not selected (main has no red-background class)"#
+        );
 
-        // let first = &list[0];
-        // assert_eq!(
-        //     first.inner_html.unwrap().trim(),
-        //     r#"<!-- These 3 links will be selected by the selector -->
-        //         <a href="link1">Link 1</a>
-        //         <a href="link2">Link 2</a>
-        //         <a href="link3">Link 3</a>
+        let first = &list[0];
+        assert_eq!(
+            first.inner_html.unwrap().trim(),
+            r#"<!-- These 3 links will be selected by the selector -->
+                <a href="link1">Link 1</a>
+                <a href="link2">Link 2</a>
+                <a href="link3">Link 3</a>
 
-        //         <!-- These elements won't be selected -->
-        //         <div>
-        //             <a href="not-selected">Not selected (nested in div)</a>
-        //         </div>
-        //         <span>No link here</span>"#
-        // );
+                <!-- These elements won't be selected -->
+                <div>
+                    <a href="not-selected">Not selected (nested in div)</a>
+                </div>
+                <span>No link here</span>"#
+        );
 
-        // assert_eq!(
-        //     first.text_content.unwrap(),
-        //     r#"Link 1 Link 2 Link 3 Not selected (nested in div) No link here"#
-        // );
+        assert_eq!(
+            first.text_content.clone().unwrap(),
+            r#"Link 1 Link 2 Link 3 Not selected (nested in div) No link here"#
+        );
 
         Ok(())
     }
