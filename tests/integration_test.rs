@@ -113,6 +113,7 @@ mod tests {
         let map = parse(HTML, queries);
 
         assert_eq!(map["a"].len()?, 7);
+        println!("{:#?}", map);
         Ok(())
     }
 

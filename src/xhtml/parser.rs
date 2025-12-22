@@ -44,10 +44,26 @@ where
             while tag.is_none() {
                 self.position.reader_position = reader.get_position();
                 tag = XHtmlTag::from(&mut *reader);
+                if tag.is_none() && self.content.text_start.is_some() {
+                    if let Some(position) = self.content.push(reader, self.position.reader_position) {
+                        self.position.text_content_position = position;
+                        self.content.set_start(reader.get_position());
+                    }
+                }
             }
 
             tag.unwrap()
         };
+
+        println!("Tag found: {:#?}", tag);
+
+        if self.content.text_start.is_some() {
+            if let Some(position) = self.content.push(reader, self.position.reader_position) {
+                self.position.text_content_position = position;
+            }
+        }
+
+        self.content.set_start(reader.get_position());
 
         // TODO: register the start
         //reader.next_while(|c| c.is_whitespace());
@@ -56,7 +72,7 @@ where
             XHtmlTag::Open(element) => {
                 self.position.element_depth += 1;
                 self.position.reader_position = reader.get_position();
-                self.content.set_start(reader.get_position());
+
 
                 println!(
                     "opening: `{}` ({})",
@@ -67,14 +83,13 @@ where
             XHtmlTag::Close(closing_tag) => {
                 println!("closing: `{closing_tag}` ({})", self.position.element_depth);
 
-                self.content.push(reader, self.position.reader_position);
-                self.position.text_content_position = self.content.get_position();
-
                 self.selectors
                     .back(closing_tag, &self.position, reader, &self.content);
                 self.position.element_depth -= 1;
             }
         }
+
+        println!("Current content: {:#?}", self.content);
 
         !reader.eof()
     }

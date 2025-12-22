@@ -13,26 +13,14 @@ use crate::store::{QueryError, Store};
 use crate::utils::Reader;
 use crate::xhtml::text_content::TextContent;
 
-#[derive(Debug, Clone)]
-enum ContentRange {
-    None,
-    Start(usize),
-}
-impl ContentRange {
-    pub fn set_end<'html>(self, end: usize) -> Option<Range<usize>> {
-        match self {
-            Self::None => None,
-            Self::Start(start) => Some(start..end),
-        }
-    }
-}
+type StartIdx = Option<usize>;
 
 #[derive(Debug)]
 struct EndTagSaveContent<E> {
     element: *mut E,
     on_depth: usize,
-    inner_html: ContentRange,
-    text_content: ContentRange,
+    inner_html: StartIdx,
+    text_content: StartIdx,
 }
 
 /*
@@ -132,14 +120,17 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                     element: element_pointer,
                     on_depth: document_position.element_depth,
                     inner_html: if *inner_html {
-                        ContentRange::Start(document_position.reader_position)
+                        // Since thiis is triggered on opening tag, the start is the current position in the content
+                        // array is about the previous elements text content item, thus I need to add 1 to get the correct position
+                        // Their could be a BUG here if there is no text content ("" -> no item added)
+                        Some(document_position.reader_position)
                     } else {
-                        ContentRange::None
+                        None
                     },
                     text_content: if *text_content {
-                        ContentRange::Start(document_position.text_content_position)
+                        Some(document_position.text_content_position)
                     } else {
-                        ContentRange::None
+                        None
                     },
                 });
             }
@@ -165,7 +156,6 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             }
 
             new_scoped_tasks.push(new_scoped_task);
-            // if position is end of fsm SelectionTree and all Selection are First Selection, then
         }
         self.scoped_tasks.append(&mut new_scoped_tasks);
 
@@ -218,14 +208,17 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                     element: element_pointer,
                     on_depth: document_position.element_depth,
                     inner_html: if *inner_html {
-                        ContentRange::Start(document_position.reader_position)
+                        // Since thiis is triggered on opening tag, the start is the current position in the content
+                        // array is about the previous elements text content item, thus I need to add 1 to get the correct position
+                        // Their could be a BUG here if there is no text content ("" -> no item added)
+                        Some(document_position.reader_position)
                     } else {
-                        ContentRange::None
+                        None
                     },
                     text_content: if *text_content {
-                        ContentRange::Start(document_position.text_content_position)
+                        Some(document_position.text_content_position)
                     } else {
-                        ContentRange::None
+                        None
                     },
                 });
             }
@@ -247,7 +240,6 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 );
             }
 
-            // if position is end of fsm SelectionTree and all Selection are First Selection, then
         }
 
         return Ok(());
@@ -265,46 +257,34 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
     {
         assert_ne!(self.tasks.len(), 0);
 
-        let mut patterns_to_remove: Vec<usize> = vec![];
-        // BUG: This should be in `back` not in `next`
-        // if !scoped_task.in_scope(document_position.element_depth) {
-        //     remove_scoped_at_index.push(i);
-        //     continue;
-        // }
-
         for i in (0..self.on_close_tag_events.len()).rev() {
             let content_trigger = &self.on_close_tag_events[i];
             if content_trigger.on_depth == document_position.element_depth {
                 println!("Closing tag save content for `{element}`");
                 let inner_html = {
-                    let inner_enum = content_trigger.inner_html.clone();
-                    let inner_range = inner_enum.set_end(document_position.reader_position);
-                    if let Some(range) = inner_range {
-                        let slice = reader.slice(range);
+                    if let Some(start_idx) = content_trigger.inner_html {
+                        let slice = reader.slice(start_idx..document_position.reader_position);
                         Some(slice)
                     } else {
                         None
                     }
                 };
                 let text_content = {
-                    let tc_enum = content_trigger.text_content.clone();
-                    if let Some(range) = tc_enum.set_end(document_position.text_content_position) {
-                        let slice = content.join(range);
-                        Some(slice)
+                    if let Some(start_idx) = content_trigger.text_content {
+                        if start_idx == content.get_position() {
+                            // No new text content was added after the element opened
+                            None
+                        } else {
+                            // to skip the text content before the element (When the start was just opened, thus thier was no text content yet)
+                            let slice = content.join((start_idx+1)..);
+                            Some(slice)
+                        }
                     } else {
                         None
                     }
                 };
                 store.set_content(content_trigger.element, inner_html, text_content);
                 self.on_close_tag_events.remove(i);
-                // TODO: Need to convert this to string
-                // let inner_html_range = content_trigger
-                //     .inner_html
-                //     .set_end(document_position.reader_position);
-                // let text_content_range = content_trigger
-                //     .text_content
-                //     .set_end(document_position.text_content_position);
-                //store.set_content(content_trigger.element, None, None);
             }
         }
 
@@ -353,34 +333,18 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 .selection_tree
                 .get_section_selection_kind(task.state.position.section);
             if self.selection_tree.is_save_point(&task.state.position) {
-                // TODO: Add real Content
-                //self.tree.set_content(task.state.parent, 0, 0);
             }
 
-            // if self.selection_tree.is_last_save_point(&task.state.position) {
-            //     // TODO: Add real Content
-            //     //self.tree.set_content(task.state.parent, 0, 0);
-            //     continue;
-            // }
 
             if self.selection_tree.is_save_point(&task.state.position) && task.state.end {
                 assert!(task.state.depths.len() > 0);
                 task.state.depths.pop();
-                //task.state.end = false;
                 continue;
             }
 
             task.state.move_backward(self.selection_tree);
-            /*if task.is_reset() {
-                // TODO: Remove the pattern
-                patterns_to_remove.push(i);
-                continue;
-            }*/
-
-            // TODO: Remove all retry point is it's equal to the current pattern
         }
 
-        //self.patterns.remove
     }
 }
 mod tests {

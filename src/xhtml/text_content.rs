@@ -1,5 +1,5 @@
 use crate::utils::Reader;
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeFrom;
 
 #[derive(Debug)]
 pub struct TextContent<'html> {
@@ -15,36 +15,44 @@ impl<'html> TextContent<'html> {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        println!("TextContent is empty check: {:#?}", self);
+        self.list.is_empty() && self.text_start.is_none()
+    }
+
     pub fn set_start(&mut self, start: usize) {
         self.text_start = Some(start);
     }
 
     pub fn get_position(&self) -> usize {
-        assert!(self.list.len() > 0);
+        assert!(!self.list.is_empty());
         // BUG: the position is off by one
-        self.list.len() // - 1
+        self.list.len() - 1
     }
 
-    pub fn push(&mut self, reader: &Reader<'html>, end_position: usize) {
+    pub fn push(&mut self, reader: &Reader<'html>, end_position: usize) -> Option<usize> {
         // It has to be inside an element, so this is an impossible case other than at initialization
-        if let Some(start_position) = self.text_start {
-            let text = reader.slice(start_position..end_position).trim();
+        let Some(start_position) = self.text_start else {unreachable!("Their has to be a start position set before pushing text content")};
+        let text = reader.slice(start_position..end_position).trim();
 
-            // TODO: In browsers `\n` is ignored and multiple ` ` are tretead as one.
-            // If the user wants the textcontent and innerhtml to be in format then I would need to filter the text
-            // The only free things I can do is trim on both sides on the string
-            if text.len() > 0 {
-                self.list.push(text);
-            }
+        // TODO: In browsers `\n` is ignored and multiple ` ` are tretead as one.
+        // If the user wants the textcontent and innerhtml to be in format then I would need to filter the text
+        // The only free things I can do is trim on both sides on the string
 
-            self.text_start = None;
+        self.text_start = None;
+        
+        if text.len() > 0 || text.trim().len() > 0 {
+            self.list.push(text.trim());
+            println!("List: {:#?}", self.list);
+            println!("Position: {:#?}", self.get_position());
+            return Some(self.get_position());
         }
-        //self.text_start = reader.get_position();
+
+        None
     }
 
-    // TODO: should be `RangeInclusive`
-    pub fn join(&self, range: Range<usize>) -> String {
-        println!("Joining text content from {:?}: {:#?}", range, self.list);
+    // It's assumed that you want from a start point to the current end of the text content list
+    pub fn join(&self, range: RangeFrom<usize>) -> String {
         self.list[range].join(" ")
     }
 }
