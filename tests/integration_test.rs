@@ -22,21 +22,21 @@ mod tests {
             <a href="link1">Link 1</a>
             <a href="link2">Link 2</a>
             <a href="link3">Link 3</a>
-            
+
             <!-- These elements won't be selected -->
             <div>
                 <a href="not-selected">Not selected (nested in div)</a>
             </div>
             <span>No link here</span>
         </section>
-        
+
         <!-- These elements won't be selected -->
         <section>
             <a href="wrong-section">Not selected (wrong section)</a>
         </section>
         <a href="direct-link">Not selected (direct child of main)</a>
     </main>
-    
+
     <!-- These elements won't be selected -->
     <main>
         <section id="id" class="third-section">
@@ -82,15 +82,15 @@ mod tests {
         assert_eq!(
             first.inner_html.unwrap().trim(),
             r#"<!-- These 3 links will be selected by the selector -->
-                <a href="link1">Link 1</a>
-                <a href="link2">Link 2</a>
-                <a href="link3">Link 3</a>
+            <a href="link1">Link 1</a>
+            <a href="link2">Link 2</a>
+            <a href="link3">Link 3</a>
 
-                <!-- These elements won't be selected -->
-                <div>
-                    <a href="not-selected">Not selected (nested in div)</a>
-                </div>
-                <span>No link here</span>"#
+            <!-- These elements won't be selected -->
+            <div>
+                <a href="not-selected">Not selected (nested in div)</a>
+            </div>
+            <span>No link here</span>"#
         );
 
         assert_eq!(

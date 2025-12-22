@@ -37,10 +37,6 @@ where
         if reader.peek().is_none() {
             return false;
         }
-        let before_element_position = reader.get_position();
-
-        self.content.push(reader, before_element_position);
-        //self.content.set_start(reader.get_position());
 
         let tag = {
             let mut tag: Option<XHtmlTag> = None;
@@ -48,7 +44,6 @@ where
             while tag.is_none() {
                 self.position.reader_position = reader.get_position();
                 tag = XHtmlTag::from(&mut *reader);
-                self.content.set_start(reader.get_position());
             }
 
             tag.unwrap()
@@ -61,6 +56,8 @@ where
             XHtmlTag::Open(element) => {
                 self.position.element_depth += 1;
                 self.position.reader_position = reader.get_position();
+                self.content.set_start(reader.get_position());
+
                 println!(
                     "opening: `{}` ({})",
                     element.name, self.position.element_depth
@@ -69,6 +66,10 @@ where
             }
             XHtmlTag::Close(closing_tag) => {
                 println!("closing: `{closing_tag}` ({})", self.position.element_depth);
+
+                self.content.push(reader, self.position.reader_position);
+                self.position.text_content_position = self.content.get_position();
+
                 self.selectors.back(closing_tag, &self.position, reader, &self.content);
                 self.position.element_depth -= 1;
             }
