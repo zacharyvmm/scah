@@ -359,13 +359,19 @@ mod tests {
         let doc = ElementBuilder::new("html")
             .child(
                 "title",
-                ElementBuilder::new("h1").text_content("Hello".to_string()).build(),
+                ElementBuilder::new("h1")
+                    .text_content("Hello".to_string())
+                    .build(),
             )
             .children(
                 "items",
                 vec![
-                    ElementBuilder::new("li").text_content("First".to_string()).build(),
-                    ElementBuilder::new("li").text_content("Second".to_string()).build(),
+                    ElementBuilder::new("li")
+                        .text_content("First".to_string())
+                        .build(),
+                    ElementBuilder::new("li")
+                        .text_content("Second".to_string())
+                        .build(),
                 ],
             )
             .build();
@@ -377,7 +383,10 @@ mod tests {
         assert_eq!(doc.get("items")?.len()?, 2);
         assert_eq!(doc["items"].len()?, 2);
 
-        assert_eq!(doc.get("items")?.get(0)?.text_content, Some("First".to_string()));
+        assert_eq!(
+            doc.get("items")?.get(0)?.text_content,
+            Some("First".to_string())
+        );
         assert_eq!(doc["items"][0].text_content, Some("First".to_string()));
 
         // Iterators for All Selections
@@ -385,8 +394,12 @@ mod tests {
         assert_eq!(
             items_iter1.collect::<Vec<&Element>>(),
             vec![
-                &ElementBuilder::new("li").text_content("First".to_string()).build(),
-                &ElementBuilder::new("li").text_content("Second".to_string()).build(),
+                &ElementBuilder::new("li")
+                    .text_content("First".to_string())
+                    .build(),
+                &ElementBuilder::new("li")
+                    .text_content("Second".to_string())
+                    .build(),
             ]
         );
 
@@ -394,8 +407,12 @@ mod tests {
         assert_eq!(
             items_iter2.collect::<Vec<&Element>>(),
             vec![
-                &ElementBuilder::new("li").text_content("First".to_string()).build(),
-                &ElementBuilder::new("li").text_content("Second".to_string()).build(),
+                &ElementBuilder::new("li")
+                    .text_content("First".to_string())
+                    .build(),
+                &ElementBuilder::new("li")
+                    .text_content("Second".to_string())
+                    .build(),
             ]
         );
 
@@ -416,13 +433,19 @@ mod tests {
         let doc = ElementBuilder::new("html")
             .child(
                 "title",
-                ElementBuilder::new("h1").text_content("Hello".to_string()).build(),
+                ElementBuilder::new("h1")
+                    .text_content("Hello".to_string())
+                    .build(),
             )
             .children(
                 "items",
                 vec![
-                    ElementBuilder::new("li").text_content("First".to_string()).build(),
-                    ElementBuilder::new("li").text_content("Second".to_string()).build(),
+                    ElementBuilder::new("li")
+                        .text_content("First".to_string())
+                        .build(),
+                    ElementBuilder::new("li")
+                        .text_content("Second".to_string())
+                        .build(),
                 ],
             )
             .build();
@@ -443,13 +466,19 @@ mod tests {
         let doc = ElementBuilder::new("html")
             .child(
                 "title",
-                ElementBuilder::new("h1").text_content("Hello".to_string()).build(),
+                ElementBuilder::new("h1")
+                    .text_content("Hello".to_string())
+                    .build(),
             )
             .children(
                 "items",
                 vec![
-                    ElementBuilder::new("li").text_content("First".to_string()).build(),
-                    ElementBuilder::new("li").text_content("Second".to_string()).build(),
+                    ElementBuilder::new("li")
+                        .text_content("First".to_string())
+                        .build(),
+                    ElementBuilder::new("li")
+                        .text_content("Second".to_string())
+                        .build(),
                 ],
             )
             .build();
@@ -466,13 +495,19 @@ mod tests {
         let doc = ElementBuilder::new("html")
             .child(
                 "title",
-                ElementBuilder::new("h1").text_content("Hello".to_string()).build(),
+                ElementBuilder::new("h1")
+                    .text_content("Hello".to_string())
+                    .build(),
             )
             .children(
                 "items",
                 vec![
-                    ElementBuilder::new("li").text_content("First".to_string()).build(),
-                    ElementBuilder::new("li").text_content("Second".to_string()).build(),
+                    ElementBuilder::new("li")
+                        .text_content("First".to_string())
+                        .build(),
+                    ElementBuilder::new("li")
+                        .text_content("Second".to_string())
+                        .build(),
                 ],
             )
             .build();

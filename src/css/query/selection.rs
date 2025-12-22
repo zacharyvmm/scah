@@ -7,7 +7,7 @@ use super::task::{FsmState, ScopedTask, Task};
 use crate::XHtmlElement;
 use crate::css::Save;
 use crate::css::parser::lexer::Combinator;
-use crate::css::parser::tree::{Position, Selection, NextPosition};
+use crate::css::parser::tree::{NextPosition, Position, Selection};
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
 use crate::utils::Reader;
@@ -64,7 +64,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
 
     pub fn next<S>(
         &mut self,
-        store: &mut S,   
+        store: &mut S,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
     ) -> Result<(), QueryError<'_>>
@@ -114,13 +114,13 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                     .selection_tree
                     .get_section(scoped_task.task.state.position.section);
 
-
-                let element_pointer = store.push(section, scoped_task.task.state.parent, element.clone())?;
+                let element_pointer =
+                    store.push(section, scoped_task.task.state.parent, element.clone())?;
                 if !self
                     .selection_tree
-                    .is_last_save_point(&scoped_task.task.state.position) {
+                    .is_last_save_point(&scoped_task.task.state.position)
+                {
                     scoped_task.task.state.parent = element_pointer;
-                        
                 }
 
                 let Save {
@@ -332,21 +332,22 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                         match self.selection_tree.next(&task.state.position) {
                             NextPosition::EndOfBranch => {
                                 task.state.position = Position { section: 0, fsm: 0 };
-                            },
+                            }
                             NextPosition::Link(pos) => {
                                 task.state.position = pos;
-                            },
+                            }
                             NextPosition::Fork(pos_list) => {
                                 assert_ne!(pos_list.len(), 0, "Fork with no positions");
                                 task.state.position = pos_list[0].clone();
                             }
                         }
                         continue;
-                    } 
-                }else {continue;}
+                    }
+                } else {
+                    continue;
+                }
             }
             println!("Saved `{}`", element);
-
 
             let kind = self
                 .selection_tree
@@ -711,22 +712,19 @@ mod tests {
         println!("{:?}", store);
         println!("{:?}", selection.tasks);
 
-        assert_eq!(
-            selection.scoped_tasks,
-            vec![]
-        );
+        assert_eq!(selection.scoped_tasks, vec![]);
 
         assert_eq!(
             selection.tasks,
             vec![Task {
-                    retry_from: None,
-                    state: FsmState {
-                        parent: std::ptr::null_mut(),
-                        position: Position { section: 0, fsm: 0 },
-                        depths: vec![0],
-                        end: true,
-                    },
-                },]
+                retry_from: None,
+                state: FsmState {
+                    parent: std::ptr::null_mut(),
+                    position: Position { section: 0, fsm: 0 },
+                    depths: vec![0],
+                    end: true,
+                },
+            },]
         );
 
         content.push(&reader, 4);
@@ -742,23 +740,19 @@ mod tests {
             &content,
         );
 
-        assert_eq!(
-            selection.scoped_tasks,
-            vec![]
-        );
+        assert_eq!(selection.scoped_tasks, vec![]);
 
         assert_eq!(
             selection.tasks,
             vec![Task {
-                    retry_from: None,
-                    state: FsmState {
-                        parent: std::ptr::null_mut(),
-                        position: Position { section: 0, fsm: 0 },
-                        depths: vec![],
-                        end: true,
-                    },
-                },]
+                retry_from: None,
+                state: FsmState {
+                    parent: std::ptr::null_mut(),
+                    position: Position { section: 0, fsm: 0 },
+                    depths: vec![],
+                    end: true,
+                },
+            },]
         );
     }
-
 }

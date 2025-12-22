@@ -70,7 +70,8 @@ where
                 self.content.push(reader, self.position.reader_position);
                 self.position.text_content_position = self.content.get_position();
 
-                self.selectors.back(closing_tag, &self.position, reader, &self.content);
+                self.selectors
+                    .back(closing_tag, &self.position, reader, &self.content);
                 self.position.element_depth -= 1;
             }
         }

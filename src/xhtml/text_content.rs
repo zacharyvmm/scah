@@ -1,5 +1,5 @@
-use std::ops::{Range, RangeInclusive};
 use crate::utils::Reader;
+use std::ops::{Range, RangeInclusive};
 
 #[derive(Debug)]
 pub struct TextContent<'html> {
@@ -22,7 +22,7 @@ impl<'html> TextContent<'html> {
     pub fn get_position(&self) -> usize {
         assert!(self.list.len() > 0);
         // BUG: the position is off by one
-        self.list.len()// - 1
+        self.list.len() // - 1
     }
 
     pub fn push(&mut self, reader: &Reader<'html>, end_position: usize) {
