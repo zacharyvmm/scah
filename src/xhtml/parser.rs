@@ -56,8 +56,6 @@ where
             tag.unwrap()
         };
 
-        println!("Tag found: {:#?}", tag);
-
         if self.content.text_start.is_some() {
             if let Some(position) = self.content.push(reader, self.position.reader_position) {
                 self.position.text_content_position = position;
@@ -88,8 +86,6 @@ where
                 self.position.element_depth -= 1;
             }
         }
-
-        println!("Current content: {:#?}", self.content);
 
         !reader.eof()
     }
@@ -265,30 +261,188 @@ mod tests {
         // STEP 1
         //let mut continue_parser = parser.next(&mut reader);
 
-        println!("{:?}", queries);
+        println!("Queries: {:#?}", queries);
 
-        while parser.next(&mut reader) {
-            println!("{:?}", parser.selectors);
-        }
+        while parser.next(&mut reader) {}
+        println!("Selectors: {:#?}", parser.selectors);
+    }
 
-        // let matches = parser.selectors.matches();
-        // assert_eq!(
-        //     matches[0].list[1].value,
-        //     XHtmlElement {
-        //         name: "span",
-        //         id: Some("name"),
-        //         class: Some("bold"),
-        //         attributes: vec![]
-        //     }
-        // );
-        // assert_eq!(
-        //     matches[1].list[1].value,
-        //     XHtmlElement {
-        //         name: "span",
-        //         id: Some("name"),
-        //         class: Some("bold"),
-        //         attributes: vec![]
-        //     }
-        // );
+    const MORE_ADVANCED_BASIC_HTML: &str = r#"
+        <html>
+            <h1>Hello World</h1>
+            <main>
+                <section>
+                    <a href="https://hello.com">Hello</a>
+                    <div>
+                        <a href="https://world.com">World</a>
+                    </div>
+                </section>
+            </main>
+
+            <main>
+                <section>
+                    <a href="https://hello2.com">Hello2</a>
+
+                    <div>
+                        <a href="https://world2.com">World2</a>
+                        <div>
+                            <a href="https://world2.com">World2</a>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </html>
+        "#;
+
+    #[test]
+    fn test_multi_selection() {
+        let mut reader = Reader::new(MORE_ADVANCED_BASIC_HTML);
+        let mut queries = vec![Selection::new(SelectionPart::new(
+            "main > section",
+            SelectionKind::All(Save {
+                inner_html: true,
+                text_content: true,
+            }),
+        ))];
+        queries[0].append(vec![
+            SelectionPart::new(
+                "> a[href]",
+                SelectionKind::First(Save {
+                    inner_html: true,
+                    text_content: true,
+                }),
+            ),
+            SelectionPart::new(
+                "div a",
+                SelectionKind::All(Save {
+                    inner_html: true,
+                    text_content: true,
+                }),
+            ),
+        ]);
+        let manager = FsmManager::<RustStore>::new(&queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
+
+        while parser.next(&mut reader) {}
+
+        let map = parser.matches().root.children;
+        //println!("Map: {:#?}", map);
+        assert_eq!(
+            map,
+            HashMap::from([(
+                "main > section",
+                SelectionValue {
+                    kind: ValueKind::List,
+                    list: vec![
+                        Element {
+                            name: "section",
+                            id: None,
+                            class: None,
+                            attributes: vec![],
+                            inner_html: Some(
+                                r#"
+                    <a href="https://hello.com">Hello</a>
+                    <div>
+                        <a href="https://world.com">World</a>
+                    </div>
+                "#
+                            ),
+                            text_content: Some("Hello World".to_string()),
+                            children: HashMap::from([(
+                                "> a[href]",
+                                SelectionValue {
+                                    kind: ValueKind::SingleItem,
+                                    list: vec![
+                                        Element {
+                                            name: "a",
+                                            id: None,
+                                            class: None,
+                                            attributes: vec![("href", Some("https://hello.com"))],
+                                            inner_html: Some(
+                                                r#"
+                    <a href="https://hello.com">Hello</a>
+                    "#
+                                            ),
+                                            text_content: Some("Hello".to_string()),
+                                            children: HashMap::new(),
+                                        },
+                                        Element {
+                                            name: "div",
+                                            id: None,
+                                            class: None,
+                                            attributes: vec![],
+                                            inner_html: Some(
+                                                r#"
+                    <div>
+                        <a href="https://world.com">World</a>
+                    </div>
+                "#
+                                            ),
+                                            text_content: Some("World".to_string()),
+                                            children: HashMap::new(),
+                                        },
+                                    ]
+                                }
+                            )]),
+                        },
+                        Element {
+                            name: "section",
+                            id: None,
+                            class: None,
+                            attributes: vec![],
+                            inner_html: Some(
+                                r#"
+                    <a href="https://hello2.com">Hello2</a>
+                    <div>
+                        <a href="https://world2.com">World2</a>
+                    </div>
+                "#
+                            ),
+                            text_content: Some("Hello2 World2".to_string()),
+                            children: HashMap::from([(
+                                "> a[href]",
+                                SelectionValue {
+                                    kind: ValueKind::SingleItem,
+                                    list: vec![
+                                        Element {
+                                            name: "a",
+                                            id: None,
+                                            class: None,
+                                            attributes: vec![("href", Some("https://hello2.com"))],
+                                            inner_html: Some(
+                                                r#"
+                    <a href="https://hello2.com">Hello2</a>
+                    "#
+                                            ),
+                                            text_content: Some("Hello2".to_string()),
+                                            children: HashMap::new(),
+                                        },
+                                        Element {
+                                            name: "div",
+                                            id: None,
+                                            class: None,
+                                            attributes: vec![],
+                                            inner_html: Some(
+                                                r#"
+                    <div>
+                        <a href="https://world2.com">World2</a>
+                    </div>
+                "#
+                                            ),
+                                            text_content: Some("World2".to_string()),
+                                            children: HashMap::new(),
+                                        },
+                                    ]
+                                }
+                            )]),
+                        },
+                    ]
+                }
+            ),])
+        );
     }
 }

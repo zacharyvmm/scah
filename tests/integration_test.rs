@@ -195,7 +195,7 @@ mod tests {
 
         let map = parse(HTML, &queries);
 
-        println!("{:#?}", map);
+        println!("Map: {:#?}", map);
         Ok(())
     }
 }

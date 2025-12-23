@@ -15,11 +15,6 @@ impl<'html> TextContent<'html> {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        println!("TextContent is empty check: {:#?}", self);
-        self.list.is_empty() && self.text_start.is_none()
-    }
-
     pub fn set_start(&mut self, start: usize) {
         self.text_start = Some(start);
     }
@@ -45,8 +40,6 @@ impl<'html> TextContent<'html> {
 
         if text.len() > 0 || text.trim().len() > 0 {
             self.list.push(text.trim());
-            println!("List: {:#?}", self.list);
-            println!("Position: {:#?}", self.get_position());
             return Some(self.get_position());
         }
 
