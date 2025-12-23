@@ -118,6 +118,22 @@ mod tests {
     }
 
     #[test]
+    fn test_html_page_first_anchor_tag_selection<'key>() -> Result<(), QueryError<'key>> {
+        let queries = &vec![Selection::new(SelectionPart::new(
+            "a",
+            SelectionKind::First(Save {
+                inner_html: true,
+                text_content: true,
+            }),
+        ))];
+        let map = parse(HTML, queries);
+
+        assert_eq!(map["a"].len()?, 1);
+        println!("{:#?}", map);
+        Ok(())
+    }
+
+    #[test]
     fn test_html_page_all_anchor_tag_starting_with_link_selection<'key>()
     -> Result<(), QueryError<'key>> {
         let queries = &vec![Selection::new(SelectionPart::new(

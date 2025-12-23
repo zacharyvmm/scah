@@ -445,4 +445,136 @@ mod tests {
             ),])
         );
     }
+
+    const BASIC_HTML_WITH_SCRIPT: &str = r#"
+        <html>
+            <h1>Hello World</h1>
+
+            <script>
+                let x = 123132.2;
+                let y = "<div>" + "Hello" + "</" + "div>";
+            </script>
+        </html>
+        "#;
+
+    #[test]
+    fn test_script_tag_with_html_like_content() {
+        let mut reader = Reader::new(BASIC_HTML_WITH_SCRIPT);
+
+        let section = SelectionPart::new(
+            "div",
+            SelectionKind::All(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        );
+        let selection_tree = Selection::new(section);
+
+        let queries = vec![selection_tree];
+
+        let manager = FsmManager::<RustStore>::new(&queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
+
+        println!("{:?}", queries);
+
+        while parser.next(&mut reader) {
+            // println!("{:?}", parser.selectors);
+        }
+
+        let map = parser.matches().root.children;
+        //println!("Matches: {:#?}", map);
+        assert_eq!(map, HashMap::from([
+            ("div", SelectionValue{
+                kind: ValueKind::List,
+                list: vec![],
+            })
+        ]))
+    }
+
+    const BASIC_HTML_WITH_SELF_CLOSING_TAG: &str = r#"
+        <html>
+            <h1>Hello World</h1>
+            <form action="/my-handling-form-page" method="post">
+                <p>
+                    <label for="name">Name:</label>
+                    <input type="text" id="name" name="user_name" />
+                </p>
+                <p>
+                    <label for="mail">Email:</label>
+                    <input type="email" id="mail" name="user_email" />
+                </p>
+                <p>
+                    <label for="msg">Message:</label>
+                    <textarea id="msg" name="user_message"></textarea>
+                </p>
+            </form>
+        </html>
+        "#;
+
+    #[test]
+    fn test_self_closing_tags() {
+        let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
+
+        let section = SelectionPart::new(
+            "form > p > input",
+            SelectionKind::All(Save {
+                inner_html: true,
+                text_content: true,
+            }),
+        );
+        let selection_tree = Selection::new(section);
+
+        let queries = vec![selection_tree];
+
+        let manager = FsmManager::<RustStore>::new(&queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
+
+        println!("{:?}", queries);
+
+        while parser.next(&mut reader) {
+            // println!("{:?}", parser.selectors);
+        }
+
+        let map = parser.matches().root.children;
+        //println!("Matches: {:#?}", map);
+        assert_eq!(map, HashMap::from([
+            ("form > p > input", SelectionValue{
+                kind: ValueKind::List,
+                list: vec![
+                    Element {
+                        name: "input",
+                        id: Some("name"),
+                        class: None,
+                        attributes: vec![
+                            ("type", Some("text")),
+                            ("name", Some("user_name")),
+                        ],
+                        inner_html: None,
+                        text_content: None,
+                        children: HashMap::new(),
+                    },
+                    Element {
+                        name: "input",
+                        id: Some("mail"),
+                        class: None,
+                        attributes: vec![
+                            ("type", Some("email")),
+                            ("name", Some("user_email")),
+                        ],
+                        inner_html: None,
+                        text_content: None,
+                        children: HashMap::new(),
+                    },
+                ],
+            })
+        ]))
+    }
 }
