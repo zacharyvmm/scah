@@ -78,7 +78,17 @@ impl<'a> From<&mut Reader<'a>> for XHtmlElement<'a> {
         let mut opened_quote: Option<QuoteKind> = None;
         let mut position = reader.get_position();
 
-        while let Some(token) = ElementAttributeToken::next(reader) {
+        // TODO: I need to refactor this, this is not clean at all
+        while let Some(token) = {
+            let t = ElementAttributeToken::next(reader);
+            if let Some(ElementAttributeToken::CloseElement) = t
+                && opened_quote.is_none()
+            {
+                None
+            } else {
+                t
+            }
+        } {
             match (&opened_quote, token) {
                 (Option::None, ElementAttributeToken::Quote(kind)) => {
                     opened_quote = Some(kind);
@@ -390,6 +400,38 @@ mod tests {
                 name: "hello-world",
                 value: Some("hello-world")
             }
+        );
+    }
+
+    #[test]
+    fn test_complex_open_tag() {
+        let mut reader = Reader::new(
+            r#"a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/crossorigin" title="The crossorigin attribute, valid on the <audio>, <img>, <link>, <script>, and <video> elements, provides support for CORS, defining how the element handles cross-origin requests, thereby enabling the configuration of the CORS requests for the element's fetched data. Depending on the element, the attribute can be a CORS settings attribute.""#,
+        );
+
+        let tag = XHtmlTag::from(&mut reader);
+
+        assert_eq!(
+            tag,
+            Some(XHtmlTag::Open(XHtmlElement {
+                name: "a",
+                id: None,
+                class: None,
+                attributes: Vec::from([
+                    Attribute {
+                        name: "href",
+                        value: Some(
+                            "https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/crossorigin"
+                        )
+                    },
+                    Attribute {
+                        name: "title",
+                        value: Some(
+                            "The crossorigin attribute, valid on the <audio>, <img>, <link>, <script>, and <video> elements, provides support for CORS, defining how the element handles cross-origin requests, thereby enabling the configuration of the CORS requests for the element's fetched data. Depending on the element, the attribute can be a CORS settings attribute."
+                        )
+                    }
+                ]),
+            }))
         );
     }
 

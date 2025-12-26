@@ -133,7 +133,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         let mut new_scoped_fsms: Vec<ScopedFsm<E>> = vec![];
 
         for i in 0..self.scoped_fsms.len() {
-            println!("Scoped Fsm's {i}");
+            // println!("Scoped Fsm's {i}");
             let ref mut scoped_fsm = self.scoped_fsms[i];
             let fsm = &scoped_fsm.fsm;
 
@@ -145,7 +145,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 continue;
             }
 
-            println!("Scope Match with `{:?}`", element);
+            // println!("Scope Match with `{:?}`", element);
 
             if fsm.is_descendant(self.selection_tree) {
                 // This should only be done if the task is not done (meaning it will move forward)
@@ -185,7 +185,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
 
         // STEP 2: check tasks
         for i in 0..self.fsms.len() {
-            println!("Fsm {i}");
+            // println!("Fsm {i}");
             let ref mut fsm = self.fsms[i];
 
             if !fsm.next(
@@ -249,7 +249,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         for i in (0..self.on_close_tag_events.len()).rev() {
             let content_trigger = &self.on_close_tag_events[i];
             if content_trigger.on_depth == document_position.element_depth {
-                println!("Closing tag save content for `{element}`");
+                // println!("Closing tag save content for `{element}`");
                 let inner_html = {
                     if let Some(start_idx) = content_trigger.inner_html {
                         let slice = reader.slice(start_idx..document_position.reader_position);

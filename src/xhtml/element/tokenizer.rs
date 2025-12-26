@@ -5,6 +5,7 @@ use crate::utils::Reader;
 pub enum ElementAttributeToken<'a> {
     String(&'a str),
     Quote(QuoteKind),
+    CloseElement,
     Equal,
 }
 
@@ -18,10 +19,13 @@ impl<'a> ElementAttributeToken<'a> {
             '"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
             '\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
             '=' => Some(Self::Equal),
-            '>' => None,
+            '>' => Some(Self::CloseElement),
             _ => {
                 // Find end of word
-                reader.next_while(|c| !matches!(c, ' ' | '"' | '\'' | '=' | '>'));
+                reader.next_while(|c| {
+                    // if in string the
+                    !matches!(c, ' ' | '"' | '\'' | '=' | '>')
+                });
                 return Some(Self::String(reader.slice(start_pos..reader.get_position())));
             }
         };
