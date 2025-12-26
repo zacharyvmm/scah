@@ -530,6 +530,80 @@ mod tests {
         let section = SelectionPart::new(
             "form > p > input",
             SelectionKind::All(Save {
+                inner_html: false,
+                text_content: false,
+            }),
+        );
+        let selection_tree = Selection::new(section);
+
+        let queries = vec![selection_tree];
+
+        let manager = FsmManager::<RustStore>::new(&queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
+
+        println!("{:?}", queries);
+
+        while parser.next(&mut reader) {
+            // println!("{:?}", parser.selectors);
+        }
+
+        let map = parser.matches().root.children;
+        //println!("Matches: {:#?}", map);
+        assert_eq!(
+            map,
+            HashMap::from([(
+                "form > p > input",
+                SelectionValue {
+                    kind: ValueKind::List,
+                    list: vec![
+                        Element {
+                            name: "input",
+                            id: Some("name"),
+                            class: None,
+                            attributes: vec![
+                                ("type", Some("text")),
+                                ("name", Some("user_name")),
+                                ("/", None),
+                            ],
+                            inner_html: None,
+                            text_content: None,
+                            children: HashMap::new(),
+                        },
+                        Element {
+                            name: "input",
+                            id: Some("mail"),
+                            class: None,
+                            attributes: vec![
+                                ("type", Some("email")),
+                                ("name", Some("user_email")),
+                                ("/", None),
+                            ],
+                            inner_html: None,
+                            text_content: None,
+                            children: HashMap::new(),
+                        },
+                    ],
+                }
+            )])
+        )
+    }
+
+    #[test]
+    fn test_self_closing_tags_with_content_query() {
+        /*
+         * What should happen?
+         * Query Warning?
+         * Handle it anyway?
+         */
+        let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
+
+        let section = SelectionPart::new(
+            "form > p > input",
+            SelectionKind::All(Save {
                 inner_html: true,
                 text_content: true,
             }),
@@ -564,7 +638,11 @@ mod tests {
                             name: "input",
                             id: Some("name"),
                             class: None,
-                            attributes: vec![("type", Some("text")), ("name", Some("user_name")),],
+                            attributes: vec![
+                                ("type", Some("text")),
+                                ("name", Some("user_name")),
+                                ("/", None),
+                            ],
                             inner_html: None,
                             text_content: None,
                             children: HashMap::new(),
@@ -573,7 +651,11 @@ mod tests {
                             name: "input",
                             id: Some("mail"),
                             class: None,
-                            attributes: vec![("type", Some("email")), ("name", Some("user_email")),],
+                            attributes: vec![
+                                ("type", Some("email")),
+                                ("name", Some("user_email")),
+                                ("/", None),
+                            ],
                             inner_html: None,
                             text_content: None,
                             children: HashMap::new(),

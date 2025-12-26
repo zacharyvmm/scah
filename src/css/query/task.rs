@@ -44,6 +44,18 @@ impl<'query, E> FsmState<E> {
         fsm.back(element, depth, last_depth)
     }
 
+    // Try going backwards from a parent of a leaf
+    pub fn try_back_parent(&self, tree: &Selection<'query>, depth: usize, element: &str) -> bool {
+        debug_assert!(self.end);
+        let parent_position = tree.back(&self.position);
+        let fsm = tree.get(&parent_position);
+
+        // BUG: I'm not sure if I should take the last or the one before
+        // What happens at length 0 or 1?
+        let last_depth = *self.depths.last().unwrap_or(&0);
+        fsm.back(element, depth, last_depth)
+    }
+
     pub fn move_foward(&mut self, tree: &Selection<'query>, depth: usize) -> Option<Vec<Position>> {
         let positions = tree.next(&self.position);
         //if tree.is_last_save_point(1)

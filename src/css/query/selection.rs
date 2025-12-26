@@ -170,12 +170,14 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 )?;
             }
 
-            Self::next_position(
-                self.selection_tree,
-                &mut new_scoped_fsms,
-                document_position.element_depth,
-                new_fsm,
-            );
+            if !element.is_self_closing() {
+                Self::next_position(
+                    self.selection_tree,
+                    &mut new_scoped_fsms,
+                    document_position.element_depth,
+                    new_fsm,
+                );
+            }
 
             new_scoped_fsms.push(new_scoped_fsm);
         }
@@ -219,12 +221,14 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 )?;
             }
 
-            Self::next_position(
-                self.selection_tree,
-                &mut self.scoped_fsms,
-                document_position.element_depth,
-                fsm,
-            );
+            if !element.is_self_closing() {
+                Self::next_position(
+                    self.selection_tree,
+                    &mut self.scoped_fsms,
+                    document_position.element_depth,
+                    fsm,
+                );
+            }
         }
 
         return Ok(());
@@ -277,55 +281,41 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             .retain(|scoped_task| scoped_task.scope_depth < document_position.element_depth);
 
         for i in 0..self.fsms.len() {
-            let ref mut task = self.fsms[i];
+            let ref mut fsm = self.fsms[i];
 
-            if !task.back(
+            if !fsm.back(
                 self.selection_tree,
                 document_position.element_depth,
                 element,
             ) {
-                if task.end {
-                    task.end = false;
-                    // jump backwards twice
-                    // TODO: refactor this, this is super hacky
-                    task.position = self.selection_tree.back(&task.position);
-                    if !task.back(
-                        self.selection_tree,
-                        document_position.element_depth,
-                        element,
-                    ) {
-                        match self.selection_tree.next(&task.position) {
-                            NextPosition::EndOfBranch => {
-                                task.position = Position { section: 0, fsm: 0 };
-                            }
-                            NextPosition::Link(pos) => {
-                                task.position = pos;
-                            }
-                            NextPosition::Fork(pos_list) => {
-                                assert_ne!(pos_list.len(), 0, "Fork with no positions");
-                                task.position = pos_list[0].clone();
-                            }
-                        }
-                        continue;
-                    }
-                } else {
+                if !fsm.end {
                     continue;
                 }
+                // jump backwards twice
+                if !fsm.try_back_parent(
+                    self.selection_tree,
+                    document_position.element_depth,
+                    element,
+                ) {
+                    continue;
+                }
+
+                fsm.end = false;
             }
             println!("Saved `{}`", element);
 
             let kind = self
                 .selection_tree
-                .get_section_selection_kind(task.position.section);
-            if self.selection_tree.is_save_point(&task.position) {}
+                .get_section_selection_kind(fsm.position.section);
+            if self.selection_tree.is_save_point(&fsm.position) {}
 
-            if self.selection_tree.is_save_point(&task.position) && task.end {
-                assert!(task.depths.len() > 0);
-                task.depths.pop();
+            if self.selection_tree.is_save_point(&fsm.position) && fsm.end {
+                assert!(fsm.depths.len() > 0);
+                fsm.depths.pop();
                 continue;
             }
 
-            task.move_backward(self.selection_tree);
+            fsm.move_backward(self.selection_tree);
         }
     }
 }
