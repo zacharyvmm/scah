@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::vec;
 
 use super::manager::DocumentPosition;
-use super::task::{FsmState, ScopedTask, Task};
+use super::task::{FsmState, ScopedFsm};
 //use super::tree::MatchTree;
 use crate::XHtmlElement;
 use crate::css::Save;
@@ -33,8 +33,8 @@ struct EndTagSaveContent<E> {
 #[derive(Debug)]
 pub struct SelectionRunner<'query, E> {
     selection_tree: &'query Selection<'query>,
-    tasks: Vec<Task<E>>,
-    scoped_tasks: Vec<ScopedTask<E>>,
+    fsms: Vec<FsmState<E>>,
+    scoped_fsms: Vec<ScopedFsm<E>>,
     on_close_tag_events: Vec<EndTagSaveContent<E>>,
     root: *mut E,
 }
@@ -43,11 +43,79 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
     pub fn new(root: *mut E, selection_tree: &'query Selection<'query>) -> Self {
         Self {
             selection_tree,
-            tasks: vec![Task::new(FsmState::new())],
-            scoped_tasks: vec![],
+            fsms: vec![FsmState::new()],
+            scoped_fsms: vec![],
             on_close_tag_events: vec![],
             root: root,
         }
+    }
+
+    fn next_position(
+        tree: &Selection<'query>,
+        list: &mut Vec<ScopedFsm<E>>,
+        depth: usize,
+        fsm: &mut FsmState<E>,
+    ) {
+        let new_branch_tasks = fsm.move_foward(tree, depth);
+        if let Some(new_branch_tasks) = new_branch_tasks {
+            fsm.end = false;
+            list.append(
+                &mut new_branch_tasks
+                    .into_iter()
+                    .map(|pos| ScopedFsm::new(depth, fsm.parent, pos))
+                    .collect(),
+            );
+        }
+    }
+
+    fn save_element<S>(
+        on_close_tag_events: &mut Vec<EndTagSaveContent<E>>,
+        tree: &Selection<'query>,
+        store: &mut S,
+        element: XHtmlElement<'html>,
+        &DocumentPosition {
+            element_depth,
+            reader_position,
+            text_content_position,
+        }: &DocumentPosition,
+        fsm: &mut FsmState<E>,
+    ) -> Result<(), QueryError<'query>>
+    where
+        S: Store<'html, 'query, E = E>,
+    {
+        debug_assert!(fsm.is_save_point(tree));
+
+        let section = tree.get_section(fsm.position.section);
+
+        let element_pointer = store.push(section, fsm.parent, element)?;
+        if !fsm.is_last_save_point(tree) {
+            fsm.parent = element_pointer;
+        }
+
+        let Save {
+            inner_html,
+            text_content,
+        } = section.kind.save();
+
+        on_close_tag_events.push(EndTagSaveContent {
+            element: element_pointer,
+            on_depth: element_depth,
+            inner_html: if *inner_html {
+                // Since thiis is triggered on opening tag, the start is the current position in the content
+                // array is about the previous elements text content item, thus I need to add 1 to get the correct position
+                // Their could be a BUG here if there is no text content ("" -> no item added)
+                Some(reader_position)
+            } else {
+                None
+            },
+            text_content: if *text_content {
+                Some(text_content_position)
+            } else {
+                None
+            },
+        });
+
+        Ok(())
     }
 
     pub fn next<S>(
@@ -59,16 +127,17 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
     where
         S: Store<'html, 'query, E = E>,
     {
-        assert_ne!(self.tasks.len(), 0);
+        assert_ne!(self.fsms.len(), 0);
 
         // STEP 1: check scoped tasks
-        let mut new_scoped_tasks: Vec<ScopedTask<E>> = vec![];
+        let mut new_scoped_fsms: Vec<ScopedFsm<E>> = vec![];
 
-        for i in 0..self.scoped_tasks.len() {
-            println!("Scoped Task {i}");
-            let ref mut scoped_task = self.scoped_tasks[i];
+        for i in 0..self.scoped_fsms.len() {
+            println!("Scoped Fsm's {i}");
+            let ref mut scoped_fsm = self.scoped_fsms[i];
+            let fsm = &scoped_fsm.fsm;
 
-            if !scoped_task.task.state.next(
+            if !fsm.next(
                 self.selection_tree,
                 document_position.element_depth,
                 element,
@@ -78,167 +147,84 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
 
             println!("Scope Match with `{:?}`", element);
 
-            if self
-                .selection_tree
-                .get(&scoped_task.task.state.position)
-                .transition
-                == Combinator::Descendant
-            {
+            if fsm.is_descendant(self.selection_tree) {
                 // This should only be done if the task is not done (meaning it will move forward)
-                new_scoped_tasks.push(ScopedTask::new(
+                new_scoped_fsms.push(ScopedFsm::new(
                     document_position.element_depth,
-                    scoped_task.task.state.parent,
-                    scoped_task.task.state.position.clone(),
+                    fsm.parent,
+                    fsm.position.clone(),
                 ));
             }
 
-            let mut new_scoped_task = scoped_task.clone();
-            let new_task = &mut new_scoped_task.task;
-            if self
-                .selection_tree
-                .is_save_point(&scoped_task.task.state.position)
-            {
-                let section = self
-                    .selection_tree
-                    .get_section(scoped_task.task.state.position.section);
+            let mut new_scoped_fsm = scoped_fsm.clone();
+            let new_fsm = &mut new_scoped_fsm.fsm;
 
-                let element_pointer =
-                    store.push(section, scoped_task.task.state.parent, element.clone())?;
-                if !self
-                    .selection_tree
-                    .is_last_save_point(&scoped_task.task.state.position)
-                {
-                    scoped_task.task.state.parent = element_pointer;
-                }
-
-                let Save {
-                    inner_html,
-                    text_content,
-                } = section.kind.save();
-
-                self.on_close_tag_events.push(EndTagSaveContent {
-                    element: element_pointer,
-                    on_depth: document_position.element_depth,
-                    inner_html: if *inner_html {
-                        // Since thiis is triggered on opening tag, the start is the current position in the content
-                        // array is about the previous elements text content item, thus I need to add 1 to get the correct position
-                        // Their could be a BUG here if there is no text content ("" -> no item added)
-                        Some(document_position.reader_position)
-                    } else {
-                        None
-                    },
-                    text_content: if *text_content {
-                        Some(document_position.text_content_position)
-                    } else {
-                        None
-                    },
-                });
+            if new_fsm.is_save_point(self.selection_tree) {
+                Self::save_element(
+                    &mut self.on_close_tag_events,
+                    self.selection_tree,
+                    store,
+                    element.clone(),
+                    document_position,
+                    new_fsm,
+                )?;
             }
 
-            // TODO: move `move_foward` inside the task next
-            // Selection should be able to know if their is a EndOfBranch or not
-            let new_branch_tasks = new_task
-                .state
-                .move_foward(self.selection_tree, document_position.element_depth);
-            if let Some(new_branch_tasks) = new_branch_tasks {
-                new_scoped_tasks.append(
-                    &mut new_branch_tasks
-                        .into_iter()
-                        .map(|pos| {
-                            ScopedTask::new(
-                                document_position.element_depth,
-                                new_task.state.parent,
-                                pos,
-                            )
-                        })
-                        .collect(),
-                );
-            }
+            Self::next_position(
+                self.selection_tree,
+                &mut new_scoped_fsms,
+                document_position.element_depth,
+                new_fsm,
+            );
 
-            new_scoped_tasks.push(new_scoped_task);
+            new_scoped_fsms.push(new_scoped_fsm);
         }
-        self.scoped_tasks.append(&mut new_scoped_tasks);
+        self.scoped_fsms.append(&mut new_scoped_fsms);
 
         // STEP 2: check tasks
-        for i in 0..self.tasks.len() {
-            println!("Task {i}");
-            let ref mut task = self.tasks[i];
+        for i in 0..self.fsms.len() {
+            println!("Fsm {i}");
+            let ref mut fsm = self.fsms[i];
 
-            if !task.state.next(
+            if !fsm.next(
                 self.selection_tree,
                 document_position.element_depth,
                 element,
             ) {
-                // println!(
-                //     "(depth: {}) NO Match  `{:?}`",
-                //     document_position.element_depth, task
-                // );
                 continue;
             }
-            task.state.end = false;
             println!("Match with `{:?}`", element);
 
-            let is_descendant_combinator =
-                self.selection_tree.get(&task.state.position).transition == Combinator::Descendant;
-            let last_save_point = self.selection_tree.is_last_save_point(&task.state.position);
+            let is_descendant_combinator = fsm.is_descendant(self.selection_tree);
+            let last_save_point = fsm.is_last_save_point(self.selection_tree);
 
             if is_descendant_combinator && !last_save_point {
                 // This should only be done if the task is not done (meaning it will move forward)
-                self.scoped_tasks.push(ScopedTask::new(
+                self.scoped_fsms.push(ScopedFsm::new(
                     document_position.element_depth,
-                    task.state.parent,
-                    task.state.position.clone(),
+                    fsm.parent,
+                    fsm.position.clone(),
                 ));
             }
 
-            if self.selection_tree.is_save_point(&task.state.position) {
-                task.state.end = true;
-                let section = self.selection_tree.get_section(task.state.position.section);
-                let element_pointer = store.push(section, task.state.parent, element.clone())?;
-                if !last_save_point {
-                    task.state.parent = element_pointer;
-                }
-
-                let Save {
-                    inner_html,
-                    text_content,
-                } = section.kind.save();
-
-                self.on_close_tag_events.push(EndTagSaveContent {
-                    element: element_pointer,
-                    on_depth: document_position.element_depth,
-                    inner_html: if *inner_html {
-                        // Since thiis is triggered on opening tag, the start is the current position in the content
-                        // array is about the previous elements text content item, thus I need to add 1 to get the correct position
-                        // Their could be a BUG here if there is no text content ("" -> no item added)
-                        Some(document_position.reader_position)
-                    } else {
-                        None
-                    },
-                    text_content: if *text_content {
-                        Some(document_position.text_content_position)
-                    } else {
-                        None
-                    },
-                });
+            if fsm.is_save_point(self.selection_tree) {
+                fsm.end = true;
+                Self::save_element(
+                    &mut self.on_close_tag_events,
+                    self.selection_tree,
+                    store,
+                    element.clone(),
+                    document_position,
+                    fsm,
+                )?;
             }
 
-            // TODO: move `move_foward` inside the task next
-            // Selection should be able to know if their is a EndOfBranch or not
-            let new_branch_tasks = task
-                .state
-                .move_foward(self.selection_tree, document_position.element_depth);
-            if let Some(new_branch_tasks) = new_branch_tasks {
-                task.state.end = false;
-                self.scoped_tasks.append(
-                    &mut new_branch_tasks
-                        .into_iter()
-                        .map(|pos| {
-                            ScopedTask::new(document_position.element_depth, task.state.parent, pos)
-                        })
-                        .collect(),
-                );
-            }
+            Self::next_position(
+                self.selection_tree,
+                &mut self.scoped_fsms,
+                document_position.element_depth,
+                fsm,
+            );
         }
 
         return Ok(());
@@ -254,7 +240,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
     ) where
         S: Store<'html, 'query, E = E>,
     {
-        assert_ne!(self.tasks.len(), 0);
+        assert_ne!(self.fsms.len(), 0);
 
         for i in (0..self.on_close_tag_events.len()).rev() {
             let content_trigger = &self.on_close_tag_events[i];
@@ -287,37 +273,37 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             }
         }
 
-        self.scoped_tasks
+        self.scoped_fsms
             .retain(|scoped_task| scoped_task.scope_depth < document_position.element_depth);
 
-        for i in 0..self.tasks.len() {
-            let ref mut task = self.tasks[i];
+        for i in 0..self.fsms.len() {
+            let ref mut task = self.fsms[i];
 
-            if !task.state.back(
+            if !task.back(
                 self.selection_tree,
                 document_position.element_depth,
                 element,
             ) {
-                if task.state.end {
-                    task.state.end = false;
+                if task.end {
+                    task.end = false;
                     // jump backwards twice
                     // TODO: refactor this, this is super hacky
-                    task.state.position = self.selection_tree.back(&task.state.position);
-                    if !task.state.back(
+                    task.position = self.selection_tree.back(&task.position);
+                    if !task.back(
                         self.selection_tree,
                         document_position.element_depth,
                         element,
                     ) {
-                        match self.selection_tree.next(&task.state.position) {
+                        match self.selection_tree.next(&task.position) {
                             NextPosition::EndOfBranch => {
-                                task.state.position = Position { section: 0, fsm: 0 };
+                                task.position = Position { section: 0, fsm: 0 };
                             }
                             NextPosition::Link(pos) => {
-                                task.state.position = pos;
+                                task.position = pos;
                             }
                             NextPosition::Fork(pos_list) => {
                                 assert_ne!(pos_list.len(), 0, "Fork with no positions");
-                                task.state.position = pos_list[0].clone();
+                                task.position = pos_list[0].clone();
                             }
                         }
                         continue;
@@ -330,16 +316,16 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
 
             let kind = self
                 .selection_tree
-                .get_section_selection_kind(task.state.position.section);
-            if self.selection_tree.is_save_point(&task.state.position) {}
+                .get_section_selection_kind(task.position.section);
+            if self.selection_tree.is_save_point(&task.position) {}
 
-            if self.selection_tree.is_save_point(&task.state.position) && task.state.end {
-                assert!(task.state.depths.len() > 0);
-                task.state.depths.pop();
+            if self.selection_tree.is_save_point(&task.position) && task.end {
+                assert!(task.depths.len() > 0);
+                task.depths.pop();
                 continue;
             }
 
-            task.state.move_backward(self.selection_tree);
+            task.move_backward(self.selection_tree);
         }
     }
 }
@@ -388,30 +374,24 @@ mod tests {
         assert_eq!(store.root.children, HashMap::new());
 
         assert_eq!(
-            selection.tasks,
-            vec![Task {
-                retry_from: None,
-                state: FsmState {
-                    parent: std::ptr::null_mut(),
-                    position: Position { section: 0, fsm: 1 },
-                    depths: vec![0],
-                    end: false,
-                }
+            selection.fsms,
+            vec![FsmState {
+                parent: std::ptr::null_mut(),
+                position: Position { section: 0, fsm: 1 },
+                depths: vec![0],
+                end: false,
             }]
         );
 
         assert_eq!(
-            selection.scoped_tasks,
-            vec![ScopedTask {
+            selection.scoped_fsms,
+            vec![ScopedFsm {
                 scope_depth: 0,
-                task: Task {
-                    retry_from: None,
-                    state: FsmState {
-                        parent: std::ptr::null_mut(),
-                        position: Position { section: 0, fsm: 0 },
-                        depths: vec![],
-                        end: false,
-                    },
+                fsm: FsmState {
+                    parent: std::ptr::null_mut(),
+                    position: Position { section: 0, fsm: 0 },
+                    depths: vec![],
+                    end: false,
                 },
             }]
         );
@@ -456,17 +436,14 @@ mod tests {
         // );
 
         assert_eq!(
-            selection.scoped_tasks,
-            vec![ScopedTask {
+            selection.scoped_fsms,
+            vec![ScopedFsm {
                 scope_depth: 0,
-                task: Task {
-                    retry_from: None,
-                    state: FsmState {
-                        parent: std::ptr::null_mut(),
-                        position: Position { section: 0, fsm: 0 },
-                        depths: vec![],
-                        end: false,
-                    },
+                fsm: FsmState {
+                    parent: std::ptr::null_mut(),
+                    position: Position { section: 0, fsm: 0 },
+                    depths: vec![],
+                    end: false,
                 },
             },]
         );
@@ -520,32 +497,26 @@ mod tests {
         assert_eq!(store.root.children, HashMap::new());
 
         assert_eq!(
-            selection.tasks,
-            vec![Task {
-                retry_from: None,
-                state: FsmState {
-                    parent: std::ptr::null_mut(),
-                    position: Position { section: 0, fsm: 1 },
-                    depths: vec![0],
-                    end: false,
-                }
+            selection.fsms,
+            vec![FsmState {
+                parent: std::ptr::null_mut(),
+                position: Position { section: 0, fsm: 1 },
+                depths: vec![0],
+                end: false,
             }]
         );
 
         assert_eq!(
-            selection.scoped_tasks,
-            vec![ScopedTask {
+            selection.scoped_fsms,
+            vec![ScopedFsm {
                 scope_depth: 0,
-                task: Task {
-                    retry_from: None,
-                    state: FsmState {
-                        parent: std::ptr::null_mut(),
-                        position: Position { section: 0, fsm: 0 },
-                        depths: vec![],
-                        end: false,
-                    },
+                fsm: FsmState {
+                    parent: std::ptr::null_mut(),
+                    position: Position { section: 0, fsm: 0 },
+                    depths: vec![],
+                    end: false,
                 },
-            }]
+            },]
         );
 
         let _ = selection.next(
@@ -583,55 +554,46 @@ mod tests {
         );
 
         assert_eq!(
-            selection.tasks,
-            vec![Task {
-                retry_from: None,
-                state: FsmState {
-                    parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
-                    position: Position { section: 2, fsm: 0 },
-                    depths: vec![0, 1],
-                    end: false,
-                }
+            selection.fsms,
+            vec![FsmState {
+                parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
+                position: Position { section: 2, fsm: 0 },
+                depths: vec![0, 1],
+                end: false,
             }]
         );
 
         assert_eq!(
-            selection.scoped_tasks,
+            selection.scoped_fsms,
             vec![
-                ScopedTask {
+                // ` div`
+                ScopedFsm {
                     scope_depth: 0,
-                    task: Task {
-                        retry_from: None,
-                        state: FsmState {
-                            parent: std::ptr::null_mut(),
-                            position: Position { section: 0, fsm: 0 },
-                            depths: vec![],
-                            end: false,
-                        },
+                    fsm: FsmState {
+                        parent: std::ptr::null_mut(),
+                        position: Position { section: 0, fsm: 0 },
+                        depths: vec![],
+                        end: false,
                     },
                 },
-                ScopedTask {
+                // ` p.class`
+                ScopedFsm {
                     scope_depth: 1,
-                    task: Task {
-                        retry_from: None,
-                        state: FsmState {
-                            parent: std::ptr::null_mut(),
-                            position: Position { section: 0, fsm: 1 },
-                            depths: vec![],
-                            end: false,
-                        },
+                    fsm: FsmState {
+                        parent: std::ptr::null_mut(),
+                        position: Position { section: 0, fsm: 1 },
+                        depths: vec![],
+                        end: false,
                     },
                 },
-                ScopedTask {
+                // `> span`
+                ScopedFsm {
                     scope_depth: 1,
-                    task: Task {
-                        retry_from: None,
-                        state: FsmState {
-                            parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
-                            position: Position { section: 1, fsm: 0 },
-                            depths: vec![],
-                            end: false,
-                        }
+                    fsm: FsmState {
+                        parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
+                        position: Position { section: 1, fsm: 0 },
+                        depths: vec![],
+                        end: false,
                     }
                 },
             ]
@@ -670,20 +632,17 @@ mod tests {
         );
         content.set_start(4);
         println!("{:?}", store);
-        println!("{:?}", selection.tasks);
+        println!("{:?}", selection.fsms);
 
-        assert_eq!(selection.scoped_tasks, vec![]);
+        assert_eq!(selection.scoped_fsms, vec![]);
 
         assert_eq!(
-            selection.tasks,
-            vec![Task {
-                retry_from: None,
-                state: FsmState {
-                    parent: std::ptr::null_mut(),
-                    position: Position { section: 0, fsm: 0 },
-                    depths: vec![0],
-                    end: true,
-                },
+            selection.fsms,
+            vec![FsmState {
+                parent: std::ptr::null_mut(),
+                position: Position { section: 0, fsm: 0 },
+                depths: vec![0],
+                end: true,
             },]
         );
 
@@ -700,18 +659,15 @@ mod tests {
             &content,
         );
 
-        assert_eq!(selection.scoped_tasks, vec![]);
+        assert_eq!(selection.scoped_fsms, vec![]);
 
         assert_eq!(
-            selection.tasks,
-            vec![Task {
-                retry_from: None,
-                state: FsmState {
-                    parent: std::ptr::null_mut(),
-                    position: Position { section: 0, fsm: 0 },
-                    depths: vec![],
-                    end: true,
-                },
+            selection.fsms,
+            vec![FsmState {
+                parent: std::ptr::null_mut(),
+                position: Position { section: 0, fsm: 0 },
+                depths: vec![],
+                end: true,
             },]
         );
     }

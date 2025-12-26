@@ -76,7 +76,11 @@ where
                     "opening: `{}` ({})",
                     element.name, self.position.element_depth
                 );
-                self.selectors.next(element, &self.position);
+                self.selectors.next(&element, &self.position);
+
+                if element.is_self_closing() {
+                    self.position.element_depth -= 1;
+                }
             }
             XHtmlTag::Close(closing_tag) => {
                 println!("closing: `{closing_tag}` ({})", self.position.element_depth);
@@ -487,12 +491,16 @@ mod tests {
 
         let map = parser.matches().root.children;
         //println!("Matches: {:#?}", map);
-        assert_eq!(map, HashMap::from([
-            ("div", SelectionValue{
-                kind: ValueKind::List,
-                list: vec![],
-            })
-        ]))
+        assert_eq!(
+            map,
+            HashMap::from([(
+                "div",
+                SelectionValue {
+                    kind: ValueKind::List,
+                    list: vec![],
+                }
+            )])
+        )
     }
 
     const BASIC_HTML_WITH_SELF_CLOSING_TAG: &str = r#"
@@ -545,36 +553,34 @@ mod tests {
 
         let map = parser.matches().root.children;
         //println!("Matches: {:#?}", map);
-        assert_eq!(map, HashMap::from([
-            ("form > p > input", SelectionValue{
-                kind: ValueKind::List,
-                list: vec![
-                    Element {
-                        name: "input",
-                        id: Some("name"),
-                        class: None,
-                        attributes: vec![
-                            ("type", Some("text")),
-                            ("name", Some("user_name")),
-                        ],
-                        inner_html: None,
-                        text_content: None,
-                        children: HashMap::new(),
-                    },
-                    Element {
-                        name: "input",
-                        id: Some("mail"),
-                        class: None,
-                        attributes: vec![
-                            ("type", Some("email")),
-                            ("name", Some("user_email")),
-                        ],
-                        inner_html: None,
-                        text_content: None,
-                        children: HashMap::new(),
-                    },
-                ],
-            })
-        ]))
+        assert_eq!(
+            map,
+            HashMap::from([(
+                "form > p > input",
+                SelectionValue {
+                    kind: ValueKind::List,
+                    list: vec![
+                        Element {
+                            name: "input",
+                            id: Some("name"),
+                            class: None,
+                            attributes: vec![("type", Some("text")), ("name", Some("user_name")),],
+                            inner_html: None,
+                            text_content: None,
+                            children: HashMap::new(),
+                        },
+                        Element {
+                            name: "input",
+                            id: Some("mail"),
+                            class: None,
+                            attributes: vec![("type", Some("email")), ("name", Some("user_email")),],
+                            inner_html: None,
+                            text_content: None,
+                            children: HashMap::new(),
+                        },
+                    ],
+                }
+            )])
+        )
     }
 }

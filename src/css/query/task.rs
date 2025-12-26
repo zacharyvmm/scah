@@ -1,5 +1,6 @@
 // A Selection Runner
 use crate::XHtmlElement;
+use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{NextPosition, Position, Selection};
 use std::ptr;
 
@@ -16,8 +17,8 @@ impl<E> Clone for FsmState<E> {
         Self {
             parent: self.parent,
             position: self.position.clone(),
-            depths: self.depths.clone(),
-            end: self.end,
+            depths: vec![],
+            end: false,
         }
     }
 }
@@ -73,81 +74,44 @@ impl<'query, E> FsmState<E> {
 
         self.position = tree.back(&self.position);
     }
-}
 
-#[derive(PartialEq, Debug)]
-pub struct Task<E> {
-    pub retry_from: Option<FsmState<E>>,
-    pub state: FsmState<E>,
-}
-
-impl<E> Clone for Task<E> {
-    fn clone(&self) -> Self {
-        Self {
-            retry_from: self.retry_from.clone(),
-            state: self.state.clone(),
-        }
-    }
-}
-
-impl<'query, E> Task<E> {
-    pub fn new(task: FsmState<E>) -> Self {
-        Self {
-            retry_from: None,
-            state: task,
-        }
+    pub fn is_descendant(&self, tree: &Selection<'query>) -> bool {
+        tree.get(&self.position).transition == Combinator::Descendant
     }
 
-    pub fn set_retry(&mut self, retry_task: FsmState<E>) {
-        self.retry_from = Some(retry_task);
+    pub fn is_save_point(&self, tree: &Selection<'query>) -> bool {
+        tree.is_save_point(&self.position)
     }
 
-    pub fn retry(
-        &mut self,
-        tree: &Selection<'query>,
-        depth: usize,
-        element: &XHtmlElement,
-    ) -> Option<FsmState<E>> {
-        //let old_task: Option<Task> = self.retry_from.take();
-        let mut retry_task = false;
-        if let Some(task) = &self.retry_from {
-            retry_task = task.next(tree, depth, element);
-        }
-        if retry_task {
-            return self.retry_from.take();
-        }
-
-        return None;
+    pub fn is_last_save_point(&self, tree: &Selection<'query>) -> bool {
+        tree.is_last_save_point(&self.position)
     }
 }
 
 #[derive(PartialEq, Debug)]
-pub struct ScopedTask<E> {
+pub struct ScopedFsm<E> {
     pub scope_depth: usize,
-    pub task: Task<E>,
+    pub fsm: FsmState<E>,
 }
 
-impl<E> Clone for ScopedTask<E> {
+impl<E> Clone for ScopedFsm<E> {
     fn clone(&self) -> Self {
         Self {
             scope_depth: self.scope_depth,
-            task: self.task.clone(),
+            fsm: self.fsm.clone(),
         }
     }
 }
 
-impl<E> ScopedTask<E> {
+impl<E> ScopedFsm<E> {
     pub fn new(depth: usize, parent: *mut E, position: Position) -> Self {
         Self {
             scope_depth: depth,
-            task: Task {
-                retry_from: None,
-                state: FsmState {
-                    parent: parent,
-                    position: position,
-                    depths: vec![],
-                    end: false,
-                },
+            fsm: FsmState {
+                parent: parent,
+                position: position,
+                depths: vec![],
+                end: false,
             },
         }
     }

@@ -35,6 +35,33 @@ impl<'a> XHtmlElement<'a> {
             self.attributes.push(attribute);
         }
     }
+
+    pub fn is_self_closing(&self) -> bool {
+        if matches!(
+            self.name,
+            "area"
+                | "base"
+                | "br"
+                | "col"
+                | "embed"
+                | "hr"
+                | "img"
+                | "input"
+                | "link"
+                | "meta"
+                | "param"
+                | "source"
+                | "track"
+                | "wbr"
+        ) {
+            return true;
+        }
+        if let Some(last_attribute) = self.attributes.last() {
+            return last_attribute.name == "\\";
+        }
+
+        return false;
+    }
 }
 
 impl<'a> From<&mut Reader<'a>> for XHtmlElement<'a> {

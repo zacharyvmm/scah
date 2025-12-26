@@ -35,9 +35,9 @@ where
         }
     }
 
-    pub fn next(&mut self, xhtml_element: XHtmlElement<'html>, position: &DocumentPosition) {
+    pub fn next(&mut self, xhtml_element: &XHtmlElement<'html>, position: &DocumentPosition) {
         for session in self.sessions.iter_mut() {
-            session.next(&mut self.store, &xhtml_element, position);
+            session.next(&mut self.store, xhtml_element, position);
         }
     }
 
