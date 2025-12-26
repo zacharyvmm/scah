@@ -2,14 +2,119 @@ use super::string_search::AttributeSelectionKind;
 use crate::utils::{QuoteKind, Reader};
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct AttributeSelection<'a> {
-    pub(super) name: &'a str,
-    pub(super) value: Option<&'a str>,
+pub struct AttributeSelection<'query> {
+    pub(super) name: &'query str,
+    pub(super) value: Option<&'query str>,
     pub(super) kind: AttributeSelectionKind,
 }
 
-enum SelectionKeyWords<'a> {
-    String(&'a str),
+struct KeyValueAttributeSelection<'query> {
+    name: Option<&'query str>,
+    selection_kind: AttributeSelectionKind,
+    value: Option<&'query str>,
+}
+
+impl<'query> KeyValueAttributeSelection<'query> {
+    fn push(&mut self, content_inside_quotes: &'query str) {
+        if self.name.is_none() {
+            self.name = Some(content_inside_quotes);
+        } else if self.value.is_none() {
+            self.value = Some(content_inside_quotes);
+        } else {
+            unreachable!();
+        }
+    }
+
+    fn refresh_equal(&mut self) {
+        if self.selection_kind == AttributeSelectionKind::Presence && self.value.is_some() {
+            self.selection_kind = AttributeSelectionKind::Exact;
+        }
+    }
+}
+
+impl<'query> From<&mut Reader<'query>> for AttributeSelection<'query> {
+    fn from(reader: &mut Reader<'query>) -> Self {
+        let mut position = reader.get_position();
+
+        let mut opened_quote: Option<QuoteKind> = None;
+        let mut equal = false;
+
+        // let mut name: Option<&str> = None;
+        // let mut value: Option<&str> = None;
+        // let mut selection_kind: AttributeSelectionKind = AttributeSelectionKind::Presence;
+        let mut kv = KeyValueAttributeSelection {
+            name: None,
+            selection_kind: AttributeSelectionKind::Presence,
+            value: None,
+        };
+
+        while let Some(token) = SelectionAttributeToken::next(reader) {
+            match token {
+                SelectionAttributeToken::Quote(kind) => {
+                    if opened_quote.is_none() {
+                        opened_quote = Some(kind);
+                        position = reader.get_position();
+                        continue;
+                    }
+
+                    if let Some(quote_kind) = &opened_quote {
+                        if *quote_kind != kind {
+                            continue;
+                        }
+                    }
+
+                    opened_quote = None;
+
+                    // `"` and `'` are always of size 1
+                    const SIZE_OF_QUOTE: usize = 1;
+
+                    let end_position = reader.get_position() - SIZE_OF_QUOTE;
+                    let content_inside_quotes = reader.slice(position..end_position);
+
+                    kv.push(content_inside_quotes);
+                }
+
+                SelectionAttributeToken::String(string_value) => {
+                    if opened_quote.is_some() {
+                        continue;
+                    }
+
+                    kv.push(string_value);
+                }
+
+                SelectionAttributeToken::StringMatchSelector(equal_selector) => {
+                    kv.selection_kind = equal_selector;
+                }
+
+                SelectionAttributeToken::Equal => {
+                    assert!(kv.name.is_some());
+                    assert!(kv.value.is_none());
+                    if equal {
+                        panic!("Equal should not have been assigned twice");
+                    }
+                    equal = true;
+                }
+
+                _ => (),
+            }
+        }
+
+        if kv.name.is_none() {
+            panic!("Need to select a attribute by name");
+        }
+
+        kv.refresh_equal();
+
+        AttributeSelection {
+            name: kv.name.unwrap(),
+            value: kv.value,
+            kind: kv.selection_kind,
+        }
+    }
+}
+
+enum SelectionKeyWords<'query> {
+    String(&'query str),
     ID,
     CLASS,
     Quote,
@@ -48,7 +153,7 @@ enum SelectionAttributeToken<'a> {
     String(&'a str),
     Quote(QuoteKind),
     Equal,
-    EqualSelector(AttributeSelectionKind),
+    StringMatchSelector(AttributeSelectionKind),
 }
 
 impl<'a> SelectionAttributeToken<'a> {
@@ -61,13 +166,15 @@ impl<'a> SelectionAttributeToken<'a> {
             '"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
             '\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
             '=' => Some(Self::Equal),
-            '~' => Some(Self::EqualSelector(
+            '~' => Some(Self::StringMatchSelector(
                 AttributeSelectionKind::WhitespaceSeparated,
             )),
-            '|' => Some(Self::EqualSelector(AttributeSelectionKind::HyphenSeparated)),
-            '^' => Some(Self::EqualSelector(AttributeSelectionKind::Prefix)),
-            '$' => Some(Self::EqualSelector(AttributeSelectionKind::Suffix)),
-            '*' => Some(Self::EqualSelector(AttributeSelectionKind::Substring)),
+            '|' => Some(Self::StringMatchSelector(
+                AttributeSelectionKind::HyphenSeparated,
+            )),
+            '^' => Some(Self::StringMatchSelector(AttributeSelectionKind::Prefix)),
+            '$' => Some(Self::StringMatchSelector(AttributeSelectionKind::Suffix)),
+            '*' => Some(Self::StringMatchSelector(AttributeSelectionKind::Substring)),
             ']' => None,
             _ => {
                 // Find end of word
@@ -112,85 +219,9 @@ impl<'a> QueryElement<'a> {
         };
     }
 
-    fn handle_attribute_parsing(&mut self, reader: &mut Reader<'a>) {
-        let mut opened_quote: Option<QuoteKind> = None;
-        let mut position = reader.get_position();
-        let mut equal = false;
-
-        let mut name: Option<&str> = None;
-        let mut value: Option<&str> = None;
-        let mut kind: Option<AttributeSelectionKind> = None;
-
-        while let Some(token) = SelectionAttributeToken::next(reader) {
-            match (&opened_quote, token) {
-                (Option::None, SelectionAttributeToken::Quote(kind)) => {
-                    opened_quote = Some(kind);
-                    position = reader.get_position();
-                }
-                (Some(previous_kind), SelectionAttributeToken::Quote(kind)) => {
-                    if *previous_kind != kind {
-                        continue;
-                    }
-
-                    opened_quote = None;
-
-                    // `"` and `'` are always of size 1
-                    const SIZE_OF_QUOTE: usize = 1;
-
-                    let end_position = reader.get_position() - SIZE_OF_QUOTE;
-                    let content_inside_quotes = reader.slice(position..end_position);
-
-                    if !name.is_some() {
-                        name = Some(content_inside_quotes);
-                    } else if !value.is_some() {
-                        value = Some(content_inside_quotes);
-                    } else {
-                        panic!("This is not supposed to happen");
-                    }
-                }
-
-                (Option::None, SelectionAttributeToken::String(string_value)) => {
-                    if !name.is_some() {
-                        name = Some(string_value);
-                    } else if !value.is_some() {
-                        value = Some(string_value);
-                    } else {
-                        panic!("This is not supposed to happen");
-                    }
-                }
-
-                (_, SelectionAttributeToken::EqualSelector(equal_selector)) => {
-                    kind = Some(equal_selector);
-                }
-
-                (_, SelectionAttributeToken::Equal) => {
-                    if equal {
-                        panic!("Equal should not have been assigned twice");
-                    }
-                    equal = true;
-                }
-
-                (_, _) => (),
-            }
-        }
-
-        if !name.is_some() {
-            panic!("Need to select a attribute by name");
-        }
-
-        if !kind.is_some() {
-            if value.is_some() {
-                kind = Some(AttributeSelectionKind::Exact);
-            } else {
-                kind = Some(AttributeSelectionKind::Presence);
-            }
-        }
-
-        self.attributes.push(AttributeSelection {
-            name: name.unwrap(),
-            value: value,
-            kind: kind.unwrap(),
-        });
+    fn parse_attribute(&mut self, reader: &mut Reader<'a>) {
+        let attribute = AttributeSelection::from(reader);
+        self.attributes.push(attribute);
     }
 }
 
@@ -220,7 +251,7 @@ impl<'a> From<&mut Reader<'a>> for QueryElement<'a> {
                     // BUG: their is more class that means it should be a list of class
                     element.class = Some(*class_name);
                 }
-                (_, SelectionKeyWords::OpenAttribute) => element.handle_attribute_parsing(reader),
+                (_, SelectionKeyWords::OpenAttribute) => element.parse_attribute(reader),
 
                 (Some(SelectionKeyWords::ID), _) | (Some(SelectionKeyWords::CLASS), _) => (),
 
