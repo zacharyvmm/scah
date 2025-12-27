@@ -1,13 +1,10 @@
-use std::ops::Range;
-use std::vec;
-
 use super::manager::DocumentPosition;
 use super::task::{FsmState, ScopedFsm};
 //use super::tree::MatchTree;
-use crate::XHtmlElement;
 use crate::css::Save;
 use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{NextPosition, Position, Selection};
+use crate::{XHtmlElement, dbg_print};
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
 use crate::utils::Reader;
@@ -195,7 +192,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             ) {
                 continue;
             }
-            println!("Match with `{:?}`", element);
+            dbg_print!("Match with `{:?}`", element);
 
             let is_descendant_combinator = fsm.is_descendant(self.selection_tree);
             let last_save_point = fsm.is_last_save_point(self.selection_tree);
@@ -302,7 +299,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
 
                 fsm.end = false;
             }
-            println!("Saved `{}`", element);
+            dbg_print!("Saved `{}`", element);
 
             let kind = self
                 .selection_tree

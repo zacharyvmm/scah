@@ -8,3 +8,12 @@ macro_rules! mut_prt_unchecked {
         cast($e)
     }};
 }
+
+#[macro_export]
+macro_rules! dbg_print {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            println!($($arg)*);
+        }
+    }
+}

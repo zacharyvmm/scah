@@ -2,6 +2,7 @@ use super::element::element::XHtmlTag;
 use super::text_content::TextContent;
 use crate::css::DocumentPosition;
 use crate::css::FsmManager;
+use crate::dbg_print;
 use crate::store::Store;
 use crate::utils::Reader;
 
@@ -72,9 +73,10 @@ where
                 self.position.element_depth += 1;
                 self.position.reader_position = reader.get_position();
 
-                println!(
+                dbg_print!(
                     "opening: `{}` ({})",
-                    element.name, self.position.element_depth
+                    element.name,
+                    self.position.element_depth
                 );
                 self.selectors.next(&element, &self.position);
 
@@ -83,7 +85,7 @@ where
                 }
             }
             XHtmlTag::Close(closing_tag) => {
-                println!("closing: `{closing_tag}` ({})", self.position.element_depth);
+                dbg_print!("closing: `{closing_tag}` ({})", self.position.element_depth);
 
                 self.selectors
                     .back(closing_tag, &self.position, reader, &self.content);

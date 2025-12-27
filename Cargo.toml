@@ -3,4 +3,19 @@ name = "onego"
 version = "0.0.1"
 edition = "2024"
 
-[dependencies]
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+# panic = "abort"
+panic = "unwind"
+# strip = "symbols"
+strip = "none"
+overflow-checks = false
+incremental = false
+debug = 1
+
+# [profile.release.package."*"]
+# opt-level = 3
+# codegen-units = 1
+# debug = 1
