@@ -26,3 +26,16 @@ pub fn parse<'html: 'query, 'query: 'html>(
 
     return parser.matches().root.children;
 }
+
+
+#[cfg(feature = "python")]
+#[pyo3::pymodule]
+mod onego {
+  use pyo3::prelude::*;
+
+  /// Formats the sum of two numbers as string.
+  #[pyfunction]
+  fn parse(query: &str, html: &str) -> PyResult<String> {
+    Ok("Hello World".to_string())
+  }
+}

@@ -3,6 +3,18 @@ name = "onego"
 version = "0.0.1"
 edition = "2024"
 
+[lib]
+name = "onego"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Make pyo3 optional so it's not included in the pure Rust build
+pyo3 = { version = "0.27.2", optional = true } 
+
+[features]
+# Define a feature that enables pyo3's extension-module
+python = ["dep:pyo3", "pyo3/extension-module"]
+
 [profile.release]
 opt-level = 3
 lto = "fat"
@@ -15,7 +27,7 @@ overflow-checks = false
 incremental = false
 debug = 1
 
-# [profile.release.package."*"]
-# opt-level = 3
-# codegen-units = 1
-# debug = 1
+[profile.release.package."*"]
+opt-level = 3
+codegen-units = 1
+debug = 1
