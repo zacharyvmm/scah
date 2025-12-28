@@ -57,11 +57,6 @@ impl<'py> Element for Bound<'py, PyDict> {
     type Map = Bound<'py, PyDict>;
     type List = Bound<'py, PyList>;
 
-    // fn get_name(&self) -> String {
-    //     let item = self.get_item(Self::NAME).unwrap().unwrap();
-    //     let string= item.cast::<PyString>().unwrap();
-    //     string.to_string()
-    // }
     fn set_name(&mut self, value: &'_ str) -> () {
         let _ = self.set_item(Self::NAME, value);
     }
@@ -139,7 +134,7 @@ impl<'py> Element for Bound<'py, PyDict> {
                     .get_item(key)
                     .expect("The Child was just set, thus it should exist")
                     .unwrap();
-                let list = children
+                let list = any
                     .cast::<PyList>()
                     .expect("The list was just created");
                 let first = list.get_item(0);
@@ -189,117 +184,6 @@ impl<'py> Element for Bound<'py, PyDict> {
         match dict.get_item(key) {
             Ok(_) => true,
             Err(_) => false,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct PythonElement<'py> {
-    value: Bound<'py, PyDict>,
-}
-impl<'py, 'query> PythonElement<'py> {
-    const NAME: &'static str = "name";
-    const ID: &'static str = "id";
-    const CLASS: &'static str = "class";
-    const ATTRIBUTES: &'static str = "attributes";
-    const INNER_HTML: &'static str = "innerHtml";
-    const TEXT_CONTENT: &'static str = "textContent";
-    const CHILDREN: &'static str = "children";
-
-    pub fn new(context: &Python<'py>, selection: &SelectionPart<'query>) -> Self {
-        let dict = PyDict::new(*context);
-
-        let attributes = PyDict::new(*context);
-        dict.set_item(Self::ATTRIBUTES, attributes);
-
-        match selection.kind {
-            SelectionKind::All(_) => {
-                let children_list = PyList::empty(*context);
-                dict.set_item(Self::CHILDREN, children_list);
-            }
-            SelectionKind::First(_) => {
-                let children = PyDict::new(*context);
-                dict.set_item(Self::CHILDREN, children);
-            }
-        }
-
-        Self { value: dict }
-    }
-
-    #[inline]
-    fn set_item<V>(&mut self, key: &'_ str, value: V) -> ()
-    where
-        V: pyo3::IntoPyObject<'py>,
-    {
-        self.value.set_item(key, value);
-    }
-
-    pub fn set_name(&mut self, value: &'_ str) -> () {
-        self.set_item(Self::NAME, value);
-    }
-
-    pub fn set_id(&mut self, value: &'_ str) -> () {
-        self.set_item(Self::ID, value);
-    }
-
-    pub fn set_class(&mut self, value: &'_ str) -> () {
-        self.set_item(Self::CLASS, value);
-    }
-
-    pub fn set_attribute(&mut self, key: &'_ str, value: Option<&'_ str>) -> () {
-        let attributes = self
-            .value
-            .get_item(Self::ATTRIBUTES)
-            .unwrap()
-            .expect("The Attributes dict should already be initialized");
-
-        if let Some(v) = value {
-            attributes.set_item(key, v);
-            return;
-        }
-        attributes.set_item(key, true);
-    }
-
-    pub fn set_child(&mut self, key: &'_ str, value: Bound<'py, PyDict>) -> () {
-        let children = self
-            .value
-            .get_item(Self::CHILDREN)
-            .unwrap()
-            .expect("The Children dict should already be initialized");
-        assert!(
-            children.is_exact_instance_of::<PyDict>() || children.is_exact_instance_of::<PyList>()
-        );
-        if children.is_exact_instance_of::<PyDict>() {}
-        children.set_item(key, value);
-    }
-    pub fn children_contains_key(&self, key: &'_ str) -> bool {
-        let children = self
-            .value
-            .get_item(Self::CHILDREN)
-            .unwrap()
-            .expect("The Children dict should already be initialized");
-        children.get_item(key).is_ok()
-    }
-
-    pub fn set_inner_html(&mut self, value: &'_ str) -> () {
-        self.set_item(Self::INNER_HTML, value);
-    }
-
-    pub fn set_text_content(&mut self, value: &'_ str) -> () {
-        self.set_item(Self::TEXT_CONTENT, value);
-    }
-
-    pub fn from<'html>(&mut self, element: crate::XHtmlElement<'html>) {
-        self.set_name(element.name);
-        if element.class.is_some() {
-            self.set_class(element.class.unwrap());
-        }
-        if element.id.is_some() {
-            self.set_id(element.id.unwrap());
-        }
-
-        for attribute in element.attributes {
-            self.set_attribute(attribute.name, attribute.value);
         }
     }
 }
@@ -373,15 +257,24 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
                 "It is not possible to add a single item to the store when it already exists."
             );
 
-            let list =
-                PyList::new(self.root.py(), vec![new_element]).expect("Unable to create list");
-            from_element.set_child(selection.source, Selection::All(list));
+            // let list =
+            //     PyList::new(self.root.py(), vec![new_element]).expect("Unable to create list");
+            // from_element.set_child(selection.source, Selection::All(list));
+            
+            const CHILDREN: &'static str = "children";
+            let children_any = from_element.get_item(CHILDREN).expect("children should be initialized").expect("Value should not be None");
+            let children = children_any.cast::<PyDict>().expect("Children is always a dict");
 
-            let list_of_child = from_element
+            let list_of_child = children
                 .get_item(selection.source)
                 .expect("The list just got added")
                 .expect("The list was not empty");
-            let first = list_of_child.get_item(0);
+            let list = list_of_child.cast::<PyList>().expect("children should be a list");
+
+            list.append(new_element);
+            let len = list.len();
+
+            let first = list.get_item(len-1);
             let pointer = match first {
                 Ok(first_value_any) => {
                     let first_value = first_value_any
@@ -429,6 +322,7 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
             Self::set_inner_html(ele, ih);
         }
 
+        // TODO: the text content was converted before. Probably should convert strait into PyString
         if let Some(tc) = text_content {
             Self::set_text_content(ele, tc.as_str());
         }

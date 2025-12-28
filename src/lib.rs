@@ -54,7 +54,7 @@ mod onego {
         let query = query_string.extract().unwrap();
         let queries = &vec![Selection::new(SelectionPart::new(
             query,
-            SelectionKind::First(Save {
+            SelectionKind::All(Save {
                 inner_html: true,
                 text_content: true,
             }),
@@ -68,13 +68,5 @@ mod onego {
 
         let out_store = parser.matches();
         Ok(out_store.root)
-
-        // let dict = PyDict::new(py);
-
-        // dict.set_item("status", "success")?;
-        // dict.set_item("count", 42)?;
-        // dict.set_item("data", vec![1, 2, 3])?; // Vectors convert to Python Lists automatically
-
-        // Ok(dict.unbind())
     }
 }

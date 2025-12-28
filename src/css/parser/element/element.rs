@@ -94,8 +94,6 @@ impl<'query> From<&mut Reader<'query>> for AttributeSelection<'query> {
                     }
                     equal = true;
                 }
-
-                _ => (),
             }
         }
 
