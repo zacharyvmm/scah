@@ -107,7 +107,7 @@ mod tests {
 
     use super::*;
     use crate::css::{FsmManager, Save, Selection, SelectionKind, SelectionPart};
-    use crate::store::{Element, RustStore, SelectionValue, ValueKind};
+    use crate::store::{Element, RustStore, SelectionValue, Store, ValueKind};
     use crate::utils::Reader;
     use crate::xhtml::element::element::{Attribute, XHtmlElement};
 
@@ -135,7 +135,7 @@ mod tests {
 
         let queries = vec![selection_tree];
 
-        let manager = FsmManager::<RustStore>::new(&queries);
+        let manager = FsmManager::new(RustStore::new(false), &queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -192,7 +192,7 @@ mod tests {
         let selection_tree = Selection::new(section);
 
         let queries = vec![selection_tree];
-        let manager = FsmManager::<RustStore>::new(&queries);
+        let manager = FsmManager::new(RustStore::new(false), &queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -260,7 +260,7 @@ mod tests {
         ));
 
         let queries = vec![selection_tree_1, selection_tree_2];
-        let manager = FsmManager::<RustStore>::new(&queries);
+        let manager = FsmManager::new(RustStore::new(false), &queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -326,7 +326,7 @@ mod tests {
                 }),
             ),
         ]);
-        let manager = FsmManager::<RustStore>::new(&queries);
+        let manager = FsmManager::new(RustStore::new(false), &queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -478,7 +478,7 @@ mod tests {
 
         let queries = vec![selection_tree];
 
-        let manager = FsmManager::<RustStore>::new(&queries);
+        let manager = FsmManager::new(RustStore::new(false), &queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -540,7 +540,7 @@ mod tests {
 
         let queries = vec![selection_tree];
 
-        let manager = FsmManager::<RustStore>::new(&queries);
+        let manager = FsmManager::new(RustStore::new(false), &queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -614,7 +614,7 @@ mod tests {
 
         let queries = vec![selection_tree];
 
-        let manager = FsmManager::<RustStore>::new(&queries);
+        let manager = FsmManager::new(RustStore::new(false), &queries);
 
         let mut parser = XHtmlParser::new(manager);
 

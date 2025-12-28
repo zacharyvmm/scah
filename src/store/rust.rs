@@ -236,8 +236,9 @@ pub struct RustStore<'html, 'query> {
 
 impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
     type E = Element<'html, 'query>;
+    type Context = bool;
 
-    fn new() -> Self {
+    fn new(_: Self::Context) -> Self {
         Self {
             root: Box::new(Element {
                 name: "root",
@@ -524,7 +525,7 @@ mod tests {
          *      |          \-> p
          *      \-> div
          */
-        let mut store = RustStore::new();
+        let mut store = RustStore::new(false);
 
         // SETUP Elements
         let first = XHtmlElement::from(&mut Reader::new("a class=\"class\""));

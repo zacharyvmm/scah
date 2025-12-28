@@ -1,7 +1,7 @@
+use onego::{Save, Selection, SelectionKind, SelectionPart, parse};
 use std::env;
 use std::fs;
 use std::time::Instant;
-use onego::{Save, Selection, SelectionKind, SelectionPart, parse};
 
 // Just a simple program to check the performance of 1go
 // cargo run --release -- /home/zmm/Music/html.spec.whatwg.index.html
@@ -29,7 +29,7 @@ fn main() {
 
     let duration = start.elapsed();
     println!(
-        "Time elapsed: {:?} ({}), Tags Found: {}",
+        "Time elapsed: {:?} ({}s), Tags Found: {}",
         duration,
         duration.as_secs_f64(),
         map["a"].len().unwrap()

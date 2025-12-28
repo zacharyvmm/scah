@@ -8,11 +8,9 @@ name = "onego"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Make pyo3 optional so it's not included in the pure Rust build
 pyo3 = { version = "0.27.2", optional = true } 
 
 [features]
-# Define a feature that enables pyo3's extension-module
 python = ["dep:pyo3", "pyo3/extension-module"]
 
 [profile.release]

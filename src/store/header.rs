@@ -3,7 +3,8 @@ use crate::css::SelectionPart;
 
 pub trait Store<'html, 'query> {
     type E;
-    fn new() -> Self;
+    type Context;
+    fn new(context: Self::Context) -> Self;
     fn root(&mut self) -> *mut Self::E;
     fn push<'key>(
         &mut self,

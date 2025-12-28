@@ -339,7 +339,7 @@ mod tests {
         );
         let selection_tree = Selection::new(section);
 
-        let mut store = RustStore::new();
+        let mut store = RustStore::new(false);
 
         let mut selection = SelectionRunner::new(store.root(), &selection_tree);
 
@@ -463,7 +463,7 @@ mod tests {
             ),
         ]));
 
-        let mut store = RustStore::new();
+        let mut store = RustStore::new(false);
         let mut selection = SelectionRunner::new(store.root(), &selection_tree);
 
         let _ = selection.next(
@@ -597,7 +597,7 @@ mod tests {
             }),
         ));
 
-        let mut store = RustStore::new();
+        let mut store = RustStore::new(false);
         let mut selection = SelectionRunner::new(store.root(), &selection_tree);
 
         let mut reader = Reader::new("<div></div>");

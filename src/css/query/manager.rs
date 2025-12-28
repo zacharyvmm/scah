@@ -23,9 +23,8 @@ impl<'html, 'query: 'html, S, E> FsmManager<'html, 'query, S>
 where
     S: Store<'html, 'query, E = E>,
 {
-    pub fn new(queries: &'query Vec<Selection<'query>>) -> Self {
+    pub fn new(mut s: S, queries: &'query Vec<Selection<'query>>) -> Self {
         // BUG: the memory moves afterwards
-        let mut s = S::new();
         Self {
             sessions: queries
                 .iter()
