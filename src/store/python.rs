@@ -84,7 +84,7 @@ impl<'py> Element for Bound<'py, PyDict> {
         let attributes = {
             let dict = self.get_item(Self::ATTRIBUTES);
             match dict {
-                Err(_) => {
+                Ok(None) | Err(_) => {
                     // init attributes
                     self.set_item(Self::ATTRIBUTES, PyDict::new(self.py()))
                         .expect("Error: was not able to create Attributes dict");
@@ -95,7 +95,6 @@ impl<'py> Element for Bound<'py, PyDict> {
                     any
                 }
                 Ok(Some(any)) => any,
-                Ok(None) => unreachable!(),
             }
         };
 
@@ -114,7 +113,7 @@ impl<'py> Element for Bound<'py, PyDict> {
         let children = {
             let dict = self.get_item(Self::CHILDREN);
             match dict {
-                Err(_) => {
+                Ok(None) | Err(_) => {
                     // init children
                     self.set_item(Self::CHILDREN, PyDict::new(self.py()))
                         .expect("Error: was not able to create Children dict");
@@ -125,7 +124,6 @@ impl<'py> Element for Bound<'py, PyDict> {
                     any
                 }
                 Ok(Some(any)) => any,
-                Ok(None) => unreachable!(),
             }
         };
 
@@ -174,11 +172,10 @@ impl<'py> Element for Bound<'py, PyDict> {
         let children = {
             let dict = self.get_item(Self::CHILDREN);
             match dict {
-                Err(_) => {
+                Ok(None) | Err(_) => {
                     return false;
                 }
                 Ok(Some(any)) => any,
-                Ok(None) => unreachable!(),
             }
         };
 
