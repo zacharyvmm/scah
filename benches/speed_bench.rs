@@ -1,6 +1,6 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use lexbor_rust;
-use onego::{QueryBuilder, Save, SelectionKind, SelectionPart, parse};
+use onego::{QueryBuilder, Save, SelectionKind, SelectionPart, parse, fake_parse};
 use scraper::{Html, Selector};
 use std::hint::black_box;
 use tl::ParserOptions;
@@ -38,6 +38,16 @@ fn bench_comparison(c: &mut Criterion) {
                 .build()];
                 let res = parse(html, queries);
                 black_box(res);
+            })
+        });
+
+        group.bench_with_input(BenchmarkId::new("onego_no_store", size), &content, |b, html| {
+            b.iter(|| {
+                let queries = vec![Selection::new(SelectionPart::new(
+                    black_box("div.article a"), 
+                    SelectionKind::All(Save { inner_html: false, text_content: true })
+                ))];
+                let res = black_box(fake_parse(html, &queries));
             })
         });
 

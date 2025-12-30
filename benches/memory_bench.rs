@@ -14,7 +14,7 @@ fn setup_html() -> String {
     html
 }
 
-use onego::{QueryBuilder, Save, SelectionKind, SelectionPart, parse};
+use onego::{QueryBuilder, Save, SelectionKind, SelectionPart, parse, fake_parse};
 
 #[library_benchmark]
 #[bench::onego(setup_html())]
@@ -30,6 +30,17 @@ fn bench_onego(html: String) {
 
     let res = parse(&html, queries);
     black_box(res);
+}
+
+#[library_benchmark]
+#[bench::onego_no_store(setup_html())]
+fn bench_onego_no_store(html: String) {
+    let queries = vec![Selection::new(SelectionPart::new(
+        black_box("div.article a"),
+        SelectionKind::All(Save { inner_html: true, text_content: false })
+    ))];
+
+    let res = black_box(fake_parse(&html, &queries));
 }
 
 use scraper::{Html, Selector};
@@ -76,7 +87,7 @@ fn bench_lexbor(html: String) {
 // Define a group that runs all three against each other
 library_benchmark_group!(
     name = comparison_group;
-    benchmarks = bench_onego, bench_tl, bench_scraper, bench_lexbor
+    benchmarks = bench_onego, bench_onego_no_store, bench_tl, bench_scraper, bench_lexbor
 );
 
 main!(library_benchmark_groups = comparison_group);

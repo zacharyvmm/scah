@@ -8,7 +8,7 @@ use utils::Reader;
 use xhtml::parser::XHtmlParser;
 
 use crate::css::FsmManager;
-use crate::store::{RustStore, Store};
+use crate::store::{RustStore, Store, FakeStore};
 
 pub use css::{Query, QueryBuilder, Save, SelectionKind, SelectionPart};
 pub use store::{Element, QueryError, SelectionValue};
@@ -25,6 +25,19 @@ pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
     while parser.next(&mut reader) {}
 
     return parser.matches().root.children;
+}
+
+pub fn fake_parse<'html: 'query, 'query: 'html>(
+    html: &'html str,
+    queries: &'query Vec<Selection<'query>>,
+) -> () {
+    let selectors = FsmManager::new(FakeStore::new(false), queries);
+    let mut parser = XHtmlParser::new(selectors);
+
+    let mut reader = Reader::new(html);
+    while parser.next(&mut reader) {}
+
+    let _ = parser.matches();
 }
 
 #[cfg(feature = "python")]
