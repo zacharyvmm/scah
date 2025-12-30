@@ -2,7 +2,7 @@ mod tests {
     use std::collections::HashMap;
 
     use onego::{
-        Element, QueryError, Save, Selection, SelectionKind, SelectionPart, SelectionValue, parse,
+        Element, QueryError, Save, QueryBuilder, SelectionKind, SelectionPart, SelectionValue, parse,
     };
     const HTML: &str = r#"
 <!DOCTYPE html>
@@ -56,7 +56,7 @@ mod tests {
                 text_content: true,
             }),
         );
-        let selection_tree = Selection::new(section);
+        let selection_tree = QueryBuilder::new(section);
 
         let queries = &vec![selection_tree];
         let map = parse(HTML, queries);
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_html_page_all_anchor_tag_selection<'key>() -> Result<(), QueryError<'key>> {
-        let queries = &vec![Selection::new(SelectionPart::new(
+        let queries = &vec![QueryBuilder::new(SelectionPart::new(
             "a",
             SelectionKind::All(Save {
                 inner_html: true,
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_html_page_first_anchor_tag_selection<'key>() -> Result<(), QueryError<'key>> {
-        let queries = &vec![Selection::new(SelectionPart::new(
+        let queries = &vec![QueryBuilder::new(SelectionPart::new(
             "a",
             SelectionKind::First(Save {
                 inner_html: true,
@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn test_html_page_all_anchor_tag_starting_with_link_selection<'key>()
     -> Result<(), QueryError<'key>> {
-        let queries = &vec![Selection::new(SelectionPart::new(
+        let queries = &vec![QueryBuilder::new(SelectionPart::new(
             "a[href^=link]",
             SelectionKind::All(Save {
                 inner_html: true,
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn test_html_page_children_valid_anchor_tags_in_main<'key>() -> Result<(), QueryError<'key>> {
-        let queries = &vec![Selection::new(SelectionPart::new(
+        let queries = &vec![QueryBuilder::new(SelectionPart::new(
             "main > section > a[href]",
             SelectionKind::All(Save {
                 inner_html: true,
@@ -174,7 +174,7 @@ mod tests {
             }),
         );
 
-        let selection_tree = Selection::new(section);
+        let selection_tree = QueryBuilder::new(section);
 
         let queries = &vec![selection_tree];
         let map = parse(HTML, queries);
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_html_multi_selection<'key>() -> Result<(), QueryError<'key>> {
-        let mut queries = vec![Selection::new(SelectionPart::new(
+        let mut queries = vec![QueryBuilder::new(SelectionPart::new(
             "main > section",
             SelectionKind::All(Save {
                 inner_html: true,

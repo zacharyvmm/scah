@@ -6,7 +6,7 @@ use std::hint::black_box;
 use scraper::{Html, Selector};
 use tl::ParserOptions;
 use lexbor_rust;
-use onego::{parse, Save, Selection, SelectionKind, SelectionPart};
+use onego::{parse, Save, QueryBuilder, SelectionKind, SelectionPart};
 
 fn generate_html(count: usize) -> String {
     let mut html = String::with_capacity(count * 100);
@@ -31,11 +31,11 @@ fn bench_comparison(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("onego", size), &content, |b, html| {
             b.iter(|| {
-                let queries = vec![Selection::new(SelectionPart::new(
+                let queries = &[QueryBuilder::new(SelectionPart::new(
                     black_box("div.article a"), 
                     SelectionKind::All(Save { inner_html: false, text_content: true })
-                ))];
-                let res = parse(html, &queries);
+                )).build()];
+                let res = parse(html, queries);
                 black_box(res);
             })
         });

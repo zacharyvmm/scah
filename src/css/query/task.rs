@@ -1,14 +1,14 @@
-// A Selection Runner
 use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
-use crate::css::parser::tree::{NextPosition, Position, Selection};
+use crate::css::parser::tree::{NextPosition, NextPositions, Position, Query};
 use std::ptr;
+use smallvec::SmallVec;
 
 #[derive(PartialEq, Debug)]
 pub struct FsmState<E> {
     pub(super) parent: *mut E,
     pub(super) position: Position,
-    pub(super) depths: Vec<usize>,
+    pub(super) depths: SmallVec<[super::DepthSize; 10]>,
     pub(super) end: bool, // This is a flag to say is a save point and this might be the end
 }
 
@@ -17,7 +17,7 @@ impl<E> Clone for FsmState<E> {
         Self {
             parent: self.parent,
             position: self.position.clone(),
-            depths: vec![],
+            depths: SmallVec::new(),
             end: false,
         }
     }
@@ -28,24 +28,25 @@ impl<'query, E> FsmState<E> {
         Self {
             parent: ptr::null_mut(),
             position: Position { section: 0, fsm: 0 },
-            depths: vec![],
+            depths: SmallVec::new(),
             end: false,
         }
     }
 
-    pub fn next(&self, tree: &Selection<'query>, depth: usize, element: &XHtmlElement) -> bool {
+    pub fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
         let fsm = tree.get(&self.position);
-        fsm.next(element, depth, *self.depths.last().unwrap_or(&0))
+        let last_depth = *self.depths.last().unwrap_or(&0);
+        fsm.next(element, depth, last_depth)
     }
 
-    pub fn back(&self, tree: &Selection<'query>, depth: usize, element: &str) -> bool {
+    pub fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
         let fsm = tree.get(&self.position);
         let last_depth = *self.depths.last().unwrap_or(&0);
         fsm.back(element, depth, last_depth)
     }
 
     // Try going backwards from a parent of a leaf
-    pub fn try_back_parent(&self, tree: &Selection<'query>, depth: usize, element: &str) -> bool {
+    pub fn try_back_parent(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
         debug_assert!(self.end);
         let parent_position = tree.back(&self.position);
         let fsm = tree.get(&parent_position);
@@ -56,7 +57,7 @@ impl<'query, E> FsmState<E> {
         fsm.back(element, depth, last_depth)
     }
 
-    pub fn move_foward(&mut self, tree: &Selection<'query>, depth: usize) -> Option<Vec<Position>> {
+    pub fn move_foward(&mut self, tree: &Query<'query>, depth: super::DepthSize) -> Option<NextPositions> {
         let positions = tree.next(&self.position);
         //if tree.is_last_save_point(1)
         self.depths.push(depth);
@@ -78,7 +79,7 @@ impl<'query, E> FsmState<E> {
         }
     }
 
-    pub fn move_backward(&mut self, tree: &Selection<'query>) {
+    pub fn move_backward(&mut self, tree: &Query<'query>) {
         // BUG: Currently this works for opening a closing element's, but if in a ALL selection
         // The FSM position and make it break
         assert!(self.depths.len() > 0);
@@ -87,22 +88,22 @@ impl<'query, E> FsmState<E> {
         self.position = tree.back(&self.position);
     }
 
-    pub fn is_descendant(&self, tree: &Selection<'query>) -> bool {
+    pub fn is_descendant(&self, tree: &Query<'query>) -> bool {
         tree.get(&self.position).transition == Combinator::Descendant
     }
 
-    pub fn is_save_point(&self, tree: &Selection<'query>) -> bool {
+    pub fn is_save_point(&self, tree: &Query<'query>) -> bool {
         tree.is_save_point(&self.position)
     }
 
-    pub fn is_last_save_point(&self, tree: &Selection<'query>) -> bool {
+    pub fn is_last_save_point(&self, tree: &Query<'query>) -> bool {
         tree.is_last_save_point(&self.position)
     }
 }
 
 #[derive(PartialEq, Debug)]
 pub struct ScopedFsm<E> {
-    pub scope_depth: usize,
+    pub scope_depth: super::DepthSize,
     pub fsm: FsmState<E>,
 }
 
@@ -116,19 +117,19 @@ impl<E> Clone for ScopedFsm<E> {
 }
 
 impl<E> ScopedFsm<E> {
-    pub fn new(depth: usize, parent: *mut E, position: Position) -> Self {
+    pub fn new(depth: super::DepthSize, parent: *mut E, position: Position) -> Self {
         Self {
             scope_depth: depth,
             fsm: FsmState {
                 parent: parent,
                 position: position,
-                depths: vec![],
+                depths: SmallVec::new(),
                 end: false,
             },
         }
     }
 
-    pub fn in_scope(&self, current_depth: usize) -> bool {
+    pub fn in_scope(&self, current_depth: super::DepthSize) -> bool {
         self.scope_depth > current_depth
     }
 }
@@ -137,6 +138,7 @@ mod tests {
     use crate::css::parser::tree::{Save, SelectionKind, SelectionPart};
     use crate::store::Element;
     use crate::utils::Reader;
+    use crate::QueryBuilder;
 
     use super::*;
 
@@ -149,7 +151,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let selection_tree = Selection::new(section);
+        let selection_tree = QueryBuilder::new(section).build();
 
         let mut state = FsmState::<Element>::new();
         let mut next: bool = false;

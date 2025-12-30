@@ -9,6 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pyo3 = { version = "0.27.2", optional = true } 
+smallvec = "1.15.1"
 
 [dev-dependencies]
 gungraun = "0.17"

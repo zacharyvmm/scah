@@ -22,11 +22,10 @@ impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
 
 impl<'a, 'b> PartialEq<XHtmlElement<'b>> for QueryElement<'a> {
     fn eq(&self, other: &XHtmlElement<'b>) -> bool {
-        if let Some(name) = self.name {
-            if name != other.name {
+        if let Some(name) = self.name
+            && name != other.name {
                 return false;
             }
-        }
 
         if self.id.is_some() && self.id != other.id {
             return false;
@@ -54,7 +53,7 @@ impl<'a, 'b> PartialEq<XHtmlElement<'b>> for QueryElement<'a> {
             return false;
         }
 
-        return true;
+        true
     }
 }
 

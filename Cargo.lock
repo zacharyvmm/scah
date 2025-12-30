@@ -563,6 +563,7 @@ dependencies = [
  "lexbor_rust",
  "pyo3",
  "scraper",
+ "smallvec",
  "tl",
 ]
 

@@ -17,17 +17,17 @@ fn setup_html() -> String {
     html
 }
 
-use onego::{parse, Save, Selection, SelectionKind, SelectionPart};
+use onego::{parse, Save, QueryBuilder, SelectionKind, SelectionPart};
 
 #[library_benchmark]
 #[bench::onego(setup_html())]
 fn bench_onego(html: String) {
-    let queries = vec![Selection::new(SelectionPart::new(
+    let queries = &[QueryBuilder::new(SelectionPart::new(
         black_box("div.article a"),
         SelectionKind::All(Save { inner_html: true, text_content: false })
-    ))];
+    )).build()];
 
-    let res = parse(&html, &queries);
+    let res = parse(&html, queries);
     black_box(res);
 }
 

@@ -10,14 +10,14 @@ pub struct Fsm<'query> {
 
 impl<'query> Fsm<'query> {
     pub fn new(transition: Combinator, state: QueryElement<'query>) -> Self {
-        return Self { transition, state };
+        Self { transition, state }
     }
 
-    pub fn next<'html>(
+    pub fn next(
         &self,
-        element: &'html XHtmlElement<'html>,
-        current_depth: usize,
-        last_depth: usize,
+        element: &XHtmlElement,
+        current_depth: crate::css::query::DepthSize,
+        last_depth: crate::css::query::DepthSize,
     ) -> bool {
         assert!(
             current_depth >= last_depth,
@@ -47,8 +47,8 @@ impl<'query> Fsm<'query> {
     pub fn back<'html>(
         &self,
         element: &'html str,
-        current_depth: usize,
-        last_depth: usize,
+        current_depth: crate::css::query::DepthSize,
+        last_depth: crate::css::query::DepthSize,
     ) -> bool {
         if current_depth == last_depth {
             return self.state.name.is_some() && self.state.name.unwrap() == element;
