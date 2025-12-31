@@ -32,7 +32,7 @@ impl<'a> Reader<'a> {
 
     // NOTE: Escaping characters has a significant cost
     // #[inline]
-    // pub fn next_while<F>(&mut self, condition: F) 
+    // pub fn next_while<F>(&mut self, condition: F)
     // where F: Fn(u8) -> bool {
     //     while self.position < self.source.len() {
     //         let b = self.source[self.position];
@@ -55,8 +55,10 @@ impl<'a> Reader<'a> {
     // }
 
     #[inline]
-    pub fn next_while<F>(&mut self, condition: F) 
-    where F: Fn(u8) -> bool {
+    pub fn next_while<F>(&mut self, condition: F)
+    where
+        F: Fn(u8) -> bool,
+    {
         while self.position < self.source.len() {
             let b = self.source[self.position];
             let should_continue = condition(b);

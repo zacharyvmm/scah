@@ -10,13 +10,13 @@ use xhtml::parser::XHtmlParser;
 use crate::css::FsmManager;
 use crate::store::{RustStore, Store};
 
-pub use css::{Save, QueryBuilder, Query, SelectionKind, SelectionPart};
+pub use css::{Query, QueryBuilder, Save, SelectionKind, SelectionPart};
 pub use store::{Element, QueryError, SelectionValue};
 pub use xhtml::element::element::{Attribute, XHtmlElement};
 
-pub fn parse<'html: 'query, 'query: 'html>(
+pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
     html: &'html str,
-    queries: &'query [Query<'query>],
+    queries: &'a [Query<'query>],
 ) -> HashMap<&'query str, SelectionValue<'html, 'query>> {
     let selectors = FsmManager::new(RustStore::new(false), queries);
     let mut parser = XHtmlParser::new(selectors);
@@ -52,13 +52,14 @@ mod onego {
             .cast::<PyString>()
             .expect("A key must be a string");
         let query = query_string.extract().unwrap();
-        let queries = &vec![QueryBuilder::new(SelectionPart::new(
+        let queries = &[QueryBuilder::new(SelectionPart::new(
             query,
             SelectionKind::All(Save {
                 inner_html: true,
                 text_content: true,
             }),
-        ))];
+        ))
+        .build()];
         let store = PythonStore::new(py);
         let selectors = FsmManager::new(store, queries);
         let mut parser = XHtmlParser::new(selectors);

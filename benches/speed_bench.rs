@@ -1,12 +1,9 @@
-use criterion::{
-    criterion_group, criterion_main, 
-    Criterion, BenchmarkId, Throughput
-};
-use std::hint::black_box;
-use scraper::{Html, Selector};
-use tl::ParserOptions;
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use lexbor_rust;
-use onego::{parse, Save, QueryBuilder, SelectionKind, SelectionPart};
+use onego::{QueryBuilder, Save, SelectionKind, SelectionPart, parse};
+use scraper::{Html, Selector};
+use std::hint::black_box;
+use tl::ParserOptions;
 
 fn generate_html(count: usize) -> String {
     let mut html = String::with_capacity(count * 100);
@@ -14,7 +11,7 @@ fn generate_html(count: usize) -> String {
     for i in 0..count {
         // Added some entities (&lt;) and bold tags (<b>) to make text extraction work harder
         html.push_str(&format!(
-            r#"<div class="article"><a href="/post/{}"><b>Post</b> &lt;{}&gt;</a></div>"#, 
+            r#"<div class="article"><a href="/post/{}"><b>Post</b> &lt;{}&gt;</a></div>"#,
             i, i
         ));
     }
@@ -32,9 +29,13 @@ fn bench_comparison(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("onego", size), &content, |b, html| {
             b.iter(|| {
                 let queries = &[QueryBuilder::new(SelectionPart::new(
-                    black_box("div.article a"), 
-                    SelectionKind::All(Save { inner_html: false, text_content: true })
-                )).build()];
+                    black_box("div.article a"),
+                    SelectionKind::All(Save {
+                        inner_html: false,
+                        text_content: true,
+                    }),
+                ))
+                .build()];
                 let res = parse(html, queries);
                 black_box(res);
             })
@@ -45,7 +46,7 @@ fn bench_comparison(c: &mut Criterion) {
                 let dom = tl::parse(html, ParserOptions::default()).unwrap();
                 let parser = dom.parser();
                 let query = dom.query_selector(black_box("div.article a")).unwrap();
-                
+
                 for node_handle in query {
                     if let Some(node) = node_handle.get(parser) {
                         black_box(node.inner_text(parser));
@@ -58,7 +59,7 @@ fn bench_comparison(c: &mut Criterion) {
             b.iter(|| {
                 let document = Html::parse_document(html);
                 let selector = Selector::parse(black_box("div.article a")).unwrap();
-                
+
                 for element in document.select(&selector) {
                     let text: String = element.text().collect();
                     black_box(text);

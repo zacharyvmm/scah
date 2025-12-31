@@ -2,7 +2,8 @@ mod tests {
     use std::collections::HashMap;
 
     use onego::{
-        Element, QueryError, Save, QueryBuilder, SelectionKind, SelectionPart, SelectionValue, parse,
+        Element, QueryBuilder, QueryError, Save, SelectionKind, SelectionPart, SelectionValue,
+        parse,
     };
     const HTML: &str = r#"
 <!DOCTYPE html>
@@ -58,7 +59,7 @@ mod tests {
         );
         let selection_tree = QueryBuilder::new(section);
 
-        let queries = &vec![selection_tree];
+        let queries = &[selection_tree.build()];
         let map = parse(HTML, queries);
 
         let list = &map["main > section#id"];
@@ -103,13 +104,14 @@ mod tests {
 
     #[test]
     fn test_html_page_all_anchor_tag_selection<'key>() -> Result<(), QueryError<'key>> {
-        let queries = &vec![QueryBuilder::new(SelectionPart::new(
+        let queries = &[QueryBuilder::new(SelectionPart::new(
             "a",
             SelectionKind::All(Save {
                 inner_html: true,
                 text_content: true,
             }),
-        ))];
+        ))
+        .build()];
         let map = parse(HTML, queries);
 
         assert_eq!(map["a"].len()?, 7);
@@ -119,13 +121,14 @@ mod tests {
 
     #[test]
     fn test_html_page_first_anchor_tag_selection<'key>() -> Result<(), QueryError<'key>> {
-        let queries = &vec![QueryBuilder::new(SelectionPart::new(
+        let queries = &[QueryBuilder::new(SelectionPart::new(
             "a",
             SelectionKind::First(Save {
                 inner_html: true,
                 text_content: true,
             }),
-        ))];
+        ))
+        .build()];
         let map = parse(HTML, queries);
 
         assert_eq!(map["a"].len()?, 1);
@@ -151,13 +154,14 @@ mod tests {
 
     #[test]
     fn test_html_page_children_valid_anchor_tags_in_main<'key>() -> Result<(), QueryError<'key>> {
-        let queries = &vec![QueryBuilder::new(SelectionPart::new(
+        let queries = &[QueryBuilder::new(SelectionPart::new(
             "main > section > a[href]",
             SelectionKind::All(Save {
                 inner_html: true,
                 text_content: true,
             }),
-        ))];
+        ))
+        .build()];
         let map = parse(HTML, queries);
 
         assert_eq!(map["main > section > a[href]"].len()?, 5);
@@ -176,7 +180,7 @@ mod tests {
 
         let selection_tree = QueryBuilder::new(section);
 
-        let queries = &vec![selection_tree];
+        let queries = &[selection_tree.build()];
         let map = parse(HTML, queries);
 
         assert_eq!(map["main.red-background > section#id"].len()?, 1);
@@ -185,14 +189,14 @@ mod tests {
 
     #[test]
     fn test_html_multi_selection<'key>() -> Result<(), QueryError<'key>> {
-        let mut queries = vec![QueryBuilder::new(SelectionPart::new(
+        let mut queries = QueryBuilder::new(SelectionPart::new(
             "main > section",
             SelectionKind::All(Save {
                 inner_html: true,
                 text_content: true,
             }),
-        ))];
-        queries[0].append(vec![
+        ));
+        queries.append(vec![
             SelectionPart::new(
                 "> a[href]",
                 SelectionKind::First(Save {
@@ -209,7 +213,8 @@ mod tests {
             ),
         ]);
 
-        let map = parse(HTML, &queries);
+        let q = [queries.build()];
+        let map = parse(HTML, &q);
 
         println!("Map: {:#?}", map);
         Ok(())

@@ -6,13 +6,13 @@ use super::super::lexer::Combinator;
 use super::selection::SelectionKind;
 use super::selection::SelectionPart;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position {
     pub(crate) section: usize,
     pub(crate) fsm: usize,
 }
 
-pub(crate) type NextPositions = SmallVec<[Position; 6]>;  
+pub(crate) type NextPositions = SmallVec<[Position; 6]>;
 
 #[derive(PartialEq, Debug)]
 pub enum NextPosition {
@@ -31,7 +31,7 @@ impl NextPosition {
 }
 #[derive(Debug)]
 pub struct Query<'query> {
-    list: Box<[SelectionPart<'query>]>
+    list: Box<[SelectionPart<'query>]>,
 }
 
 impl<'query> Query<'query> {
@@ -155,7 +155,9 @@ impl<'query> QueryBuilder<'query> {
     }
 
     pub fn build(self) -> Query<'query> {
-        Query { list: self.list.into_boxed_slice() }
+        Query {
+            list: self.list.into_boxed_slice(),
+        }
     }
 }
 

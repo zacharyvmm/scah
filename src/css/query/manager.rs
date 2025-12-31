@@ -12,13 +12,16 @@ pub(crate) struct DocumentPosition {
     pub element_depth: crate::css::query::DepthSize,
 }
 
+//type Runner<'query, E> = SmallVec<[SelectionRunner<'query, E>; 1]>;
+type Runner<'query, E> = Vec<SelectionRunner<'query, E>>;
+
 #[derive(Debug)]
 pub struct FsmManager<'html, 'query: 'html, S>
 where
     S: Store<'html, 'query>,
 {
     store: S,
-    sessions: SmallVec<[SelectionRunner<'query, S::E>; 6]>,
+    sessions: Runner<'query, S::E>,
 }
 
 impl<'html, 'query: 'html, S, E> FsmManager<'html, 'query, S>

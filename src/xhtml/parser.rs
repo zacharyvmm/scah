@@ -79,7 +79,7 @@ where
                     self.position.element_depth
                 );
 
-                let mut remove_depth_after_next = false; 
+                let mut remove_depth_after_next = false;
                 if element.is_self_closing() {
                     remove_depth_after_next = true;
                 }
@@ -106,7 +106,7 @@ where
         self.selectors.matches()
     }
 }
-/*
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -674,4 +674,3 @@ mod tests {
         )
     }
 }
-*/

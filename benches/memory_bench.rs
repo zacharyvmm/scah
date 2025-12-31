@@ -1,7 +1,4 @@
-use gungraun::{
-    main, library_benchmark, library_benchmark_group,
-    LibraryBenchmarkConfig
-};
+use gungraun::{LibraryBenchmarkConfig, library_benchmark, library_benchmark_group, main};
 use std::hint::black_box;
 
 fn setup_html() -> String {
@@ -17,15 +14,19 @@ fn setup_html() -> String {
     html
 }
 
-use onego::{parse, Save, QueryBuilder, SelectionKind, SelectionPart};
+use onego::{QueryBuilder, Save, SelectionKind, SelectionPart, parse};
 
 #[library_benchmark]
 #[bench::onego(setup_html())]
 fn bench_onego(html: String) {
     let queries = &[QueryBuilder::new(SelectionPart::new(
         black_box("div.article a"),
-        SelectionKind::All(Save { inner_html: true, text_content: false })
-    )).build()];
+        SelectionKind::All(Save {
+            inner_html: true,
+            text_content: false,
+        }),
+    ))
+    .build()];
 
     let res = parse(&html, queries);
     black_box(res);
@@ -59,7 +60,7 @@ fn bench_tl(html: String) {
     // 3. Iterate
     for node_handle in query {
         if let Some(node) = node_handle.get(parser) {
-             black_box(node.inner_html(parser));
+            black_box(node.inner_html(parser));
         }
     }
 }
@@ -70,7 +71,6 @@ use lexbor_rust;
 fn bench_lexbor(html: String) {
     let _ = lexbor_rust::parse_and_select(html.as_str(), black_box("div.article a"));
 }
-
 
 // --- 5. GROUPING ---
 // Define a group that runs all three against each other

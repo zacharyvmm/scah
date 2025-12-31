@@ -6,6 +6,7 @@ use super::task::{FsmState, ScopedFsm};
 use crate::css::Save;
 use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{NextPosition, Position, Query, QueryBuilder};
+use crate::css::query::task::Fsm;
 use crate::{XHtmlElement, dbg_print};
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
@@ -29,8 +30,8 @@ struct EndTagSaveContent<E> {
  *  The important distinction is that the scoped task terminates at a set scope depth (when <= to current depth: terminate).
  */
 
-type ScopedFsmVec<E> = SmallVec<[ScopedFsm<E>; 16]>;
-type EndTagEventVec<E> = SmallVec<[EndTagSaveContent<E>; 16]>;
+type ScopedFsmVec<E> = Vec<ScopedFsm<E>>;
+type EndTagEventVec<E> = Vec<EndTagSaveContent<E>>;
 
 #[derive(Debug)]
 pub struct SelectionRunner<'query, E> {
@@ -46,8 +47,8 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         Self {
             selection_tree,
             fsm: FsmState::new(),
-            scoped_fsms: SmallVec::new(),
-            on_close_tag_events: SmallVec::new(),
+            scoped_fsms: Vec::new(),
+            on_close_tag_events: Vec::new(),
             root: root,
         }
     }
@@ -56,15 +57,15 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         tree: &Query<'query>,
         list: &mut ScopedFsmVec<E>,
         depth: super::DepthSize,
-        fsm: &mut FsmState<E>,
+        fsm: &mut impl Fsm<'query, 'html, E>,
     ) {
         let new_branch_tasks = fsm.move_foward(tree, depth);
         if let Some(new_branch_tasks) = new_branch_tasks {
-            fsm.end = false;
+            fsm.set_end_false();
             list.append(
                 &mut new_branch_tasks
                     .into_iter()
-                    .map(|pos| ScopedFsm::new(depth, fsm.parent, pos))
+                    .map(|pos| ScopedFsm::new(depth, fsm.get_parent(), pos))
                     .collect::<ScopedFsmVec<E>>(),
             );
         }
@@ -80,18 +81,18 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             reader_position,
             text_content_position,
         }: &DocumentPosition,
-        fsm: &mut FsmState<E>,
+        fsm: &mut impl Fsm<'query, 'html, E>,
     ) -> Result<(), QueryError<'query>>
     where
         S: Store<'html, 'query, E = E>,
     {
         debug_assert!(fsm.is_save_point(tree));
 
-        let section = tree.get_section(fsm.position.section);
+        let section = tree.get_section(fsm.get_section());
 
-        let element_pointer = store.push(section, fsm.parent, element)?;
+        let element_pointer = store.push(section, fsm.get_parent(), element)?;
         if !fsm.is_last_save_point(tree) {
-            fsm.parent = element_pointer;
+            fsm.set_parent(element_pointer);
         }
 
         let Save {
@@ -130,12 +131,11 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         S: Store<'html, 'query, E = E>,
     {
         // STEP 1: check scoped tasks
-        let mut new_scoped_fsms: ScopedFsmVec<E> = SmallVec::new();
+        let mut new_scoped_fsms: ScopedFsmVec<E> = Vec::new();
 
         for i in 0..self.scoped_fsms.len() {
             // println!("Scoped Fsm's {i}");
-            let ref mut scoped_fsm = self.scoped_fsms[i];
-            let fsm = &scoped_fsm.fsm;
+            let fsm = &mut self.scoped_fsms[i];
 
             if !fsm.next(
                 self.selection_tree,
@@ -152,21 +152,20 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 new_scoped_fsms.push(ScopedFsm::new(
                     document_position.element_depth,
                     fsm.parent,
-                    fsm.position.clone(),
+                    fsm.position,
                 ));
             }
 
-            let mut new_scoped_fsm = scoped_fsm.clone();
-            let new_fsm = &mut new_scoped_fsm.fsm;
+            let mut new_scoped_fsm = fsm.clone();
 
-            if new_fsm.is_save_point(self.selection_tree) {
+            if new_scoped_fsm.is_save_point(self.selection_tree) {
                 Self::save_element(
                     &mut self.on_close_tag_events,
                     self.selection_tree,
                     store,
                     element.clone(),
                     document_position,
-                    new_fsm,
+                    &mut new_scoped_fsm,
                 )?;
             }
 
@@ -175,7 +174,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                     self.selection_tree,
                     &mut new_scoped_fsms,
                     document_position.element_depth,
-                    new_fsm,
+                    &mut new_scoped_fsm,
                 );
             }
 
@@ -201,7 +200,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 self.scoped_fsms.push(ScopedFsm::new(
                     document_position.element_depth,
                     fsm.parent,
-                    fsm.position.clone(),
+                    fsm.position,
                 ));
             }
 
@@ -304,6 +303,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         fsm.move_backward(self.selection_tree);
     }
 }
+
 /*
 mod tests {
     use std::collections::HashMap;
@@ -366,12 +366,8 @@ mod tests {
             selection.scoped_fsms.to_vec(),
             vec![ScopedFsm {
                 scope_depth: 0,
-                fsm: FsmState {
-                    parent: NULL_POINTER,
-                    position: Position { section: 0, fsm: 0 },
-                    depths: smallvec![],
-                    end: false,
-                },
+                parent: NULL_POINTER,
+                position: Position { section: 0, fsm: 0 },
             }]
         );
 
@@ -418,12 +414,8 @@ mod tests {
             selection.scoped_fsms.to_vec(),
             vec![ScopedFsm {
                 scope_depth: 0,
-                fsm: FsmState {
-                    parent: NULL_POINTER,
-                    position: Position { section: 0, fsm: 0 },
-                    depths: smallvec![],
-                    end: false,
-                },
+                parent: NULL_POINTER,
+                position: Position { section: 0, fsm: 0 },
             },]
         );
     }
@@ -454,7 +446,7 @@ mod tests {
                 }),
             ),
         ]));
-        let selection_tree = selection_tree;
+        let selection_tree = selection_tree.build();
 
         let mut store = RustStore::new(false);
         let mut selection = SelectionRunner::new(store.root(), &selection_tree);
@@ -491,12 +483,8 @@ mod tests {
             selection.scoped_fsms[0],
             ScopedFsm {
                 scope_depth: 0,
-                fsm: FsmState {
-                    parent: NULL_POINTER,
-                    position: Position { section: 0, fsm: 0 },
-                    depths: selection.scoped_fsms[0].fsm.depths.clone(),
-                    end: false,
-                },
+                parent: NULL_POINTER,
+                position: Position { section: 0, fsm: 0 },
             }
         );
 
@@ -550,32 +538,20 @@ mod tests {
                 // ` div`
                 ScopedFsm {
                     scope_depth: 0,
-                    fsm: FsmState {
-                        parent: NULL_POINTER,
-                        position: Position { section: 0, fsm: 0 },
-                        depths: smallvec![],
-                        end: false,
-                    },
+                    parent: NULL_POINTER,
+                    position: Position { section: 0, fsm: 0 },
                 },
                 // ` p.class`
                 ScopedFsm {
                     scope_depth: 1,
-                    fsm: FsmState {
-                        parent: NULL_POINTER,
-                        position: Position { section: 0, fsm: 1 },
-                        depths: smallvec![],
-                        end: false,
-                    },
+                    parent: NULL_POINTER,
+                    position: Position { section: 0, fsm: 1 },
                 },
                 // `> span`
                 ScopedFsm {
                     scope_depth: 1,
-                    fsm: FsmState {
-                        parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
-                        position: Position { section: 1, fsm: 0 },
-                        depths: smallvec![],
-                        end: false,
-                    }
+                    parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
+                    position: Position { section: 1, fsm: 0 },
                 },
             ]
         );
@@ -589,7 +565,8 @@ mod tests {
                 inner_html: false,
                 text_content: false,
             }),
-        ));
+        ))
+        .build();
 
         let mut store = RustStore::new(false);
         let mut selection = SelectionRunner::new(store.root(), &selection_tree);

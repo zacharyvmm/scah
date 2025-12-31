@@ -1,8 +1,9 @@
 use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{NextPosition, NextPositions, Position, Query};
-use std::ptr;
 use smallvec::SmallVec;
+use std::io::Empty;
+use std::ptr;
 
 #[derive(PartialEq, Debug)]
 pub struct FsmState<E> {
@@ -12,15 +13,32 @@ pub struct FsmState<E> {
     pub(super) end: bool, // This is a flag to say is a save point and this might be the end
 }
 
-impl<E> Clone for FsmState<E> {
-    fn clone(&self) -> Self {
-        Self {
-            parent: self.parent,
-            position: self.position.clone(),
-            depths: SmallVec::new(),
-            end: false,
-        }
-    }
+pub trait Fsm<'query, 'html, E> {
+    fn next(
+        &self,
+        tree: &Query<'query>,
+        depth: super::DepthSize,
+        element: &XHtmlElement<'html>,
+    ) -> bool;
+    fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &'html str) -> bool;
+    fn try_back_parent(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str)
+    -> bool;
+
+    fn move_foward(
+        &mut self,
+        tree: &Query<'query>,
+        depth: super::DepthSize,
+    ) -> Option<NextPositions>;
+    fn move_backward(&mut self, tree: &Query<'query>);
+
+    fn is_descendant(&self, tree: &Query<'query>) -> bool;
+    fn is_save_point(&self, tree: &Query<'query>) -> bool;
+    fn is_last_save_point(&self, tree: &Query<'query>) -> bool;
+
+    fn get_parent(&self) -> *mut E;
+    fn set_parent(&mut self, value: *mut E);
+    fn get_section(&self) -> usize;
+    fn set_end_false(&mut self);
 }
 
 impl<'query, E> FsmState<E> {
@@ -32,21 +50,28 @@ impl<'query, E> FsmState<E> {
             end: false,
         }
     }
+}
 
-    pub fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
+impl<'query, 'html, E> Fsm<'query, 'html, E> for FsmState<E> {
+    fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
         let fsm = tree.get(&self.position);
         let last_depth = *self.depths.last().unwrap_or(&0);
         fsm.next(element, depth, last_depth)
     }
 
-    pub fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
+    fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
         let fsm = tree.get(&self.position);
         let last_depth = *self.depths.last().unwrap_or(&0);
         fsm.back(element, depth, last_depth)
     }
 
     // Try going backwards from a parent of a leaf
-    pub fn try_back_parent(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
+    fn try_back_parent(
+        &self,
+        tree: &Query<'query>,
+        depth: super::DepthSize,
+        element: &str,
+    ) -> bool {
         debug_assert!(self.end);
         let parent_position = tree.back(&self.position);
         let fsm = tree.get(&parent_position);
@@ -57,7 +82,11 @@ impl<'query, E> FsmState<E> {
         fsm.back(element, depth, last_depth)
     }
 
-    pub fn move_foward(&mut self, tree: &Query<'query>, depth: super::DepthSize) -> Option<NextPositions> {
+    fn move_foward(
+        &mut self,
+        tree: &Query<'query>,
+        depth: super::DepthSize,
+    ) -> Option<NextPositions> {
         let positions = tree.next(&self.position);
         //if tree.is_last_save_point(1)
         self.depths.push(depth);
@@ -79,7 +108,7 @@ impl<'query, E> FsmState<E> {
         }
     }
 
-    pub fn move_backward(&mut self, tree: &Query<'query>) {
+    fn move_backward(&mut self, tree: &Query<'query>) {
         // BUG: Currently this works for opening a closing element's, but if in a ALL selection
         // The FSM position and make it break
         assert!(self.depths.len() > 0);
@@ -88,44 +117,58 @@ impl<'query, E> FsmState<E> {
         self.position = tree.back(&self.position);
     }
 
-    pub fn is_descendant(&self, tree: &Query<'query>) -> bool {
+    fn is_descendant(&self, tree: &Query<'query>) -> bool {
         tree.get(&self.position).transition == Combinator::Descendant
     }
 
-    pub fn is_save_point(&self, tree: &Query<'query>) -> bool {
+    fn is_save_point(&self, tree: &Query<'query>) -> bool {
         tree.is_save_point(&self.position)
     }
 
-    pub fn is_last_save_point(&self, tree: &Query<'query>) -> bool {
+    fn is_last_save_point(&self, tree: &Query<'query>) -> bool {
         tree.is_last_save_point(&self.position)
+    }
+
+    fn get_parent(&self) -> *mut E {
+        self.parent
+    }
+
+    fn set_parent(&mut self, value: *mut E) {
+        self.parent = value;
+    }
+
+    fn get_section(&self) -> usize {
+        self.position.section
+    }
+
+    fn set_end_false(&mut self) {
+        self.end = false;
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Copy)]
 pub struct ScopedFsm<E> {
     pub scope_depth: super::DepthSize,
-    pub fsm: FsmState<E>,
+    pub parent: *mut E,
+    pub position: Position,
 }
 
-impl<E> Clone for ScopedFsm<E> {
+impl<'query, E> Clone for ScopedFsm<E> {
     fn clone(&self) -> Self {
         Self {
             scope_depth: self.scope_depth,
-            fsm: self.fsm.clone(),
+            parent: self.parent,
+            position: self.position,
         }
     }
 }
 
-impl<E> ScopedFsm<E> {
+impl<'query, E> ScopedFsm<E> {
     pub fn new(depth: super::DepthSize, parent: *mut E, position: Position) -> Self {
         Self {
             scope_depth: depth,
-            fsm: FsmState {
-                parent: parent,
-                position: position,
-                depths: SmallVec::new(),
-                end: false,
-            },
+            parent: parent,
+            position: position,
         }
     }
 
@@ -134,6 +177,83 @@ impl<E> ScopedFsm<E> {
     }
 }
 
+impl<'query, 'html, E> Fsm<'query, 'html, E> for ScopedFsm<E> {
+    fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
+        let fsm = tree.get(&self.position);
+        fsm.next(element, depth, self.scope_depth)
+    }
+
+    fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
+        let fsm = tree.get(&self.position);
+        fsm.back(element, depth, self.scope_depth)
+    }
+
+    // Try going backwards from a parent of a leaf
+    fn try_back_parent(
+        &self,
+        tree: &Query<'query>,
+        depth: super::DepthSize,
+        element: &str,
+    ) -> bool {
+        let parent_position = tree.back(&self.position);
+        let fsm = tree.get(&parent_position);
+
+        fsm.back(element, depth, self.scope_depth)
+    }
+
+    fn move_foward(
+        &mut self,
+        tree: &Query<'query>,
+        depth: super::DepthSize,
+    ) -> Option<NextPositions> {
+        let positions = tree.next(&self.position);
+        //if tree.is_last_save_point(1)
+        self.scope_depth = depth;
+
+        match positions {
+            NextPosition::Link(pos) => {
+                self.position = pos;
+                None
+            }
+            NextPosition::Fork(mut pos_list) => {
+                assert_ne!(pos_list.len(), 0, "Fork with no positions");
+
+                self.position = pos_list.pop()?;
+
+                Some(pos_list)
+            }
+
+            NextPosition::EndOfBranch => None,
+        }
+    }
+
+    fn is_descendant(&self, tree: &Query<'query>) -> bool {
+        tree.get(&self.position).transition == Combinator::Descendant
+    }
+
+    fn is_save_point(&self, tree: &Query<'query>) -> bool {
+        tree.is_save_point(&self.position)
+    }
+
+    fn is_last_save_point(&self, tree: &Query<'query>) -> bool {
+        tree.is_last_save_point(&self.position)
+    }
+
+    fn get_parent(&self) -> *mut E {
+        self.parent
+    }
+
+    fn set_parent(&mut self, value: *mut E) {
+        self.parent = value;
+    }
+
+    fn get_section(&self) -> usize {
+        self.position.section
+    }
+
+    fn move_backward(&mut self, tree: &Query<'query>) {}
+    fn set_end_false(&mut self) {}
+}
 mod tests {
     use crate::css::parser::tree::{Save, SelectionKind, SelectionPart};
     use crate::store::Element;
