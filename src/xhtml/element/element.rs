@@ -138,11 +138,11 @@ impl<'a> From<&mut Reader<'a>> for XHtmlElement<'a> {
 // TODO: Parse the closing tag for the XHtmlTag
 impl<'a> XHtmlTag<'a> {
     pub fn from(reader: &mut Reader<'a>) -> Option<Self> {
-        reader.next_while(|c| c.is_whitespace() || c == '<');
+        reader.next_while(|c| c.is_ascii_whitespace() || c == b'<');
         if let Some(character) = reader.peek() {
-            if character == '/' {
+            if character == b'/' {
                 let start = reader.get_position() + 1;
-                reader.next_while(|c| c != '>');
+                reader.next_while(|c| c != b'>');
 
                 let end = reader.get_position();
                 reader.skip();
@@ -152,9 +152,9 @@ impl<'a> XHtmlTag<'a> {
                 // BUG: The Formating of the string breaks this code
 
                 return Some(Self::Close(reader.slice(start..end).trim()));
-            } else if character == '!' {
+            } else if character == b'!' {
                 // This is a comment
-                reader.next_while(|c| c != '>');
+                reader.next_while(|c| c != b'>');
                 reader.skip();
                 return None;
             }

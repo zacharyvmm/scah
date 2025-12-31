@@ -125,22 +125,22 @@ impl<'a> SelectionKeyWords<'a> {
         let start_pos = reader.get_position();
 
         if let Some(token) = reader.peek() {
-            if matches!(token, '>' | ' ' | '+' | '~' | '|') {
+            if matches!(token, b'>' | b' ' | b'+' | b'~' | b'|') {
                 return None;
             };
         }
 
         return match reader.next()? {
-            '#' => Some(Self::ID),
-            '.' => Some(Self::CLASS),
-            '"' => Some(Self::Quote),
-            '\'' => Some(Self::Quote),
-            '[' => Some(Self::OpenAttribute),
-            ']' => Some(Self::CloseAttribute),
+            b'#' => Some(Self::ID),
+            b'.' => Some(Self::CLASS),
+            b'"' => Some(Self::Quote),
+            b'\'' => Some(Self::Quote),
+            b'[' => Some(Self::OpenAttribute),
+            b']' => Some(Self::CloseAttribute),
             _ => {
                 // Find end of word
                 // POTENTIAL BUG ??? |> I'm pretty sure this is missing '\'' and '"'
-                reader.next_while(|c| !matches!(c, ' ' | '#' | '.' | '['));
+                reader.next_while(|c| !matches!(c, b' ' | b'#' | b'.' | b'['));
                 return Some(Self::String(reader.slice(start_pos..reader.get_position())));
             }
         };
@@ -156,30 +156,30 @@ enum SelectionAttributeToken<'a> {
 
 impl<'a> SelectionAttributeToken<'a> {
     pub fn next(reader: &mut Reader<'a>) -> Option<Self> {
-        reader.next_while(|c| c.is_whitespace());
+        reader.next_while(|c| c.is_ascii_whitespace());
 
         let start_pos = reader.get_position();
 
         return match reader.next()? {
-            '"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
-            '\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
-            '=' => Some(Self::Equal),
-            '~' => Some(Self::StringMatchSelector(
+            b'"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
+            b'\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
+            b'=' => Some(Self::Equal),
+            b'~' => Some(Self::StringMatchSelector(
                 AttributeSelectionKind::WhitespaceSeparated,
             )),
-            '|' => Some(Self::StringMatchSelector(
+            b'|' => Some(Self::StringMatchSelector(
                 AttributeSelectionKind::HyphenSeparated,
             )),
-            '^' => Some(Self::StringMatchSelector(AttributeSelectionKind::Prefix)),
-            '$' => Some(Self::StringMatchSelector(AttributeSelectionKind::Suffix)),
-            '*' => Some(Self::StringMatchSelector(AttributeSelectionKind::Substring)),
-            ']' => None,
+            b'^' => Some(Self::StringMatchSelector(AttributeSelectionKind::Prefix)),
+            b'$' => Some(Self::StringMatchSelector(AttributeSelectionKind::Suffix)),
+            b'*' => Some(Self::StringMatchSelector(AttributeSelectionKind::Substring)),
+            b']' => None,
             _ => {
                 // Find end of word
                 reader.next_while(|c| {
                     !matches!(
                         c,
-                        ' ' | '"' | '\'' | '=' | ']' | '~' | '|' | '^' | '$' | '*'
+                        b' ' | b'"' | b'\'' | b'=' | b']' | b'~' | b'|' | b'^' | b'$' | b'*'
                     )
                 });
 

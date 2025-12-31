@@ -33,7 +33,7 @@ where
 
     pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
         // move until it finds the first `<`
-        reader.next_while(|c| c != '<');
+        reader.next_while(|c| c != b'<');
 
         if reader.peek().is_none() {
             return false;

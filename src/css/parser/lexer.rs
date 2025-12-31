@@ -18,17 +18,17 @@ pub enum Combinator {
 impl Combinator {
     fn next<'a>(reader: &mut Reader<'a>) -> Option<Self> {
         if let Some(token) = reader.peek() {
-            if !matches!(token, '>' | ' ' | '+' | '~' | '|') {
+            if !matches!(token, b'>' | b' ' | b'+' | b'~' | b'|') {
                 return None;
             };
         }
 
         match reader.next()? {
-            '>' => Some(Self::Child),
-            ' ' => Some(Self::Descendant),
-            '+' => Some(Self::NextSibling),
-            '~' => Some(Self::SubsequentSibling),
-            '|' => Some(Self::Namespace),
+            b'>' => Some(Self::Child),
+            b' ' => Some(Self::Descendant),
+            b'+' => Some(Self::NextSibling),
+            b'~' => Some(Self::SubsequentSibling),
+            b'|' => Some(Self::Namespace),
             _ => panic!("Not possible root"),
         }
     }
