@@ -30,23 +30,36 @@ impl<'a> Reader<'a> {
         return self.source.get(self.position).copied();
     }
 
+    // NOTE: Escaping characters has a significant cost
+    // #[inline]
+    // pub fn next_while<F>(&mut self, condition: F) 
+    // where F: Fn(u8) -> bool {
+    //     while self.position < self.source.len() {
+    //         let b = self.source[self.position];
+    //         let should_continue = if last_escape_character {
+    //             last_escape_character = false;
+    //             true
+    //         } else if b == ESCAPE_CHARACTER {
+    //             last_escape_character = true;
+    //             true
+    //         } else {
+    //             condition(b)
+    //         };
+
+    //         if should_continue {
+    //             self.position += 1;
+    //         } else {
+    //             break;
+    //         }
+    //     }
+    // }
+
     #[inline]
     pub fn next_while<F>(&mut self, condition: F) 
     where F: Fn(u8) -> bool {
-        let mut last_escape_character = false;
-        const ESCAPE_CHARACTER: u8 = b'\\';
-        
         while self.position < self.source.len() {
             let b = self.source[self.position];
-            let should_continue = if last_escape_character {
-                last_escape_character = false;
-                true
-            } else if b == ESCAPE_CHARACTER {
-                last_escape_character = true;
-                true
-            } else {
-                condition(b)
-            };
+            let should_continue = condition(b);
 
             if should_continue {
                 self.position += 1;
