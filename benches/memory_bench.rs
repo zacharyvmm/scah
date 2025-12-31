@@ -35,12 +35,12 @@ fn bench_onego(html: String) {
 #[library_benchmark]
 #[bench::onego_no_store(setup_html())]
 fn bench_onego_no_store(html: String) {
-    let queries = vec![Selection::new(SelectionPart::new(
+    let queries = &[QueryBuilder::new(SelectionPart::new(
         black_box("div.article a"),
         SelectionKind::All(Save { inner_html: true, text_content: false })
-    ))];
+    )).build()];
 
-    let res = black_box(fake_parse(&html, &queries));
+    let res = black_box(fake_parse(&html, queries));
 }
 
 use scraper::{Html, Selector};

@@ -43,11 +43,11 @@ fn bench_comparison(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("onego_no_store", size), &content, |b, html| {
             b.iter(|| {
-                let queries = vec![Selection::new(SelectionPart::new(
+                let queries = &[QueryBuilder::new(SelectionPart::new(
                     black_box("div.article a"), 
                     SelectionKind::All(Save { inner_html: false, text_content: true })
-                ))];
-                let res = black_box(fake_parse(html, &queries));
+                )).build()];
+                let res = black_box(fake_parse(html, queries));
             })
         });
 
@@ -77,11 +77,11 @@ fn bench_comparison(c: &mut Criterion) {
             })
         });
 
-        group.bench_with_input(BenchmarkId::new("lexbor", size), &content, |b, html| {
-            b.iter(|| {
-                let _ = lexbor_rust::parse_and_select(html.as_str(), black_box("div.article a"));
-            })
-        });
+        // group.bench_with_input(BenchmarkId::new("lexbor", size), &content, |b, html| {
+        //     b.iter(|| {
+        //         let _ = lexbor_rust::parse_and_select(html.as_str(), black_box("div.article a"));
+        //     })
+        // });
     }
     group.finish();
 }

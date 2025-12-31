@@ -27,9 +27,9 @@ pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
     return parser.matches().root.children;
 }
 
-pub fn fake_parse<'html: 'query, 'query: 'html>(
+pub fn fake_parse<'a: 'query, 'html: 'query, 'query: 'html>(
     html: &'html str,
-    queries: &'query Vec<Selection<'query>>,
+    queries: &'a [Query<'query>],
 ) -> () {
     let selectors = FsmManager::new(FakeStore::new(false), queries);
     let mut parser = XHtmlParser::new(selectors);

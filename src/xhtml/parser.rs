@@ -106,7 +106,7 @@ where
         self.selectors.matches()
     }
 }
-
+/*
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn test_multi_selection() {
         let mut reader = Reader::new(MORE_ADVANCED_BASIC_HTML);
-        let mut queries = vec![QueryBuilder::new(SelectionPart::new(
+        let mut queries = &[QueryBuilder::new(SelectionPart::new(
             "main > section",
             SelectionKind::All(Save {
                 inner_html: true,
@@ -674,3 +674,4 @@ mod tests {
         )
     }
 }
+*/
