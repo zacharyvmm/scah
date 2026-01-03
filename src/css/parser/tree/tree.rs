@@ -12,7 +12,7 @@ pub struct Position {
     pub(crate) fsm: usize,
 }
 
-pub(crate) type NextPositions = SmallVec<[Position; 6]>;
+pub(crate) type NextPositions = SmallVec<[Position; 3]>;
 
 #[derive(PartialEq, Debug)]
 pub enum NextPosition {

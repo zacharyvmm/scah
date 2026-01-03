@@ -139,13 +139,13 @@ mod tests {
     #[test]
     fn test_html_page_all_anchor_tag_starting_with_link_selection<'key>()
     -> Result<(), QueryError<'key>> {
-        let queries = &vec![QueryBuilder::new(SelectionPart::new(
+        let queries = &[QueryBuilder::new(SelectionPart::new(
             "a[href^=link]",
             SelectionKind::All(Save {
                 inner_html: true,
                 text_content: true,
             }),
-        ))];
+        )).build()];
         let map = parse(HTML, queries);
 
         assert_eq!(map["a[href^=link]"].len()?, 3);

@@ -106,7 +106,6 @@ where
         self.selectors.matches()
     }
 }
-/*
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -139,9 +138,9 @@ mod tests {
         );
         let selection_tree = QueryBuilder::new(section);
 
-        let queries = vec![selection_tree];
+        let queries = &[selection_tree.build()];
 
-        let manager = FsmManager::new(RustStore::new(false), &queries);
+        let manager = FsmManager::new(RustStore::new(false), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -197,8 +196,8 @@ mod tests {
         );
         let selection_tree = QueryBuilder::new(section);
 
-        let queries = vec![selection_tree];
-        let manager = FsmManager::new(RustStore::new(false), &queries);
+        let queries = &[selection_tree.build()];
+        let manager = FsmManager::new(RustStore::new(false), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -265,8 +264,8 @@ mod tests {
             }),
         ));
 
-        let queries = vec![selection_tree_1, selection_tree_2];
-        let manager = FsmManager::new(RustStore::new(false), &queries);
+        let queries = &[selection_tree_1.build(), selection_tree_2.build()];
+        let manager = FsmManager::new(RustStore::new(false), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -309,14 +308,14 @@ mod tests {
     #[test]
     fn test_multi_selection() {
         let mut reader = Reader::new(MORE_ADVANCED_BASIC_HTML);
-        let mut queries = &[QueryBuilder::new(SelectionPart::new(
+        let mut queries = QueryBuilder::new(SelectionPart::new(
             "main > section",
             SelectionKind::All(Save {
                 inner_html: true,
                 text_content: true,
             }),
-        ))];
-        queries[0].append(vec![
+        ));
+        queries.append(vec![
             SelectionPart::new(
                 "> a[href]",
                 SelectionKind::First(Save {
@@ -332,7 +331,8 @@ mod tests {
                 }),
             ),
         ]);
-        let manager = FsmManager::new(RustStore::new(false), &queries);
+        let queries = &[queries.build()];
+        let manager = FsmManager::new(RustStore::new(false), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -482,9 +482,9 @@ mod tests {
         );
         let selection_tree = QueryBuilder::new(section);
 
-        let queries = vec![selection_tree];
+        let queries = &[selection_tree.build()];
 
-        let manager = FsmManager::new(RustStore::new(false), &queries);
+        let manager = FsmManager::new(RustStore::new(false), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -544,9 +544,9 @@ mod tests {
         );
         let selection_tree = QueryBuilder::new(section);
 
-        let queries = vec![selection_tree];
+        let queries = &[selection_tree.build()];
 
-        let manager = FsmManager::new(RustStore::new(false), &queries);
+        let manager = FsmManager::new(RustStore::new(false), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -618,9 +618,9 @@ mod tests {
         );
         let selection_tree = QueryBuilder::new(section);
 
-        let queries = vec![selection_tree];
+        let queries = &[selection_tree.build()];
 
-        let manager = FsmManager::new(RustStore::new(false), &queries);
+        let manager = FsmManager::new(RustStore::new(false), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -674,4 +674,3 @@ mod tests {
         )
     }
 }
-*/
