@@ -1,6 +1,5 @@
 // This is to examine the performance cost of the Store
 
-
 use super::header::{QueryError, Store};
 use crate::{Attribute, Save, SelectionKind, SelectionPart, XHtmlElement, mut_prt_unchecked};
 
@@ -10,7 +9,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> for FakeStore {
     type E = usize;
     type Context = bool;
     fn new(context: Self::Context) -> Self {
-        Self {  }
+        Self {}
     }
     fn root(&mut self) -> *mut Self::E {
         std::ptr::null_mut()

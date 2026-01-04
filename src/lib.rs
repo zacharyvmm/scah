@@ -8,7 +8,7 @@ use utils::Reader;
 use xhtml::parser::XHtmlParser;
 
 use crate::css::FsmManager;
-use crate::store::{RustStore, Store, FakeStore};
+use crate::store::{FakeStore, RustStore, Store};
 
 pub use css::{Query, QueryBuilder, Save, SelectionKind, SelectionPart};
 pub use store::{Element, QueryError, SelectionValue};

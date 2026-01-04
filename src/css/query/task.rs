@@ -2,15 +2,25 @@ use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{NextPosition, NextPositions, Position, Query};
 use smallvec::SmallVec;
-use std::io::Empty;
 use std::ptr;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq)]
 pub struct FsmState<E> {
     pub(super) parent: *mut E,
     pub(super) position: Position,
     pub(super) depths: SmallVec<[super::DepthSize; 10]>,
     pub(super) end: bool, // This is a flag to say is a save point and this might be the end
+}
+
+impl<E> std::fmt::Debug for FsmState<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FsmState")
+            .field("parent", &self.parent)
+            .field("position", &self.position)
+            .field("depths", &self.depths)
+            .field("end", &self.end)
+            .finish()
+    }
 }
 
 pub trait Fsm<'query, 'html, E> {
@@ -50,6 +60,12 @@ impl<'query, E> FsmState<E> {
             end: false,
         }
     }
+
+    pub fn move_backward_twice(&mut self, tree: &Query<'query>) {
+        // Only need one pop, since the current fsm depth was not added to the list
+        self.move_backward(tree);
+        self.position = tree.back(&self.position);
+    }
 }
 
 impl<'query, 'html, E> Fsm<'query, 'html, E> for FsmState<E> {
@@ -73,7 +89,13 @@ impl<'query, 'html, E> Fsm<'query, 'html, E> for FsmState<E> {
         element: &str,
     ) -> bool {
         debug_assert!(self.end);
+
+        if (self.position == Position { section: 0, fsm: 0 }) {
+            return false;
+        }
+
         let parent_position = tree.back(&self.position);
+        assert_ne!(self.position, parent_position);
         let fsm = tree.get(&parent_position);
 
         // BUG: I'm not sure if I should take the last or the one before
@@ -146,7 +168,7 @@ impl<'query, 'html, E> Fsm<'query, 'html, E> for FsmState<E> {
     }
 }
 
-#[derive(PartialEq, Debug, Copy)]
+#[derive(PartialEq)]
 pub struct ScopedFsm<E> {
     pub scope_depth: super::DepthSize,
     pub parent: *mut E,
@@ -160,6 +182,18 @@ impl<'query, E> Clone for ScopedFsm<E> {
             parent: self.parent,
             position: self.position,
         }
+    }
+}
+
+impl<E> std::fmt::Debug for ScopedFsm<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScopedFsm")
+            .field("scope_depth", &self.scope_depth)
+            // This will print the raw memory address (e.g., 0x7ff...)
+            // It is safe because we are not dereferencing it.
+            .field("parent", &self.parent)
+            .field("position", &self.position)
+            .finish()
     }
 }
 
@@ -255,10 +289,10 @@ impl<'query, 'html, E> Fsm<'query, 'html, E> for ScopedFsm<E> {
     fn set_end_false(&mut self) {}
 }
 mod tests {
+    use crate::QueryBuilder;
     use crate::css::parser::tree::{Save, SelectionKind, SelectionPart};
     use crate::store::Element;
     use crate::utils::Reader;
-    use crate::QueryBuilder;
 
     use super::*;
 

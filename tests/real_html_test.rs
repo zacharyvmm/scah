@@ -22,7 +22,8 @@ mod tests {
                 inner_html: true,
                 text_content: true,
             }),
-        )).build()];
+        ))
+        .build()];
         let map = parse(&contents, queries);
 
         //println!("{:#?}", map);
@@ -43,7 +44,8 @@ mod tests {
                 inner_html: true,
                 text_content: true,
             }),
-        )).build()];
+        ))
+        .build()];
         let map = parse(&contents, queries);
 
         //assert_eq!(map["a"].len().unwrap(), 3879);

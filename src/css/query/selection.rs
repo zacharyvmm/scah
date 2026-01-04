@@ -145,6 +145,8 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 continue;
             }
 
+            dbg_print!("Scoped FSM ({i}) Match with `{:?}`", element);
+
             // println!("Scope Match with `{:?}`", element);
 
             if fsm.is_descendant(self.selection_tree) {
@@ -167,6 +169,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                     document_position,
                     &mut new_scoped_fsm,
                 )?;
+                dbg_print!("Scoped FSM ({i}) Saved `{:?}`", element);
             }
 
             if !element.is_self_closing() {
@@ -179,6 +182,8 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             }
 
             new_scoped_fsms.push(new_scoped_fsm);
+
+            dbg_print!(">> Scoped FSM's: {:#?}", self.scoped_fsms)
         }
         self.scoped_fsms.append(&mut new_scoped_fsms);
 
@@ -190,7 +195,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             document_position.element_depth,
             element,
         ) {
-            dbg_print!("Match with `{:?}`", element);
+            dbg_print!("FSM Match with `{:?}`", element);
 
             let is_descendant_combinator = fsm.is_descendant(self.selection_tree);
             let last_save_point = fsm.is_last_save_point(self.selection_tree);
@@ -204,6 +209,8 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                 ));
             }
 
+            // let parent: *mut E = fsm.parent;
+
             if fsm.is_save_point(self.selection_tree) {
                 fsm.end = true;
                 Self::save_element(
@@ -214,16 +221,22 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
                     document_position,
                     fsm,
                 )?;
+
+                dbg_print!("FSM Saved `{:?}`", element);
             }
 
             if !element.is_self_closing() {
+                // let new_parent = fsm.parent;
+                // fsm.set_parent(parent);
                 Self::next_position(
                     self.selection_tree,
                     &mut self.scoped_fsms,
                     document_position.element_depth,
                     fsm,
                 );
+                // fsm.set_parent(new_parent);
             }
+            dbg_print!("Scoped FSM's: {:#?}", self.scoped_fsms)
         }
 
         return Ok(());
@@ -270,37 +283,51 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             }
         }
 
-        self.scoped_fsms
-            .retain(|scoped_task| scoped_task.scope_depth < document_position.element_depth);
+        // self.scoped_fsms
+        //     .retain(|scoped_task| scoped_task.scope_depth < document_position.element_depth);
+
+        let mut remove_last_x_fsms = 0;
+        for scoped_fsm in self.scoped_fsms.iter().rev() {
+            if scoped_fsm.scope_depth < document_position.element_depth {
+                self.fsm.parent = scoped_fsm.parent;
+                break;
+            }
+            remove_last_x_fsms += 1;
+        }
+        while remove_last_x_fsms > 0 {
+            self.scoped_fsms.pop();
+            remove_last_x_fsms -= 1;
+        }
 
         let ref mut fsm = self.fsm;
-        if !fsm.back(
+        dbg_print!("FSM Before back: {:#?}", fsm);
+        if fsm.back(
             self.selection_tree,
             document_position.element_depth,
             element,
         ) {
-            if !fsm.end {
-                return;
-            }
+            fsm.move_backward(self.selection_tree);
+            dbg_print!("FSM out of `{}`", element);
+            dbg_print!("SHOULD INVALIDATED PARENT POINTER");
+        } else if fsm.end {
             // jump backwards twice
-            if !fsm.try_back_parent(
+            if fsm.try_back_parent(
                 self.selection_tree,
                 document_position.element_depth,
                 element,
             ) {
-                return;
+                fsm.move_backward_twice(self.selection_tree);
+                fsm.end = false;
+
+                dbg_print!("FSM out of `{}`", element);
+                dbg_print!("SHOULD INVALIDATED PARENT POINTER");
+            } else if self.selection_tree.is_save_point(&fsm.position) {
+                fsm.depths.pop();
+                dbg_print!("FSM out of `{}`", element);
             }
 
-            fsm.end = false;
+            //fsm.end = false;
         }
-        dbg_print!("Saved `{}`", element);
-
-        if self.selection_tree.is_save_point(&fsm.position) && fsm.end {
-            fsm.depths.pop();
-            return;
-        }
-
-        fsm.move_backward(self.selection_tree);
     }
 }
 

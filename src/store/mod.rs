@@ -1,7 +1,7 @@
+mod fake;
 mod header;
 mod python;
 mod rust;
-mod fake;
 pub use header::QueryError;
 pub(crate) use header::Store;
 pub use rust::{Element, SelectionValue};

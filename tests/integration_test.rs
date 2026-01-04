@@ -145,7 +145,8 @@ mod tests {
                 inner_html: true,
                 text_content: true,
             }),
-        )).build()];
+        ))
+        .build()];
         let map = parse(HTML, queries);
 
         assert_eq!(map["a[href^=link]"].len()?, 3);

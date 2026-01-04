@@ -17,6 +17,7 @@ criterion = { version = "0.8.1", features = ["html_reports"] }
 lexbor_rust = { git = "https://github.com/zacharyvmm/lexbor-rust-css-selection.git" }
 scraper = "0.25.0"
 tl = "0.7.8"
+pretty_assertions = "1.4.1"
 
 [[bench]]
 name = "memory_bench"
