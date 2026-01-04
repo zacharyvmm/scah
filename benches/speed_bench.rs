@@ -31,13 +31,17 @@ fn bench_comparison(c: &mut Criterion) {
                 let queries = &[QueryBuilder::new(SelectionPart::new(
                     black_box("div.article a"),
                     SelectionKind::All(Save {
-                        inner_html: false,
+                        inner_html: true,
                         text_content: true,
                     }),
                 ))
                 .build()];
                 let res = parse(html, queries);
-                black_box(res);
+                for element in res["div.article a"].iter().unwrap() {
+                    black_box(&element.attributes);
+                    black_box(&element.inner_html);
+                    black_box(&element.text_content);
+                }
             })
         });
 
@@ -50,7 +54,7 @@ fn bench_comparison(c: &mut Criterion) {
                         black_box("div.article a"),
                         SelectionKind::All(Save {
                             inner_html: false,
-                            text_content: true,
+                            text_content: false,
                         }),
                     ))
                     .build()];
@@ -67,6 +71,9 @@ fn bench_comparison(c: &mut Criterion) {
 
                 for node_handle in query {
                     if let Some(node) = node_handle.get(parser) {
+                        let attributes = node.as_tag().unwrap().attributes();
+                        black_box(attributes.get("href"));
+                        black_box(node.inner_html(parser));
                         black_box(node.inner_text(parser));
                     }
                 }
@@ -79,8 +86,9 @@ fn bench_comparison(c: &mut Criterion) {
                 let selector = Selector::parse(black_box("div.article a")).unwrap();
 
                 for element in document.select(&selector) {
-                    let text: String = element.text().collect();
-                    black_box(text);
+                    black_box(element.attr("href"));
+                    black_box(element.inner_html());
+                    black_box(element.text().collect::<Vec<&str>>());
                 }
             })
         });
@@ -91,6 +99,7 @@ fn bench_comparison(c: &mut Criterion) {
                 let nodes = doc.select(black_box("div.article a"));
 
                 for node in nodes.iter() {
+                    // TODO: I need to add attributes and innerhtml for lexbor
                     black_box(node.text_content());
                 }
             })

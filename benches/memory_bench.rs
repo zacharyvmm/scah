@@ -23,12 +23,18 @@ fn bench_onego(html: String) {
         black_box("div.article a"),
         SelectionKind::All(Save {
             inner_html: true,
-            text_content: false,
+            text_content: true,
         }),
     ))
     .build()];
 
-    let res = black_box(parse(&html, queries));
+    let res = parse(&html, queries);
+
+    for element in res["div.article a"].iter().unwrap() {
+        black_box(&element.attributes);
+        black_box(&element.inner_html);
+        black_box(&element.text_content);
+    }
 }
 
 #[library_benchmark]
@@ -74,7 +80,10 @@ fn bench_tl(html: String) {
     // 3. Iterate
     for node_handle in query {
         if let Some(node) = node_handle.get(parser) {
+            let attributes = node.as_tag().unwrap().attributes();
+            black_box(attributes.get("href"));
             black_box(node.inner_html(parser));
+            black_box(node.inner_text(parser));
         }
     }
 }
