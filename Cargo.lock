@@ -454,7 +454,7 @@ dependencies = [
 [[package]]
 name = "lexbor_css"
 version = "0.0.1"
-source = "git+https://github.com/zacharyvmm/lexbor-rust-css-selection.git#689561789103edee8abeb7a0b93010a491c6b548"
+source = "git+https://github.com/zacharyvmm/lexbor-rust-css-selection.git#3af3e3250441229bee1f0ea5366c58c7c64775f0"
 dependencies = [
  "bindgen",
 ]

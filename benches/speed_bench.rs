@@ -101,6 +101,8 @@ fn bench_comparison(c: &mut Criterion) {
                 for node in nodes.iter() {
                     // TODO: I need to add attributes and innerhtml for lexbor
                     black_box(node.text_content());
+                    black_box(node.inner_html());
+                    black_box(node.attributes());
                 }
             })
         });
