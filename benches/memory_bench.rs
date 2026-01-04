@@ -28,8 +28,7 @@ fn bench_onego(html: String) {
     ))
     .build()];
 
-    let res = parse(&html, queries);
-    black_box(res);
+    let res = black_box(parse(&html, queries));
 }
 
 #[library_benchmark]
@@ -80,11 +79,17 @@ fn bench_tl(html: String) {
     }
 }
 
-use lexbor_rust;
+use lexbor_css::HtmlDocument;
 #[library_benchmark]
 #[bench::lexbor(setup_html())]
 fn bench_lexbor(html: String) {
-    let _ = lexbor_rust::parse_and_select(html.as_str(), black_box("div.article a"));
+    let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
+    let nodes = doc.select(black_box("div.article a"));
+
+    for node in nodes.iter() {
+        black_box(node.text_content());
+    }
+
 }
 
 // --- 5. GROUPING ---

@@ -213,6 +213,7 @@ mod tests {
                 }),
             ),
         ]);
+        // let query = QueryBuilder::new().all("main").then(|query| [query.all("> a[href]"), query.all("div a")]).build();
 
         let q = [queries.build()];
         let map = parse(HTML, &q);

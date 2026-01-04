@@ -452,12 +452,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "lexbor_rust"
-version = "0.1.0"
-source = "git+https://github.com/zacharyvmm/lexbor-rust-css-selection.git#47ccbeac86e2e3a19fa3a00905aeb03edd9ac344"
+name = "lexbor_css"
+version = "0.0.1"
+source = "git+https://github.com/zacharyvmm/lexbor-rust-css-selection.git#689561789103edee8abeb7a0b93010a491c6b548"
 dependencies = [
  "bindgen",
- "libc",
 ]
 
 [[package]]
@@ -566,7 +565,7 @@ version = "0.0.1"
 dependencies = [
  "criterion",
  "gungraun",
- "lexbor_rust",
+ "lexbor_css",
  "pretty_assertions",
  "pyo3",
  "scraper",

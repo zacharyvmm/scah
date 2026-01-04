@@ -1,9 +1,9 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use lexbor_rust;
 use onego::{QueryBuilder, Save, SelectionKind, SelectionPart, fake_parse, parse};
 use scraper::{Html, Selector};
 use std::hint::black_box;
 use tl::ParserOptions;
+use lexbor_css::HtmlDocument;
 
 fn generate_html(count: usize) -> String {
     let mut html = String::with_capacity(count * 100);
@@ -85,11 +85,16 @@ fn bench_comparison(c: &mut Criterion) {
             })
         });
 
-        // group.bench_with_input(BenchmarkId::new("lexbor", size), &content, |b, html| {
-        //     b.iter(|| {
-        //         let _ = lexbor_rust::parse_and_select(html.as_str(), black_box("div.article a"));
-        //     })
-        // });
+        group.bench_with_input(BenchmarkId::new("lexbor", size), &content, |b, html| {
+            b.iter(|| {
+                let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
+                let nodes = doc.select(black_box("div.article a"));
+
+                for node in nodes.iter() {
+                    black_box(node.text_content());
+                }
+            })
+        });
     }
     group.finish();
 }
