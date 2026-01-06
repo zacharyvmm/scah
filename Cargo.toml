@@ -3,12 +3,14 @@ name = "onego"
 version = "0.0.1"
 edition = "2024"
 
+[workspace]
+members = ["python"]
+
 [lib]
 name = "onego"
-crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
 
 [dependencies]
-pyo3 = { version = "0.27.2", optional = true } 
 smallvec = "1.15.1"
 
 [dev-dependencies]
@@ -26,9 +28,6 @@ harness = false
 [[bench]]
 name = "speed_bench"
 harness = false
-
-[features]
-python = ["dep:pyo3", "pyo3/extension-module"]
 
 [profile.release]
 opt-level = 3

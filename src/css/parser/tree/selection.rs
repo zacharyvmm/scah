@@ -26,10 +26,10 @@ impl SelectionKind {
 
 #[derive(PartialEq, Debug)]
 pub struct SelectionPart<'query> {
-    pub(crate) source: &'query str,
+    pub source: &'query str,
     pub(crate) fsms: Vec<Fsm<'query>>,
     pub descendants: Vec<usize>,
-    pub(crate) kind: SelectionKind,
+    pub kind: SelectionKind,
 
     pub(crate) parent: Option<usize>, // real index
     pub(crate) children: Vec<usize>,  // offset

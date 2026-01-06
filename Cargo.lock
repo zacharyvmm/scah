@@ -567,10 +567,17 @@ dependencies = [
  "gungraun",
  "lexbor_css",
  "pretty_assertions",
- "pyo3",
  "scraper",
  "smallvec",
  "tl",
+]
+
+[[package]]
+name = "onego-python"
+version = "0.0.1"
+dependencies = [
+ "onego",
+ "pyo3",
 ]
 
 [[package]]

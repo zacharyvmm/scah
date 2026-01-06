@@ -1,0 +1,12 @@
+[package]
+name = "onego-python"
+version = "0.0.1"
+edition = "2024"
+
+[lib]
+name = "onego"
+crate-type = ["cdylib"]
+
+[dependencies]
+onego = { path = ".." }
+pyo3 = { version = "0.27.2", features = ["extension-module"] }

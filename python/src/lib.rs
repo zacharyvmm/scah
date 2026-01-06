@@ -1,17 +1,27 @@
-#![cfg(feature = "python")]
-
-use super::header::{QueryError, Store};
-use crate::xhtml::text_content;
-use crate::{Attribute, Save, SelectionKind, SelectionPart, XHtmlElement, mut_prt_unchecked};
+use ::onego::{
+    Attribute, FsmManager, QueryBuilder, QueryError, Reader, Save, SelectionKind, SelectionPart,
+    Store, XHtmlElement, XHtmlParser,
+};
 use pyo3::ffi::PyObject;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyDict, PyList, PyString};
+use pyo3::types::{PyDict, PyList, PyString};
+
+macro_rules! mut_prt_unchecked {
+    ($e:expr) => {{
+        #[inline(always)]
+        fn cast<T>(r: &T) -> *mut T {
+            r as *const T as *mut T
+        }
+        cast($e)
+    }};
+}
 
 #[derive(Debug)]
 pub enum Selection<M, L> {
     First(M),
     All(L),
 }
+
 trait Element {
     type MapPointer;
     type Map;
@@ -24,17 +34,6 @@ trait Element {
     const INNER_HTML: &'static str = "innerHtml";
     const TEXT_CONTENT: &'static str = "textContent";
     const CHILDREN: &'static str = "children";
-
-    // Just for testing
-    // fn get_name(&self) -> String;
-    // fn get_id(&self) -> String;
-    // fn get_class(&self) -> String;
-    // fn get_attributes(&self) -> Self::E;
-    // fn get_attribute(&self, key: &'_ str) -> Option<String>;
-    // fn get_inner_html(&self) -> String;
-    // fn get_text_content(&self) -> String;
-    // fn get_children(&self) -> Self::Map;
-    // fn get_child(&self, key: &'_ str) -> Selection<Self::Map, Self::List>;
 
     fn set_name(&mut self, value: &'_ str) -> ();
     fn set_id(&mut self, value: &'_ str) -> ();
@@ -73,14 +72,11 @@ impl<'py> Element for Bound<'py, PyDict> {
         let _ = self.set_item(Self::TEXT_CONTENT, value);
     }
 
-    // TODO: Check if I really do need to fetch the values I put in it
-    // Can I just return the Dict I already created?
     fn set_attribute(&mut self, key: &'_ str, value: Option<&'_ str>) -> () {
         let attributes = {
             let dict = self.get_item(Self::ATTRIBUTES);
             match dict {
                 Ok(None) | Err(_) => {
-                    // init attributes
                     self.set_item(Self::ATTRIBUTES, PyDict::new(self.py()))
                         .expect("Error: was not able to create Attributes dict");
                     let any = self
@@ -109,7 +105,6 @@ impl<'py> Element for Bound<'py, PyDict> {
             let dict = self.get_item(Self::CHILDREN);
             match dict {
                 Ok(None) | Err(_) => {
-                    // init children
                     self.set_item(Self::CHILDREN, PyDict::new(self.py()))
                         .expect("Error: was not able to create Children dict");
                     let any = self
@@ -172,8 +167,8 @@ impl<'py> Element for Bound<'py, PyDict> {
             }
         };
 
-        children.is_exact_instance_of::<PyDict>();
-        children.is_exact_instance_of::<PyList>();
+        // children.is_exact_instance_of::<PyDict>();
+        // children.is_exact_instance_of::<PyList>();
 
         let dict = children
             .cast::<PyDict>()
@@ -218,7 +213,6 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
     type E = PyDict;
     type Context = Python<'py>;
 
-    // Todo: Instead of passing the context just pass in the root
     fn new(context: Self::Context) -> Self {
         Self {
             root: PyDict::new(context),
@@ -233,7 +227,7 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
         &mut self,
         selection: &SelectionPart<'query>,
         mut from: *mut Self::E,
-        element: crate::XHtmlElement<'html>,
+        element: XHtmlElement<'html>,
     ) -> Result<*mut Self::E, QueryError<'key>> {
         if from.is_null() {
             from = self.root.as_ptr() as *mut Self::E;
@@ -241,23 +235,17 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
         let mut new_element = PyDict::new(self.root.py());
         Self::copy_from_element(&mut new_element, element);
 
-        // attache new element to from element
-        // from.children.insert(k, v)
         let from_any = unsafe { Bound::from_borrowed_ptr(self.root.py(), from as *mut PyObject) };
         let from_dict = from_any
             .cast::<PyDict>()
             .expect("This is the only type it could be");
         let from_element = unsafe { mut_prt_unchecked!(from_dict).as_mut().unwrap() };
-        //println!("Element: {from_element:?}");
+
         if from_element.children_contains_key(selection.source) {
             assert!(
                 matches!(selection.kind, SelectionKind::All(..)),
                 "It is not possible to add a single item to the store when it already exists."
             );
-
-            // let list =
-            //     PyList::new(self.root.py(), vec![new_element]).expect("Unable to create list");
-            // from_element.set_child(selection.source, Selection::All(list));
 
             const CHILDREN: &'static str = "children";
             let children_any = from_element
@@ -276,7 +264,7 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
                 .cast::<PyList>()
                 .expect("children should be a list");
 
-            list.append(new_element);
+            list.append(new_element).expect("Failed to append");
             let len = list.len();
 
             let first = list.get_item(len - 1);
@@ -290,8 +278,6 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
                 Err(_) => unreachable!("Empty List"),
             };
 
-            // BUG: This line might not work
-            // I might have to refetch it
             return Ok(pointer);
         }
 
@@ -314,7 +300,6 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
         &mut self,
         element: *mut Self::E,
         inner_html: Option<&'html str>,
-        // text_content_should be an Option<Range>
         text_content: Option<String>,
     ) -> () {
         let ele_any = unsafe { Bound::from_borrowed_ptr(self.root.py(), element as *mut PyObject) };
@@ -327,9 +312,48 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
             Self::set_inner_html(ele, ih);
         }
 
-        // TODO: the text content was converted before. Probably should convert strait into PyString
         if let Some(tc) = text_content {
             Self::set_text_content(ele, tc.as_str());
         }
     }
+}
+
+#[pyfunction]
+fn parse<'py>(
+    py: Python<'py>,
+    html: &str,
+    queries: &Bound<'py, PyDict>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let keys_list = queries.keys();
+    // Assuming a single query
+    let query_any = keys_list
+        .get_item(0)
+        .expect("Should have at least a single key");
+    let query_string = query_any
+        .cast::<PyString>()
+        .expect("A key must be a string");
+    let query = query_string.extract().unwrap();
+    let queries = &[QueryBuilder::new(SelectionPart::new(
+        query,
+        SelectionKind::All(Save {
+            inner_html: true,
+            text_content: true,
+        }),
+    ))
+    .build()];
+    let store = PythonStore::new(py);
+    let selectors = FsmManager::new(store, queries);
+    let mut parser = XHtmlParser::new(selectors);
+
+    let mut reader = Reader::new(html);
+    while parser.next(&mut reader) {}
+
+    let out_store = parser.matches();
+    Ok(out_store.root)
+}
+
+#[pymodule]
+fn onego(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(parse, m)?)?;
+    Ok(())
 }
