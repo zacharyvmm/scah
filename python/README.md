@@ -9,5 +9,7 @@ Synthetic Html BenchMark (select all `a` tags):
 
 ### Run benchmarks
 ```bash
+uv venv
+source .venv/bin/activate
 uv run --all-extras poe bench
 ```

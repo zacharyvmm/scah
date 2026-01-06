@@ -33,27 +33,6 @@ try:
 except ImportError:
     onego = None
 
-# def parse_regex(html:str):
-#     return re.findall(r'<a\s', html)
-
-# def parse_html_parser(html:str):
-#     assert(HTMLParser)
-#     class AnchorParser(HTMLParser):
-#         def __init__(self):
-#             super().__init__()
-#             self.count = 0
-#         def handle_starttag(self, tag, attrs):
-#             if tag == 'a':
-#                 self.count += 1
-#     parser = AnchorParser()
-#     parser.feed(html)
-#     return parser.count
-
-# def parse_lxml(html:str):
-#     assert(lxml)
-#     tree = lxml.html.fromstring(html)
-#     return tree.xpath('//a')
-
 def parse_bs4_htmlparser(html:str, query:str):
     assert(BeautifulSoup)
     soup = BeautifulSoup(html, "html.parser")

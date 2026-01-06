@@ -10,9 +10,9 @@ def create_benchmark_graph(json_file:str, bench_name:str, output_image="benchmar
     bench_results = []
     for bench in data['benchmarks']:
         bench_results.append({
-            "Library": bench['name'].split('[')[0],  # Extracts name before any params
+            "Library": bench['name'].split('[')[0],
             "Test": bench['fullname'],
-            "Mean (ms)": bench['stats']['mean'] * 1000, # Convert seconds to ms
+            "Mean (ms)": bench['stats']['mean'] * 1000,
             "StdDev (ms)": bench['stats']['stddev'] * 1000
         })
 
