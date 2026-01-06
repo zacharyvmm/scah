@@ -4,7 +4,8 @@ mod tests {
     use std::io::prelude::*;
 
     use onego::{
-        Element, QueryError, Save, Selection, SelectionKind, SelectionPart, SelectionValue, parse,
+        Element, QueryBuilder, QueryError, Save, SelectionKind, SelectionPart, SelectionValue,
+        parse,
     };
 
     #[test]
@@ -15,13 +16,14 @@ mod tests {
         let mut contents = String::new();
         buf_reader.read_to_string(&mut contents)?;
 
-        let queries = &vec![Selection::new(SelectionPart::new(
+        let queries = &[QueryBuilder::new(SelectionPart::new(
             "a",
             SelectionKind::All(Save {
                 inner_html: true,
                 text_content: true,
             }),
-        ))];
+        ))
+        .build()];
         let map = parse(&contents, queries);
 
         //println!("{:#?}", map);
@@ -36,13 +38,14 @@ mod tests {
         let mut contents = String::new();
         buf_reader.read_to_string(&mut contents)?;
 
-        let queries = &vec![Selection::new(SelectionPart::new(
+        let queries = &[QueryBuilder::new(SelectionPart::new(
             "a",
             SelectionKind::All(Save {
                 inner_html: true,
                 text_content: true,
             }),
-        ))];
+        ))
+        .build()];
         let map = parse(&contents, queries);
 
         //assert_eq!(map["a"].len().unwrap(), 3879);

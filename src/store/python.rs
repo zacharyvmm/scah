@@ -134,9 +134,7 @@ impl<'py> Element for Bound<'py, PyDict> {
                     .get_item(key)
                     .expect("The Child was just set, thus it should exist")
                     .unwrap();
-                let list = any
-                    .cast::<PyList>()
-                    .expect("The list was just created");
+                let list = any.cast::<PyList>().expect("The list was just created");
                 let first = list.get_item(0);
                 match first {
                     Ok(first_value_any) => {
@@ -260,21 +258,28 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
             // let list =
             //     PyList::new(self.root.py(), vec![new_element]).expect("Unable to create list");
             // from_element.set_child(selection.source, Selection::All(list));
-            
+
             const CHILDREN: &'static str = "children";
-            let children_any = from_element.get_item(CHILDREN).expect("children should be initialized").expect("Value should not be None");
-            let children = children_any.cast::<PyDict>().expect("Children is always a dict");
+            let children_any = from_element
+                .get_item(CHILDREN)
+                .expect("children should be initialized")
+                .expect("Value should not be None");
+            let children = children_any
+                .cast::<PyDict>()
+                .expect("Children is always a dict");
 
             let list_of_child = children
                 .get_item(selection.source)
                 .expect("The list just got added")
                 .expect("The list was not empty");
-            let list = list_of_child.cast::<PyList>().expect("children should be a list");
+            let list = list_of_child
+                .cast::<PyList>()
+                .expect("children should be a list");
 
             list.append(new_element);
             let len = list.len();
 
-            let first = list.get_item(len-1);
+            let first = list.get_item(len - 1);
             let pointer = match first {
                 Ok(first_value_any) => {
                     let first_value = first_value_any

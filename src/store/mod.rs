@@ -1,3 +1,4 @@
+mod fake;
 mod header;
 mod python;
 mod rust;
@@ -8,3 +9,5 @@ pub(crate) use rust::{RustStore, ValueKind};
 
 #[cfg(feature = "python")]
 pub(crate) use python::PythonStore;
+
+pub(crate) use fake::FakeStore;

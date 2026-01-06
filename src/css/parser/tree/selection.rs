@@ -51,10 +51,10 @@ impl<'query> SelectionPart<'query> {
             selection.fsms.push(Fsm::new(combinator, element));
         }
 
-        return selection;
+        selection
     }
 
     pub fn len(&self) -> usize {
-        return self.fsms.len();
+        self.fsms.len()
     }
 }

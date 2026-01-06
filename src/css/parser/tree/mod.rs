@@ -2,5 +2,5 @@ mod selection;
 mod tree;
 
 pub use selection::{Save, SelectionKind, SelectionPart};
-pub use tree::Selection;
-pub(crate) use tree::{NextPosition, Position};
+pub(crate) use tree::{NextPosition, NextPositions, Position};
+pub use tree::{Query, QueryBuilder};

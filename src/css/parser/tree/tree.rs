@@ -1,19 +1,23 @@
+use smallvec::SmallVec;
+use smallvec::smallvec;
+
 use super::super::fsm::Fsm;
 use super::super::lexer::Combinator;
 use super::selection::SelectionKind;
 use super::selection::SelectionPart;
-use crate::css::parser::element::QueryElement;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position {
     pub(crate) section: usize,
     pub(crate) fsm: usize,
 }
 
+pub(crate) type NextPositions = SmallVec<[Position; 3]>;
+
 #[derive(PartialEq, Debug)]
 pub enum NextPosition {
     Link(Position),
-    Fork(Vec<Position>),
+    Fork(NextPositions),
     EndOfBranch,
 }
 
@@ -25,48 +29,24 @@ impl NextPosition {
         }
     }
 }
-
 #[derive(Debug)]
-pub struct Selection<'query> {
-    pub list: Vec<SelectionPart<'query>>,
+pub struct Query<'query> {
+    list: Box<[SelectionPart<'query>]>,
 }
 
-impl<'query> Selection<'query> {
-    pub fn new(root_element: SelectionPart<'query>) -> Self {
-        Self {
-            list: vec![root_element],
-        }
-    }
-
-    pub fn append(&mut self, mut sections: Vec<SelectionPart<'query>>) -> () {
-        let list_len = self.list.len();
-        if list_len > 0 && sections.len() > 1 {
-            let last_element_index = list_len - 1;
-            let ref mut last = self.list[last_element_index];
-
-            for index in 0..sections.len() {
-                if sections[index].parent == Option::None {
-                    sections[index].parent = Some(last_element_index);
-                    last.children.push(index + 1);
-                }
-            }
-        }
-
-        self.list.append(&mut sections);
-    }
-
+impl<'query> Query<'query> {
     pub fn get(&self, position: &Position) -> &Fsm<'query> {
-        return &self.list[position.section].fsms[position.fsm];
+        &self.list[position.section].fsms[position.fsm]
     }
 
     pub fn get_section_selection_kind(&self, section_index: usize) -> &SelectionKind {
         assert!(section_index < self.list.len());
-        return &self.list[section_index].kind;
+        &self.list[section_index].kind
     }
 
     pub fn get_section(&self, section_index: usize) -> &SelectionPart<'query> {
         assert!(section_index < self.list.len());
-        return &self.list[section_index];
+        &self.list[section_index]
     }
 
     pub fn is_descendant(&self, position: &Position) -> bool {
@@ -78,15 +58,20 @@ impl<'query> Selection<'query> {
         assert!(position.fsm < self.list[position.section].len());
 
         // if it's the last fsm in the section
-        return position.fsm == self.list[position.section].len() - 1;
+        position.fsm == self.list[position.section].len() - 1
     }
     pub fn is_last_save_point(&self, position: &Position) -> bool {
         assert!(position.section < self.list.len());
         assert!(position.fsm < self.list[position.section].len());
 
         // if it's the last fsm in the section
-        return position.section == self.list.len() - 1
-            && position.fsm == self.list[self.list.len() - 1].len() - 1;
+        let last_section = self.list.len() - 1;
+        let last_element_of_last_section = self.list[last_section].len() - 1;
+
+        let is_last_section = position.section == last_section;
+        let is_last_element_of_last_section = position.fsm == last_element_of_last_section;
+
+        is_last_section && is_last_element_of_last_section
     }
 
     pub fn next(&self, position: &Position) -> NextPosition {
@@ -140,6 +125,42 @@ impl<'query> Selection<'query> {
     }
 }
 
+#[derive(Debug)]
+pub struct QueryBuilder<'query> {
+    pub list: Vec<SelectionPart<'query>>,
+}
+
+impl<'query> QueryBuilder<'query> {
+    pub fn new(root_element: SelectionPart<'query>) -> Self {
+        Self {
+            list: vec![root_element],
+        }
+    }
+
+    pub fn append(&mut self, mut sections: Vec<SelectionPart<'query>>) {
+        let list_len = self.list.len();
+        if list_len > 0 && sections.len() > 1 {
+            let last_element_index = list_len - 1;
+            let ref mut last = self.list[last_element_index];
+
+            for index in 0..sections.len() {
+                if sections[index].parent.is_none() {
+                    sections[index].parent = Some(last_element_index);
+                    last.children.push(index + 1);
+                }
+            }
+        }
+
+        self.list.append(&mut sections);
+    }
+
+    pub fn build(self) -> Query<'query> {
+        Query {
+            list: self.list.into_boxed_slice(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::super::lexer::Combinator;
@@ -157,7 +178,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let tree = Selection::new(section);
+        let tree = QueryBuilder::new(section);
 
         assert_eq!(
             tree.list[0].fsms,
@@ -193,7 +214,7 @@ mod tests {
                 text_content: false,
             }),
         );
-        let mut selection = Selection::new(section);
+        let mut selection = QueryBuilder::new(section);
 
         assert_eq!(
             selection.list,

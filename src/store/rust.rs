@@ -1,7 +1,7 @@
 use crate::css::{SelectionKind, SelectionPart};
 
 use super::header::{QueryError, Store};
-use crate::mut_prt_unchecked;
+use crate::{dbg_print, mut_prt_unchecked};
 use std::collections::HashMap;
 use std::ops::Index;
 use std::ptr;
@@ -287,9 +287,12 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
 
         if children_map.contains_key(selection.source) {
             match selection.kind {
-                SelectionKind::First(_) => panic!(
-                    "It is not possible to add a single item to the store when it already exists."
-                ),
+                SelectionKind::First(_) => {
+                    dbg_print!("Store: {:#?}", self);
+                    panic!(
+                        "It is not possible to add a single item to the store when it already exists."
+                    )
+                }
                 SelectionKind::All(_) => {
                     assert!(matches!(
                         children_map[selection.source].kind,

@@ -34,6 +34,18 @@ document.querySelectorAll('#world')
     .querySelectorAll('a')
 ```
 ```py
+doc = CssSelector()
+q1 = doc.all('#world').all('a')
+
+for world in doc.select["#world"]:
+    for anchor in world["a"]:
+        print("href:", anchor.href)
+```
+
+```py
+doc = CssSelector()
+doc.all('#world').then(lambda x: [x.all('a'), x.all('p')])
+
 for world in doc.select["#world"]:
     for anchor in world["a"]:
         print("href:", anchor.href)
