@@ -148,7 +148,7 @@ impl<'py> Element for Bound<'py, PyDict> {
                     .get_item(key)
                     .expect("The Child was just set, thus it should exist")
                     .unwrap();
-                let dict = children
+                let dict = any
                     .cast::<PyDict>()
                     .expect("The dict was just created");
                 dict.as_ptr() as *mut PyDict

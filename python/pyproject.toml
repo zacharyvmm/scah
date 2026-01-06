@@ -9,3 +9,35 @@ description = "1go"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
+
+[project.optional-dependencies]
+bench = [
+    "onego",
+    "beautifulsoup4",
+    "lxml",
+    "selectolax",
+    "parsel",
+    "gazpacho",
+    "pytest",
+    "pytest-benchmark[histogram]",
+    "seaborn",
+    "poethepoet",
+]
+
+[tool.poe.tasks]
+bench = [
+    { cmd = "uvx maturin build --release" },
+    { cmd = "pytest benches/test_synthetic.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic.json" },
+    { cmd = "pytest benches/test_spec.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/whatwg.json" },
+    { cmd = "python3 ./benches/utils/figure.py ./benches/synthetic.json -o ./benches/images/synthetic.png" },
+    { cmd = "python3 ./benches/utils/figure.py ./benches/whatwg.json -o ./benches/images/whatwg.png" },
+    { cmd = "rm ./benches/*.json" },
+]
+
+[tool.uv.workspace]
+members = [
+    ".",
+]
+
+[tool.uv.sources]
+onego = { workspace = true }
