@@ -1,1 +1,8 @@
 # 1Go
+
+## Python Bindings for 1Go Benchmark's
+Real Html BenchMark ([html.spec.whatwg.org](https://html.spec.whatwg.org/)) (select all `a` tags):
+![WhatWg Html Spec BenchMark](./python/benches/images/whatwg.png)
+
+Synthetic Html BenchMark (select all `a` tags):
+![Synthetic Html BenchMark](./python/benches/images/synthetic.png)
