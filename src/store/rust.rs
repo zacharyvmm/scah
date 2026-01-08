@@ -91,7 +91,7 @@ pub struct Element<'html, 'query> {
     pub inner_html: Option<&'html str>,
     pub text_content: Option<String>,
     // Store Selection directly to enable Index trait
-    pub(crate) children: HashMap<&'query str, SelectionValue<'html, 'query>>,
+    pub children: HashMap<&'query str, SelectionValue<'html, 'query>>,
 }
 
 impl<'html, 'query, 'key> Element<'html, 'query> {

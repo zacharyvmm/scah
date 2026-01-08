@@ -13,7 +13,7 @@ pub(crate) struct DocumentPosition {
 }
 
 //type Runner<'query, E> = SmallVec<[SelectionRunner<'query, E>; 1]>;
-type Runner<'query, E> = Vec<SelectionRunner<'query, E>>;
+type Runner<'query, E> = Vec<SelectionRunner<'query, 'query, E>>;
 
 #[derive(Debug)]
 pub struct FsmManager<'html, 'query: 'html, S>

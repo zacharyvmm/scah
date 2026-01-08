@@ -34,16 +34,16 @@ type ScopedFsmVec<E> = Vec<ScopedFsm<E>>;
 type EndTagEventVec<E> = Vec<EndTagSaveContent<E>>;
 
 #[derive(Debug)]
-pub struct SelectionRunner<'query, E> {
-    selection_tree: &'query Query<'query>,
+pub struct SelectionRunner<'a, 'query, E> {
+    selection_tree: &'a Query<'query>,
     fsm: FsmState<E>,
     scoped_fsms: ScopedFsmVec<E>,
     on_close_tag_events: EndTagEventVec<E>,
     root: *mut E,
 }
 
-impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
-    pub fn new(root: *mut E, selection_tree: &'query Query<'query>) -> Self {
+impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
+    pub fn new(root: *mut E, selection_tree: &'a Query<'query>) -> Self {
         Self {
             selection_tree,
             fsm: FsmState::new(),
@@ -339,7 +339,6 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
     }
 }
 
-/*
 mod tests {
     use std::collections::HashMap;
 
@@ -357,11 +356,11 @@ mod tests {
 
     #[test]
     fn test_fsm_next_descendant() {
-        let selection_tree = Query::all("div a", Save::none()).build();
+        let selection_tree = &Query::all("div a", Save::none()).build();
 
         let mut store = RustStore::new(false);
 
-        let mut selection = SelectionRunner::new(store.root(), &selection_tree);
+        let mut selection = SelectionRunner::new(store.root(), selection_tree);
 
         let _ = selection.next(
             &mut store,
@@ -450,12 +449,12 @@ mod tests {
 
     #[test]
     fn test_complex_fsm_query() {
-        let selection_tree = Query::first("div p.class", Save::none())
+        let selection_tree = &Query::first("div p.class", Save::none())
             .then(|p| [p.first("span", Save::none()), p.first("a", Save::none())])
             .build();
 
         let mut store = RustStore::new(false);
-        let mut selection = SelectionRunner::new(store.root(), &selection_tree);
+        let mut selection = SelectionRunner::new(store.root(), selection_tree);
 
         let _ = selection.next(
             &mut store,
@@ -629,4 +628,3 @@ mod tests {
         );
     }
 }
-*/
