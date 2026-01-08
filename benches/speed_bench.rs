@@ -1,6 +1,6 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use lexbor_css::HtmlDocument;
-use onego::{QueryBuilder, Save, SelectionKind, SelectionPart, fake_parse, parse};
+use onego::{Query, Save, fake_parse, parse};
 use scraper::{Html, Selector};
 use std::hint::black_box;
 use tl::ParserOptions;

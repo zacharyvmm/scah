@@ -35,6 +35,7 @@ impl NextPosition {
 #[derive(Debug)]
 pub struct Query<'query> {
     list: Box<[QuerySection<'query>]>,
+    exit_at_section_end: usize,
 }
 
 impl<'query> Query<'query> {
@@ -202,13 +203,79 @@ impl<'query> QueryBuilder<'query> {
         self
     }
 
+    fn exit_at_section(&self) -> usize {
+        // returns the position in the selection tree where it can early exit
+        // TODO: I should add a required flag for QuerySections, so that the first selection is nulled
+        //  -> Basicly you can't return the first section without a perticular section behind added
+        //  -> If you come back to the section without saving the required section,
+        //      then you delete the saved data and you start over.
+
+        fn early_exist_when_done_with_section(section: &SelectionPart) -> bool {
+            match &section.kind {
+                SelectionKind::All(_) => true,
+
+                // This is it need's to find the </{element}> to get either inner_html or text_content
+                SelectionKind::First(save) => *save != Save::none(),
+            }
+        }
+
+        fn search_for_single_exit_section(
+            index: usize,
+            list: &Vec<SelectionPart>,
+        ) -> Option<usize> {
+            // If you have a section with MULTIPLE children that can early exit,
+            //   then this parent node will become the exit section
+            if index >= list.len() {
+                return None;
+            }
+            let section = &list[index];
+            if early_exist_when_done_with_section(section) {
+                return None;
+            }
+
+            if section.children.is_empty() {
+                let child_can_early_exit = search_for_single_exit_section(index + 1, list);
+                if child_can_early_exit.is_none() {
+                    return Some(index);
+                }
+                return child_can_early_exit;
+            }
+
+            let mut child_response: Option<usize> = None;
+            for child in &section.children {
+                let child_can_early_exit = search_for_single_exit_section(index + *child, list);
+                child_response = match child_response {
+                    None => child_can_early_exit,
+                    Some(_) => {
+                        // If their's more than one child that can early exit then
+                        // the parent is chosen
+                        return Some(index);
+                    }
+                }
+            }
+
+            if child_response.is_some() {
+                return child_response;
+            }
+            Some(index)
+        }
+
+        // BUG: I'm intentially adding this bug, because to actually solve this
+        //  I would need to be able to check if all descandants in my fsm tree was saved to early exit
+        search_for_single_exit_section(0, &self.list).unwrap_or(0)
+    }
+
     pub fn build(self) -> Query<'query> {
+        let exit_at_section_end = self.exit_at_section();
         let list = self
             .list
             .into_iter()
             .map(|part| part.build())
             .collect::<Box<[QuerySection<'query>]>>();
-        Query { list }
+        Query {
+            list,
+            exit_at_section_end,
+        }
     }
 }
 
@@ -398,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn test_then_based_Query_builder() {
+    fn test_then_based_query_builder() {
         let query = Query::first("section", Save::default())
             .all("div > p", Save::default())
             .then(|p| {
@@ -454,6 +521,90 @@ mod tests {
         assert_eq!(query.list[6].source, "a");
         assert_eq!(query.list[6].parent, Some(5));
 
-        //println!("{:#?}", query)
+        println!("{:#?}", query)
+    }
+
+    #[test]
+    fn test_early_exit_basic() {
+        let query = Query::first("section", Save::default()).build();
+        assert_eq!(query.exit_at_section_end, 0);
+    }
+
+    #[test]
+    fn test_early_exit_big_tree() {
+        let query = Query::first("section", Save::default())
+            .first("div > p", Save::default())
+            .then(|p| {
+                [
+                    p.first(
+                        "span",
+                        Save {
+                            inner_html: true,
+                            text_content: false,
+                        },
+                    ),
+                    p.first(
+                        "figure",
+                        Save {
+                            inner_html: false,
+                            text_content: true,
+                        },
+                    )
+                    .then(|figure| {
+                        [
+                            figure.first("> img", Save::default()),
+                            figure.first("> figcaption", Save::default()).first(
+                                "a",
+                                Save {
+                                    inner_html: true,
+                                    text_content: true,
+                                },
+                            ),
+                        ]
+                    }),
+                ]
+            })
+            .build();
+        assert_eq!(query.exit_at_section_end, 1);
+    }
+
+    #[test]
+    fn test_early_exit_big_list_deepest_exit() {
+        let query = Query::first("section", Save::default()).build();
+        assert_eq!(query.exit_at_section_end, 0);
+
+        let query = Query::first("section", Save::default())
+            .first("div > p", Save::default())
+            .first("span", Save::none())
+            .first("figure", Save::none())
+            .first("> img", Save::default())
+            .first("> figcaption", Save::default())
+            .first("a", Save::none())
+            .build();
+        assert_eq!(query.exit_at_section_end, 6);
+    }
+
+    #[test]
+    fn test_early_exit_big_tree_with_fully_valid_exits() {
+        let query = Query::first("section", Save::default()).build();
+        assert_eq!(query.exit_at_section_end, 0);
+
+        let query = Query::first("section", Save::default())
+            .first("div > p", Save::default())
+            .then(|p| {
+                [
+                    p.first("span", Save::none()),
+                    p.first("figure", Save::none()).then(|figure| {
+                        [
+                            figure.first("> img", Save::default()),
+                            figure
+                                .first("> figcaption", Save::default())
+                                .first("a", Save::none()),
+                        ]
+                    }),
+                ]
+            })
+            .build();
+        assert_eq!(query.exit_at_section_end, 1);
     }
 }

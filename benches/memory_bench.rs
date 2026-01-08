@@ -14,7 +14,7 @@ fn setup_html() -> String {
     html
 }
 
-use onego::{Query, Save, SelectionKind, SelectionPart, fake_parse, parse};
+use onego::{Query, Save, fake_parse, parse};
 
 #[library_benchmark]
 #[bench::onego(setup_html())]
