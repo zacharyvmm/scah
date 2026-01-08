@@ -111,7 +111,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::css::{FsmManager, QueryBuilder, Save, SelectionKind, SelectionPart};
+    use crate::css::{FsmManager, Query, Save, SelectionKind, SelectionPart};
     use crate::store::{Element, RustStore, SelectionValue, Store, ValueKind};
     use crate::utils::Reader;
     use crate::xhtml::element::element::{Attribute, XHtmlElement};
@@ -130,16 +130,7 @@ mod tests {
     fn test_basic_html() {
         let mut reader = Reader::new(BASIC_HTML);
 
-        let section = SelectionPart::new(
-            "p.indent > .bold",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        );
-        let selection_tree = QueryBuilder::new(section);
-
-        let queries = &[selection_tree.build()];
+        let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
 
         let manager = FsmManager::new(RustStore::new(false), queries);
 
@@ -188,16 +179,7 @@ mod tests {
     fn test_text_content() {
         let mut reader = Reader::new(BASIC_HTML);
 
-        let section = SelectionPart::new(
-            "p.indent > .bold",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        );
-        let selection_tree = QueryBuilder::new(section);
-
-        let queries = &[selection_tree.build()];
+        let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
         let manager = FsmManager::new(RustStore::new(false), queries);
 
         let mut parser = XHtmlParser::new(manager);
@@ -249,23 +231,11 @@ mod tests {
     fn test_top_level_multi_selection() {
         let mut reader = Reader::new(BASIC_HTML);
 
-        let selection_tree_1 = QueryBuilder::new(SelectionPart::new(
-            "p.indent > .bold",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        ));
+        let queries = &[
+            Query::all("p.indent > .bold", Save::none()).build(),
+            Query::all("h1 + .indent #name", Save::none()).build(),
+        ];
 
-        let selection_tree_2 = QueryBuilder::new(SelectionPart::new(
-            "h1 + .indent #name",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        ));
-
-        let queries = &[selection_tree_1.build(), selection_tree_2.build()];
         let manager = FsmManager::new(RustStore::new(false), queries);
 
         let mut parser = XHtmlParser::new(manager);
@@ -309,32 +279,12 @@ mod tests {
     #[test]
     fn test_multi_selection() {
         let mut reader = Reader::new(MORE_ADVANCED_BASIC_HTML);
-        let mut queries = QueryBuilder::new(SelectionPart::new(
-            "main > section",
-            SelectionKind::All(Save {
-                inner_html: true,
-                text_content: true,
-            }),
-        ));
-        queries.append(
-            0,
-            vec![
-                SelectionPart::new(
-                    "> a[href]",
-                    SelectionKind::First(Save {
-                        inner_html: true,
-                        text_content: true,
-                    }),
-                ),
-                SelectionPart::new(
-                    "div a",
-                    SelectionKind::All(Save {
-                        inner_html: true,
-                        text_content: true,
-                    }),
-                ),
-            ],
-        );
+        let queries = Query::all("main > section", Save::all()).then(|section| {
+            [
+                section.first("> a[href]", Save::all()),
+                section.all("div a", Save::all()),
+            ]
+        });
         let queries = &[queries.build()];
         let manager = FsmManager::new(RustStore::new(false), queries);
 
@@ -490,16 +440,7 @@ mod tests {
     fn test_script_tag_with_html_like_content() {
         let mut reader = Reader::new(BASIC_HTML_WITH_SCRIPT);
 
-        let section = SelectionPart::new(
-            "div",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        );
-        let selection_tree = QueryBuilder::new(section);
-
-        let queries = &[selection_tree.build()];
+        let queries = &[Query::all("div", Save::none()).build()];
 
         let manager = FsmManager::new(RustStore::new(false), queries);
 
@@ -551,17 +492,7 @@ mod tests {
     #[test]
     fn test_self_closing_tags() {
         let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
-
-        let section = SelectionPart::new(
-            "form > p > input",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        );
-        let selection_tree = QueryBuilder::new(section);
-
-        let queries = &[selection_tree.build()];
+        let queries = &[Query::all("form > p > input", Save::none()).build()];
 
         let manager = FsmManager::new(RustStore::new(false), queries);
 
@@ -626,16 +557,7 @@ mod tests {
          */
         let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
 
-        let section = SelectionPart::new(
-            "form > p > input",
-            SelectionKind::All(Save {
-                inner_html: true,
-                text_content: true,
-            }),
-        );
-        let selection_tree = QueryBuilder::new(section);
-
-        let queries = &[selection_tree.build()];
+        let queries = &[Query::all("form > p > input", Save::all()).build()];
 
         let manager = FsmManager::new(RustStore::new(false), queries);
 
@@ -701,16 +623,7 @@ mod tests {
     fn test_anchor_list_selection() {
         let mut reader = Reader::new(BASIC_ANCHOR_LIST);
 
-        let section = SelectionPart::new(
-            "a",
-            SelectionKind::All(Save {
-                inner_html: true,
-                text_content: true,
-            }),
-        );
-        let selection_tree = QueryBuilder::new(section);
-
-        let queries = &[selection_tree.build()];
+        let queries = &[Query::all("a", Save::all()).build()];
 
         let manager = FsmManager::new(RustStore::new(false), queries);
 

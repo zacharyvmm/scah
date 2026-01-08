@@ -3,10 +3,7 @@ mod tests {
     use std::io::BufReader;
     use std::io::prelude::*;
 
-    use onego::{
-        Element, QueryBuilder, QueryError, Save, SelectionKind, SelectionPart, SelectionValue,
-        parse,
-    };
+    use onego::{Element, Query, QueryError, Save, SelectionValue, parse};
 
     #[test]
     fn test_all_anchor_tags_for_whatwg_html_spec() -> std::io::Result<()> {
@@ -16,14 +13,7 @@ mod tests {
         let mut contents = String::new();
         buf_reader.read_to_string(&mut contents)?;
 
-        let queries = &[QueryBuilder::new(SelectionPart::new(
-            "a",
-            SelectionKind::All(Save {
-                inner_html: true,
-                text_content: true,
-            }),
-        ))
-        .build()];
+        let queries = &[Query::all("a", Save::all()).build()];
         let map = parse(&contents, queries);
 
         //println!("{:#?}", map);
@@ -38,14 +28,7 @@ mod tests {
         let mut contents = String::new();
         buf_reader.read_to_string(&mut contents)?;
 
-        let queries = &[QueryBuilder::new(SelectionPart::new(
-            "a",
-            SelectionKind::All(Save {
-                inner_html: true,
-                text_content: true,
-            }),
-        ))
-        .build()];
+        let queries = &[Query::all("a", Save::all()).build()];
         let map = parse(&contents, queries);
 
         //assert_eq!(map["a"].len().unwrap(), 3879);

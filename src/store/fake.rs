@@ -1,9 +1,7 @@
 // This is to examine the performance cost of the Store
 
 use super::header::{QueryError, Store};
-use crate::{
-    Attribute, QuerySection, Save, SelectionKind, SelectionPart, XHtmlElement, mut_prt_unchecked,
-};
+use crate::{Attribute, QuerySection, Save, XHtmlElement, mut_prt_unchecked};
 
 pub struct FakeStore {}
 

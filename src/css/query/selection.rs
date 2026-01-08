@@ -5,7 +5,7 @@ use super::task::{FsmState, ScopedFsm};
 //use super::tree::MatchTree;
 use crate::css::Save;
 use crate::css::parser::lexer::Combinator;
-use crate::css::parser::tree::{NextPosition, Position, Query, QueryBuilder};
+use crate::css::parser::tree::{NextPosition, Position, Query};
 use crate::css::query::task::Fsm;
 use crate::{XHtmlElement, dbg_print};
 //use crate::store::rust::Element;
@@ -349,14 +349,7 @@ mod tests {
 
     #[test]
     fn test_fsm_next_descendant() {
-        let section = SelectionPart::new(
-            "div a",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        );
-        let selection_tree = QueryBuilder::new(section).build();
+        let selection_tree = Query::all("div a", Save::none()).build();
 
         let mut store = RustStore::new(false);
 
@@ -449,31 +442,9 @@ mod tests {
 
     #[test]
     fn test_complex_fsm_query() {
-        let mut selection_tree = QueryBuilder::new(SelectionPart::new(
-            "div p.class",
-            SelectionKind::First(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        ));
-
-        selection_tree.append(Vec::from([
-            SelectionPart::new(
-                "span",
-                SelectionKind::First(Save {
-                    inner_html: false,
-                    text_content: false,
-                }),
-            ),
-            SelectionPart::new(
-                "a",
-                SelectionKind::First(Save {
-                    inner_html: false,
-                    text_content: false,
-                }),
-            ),
-        ]));
-        let selection_tree = selection_tree.build();
+        let selection_tree = Query::first("div p.class", Save::none())
+            .then(|p| [p.first("span", Save::none()), p.first("a", Save::none())])
+            .build();
 
         let mut store = RustStore::new(false);
         let mut selection = SelectionRunner::new(store.root(), &selection_tree);
@@ -586,19 +557,12 @@ mod tests {
 
     #[test]
     fn test_simple_open_close() {
-        let selection_tree = QueryBuilder::new(SelectionPart::new(
-            "div",
-            SelectionKind::First(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        ))
-        .build();
+        let selection_tree = Query::first("div", Save::none()).build();
 
         let mut store = RustStore::new(false);
         let mut selection = SelectionRunner::new(store.root(), &selection_tree);
 
-        let mut reader = Reader::new("<div></div>");
+        let reader = Reader::new("<div></div>");
         let mut content = TextContent::new();
 
         let _ = selection.next(

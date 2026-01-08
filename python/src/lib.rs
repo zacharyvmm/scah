@@ -1,7 +1,4 @@
-use ::onego::{
-    Attribute, FsmManager, QueryBuilder, QueryError, Reader, Save, SelectionKind, SelectionPart,
-    Store, XHtmlElement, XHtmlParser,
-};
+use ::onego::{Attribute, FsmManager, QueryError, Reader, Save, Store, XHtmlElement, XHtmlParser};
 use pyo3::ffi::PyObject;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyString};

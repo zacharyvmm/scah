@@ -15,7 +15,7 @@ pub struct Position {
     pub(crate) fsm: usize,
 }
 
-pub(crate) type NextPositions = SmallVec<[Position; 3]>;
+pub(crate) type NextPositions = Vec<Position>;
 
 #[derive(PartialEq, Debug)]
 pub enum NextPosition {
@@ -94,17 +94,17 @@ impl<'query> Query<'query> {
         assert!(position.fsm < self.list[position.section].len());
 
         if position.fsm + 1 < self.list[position.section].len() {
-            return NextPosition::Link(Position {
+            NextPosition::Link(Position {
                 section: position.section,
                 fsm: position.fsm + 1,
-            });
+            })
         } else {
-            let ref section = self.list[position.section];
-            if section.children.len() == 0 {
+            let section = &self.list[position.section];
+            if section.children.is_empty() {
                 return NextPosition::EndOfBranch;
             }
 
-            return NextPosition::Fork(
+            NextPosition::Fork(
                 section
                     .children
                     .iter()
@@ -113,7 +113,7 @@ impl<'query> Query<'query> {
                         fsm: 0,
                     })
                     .collect(),
-            );
+            )
         }
     }
 
@@ -122,19 +122,19 @@ impl<'query> Query<'query> {
         assert!(position.fsm < self.list[position.section].len());
 
         if position.fsm > 0 {
-            return Position {
+            Position {
                 section: position.section,
                 fsm: position.fsm - 1,
-            };
+            }
         } else {
-            let ref section = self.list[position.section];
+            let section = &self.list[position.section];
             if let Some(parent) = section.parent {
-                return Position {
+                Position {
                     section: parent,
                     fsm: section.len() - 1,
-                };
+                }
             } else {
-                return Position { section: 0, fsm: 0 };
+                Position { section: 0, fsm: 0 }
             }
         }
     }
@@ -153,7 +153,6 @@ impl<'query> QueryBuilder<'query> {
     }
 
     pub fn append(&mut self, parent: usize, mut sections: Vec<SelectionPart<'query>>) {
-        println!("\n\tAPPEND");
         let last = &mut self.list[parent];
         let mut offset = 0;
 
@@ -167,7 +166,6 @@ impl<'query> QueryBuilder<'query> {
                 Some(p) => *p + offset + parent,
             };
             section.parent = Some(new_parent_index);
-            println!(">> {:#?}", section);
         }
 
         self.list.append(&mut sections);

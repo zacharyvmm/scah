@@ -2,15 +2,36 @@ use super::super::fsm::Fsm;
 use super::super::lexer::Lexer;
 use crate::utils::Reader;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Default)]
 pub struct Save {
     // attributes: bool, // If your saving this has to be on
     pub inner_html: bool,
     pub text_content: bool,
 }
 
-impl Default for Save {
-    fn default() -> Self {
+impl Save {
+    pub fn only_inner_html() -> Self {
+        Self {
+            inner_html: true,
+            text_content: false,
+        }
+    }
+
+    pub fn only_text_content() -> Self {
+        Self {
+            inner_html: false,
+            text_content: true,
+        }
+    }
+
+    pub fn all() -> Self {
+        Self {
+            inner_html: true,
+            text_content: true,
+        }
+    }
+
+    pub fn none() -> Self {
         Self {
             inner_html: false,
             text_content: false,

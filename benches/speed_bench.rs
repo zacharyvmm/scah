@@ -28,14 +28,7 @@ fn bench_comparison(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("onego", size), &content, |b, html| {
             b.iter(|| {
-                let queries = &[QueryBuilder::new(SelectionPart::new(
-                    black_box("div.article a"),
-                    SelectionKind::All(Save {
-                        inner_html: true,
-                        text_content: true,
-                    }),
-                ))
-                .build()];
+                let queries = &[Query::all(black_box("div.article a"), Save::all()).build()];
                 let res = parse(html, queries);
                 for element in res["div.article a"].iter().unwrap() {
                     black_box(&element.attributes);
@@ -50,14 +43,7 @@ fn bench_comparison(c: &mut Criterion) {
             &content,
             |b, html| {
                 b.iter(|| {
-                    let queries = &[QueryBuilder::new(SelectionPart::new(
-                        black_box("div.article a"),
-                        SelectionKind::All(Save {
-                            inner_html: false,
-                            text_content: false,
-                        }),
-                    ))
-                    .build()];
+                    let queries = &[Query::all(black_box("div.article a"), Save::none()).build()];
                     let res = black_box(fake_parse(html, queries));
                 })
             },

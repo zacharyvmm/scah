@@ -289,7 +289,7 @@ impl<'query, 'html, E> Fsm<'query, 'html, E> for ScopedFsm<E> {
     fn set_end_false(&mut self) {}
 }
 mod tests {
-    use crate::QueryBuilder;
+    use crate::Query;
     use crate::css::parser::tree::{Save, SelectionKind, SelectionPart};
     use crate::store::Element;
     use crate::utils::Reader;
@@ -298,14 +298,7 @@ mod tests {
 
     #[test]
     fn test_fsm_next_descendant() {
-        let section = SelectionPart::new(
-            "div a",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        );
-        let selection_tree = QueryBuilder::new(section).build();
+        let selection_tree = Query::all("div a", Save::none()).build();
 
         let mut state = FsmState::<Element>::new();
         let mut next: bool = false;

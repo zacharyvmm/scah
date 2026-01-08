@@ -14,19 +14,12 @@ fn setup_html() -> String {
     html
 }
 
-use onego::{QueryBuilder, Save, SelectionKind, SelectionPart, fake_parse, parse};
+use onego::{Query, Save, SelectionKind, SelectionPart, fake_parse, parse};
 
 #[library_benchmark]
 #[bench::onego(setup_html())]
 fn bench_onego(html: String) {
-    let queries = &[QueryBuilder::new(SelectionPart::new(
-        black_box("div.article a"),
-        SelectionKind::All(Save {
-            inner_html: true,
-            text_content: true,
-        }),
-    ))
-    .build()];
+    let queries = &[Query::all(black_box("div.article a"), Save::all()).build()];
 
     let res = parse(&html, queries);
 
@@ -40,14 +33,7 @@ fn bench_onego(html: String) {
 #[library_benchmark]
 #[bench::onego_no_store(setup_html())]
 fn bench_onego_no_store(html: String) {
-    let queries = &[QueryBuilder::new(SelectionPart::new(
-        black_box("div.article a"),
-        SelectionKind::All(Save {
-            inner_html: true,
-            text_content: false,
-        }),
-    ))
-    .build()];
+    let queries = &[Query::all(black_box("div.article a"), Save::none()).build()];
 
     let res = black_box(fake_parse(&html, queries));
 }

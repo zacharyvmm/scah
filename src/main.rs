@@ -1,4 +1,4 @@
-use onego::{QueryBuilder, Save, SelectionKind, SelectionPart, parse};
+use onego::{Query, Save, parse};
 use std::env;
 use std::fs;
 use std::time::Instant;
@@ -15,14 +15,7 @@ fn main() {
 
     let start = Instant::now();
 
-    let queries = &[QueryBuilder::new(SelectionPart::new(
-        "a",
-        SelectionKind::All(Save {
-            inner_html: true,
-            text_content: true,
-        }),
-    ))
-    .build()];
+    let queries = &[Query::first("a", Save::all()).build()];
 
     let map = parse(content.as_str(), queries);
     // assert_eq!(map["a"].len()?, 7);
