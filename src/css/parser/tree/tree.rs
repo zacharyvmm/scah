@@ -1,6 +1,9 @@
 use smallvec::SmallVec;
 use smallvec::smallvec;
 
+use crate::Save;
+use crate::css::parser::tree::selection::QuerySection;
+
 use super::super::fsm::Fsm;
 use super::super::lexer::Combinator;
 use super::selection::SelectionKind;
@@ -31,36 +34,48 @@ impl NextPosition {
 }
 #[derive(Debug)]
 pub struct Query<'query> {
-    list: Box<[SelectionPart<'query>]>,
+    list: Box<[QuerySection<'query>]>,
 }
 
 impl<'query> Query<'query> {
-    pub fn get(&self, position: &Position) -> &Fsm<'query> {
+    pub fn first(query: &'query str, save: Save) -> QueryBuilder<'query> {
+        QueryBuilder {
+            list: vec![SelectionPart::new(query, SelectionKind::First(save))],
+        }
+    }
+
+    pub fn all(query: &'query str, save: Save) -> QueryBuilder<'query> {
+        QueryBuilder {
+            list: vec![SelectionPart::new(query, SelectionKind::All(save))],
+        }
+    }
+
+    pub(crate) fn get(&self, position: &Position) -> &Fsm<'query> {
         &self.list[position.section].fsms[position.fsm]
     }
 
-    pub fn get_section_selection_kind(&self, section_index: usize) -> &SelectionKind {
+    pub(crate) fn get_section_selection_kind(&self, section_index: usize) -> &SelectionKind {
         assert!(section_index < self.list.len());
         &self.list[section_index].kind
     }
 
-    pub fn get_section(&self, section_index: usize) -> &SelectionPart<'query> {
+    pub(crate) fn get_section(&self, section_index: usize) -> &QuerySection<'query> {
         assert!(section_index < self.list.len());
         &self.list[section_index]
     }
 
-    pub fn is_descendant(&self, position: &Position) -> bool {
+    pub(crate) fn is_descendant(&self, position: &Position) -> bool {
         self.get(position).transition == Combinator::Descendant
     }
 
-    pub fn is_save_point(&self, position: &Position) -> bool {
+    pub(crate) fn is_save_point(&self, position: &Position) -> bool {
         assert!(position.section < self.list.len());
         assert!(position.fsm < self.list[position.section].len());
 
         // if it's the last fsm in the section
         position.fsm == self.list[position.section].len() - 1
     }
-    pub fn is_last_save_point(&self, position: &Position) -> bool {
+    pub(crate) fn is_last_save_point(&self, position: &Position) -> bool {
         assert!(position.section < self.list.len());
         assert!(position.fsm < self.list[position.section].len());
 
@@ -74,7 +89,7 @@ impl<'query> Query<'query> {
         is_last_section && is_last_element_of_last_section
     }
 
-    pub fn next(&self, position: &Position) -> NextPosition {
+    pub(crate) fn next(&self, position: &Position) -> NextPosition {
         assert!(position.section < self.list.len());
         assert!(position.fsm < self.list[position.section].len());
 
@@ -102,7 +117,7 @@ impl<'query> Query<'query> {
         }
     }
 
-    pub fn back(&self, position: &Position) -> Position {
+    pub(crate) fn back(&self, position: &Position) -> Position {
         assert!(position.section < self.list.len());
         assert!(position.fsm < self.list[position.section].len());
 
@@ -137,27 +152,80 @@ impl<'query> QueryBuilder<'query> {
         }
     }
 
-    pub fn append(&mut self, mut sections: Vec<SelectionPart<'query>>) {
-        let list_len = self.list.len();
-        if list_len > 0 && sections.len() > 1 {
-            let last_element_index = list_len - 1;
-            let ref mut last = self.list[last_element_index];
+    pub fn append(&mut self, parent: usize, mut sections: Vec<SelectionPart<'query>>) {
+        println!("\n\tAPPEND");
+        let last = &mut self.list[parent];
+        let mut offset = 0;
 
-            for index in 0..sections.len() {
-                if sections[index].parent.is_none() {
-                    sections[index].parent = Some(last_element_index);
+        for (index, section) in sections.iter_mut().enumerate() {
+            let new_parent_index = match &section.parent {
+                None => {
                     last.children.push(index + 1);
+                    offset += 1;
+                    parent
                 }
-            }
+                Some(p) => *p + offset + parent,
+            };
+            section.parent = Some(new_parent_index);
+            println!(">> {:#?}", section);
         }
 
         self.list.append(&mut sections);
     }
 
+    pub fn all(mut self, query: &'query str, save: Save) -> Self {
+        assert!(!self.list.is_empty());
+        let mut part = SelectionPart::new(query, SelectionKind::All(save));
+        part.parent = Some(self.list.len() - 1);
+        self.list.push(part);
+        self
+    }
+
+    pub fn first(mut self, query: &'query str, save: Save) -> Self {
+        assert!(!self.list.is_empty());
+        let mut part = SelectionPart::new(query, SelectionKind::First(save));
+        part.parent = Some(self.list.len() - 1);
+        self.list.push(part);
+        self
+    }
+
+    pub fn then<F, I>(mut self, func: F) -> Self
+    where
+        F: FnOnce(QueryFactory) -> I,
+        I: IntoIterator<Item = Self>,
+    {
+        let factory = QueryFactory {};
+        let children = func(factory);
+
+        let parts_vec_iter = children.into_iter().flat_map(|child| child.list);
+
+        let current_index = self.list.len() - 1;
+        self.append(current_index, parts_vec_iter.collect());
+        self
+    }
+
     pub fn build(self) -> Query<'query> {
-        Query {
-            list: self.list.into_boxed_slice(),
-        }
+        let list = self
+            .list
+            .into_iter()
+            .map(|part| part.build())
+            .collect::<Box<[QuerySection<'query>]>>();
+        Query { list }
+    }
+}
+
+#[derive(Debug)]
+pub struct QueryFactory {}
+
+impl<'query> QueryFactory {
+    pub fn all(&self, query: &'query str, save: Save) -> QueryBuilder<'query> {
+        let part = SelectionPart::new(query, SelectionKind::All(save));
+        QueryBuilder::new(part)
+    }
+
+    pub fn first(&self, query: &'query str, save: Save) -> QueryBuilder<'query> {
+        let part = SelectionPart::new(query, SelectionKind::First(save));
+        QueryBuilder::new(part)
     }
 }
 
@@ -240,7 +308,6 @@ mod tests {
                         transition: Combinator::Child
                     },
                 ]),
-                descendants: Vec::new(),
                 kind: SelectionKind::All(Save {
                     inner_html: false,
                     text_content: false
@@ -250,22 +317,25 @@ mod tests {
             }])
         );
 
-        selection.append(Vec::from([
-            SelectionPart::new(
-                "> a",
-                SelectionKind::All(Save {
-                    inner_html: false,
-                    text_content: false,
-                }),
-            ),
-            SelectionPart::new(
-                " p",
-                SelectionKind::All(Save {
-                    inner_html: false,
-                    text_content: false,
-                }),
-            ),
-        ]));
+        selection.append(
+            0,
+            Vec::from([
+                SelectionPart::new(
+                    "> a",
+                    SelectionKind::All(Save {
+                        inner_html: false,
+                        text_content: false,
+                    }),
+                ),
+                SelectionPart::new(
+                    " p",
+                    SelectionKind::All(Save {
+                        inner_html: false,
+                        text_content: false,
+                    }),
+                ),
+            ]),
+        );
 
         assert_eq!(
             selection.list,
@@ -292,7 +362,6 @@ mod tests {
                             transition: Combinator::Child
                         },
                     ]),
-                    descendants: Vec::new(),
                     kind: SelectionKind::All(Save {
                         inner_html: false,
                         text_content: false
@@ -306,7 +375,6 @@ mod tests {
                         state: QueryElement::new(Some("a"), None, None, Vec::new(),),
                         transition: Combinator::Child
                     },]),
-                    descendants: Vec::new(),
                     kind: SelectionKind::All(Save {
                         inner_html: false,
                         text_content: false
@@ -320,7 +388,6 @@ mod tests {
                         state: QueryElement::new(Some("p"), None, None, Vec::new(),),
                         transition: Combinator::Descendant
                     },]),
-                    descendants: Vec::new(),
                     kind: SelectionKind::All(Save {
                         inner_html: false,
                         text_content: false
@@ -330,5 +397,65 @@ mod tests {
                 },
             ])
         );
+    }
+
+    #[test]
+    fn test_then_based_Query_builder() {
+        let query = Query::first("section", Save::default())
+            .all("div > p", Save::default())
+            .then(|p| {
+                [
+                    p.all(
+                        "span",
+                        Save {
+                            inner_html: true,
+                            text_content: false,
+                        },
+                    ),
+                    p.first(
+                        "figure",
+                        Save {
+                            inner_html: false,
+                            text_content: true,
+                        },
+                    )
+                    .then(|figure| {
+                        [
+                            figure.first("> img", Save::default()),
+                            figure.first("> figcaption", Save::default()).all(
+                                "a",
+                                Save {
+                                    inner_html: true,
+                                    text_content: true,
+                                },
+                            ),
+                        ]
+                    }),
+                ]
+            })
+            .build();
+
+        assert_eq!(query.list[0].source, "section");
+        assert_eq!(query.list[0].parent, None);
+
+        assert_eq!(query.list[1].source, "div > p");
+        assert_eq!(query.list[1].parent, Some(0));
+
+        assert_eq!(query.list[2].source, "span");
+        assert_eq!(query.list[2].parent, Some(1));
+
+        assert_eq!(query.list[3].source, "figure");
+        assert_eq!(query.list[3].parent, Some(1));
+
+        assert_eq!(query.list[4].source, "> img");
+        assert_eq!(query.list[4].parent, Some(3));
+
+        assert_eq!(query.list[5].source, "> figcaption");
+        assert_eq!(query.list[5].parent, Some(3));
+
+        assert_eq!(query.list[6].source, "a");
+        assert_eq!(query.list[6].parent, Some(5));
+
+        //println!("{:#?}", query)
     }
 }

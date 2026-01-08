@@ -100,7 +100,6 @@ fn bench_lexbor(html: String) {
         black_box(node.inner_html());
         black_box(node.attributes());
     }
-
 }
 
 // --- 5. GROUPING ---

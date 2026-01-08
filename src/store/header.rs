@@ -1,5 +1,5 @@
 use crate::XHtmlElement;
-use crate::css::SelectionPart;
+use crate::css::QuerySection;
 
 pub trait Store<'html, 'query> {
     type E;
@@ -8,7 +8,7 @@ pub trait Store<'html, 'query> {
     fn root(&mut self) -> *mut Self::E;
     fn push<'key>(
         &mut self,
-        selection: &SelectionPart<'query>,
+        selection: &QuerySection<'query>,
         from: *mut Self::E,
         element: XHtmlElement<'html>,
     ) -> Result<*mut Self::E, QueryError<'key>>;

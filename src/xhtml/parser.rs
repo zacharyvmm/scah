@@ -316,22 +316,25 @@ mod tests {
                 text_content: true,
             }),
         ));
-        queries.append(vec![
-            SelectionPart::new(
-                "> a[href]",
-                SelectionKind::First(Save {
-                    inner_html: true,
-                    text_content: true,
-                }),
-            ),
-            SelectionPart::new(
-                "div a",
-                SelectionKind::All(Save {
-                    inner_html: true,
-                    text_content: true,
-                }),
-            ),
-        ]);
+        queries.append(
+            0,
+            vec![
+                SelectionPart::new(
+                    "> a[href]",
+                    SelectionKind::First(Save {
+                        inner_html: true,
+                        text_content: true,
+                    }),
+                ),
+                SelectionPart::new(
+                    "div a",
+                    SelectionKind::All(Save {
+                        inner_html: true,
+                        text_content: true,
+                    }),
+                ),
+            ],
+        );
         let queries = &[queries.build()];
         let manager = FsmManager::new(RustStore::new(false), queries);
 

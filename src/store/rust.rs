@@ -1,7 +1,7 @@
 use crate::css::{SelectionKind, SelectionPart};
 
 use super::header::{QueryError, Store};
-use crate::{dbg_print, mut_prt_unchecked};
+use crate::{QuerySection, dbg_print, mut_prt_unchecked};
 use std::collections::HashMap;
 use std::ops::Index;
 use std::ptr;
@@ -258,7 +258,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
 
     fn push<'key>(
         &mut self,
-        selection: &SelectionPart<'query>,
+        selection: &QuerySection<'query>,
         mut from: *mut Element<'html, 'query>,
         element: crate::XHtmlElement<'html>,
     ) -> Result<*mut Element<'html, 'query>, QueryError<'key>> {
@@ -543,7 +543,8 @@ mod tests {
                 inner_html: false,
                 text_content: false,
             }),
-        );
+        )
+        .build();
 
         let selection_first_alternate = SelectionPart::new(
             "div",
@@ -551,7 +552,8 @@ mod tests {
                 inner_html: false,
                 text_content: false,
             }),
-        );
+        )
+        .build();
 
         let selection_second_alternate = SelectionPart::new(
             "p",
@@ -559,7 +561,8 @@ mod tests {
                 inner_html: false,
                 text_content: false,
             }),
-        );
+        )
+        .build();
 
         let selection_second = SelectionPart::new(
             "span",
@@ -567,7 +570,8 @@ mod tests {
                 inner_html: false,
                 text_content: false,
             }),
-        );
+        )
+        .build();
 
         let selection_second_extended = SelectionPart::new(
             "p",
@@ -575,7 +579,8 @@ mod tests {
                 inner_html: false,
                 text_content: false,
             }),
-        );
+        )
+        .build();
 
         let mut last_element = store
             .push(&selection_first, std::ptr::null_mut(), first)

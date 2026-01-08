@@ -1,7 +1,9 @@
 // This is to examine the performance cost of the Store
 
 use super::header::{QueryError, Store};
-use crate::{Attribute, Save, SelectionKind, SelectionPart, XHtmlElement, mut_prt_unchecked};
+use crate::{
+    Attribute, QuerySection, Save, SelectionKind, SelectionPart, XHtmlElement, mut_prt_unchecked,
+};
 
 pub struct FakeStore {}
 
@@ -16,7 +18,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> for FakeStore {
     }
     fn push<'key>(
         &mut self,
-        selection: &SelectionPart<'query>,
+        selection: &QuerySection<'query>,
         from: *mut Self::E,
         element: XHtmlElement<'html>,
     ) -> Result<*mut Self::E, QueryError<'key>> {
