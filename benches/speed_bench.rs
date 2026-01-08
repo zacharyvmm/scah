@@ -39,6 +39,23 @@ fn bench_comparison(c: &mut Criterion) {
         });
 
         group.bench_with_input(
+            BenchmarkId::new("onego_first_element", size),
+            &content,
+            |b, html| {
+                b.iter(|| {
+                    let queries = &[Query::first(black_box("div.article a"), Save::all()).build()];
+
+                    let res = parse(&html, queries);
+
+                    let element = res["div.article a"].value().unwrap();
+                    black_box(&element.attributes);
+                    black_box(&element.inner_html);
+                    black_box(&element.text_content);
+                })
+            },
+        );
+
+        group.bench_with_input(
             BenchmarkId::new("onego_no_store", size),
             &content,
             |b, html| {

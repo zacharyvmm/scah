@@ -23,9 +23,9 @@ fn main() {
 
     let duration = start.elapsed();
     println!(
-        "Time elapsed: {:?} ({}s), Tags Found: {}",
+        "Time elapsed: {:?} ({}s), Tags Found: {:#?}",
         duration,
         duration.as_secs_f64(),
-        map["a"].len().unwrap()
+        map["a"].value().unwrap()
     );
 }

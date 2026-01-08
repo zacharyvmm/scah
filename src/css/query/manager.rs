@@ -51,10 +51,21 @@ where
         position: &DocumentPosition,
         reader: &crate::utils::Reader<'html>,
         content: &crate::xhtml::text_content::TextContent,
-    ) {
-        for session in self.sessions.iter_mut() {
-            session.back(&mut self.store, xhtml_element, position, reader, content);
+    ) -> bool {
+        let mut remove_indices = vec![];
+        for (index, session) in self.sessions.iter_mut().enumerate() {
+            let early_exit = session.early_exit();
+            let back = session.back(&mut self.store, xhtml_element, position, reader, content);
+
+            if early_exit && back {
+                remove_indices.push(index);
+            }
         }
+        for idx in remove_indices {
+            self.sessions.remove(idx);
+        }
+
+        self.sessions.is_empty()
     }
 
     pub fn matches(self) -> S {

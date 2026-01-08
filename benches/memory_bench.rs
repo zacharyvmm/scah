@@ -31,6 +31,19 @@ fn bench_onego(html: String) {
 }
 
 #[library_benchmark]
+#[bench::onego_first_element(setup_html())]
+fn bench_onego_first_element(html: String) {
+    let queries = &[Query::first(black_box("div.article a"), Save::all()).build()];
+
+    let res = parse(&html, queries);
+
+    let element = res["div.article a"].value().unwrap();
+    black_box(&element.attributes);
+    black_box(&element.inner_html);
+    black_box(&element.text_content);
+}
+
+#[library_benchmark]
 #[bench::onego_no_store(setup_html())]
 fn bench_onego_no_store(html: String) {
     let queries = &[Query::all(black_box("div.article a"), Save::none()).build()];
@@ -92,7 +105,7 @@ fn bench_lexbor(html: String) {
 // Define a group that runs all three against each other
 library_benchmark_group!(
     name = comparison_group;
-    benchmarks = bench_onego, bench_onego_no_store, bench_tl, bench_scraper, bench_lexbor
+    benchmarks = bench_onego, bench_onego_first_element, bench_onego_no_store, bench_tl, bench_scraper, bench_lexbor
 );
 
 main!(library_benchmark_groups = comparison_group);

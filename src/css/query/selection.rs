@@ -242,6 +242,10 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         return Ok(());
     }
 
+    pub fn early_exit(&self) -> bool {
+        self.selection_tree.exit_at_section_end == self.fsm.position.section
+    }
+
     pub fn back<S>(
         &mut self,
         store: &mut S,
@@ -249,7 +253,8 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
         document_position: &DocumentPosition,
         reader: &Reader<'html>,
         content: &TextContent,
-    ) where
+    ) -> bool
+    where
         S: Store<'html, 'query, E = E>,
     {
         for i in (0..self.on_close_tag_events.len()).rev() {
@@ -309,6 +314,7 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
             fsm.move_backward(self.selection_tree);
             dbg_print!("FSM out of `{}`", element);
             dbg_print!("SHOULD INVALIDATED PARENT POINTER");
+            return true;
         } else if fsm.end {
             // jump backwards twice
             if fsm.try_back_parent(
@@ -328,6 +334,8 @@ impl<'html, 'query: 'html, E> SelectionRunner<'query, E> {
 
             //fsm.end = false;
         }
+
+        return false;
     }
 }
 

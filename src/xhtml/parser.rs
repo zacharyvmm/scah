@@ -67,6 +67,7 @@ where
 
         // TODO: register the start
         //reader.next_while(|c| c.is_whitespace());
+        let mut early_exit = false;
 
         match tag {
             XHtmlTag::Open(element) => {
@@ -93,13 +94,14 @@ where
             XHtmlTag::Close(closing_tag) => {
                 dbg_print!("closing: `{closing_tag}` ({})", self.position.element_depth);
 
-                self.selectors
-                    .back(closing_tag, &self.position, reader, &self.content);
+                early_exit =
+                    self.selectors
+                        .back(closing_tag, &self.position, reader, &self.content);
                 self.position.element_depth -= 1;
             }
         }
 
-        !reader.eof()
+        !early_exit && !reader.eof()
     }
 
     pub fn matches(self) -> S {

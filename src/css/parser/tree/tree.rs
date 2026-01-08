@@ -35,7 +35,7 @@ impl NextPosition {
 #[derive(Debug)]
 pub struct Query<'query> {
     list: Box<[QuerySection<'query>]>,
-    exit_at_section_end: usize,
+    pub(crate) exit_at_section_end: usize,
 }
 
 impl<'query> Query<'query> {
