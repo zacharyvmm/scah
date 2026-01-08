@@ -5,6 +5,8 @@ use scraper::{Html, Selector};
 use std::hint::black_box;
 use tl::ParserOptions;
 
+const QUERY:&str = black_box("a");
+
 fn generate_html(count: usize) -> String {
     let mut html = String::with_capacity(count * 100);
     html.push_str("<html><body><div id='content'>");
@@ -28,9 +30,9 @@ fn bench_comparison(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("onego", size), &content, |b, html| {
             b.iter(|| {
-                let queries = &[Query::all(black_box("div.article a"), Save::all()).build()];
+                let queries = &[Query::all(QUERY, Save::all()).build()];
                 let res = parse(html, queries);
-                for element in res["div.article a"].iter().unwrap() {
+                for element in res[QUERY].iter().unwrap() {
                     black_box(&element.attributes);
                     black_box(&element.inner_html);
                     black_box(&element.text_content);
@@ -43,7 +45,7 @@ fn bench_comparison(c: &mut Criterion) {
             &content,
             |b, html| {
                 b.iter(|| {
-                    let queries = &[Query::all(black_box("div.article a"), Save::none()).build()];
+                    let queries = &[Query::all(black_box(QUERY), Save::none()).build()];
                     let res = black_box(fake_parse(html, queries));
                 })
             },
@@ -54,11 +56,11 @@ fn bench_comparison(c: &mut Criterion) {
             &content,
             |b, html| {
                 b.iter(|| {
-                    let queries = &[Query::first(black_box("div.article a"), Save::all()).build()];
+                    let queries = &[Query::first(black_box(QUERY), Save::all()).build()];
 
                     let res = parse(&html, queries);
 
-                    let element = res["div.article a"].value().unwrap();
+                    let element = res[QUERY].value().unwrap();
                     black_box(&element.attributes);
                     black_box(&element.inner_html);
                     black_box(&element.text_content);
@@ -70,7 +72,7 @@ fn bench_comparison(c: &mut Criterion) {
             b.iter(|| {
                 let dom = tl::parse(html, ParserOptions::default()).unwrap();
                 let parser = dom.parser();
-                let query = dom.query_selector(black_box("div.article a")).unwrap();
+                let query = dom.query_selector(QUERY).unwrap();
 
                 for node_handle in query {
                     if let Some(node) = node_handle.get(parser) {
@@ -90,8 +92,7 @@ fn bench_comparison(c: &mut Criterion) {
                 b.iter(|| {
                     let dom = tl::parse(html, ParserOptions::default()).unwrap();
                     let parser = dom.parser();
-                    let query = dom.query_selector(black_box("div.article a")).unwrap();
-                    let node_handle = dom.query_selector("div.article a").unwrap().next().unwrap();
+                    let node_handle = dom.query_selector(QUERY).unwrap().next().unwrap();
 
                     if let Some(node) = node_handle.get(parser) {
                         let attributes = node.as_tag().unwrap().attributes();
@@ -106,7 +107,7 @@ fn bench_comparison(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("scraper", size), &content, |b, html| {
             b.iter(|| {
                 let document = Html::parse_document(html);
-                let selector = Selector::parse(black_box("div.article a")).unwrap();
+                let selector = Selector::parse(QUERY).unwrap();
 
                 for element in document.select(&selector) {
                     black_box(element.attr("href"));
@@ -122,7 +123,7 @@ fn bench_comparison(c: &mut Criterion) {
             |b, html| {
                 b.iter(|| {
                     let document = Html::parse_document(html);
-                    let selector = Selector::parse(black_box("div.article a")).unwrap();
+                    let selector = Selector::parse(QUERY).unwrap();
 
                     let element = document.select(&selector).next().unwrap();
                     black_box(element.attr("href"));
@@ -135,7 +136,7 @@ fn bench_comparison(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("lexbor", size), &content, |b, html| {
             b.iter(|| {
                 let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
-                let nodes = doc.select(black_box("div.article a"));
+                let nodes = doc.select(QUERY);
 
                 for node in nodes.iter() {
                     // TODO: I need to add attributes and innerhtml for lexbor
@@ -152,7 +153,7 @@ fn bench_comparison(c: &mut Criterion) {
             |b, html| {
                 b.iter(|| {
                     let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
-                    let nodes = doc.select(black_box("div.article a"));
+                    let nodes = doc.select(QUERY);
 
                     let node = nodes.iter().next().unwrap();
                     // TODO: I need to add attributes and innerhtml for lexbor

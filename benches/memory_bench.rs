@@ -1,10 +1,13 @@
 use gungraun::{LibraryBenchmarkConfig, library_benchmark, library_benchmark_group, main};
 use std::hint::black_box;
 
+const MAX_ELEMENT_LEN:usize = 1000;
+const QUERY:&str = black_box("a");
+
 fn setup_html() -> String {
     let mut html = String::new();
     html.push_str("<html><body><div id='content'>");
-    for i in 0..1000 {
+    for i in 0..MAX_ELEMENT_LEN {
         html.push_str(&format!(
             r#"<div class="article"><a href="/post/{}">Post {}</a></div>"#,
             i, i
@@ -19,11 +22,14 @@ use onego::{Query, Save, fake_parse, parse};
 #[library_benchmark]
 #[bench::onego(setup_html())]
 fn bench_onego(html: String) {
-    let queries = &[Query::all(black_box("div.article a"), Save::all()).build()];
+    let queries = &[Query::all(QUERY, Save::all()).build()];
 
     let res = parse(&html, queries);
+    let iterator = res[QUERY].iter().unwrap();
 
-    for element in res["div.article a"].iter().unwrap() {
+    //assert_eq!(iterator.count(), MAX_ELEMENT_LEN);
+
+    for element in iterator {
         black_box(&element.attributes);
         black_box(&element.inner_html);
         black_box(&element.text_content);
@@ -33,7 +39,7 @@ fn bench_onego(html: String) {
 #[library_benchmark]
 #[bench::onego_no_store(setup_html())]
 fn bench_onego_no_store(html: String) {
-    let queries = &[Query::all(black_box("div.article a"), Save::none()).build()];
+    let queries = &[Query::all(QUERY, Save::none()).build()];
 
     let res = black_box(fake_parse(&html, queries));
 }
@@ -41,11 +47,11 @@ fn bench_onego_no_store(html: String) {
 #[library_benchmark]
 #[bench::onego_first_element(setup_html())]
 fn bench_onego_first_element(html: String) {
-    let queries = &[Query::first(black_box("div.article a"), Save::all()).build()];
+    let queries = &[Query::first(QUERY, Save::all()).build()];
 
     let res = parse(&html, queries);
 
-    let element = res["div.article a"].value().unwrap();
+    let element = res[QUERY].value().unwrap();
     black_box(&element.attributes);
     black_box(&element.inner_html);
     black_box(&element.text_content);
@@ -57,9 +63,12 @@ use scraper::{Html, Selector};
 fn bench_scraper(html: String) {
     let document = Html::parse_document(&html);
 
-    let selector = Selector::parse(black_box("div.article a")).unwrap();
+    let selector = Selector::parse(QUERY).unwrap();
+    let iterator = document.select(&selector);
 
-    for element in document.select(&selector) {
+    // assert_eq!(iterator.count(), MAX_ELEMENT_LEN);
+
+    for element in iterator {
         black_box(element.inner_html());
         black_box(element.attr("href"));
         black_box(element.text());
@@ -71,7 +80,7 @@ fn bench_scraper(html: String) {
 fn bench_scraper_first_element(html: String) {
     let document = Html::parse_document(&html);
 
-    let selector = Selector::parse(black_box("div.article a")).unwrap();
+    let selector = Selector::parse(QUERY).unwrap();
 
     let element = document.select(&selector).next().unwrap();
     black_box(element.attr("href"));
@@ -87,7 +96,9 @@ fn bench_tl(html: String) {
     let dom = tl::parse(&html, ParserOptions::default()).unwrap();
     let parser = dom.parser();
 
-    let query = dom.query_selector(black_box("div.article a")).unwrap();
+    // tl doesn't work with complex queries `div.article a` returns a count of 0 while `a` works fine
+    let query = dom.query_selector(QUERY).unwrap();
+    //assert_eq!(query.count(), MAX_ELEMENT_LEN);
 
     for node_handle in query {
         if let Some(node) = node_handle.get(parser) {
@@ -105,7 +116,7 @@ fn bench_tl_first_element(html: String) {
     let dom = tl::parse(&html, ParserOptions::default()).unwrap();
     let parser = dom.parser();
 
-    let node_handle = dom.query_selector("div.article a").unwrap().next().unwrap();
+    let node_handle = dom.query_selector(QUERY).unwrap().next().unwrap();
 
     if let Some(node) = node_handle.get(parser) {
         let attributes = node.as_tag().unwrap().attributes();
@@ -120,9 +131,12 @@ use lexbor_css::HtmlDocument;
 #[bench::lexbor(setup_html())]
 fn bench_lexbor(html: String) {
     let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
-    let nodes = doc.select(black_box("div.article a"));
+    let nodes = doc.select(QUERY);
+    let iterator = nodes.iter();
 
-    for node in nodes.iter() {
+    //assert_eq!(iterator.count(), MAX_ELEMENT_LEN);
+
+    for node in iterator {
         black_box(node.text_content());
         black_box(node.inner_html());
         black_box(node.attributes());
@@ -133,7 +147,7 @@ fn bench_lexbor(html: String) {
 #[bench::lexbor_first_element(setup_html())]
 fn bench_lexbor_first_element(html: String) {
     let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
-    let nodes = doc.select(black_box("div.article a"));
+    let nodes = doc.select(QUERY);
 
     let node = nodes.iter().next().unwrap();
     black_box(node.text_content());
@@ -143,7 +157,7 @@ fn bench_lexbor_first_element(html: String) {
 
 library_benchmark_group!(
     name = comparison_group;
-    benchmarks = /*bench_onego, bench_onego_no_store, bench_onego_first_element,*/ bench_tl, /*bench_tl_first_element, bench_scraper, bench_scraper_first_element, bench_lexbor, bench_lexbor_first_element*/
+    benchmarks = bench_onego, bench_onego_no_store, bench_onego_first_element, bench_tl, bench_tl_first_element, bench_scraper, bench_scraper_first_element, bench_lexbor, bench_lexbor_first_element
 );
 
 main!(library_benchmark_groups = comparison_group);
