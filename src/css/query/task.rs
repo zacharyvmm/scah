@@ -285,16 +285,16 @@ impl<'query, 'html, E> Fsm<'query, 'html, E> for ScopedFsm<E> {
         self.position.section
     }
 
-    fn move_backward(&mut self, tree: &Query<'query>) {}
+    fn move_backward(&mut self, _tree: &Query<'query>) {}
     fn set_end_false(&mut self) {}
 }
 mod tests {
+    use super::{Fsm, FsmState};
     use crate::Query;
-    use crate::css::parser::tree::{Save, SelectionKind, SelectionPart};
+    use crate::css::parser::tree::{Save, SelectionPart};
     use crate::store::Element;
     use crate::utils::Reader;
-
-    use super::*;
+    use crate::xhtml::element::element::XHtmlElement;
 
     #[test]
     fn test_fsm_next_descendant() {

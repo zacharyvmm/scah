@@ -1,11 +1,8 @@
-use smallvec::SmallVec;
-
 use super::manager::DocumentPosition;
 use super::task::{FsmState, ScopedFsm};
 //use super::tree::MatchTree;
 use crate::css::Save;
-use crate::css::parser::lexer::Combinator;
-use crate::css::parser::tree::{NextPosition, Position, Query};
+use crate::css::parser::tree::Query;
 use crate::css::query::task::Fsm;
 use crate::{XHtmlElement, dbg_print};
 //use crate::store::rust::Element;
@@ -39,17 +36,15 @@ pub struct SelectionRunner<'a, 'query, E> {
     fsm: FsmState<E>,
     scoped_fsms: ScopedFsmVec<E>,
     on_close_tag_events: EndTagEventVec<E>,
-    root: *mut E,
 }
 
 impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
-    pub fn new(root: *mut E, selection_tree: &'a Query<'query>) -> Self {
+    pub fn new(selection_tree: &'a Query<'query>) -> Self {
         Self {
             selection_tree,
             fsm: FsmState::new(),
             scoped_fsms: Vec::new(),
             on_close_tag_events: Vec::new(),
-            root: root,
         }
     }
 
@@ -243,7 +238,11 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
     }
 
     pub fn early_exit(&self) -> bool {
-        self.selection_tree.exit_at_section_end == self.fsm.position.section
+        if let Some(early_exit_section) = self.selection_tree.exit_at_section_end {
+            return early_exit_section == self.fsm.position.section;
+        }
+
+        false
     }
 
     pub fn back<S>(
@@ -327,12 +326,8 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
 
                 dbg_print!("FSM out of `{}`", element);
                 dbg_print!("SHOULD INVALIDATED PARENT POINTER");
-            } else if self.selection_tree.is_save_point(&fsm.position) {
-                fsm.depths.pop();
-                dbg_print!("FSM out of `{}`", element);
+                return true;
             }
-
-            //fsm.end = false;
         }
 
         return false;
@@ -340,17 +335,15 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
 }
 
 mod tests {
-    use std::collections::HashMap;
-
+    use super::*;
     use crate::css::parser::element::QueryElement;
     use crate::css::parser::fsm::Fsm;
-    use crate::css::parser::tree::{Position, Save, SelectionKind, SelectionPart};
-    use crate::store::{Element, RustStore, SelectionValue, ValueKind};
+    use crate::css::parser::tree::{Position, Query, Save, SelectionPart};
+    use crate::store::{Element, RustStore, SelectionValue, Store, ValueKind};
     use crate::utils::Reader;
     use crate::{XHtmlElement, mut_prt_unchecked};
     use smallvec::smallvec;
-
-    use super::*;
+    use std::collections::HashMap;
 
     const NULL_POINTER: *mut crate::Element = std::ptr::null_mut::<crate::Element>();
 
@@ -360,7 +353,7 @@ mod tests {
 
         let mut store = RustStore::new(false);
 
-        let mut selection = SelectionRunner::new(store.root(), selection_tree);
+        let mut selection = SelectionRunner::new(selection_tree);
 
         let _ = selection.next(
             &mut store,
@@ -454,7 +447,7 @@ mod tests {
             .build();
 
         let mut store = RustStore::new(false);
-        let mut selection = SelectionRunner::new(store.root(), selection_tree);
+        let mut selection = SelectionRunner::new(selection_tree);
 
         let _ = selection.next(
             &mut store,
@@ -567,7 +560,7 @@ mod tests {
         let selection_tree = Query::first("div", Save::none()).build();
 
         let mut store = RustStore::new(false);
-        let mut selection = SelectionRunner::new(store.root(), &selection_tree);
+        let mut selection = SelectionRunner::new(&selection_tree);
 
         let reader = Reader::new("<div></div>");
         let mut content = TextContent::new();

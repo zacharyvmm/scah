@@ -1,9 +1,6 @@
-use smallvec::SmallVec;
-
 use super::selection::SelectionRunner;
 use crate::XHtmlElement;
 use crate::css::parser::tree::Query;
-//use crate::css::query::tree::MatchTree;
 use crate::store::Store;
 
 pub(crate) struct DocumentPosition {
@@ -12,7 +9,7 @@ pub(crate) struct DocumentPosition {
     pub element_depth: crate::css::query::DepthSize,
 }
 
-//type Runner<'query, E> = SmallVec<[SelectionRunner<'query, E>; 1]>;
+//type Runner<'query, E> = SmallVec<[SelectionRunner<'query, 'query, E>; 1]>;
 type Runner<'query, E> = Vec<SelectionRunner<'query, 'query, E>>;
 
 #[derive(Debug)]
@@ -28,12 +25,12 @@ impl<'html, 'query: 'html, S, E> FsmManager<'html, 'query, S>
 where
     S: Store<'html, 'query, E = E>,
 {
-    pub fn new(mut s: S, queries: &'query [Query<'query>]) -> Self {
+    pub fn new(s: S, queries: &'query [Query<'query>]) -> Self {
         // BUG: the memory moves afterwards
         Self {
             sessions: queries
                 .iter()
-                .map(|query| SelectionRunner::new(s.root(), query))
+                .map(|query| SelectionRunner::new(query))
                 .collect(),
             store: s,
         }
@@ -70,5 +67,23 @@ where
 
     pub fn matches(self) -> S {
         self.store
+    }
+}
+
+mod tests {
+    use super::super::selection::SelectionRunner;
+    use crate::Element;
+    use smallvec::SmallVec;
+
+    #[test]
+    fn runner_size() {
+        println!(
+            "Vec size: {}",
+            std::mem::size_of::<Vec<SelectionRunner<'static, 'static, Element>>>()
+        );
+        println!(
+            "Inline size: {}",
+            std::mem::size_of::<SmallVec<[SelectionRunner<'static, 'static, Element>; 1]>>()
+        );
     }
 }

@@ -39,6 +39,17 @@ fn bench_comparison(c: &mut Criterion) {
         });
 
         group.bench_with_input(
+            BenchmarkId::new("onego_no_store", size),
+            &content,
+            |b, html| {
+                b.iter(|| {
+                    let queries = &[Query::all(black_box("div.article a"), Save::none()).build()];
+                    let res = black_box(fake_parse(html, queries));
+                })
+            },
+        );
+
+        group.bench_with_input(
             BenchmarkId::new("onego_first_element", size),
             &content,
             |b, html| {
@@ -51,17 +62,6 @@ fn bench_comparison(c: &mut Criterion) {
                     black_box(&element.attributes);
                     black_box(&element.inner_html);
                     black_box(&element.text_content);
-                })
-            },
-        );
-
-        group.bench_with_input(
-            BenchmarkId::new("onego_no_store", size),
-            &content,
-            |b, html| {
-                b.iter(|| {
-                    let queries = &[Query::all(black_box("div.article a"), Save::none()).build()];
-                    let res = black_box(fake_parse(html, queries));
                 })
             },
         );
@@ -83,6 +83,26 @@ fn bench_comparison(c: &mut Criterion) {
             })
         });
 
+        group.bench_with_input(
+            BenchmarkId::new("tl_first_element", size),
+            &content,
+            |b, html| {
+                b.iter(|| {
+                    let dom = tl::parse(html, ParserOptions::default()).unwrap();
+                    let parser = dom.parser();
+                    let query = dom.query_selector(black_box("div.article a")).unwrap();
+                    let node_handle = dom.query_selector("div.article a").unwrap().next().unwrap();
+
+                    if let Some(node) = node_handle.get(parser) {
+                        let attributes = node.as_tag().unwrap().attributes();
+                        black_box(attributes.get("href"));
+                        black_box(node.inner_html(parser));
+                        black_box(node.inner_text(parser));
+                    }
+                })
+            },
+        );
+
         group.bench_with_input(BenchmarkId::new("scraper", size), &content, |b, html| {
             b.iter(|| {
                 let document = Html::parse_document(html);
@@ -95,6 +115,22 @@ fn bench_comparison(c: &mut Criterion) {
                 }
             })
         });
+
+        group.bench_with_input(
+            BenchmarkId::new("scraper_first_element", size),
+            &content,
+            |b, html| {
+                b.iter(|| {
+                    let document = Html::parse_document(html);
+                    let selector = Selector::parse(black_box("div.article a")).unwrap();
+
+                    let element = document.select(&selector).next().unwrap();
+                    black_box(element.attr("href"));
+                    black_box(element.inner_html());
+                    black_box(element.text().collect::<Vec<&str>>());
+                })
+            },
+        );
 
         group.bench_with_input(BenchmarkId::new("lexbor", size), &content, |b, html| {
             b.iter(|| {
@@ -109,6 +145,23 @@ fn bench_comparison(c: &mut Criterion) {
                 }
             })
         });
+
+        group.bench_with_input(
+            BenchmarkId::new("lexbor_first_element", size),
+            &content,
+            |b, html| {
+                b.iter(|| {
+                    let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
+                    let nodes = doc.select(black_box("div.article a"));
+
+                    let node = nodes.iter().next().unwrap();
+                    // TODO: I need to add attributes and innerhtml for lexbor
+                    black_box(node.text_content());
+                    black_box(node.inner_html());
+                    black_box(node.attributes());
+                })
+            },
+        );
     }
     group.finish();
 }

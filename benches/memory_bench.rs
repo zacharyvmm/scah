@@ -31,6 +31,14 @@ fn bench_onego(html: String) {
 }
 
 #[library_benchmark]
+#[bench::onego_no_store(setup_html())]
+fn bench_onego_no_store(html: String) {
+    let queries = &[Query::all(black_box("div.article a"), Save::none()).build()];
+
+    let res = black_box(fake_parse(&html, queries));
+}
+
+#[library_benchmark]
 #[bench::onego_first_element(setup_html())]
 fn bench_onego_first_element(html: String) {
     let queries = &[Query::first(black_box("div.article a"), Save::all()).build()];
@@ -43,16 +51,7 @@ fn bench_onego_first_element(html: String) {
     black_box(&element.text_content);
 }
 
-#[library_benchmark]
-#[bench::onego_no_store(setup_html())]
-fn bench_onego_no_store(html: String) {
-    let queries = &[Query::all(black_box("div.article a"), Save::none()).build()];
-
-    let res = black_box(fake_parse(&html, queries));
-}
-
 use scraper::{Html, Selector};
-
 #[library_benchmark]
 #[bench::scraper(setup_html())]
 fn bench_scraper(html: String) {
@@ -62,7 +61,22 @@ fn bench_scraper(html: String) {
 
     for element in document.select(&selector) {
         black_box(element.inner_html());
+        black_box(element.attr("href"));
+        black_box(element.text());
     }
+}
+
+#[library_benchmark]
+#[bench::scraper_first_element(setup_html())]
+fn bench_scraper_first_element(html: String) {
+    let document = Html::parse_document(&html);
+
+    let selector = Selector::parse(black_box("div.article a")).unwrap();
+
+    let element = document.select(&selector).next().unwrap();
+    black_box(element.attr("href"));
+    black_box(element.inner_html());
+    black_box(element.text().collect::<Vec<&str>>());
 }
 
 use tl::ParserOptions;
@@ -73,10 +87,8 @@ fn bench_tl(html: String) {
     let dom = tl::parse(&html, ParserOptions::default()).unwrap();
     let parser = dom.parser();
 
-    // 2. Query
     let query = dom.query_selector(black_box("div.article a")).unwrap();
 
-    // 3. Iterate
     for node_handle in query {
         if let Some(node) = node_handle.get(parser) {
             let attributes = node.as_tag().unwrap().attributes();
@@ -84,6 +96,22 @@ fn bench_tl(html: String) {
             black_box(node.inner_html(parser));
             black_box(node.inner_text(parser));
         }
+    }
+}
+
+#[library_benchmark]
+#[bench::tl_first_element(setup_html())]
+fn bench_tl_first_element(html: String) {
+    let dom = tl::parse(&html, ParserOptions::default()).unwrap();
+    let parser = dom.parser();
+
+    let node_handle = dom.query_selector("div.article a").unwrap().next().unwrap();
+
+    if let Some(node) = node_handle.get(parser) {
+        let attributes = node.as_tag().unwrap().attributes();
+        black_box(attributes.get("href"));
+        black_box(node.inner_html(parser));
+        black_box(node.inner_text(parser));
     }
 }
 
@@ -101,11 +129,21 @@ fn bench_lexbor(html: String) {
     }
 }
 
-// --- 5. GROUPING ---
-// Define a group that runs all three against each other
+#[library_benchmark]
+#[bench::lexbor_first_element(setup_html())]
+fn bench_lexbor_first_element(html: String) {
+    let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
+    let nodes = doc.select(black_box("div.article a"));
+
+    let node = nodes.iter().next().unwrap();
+    black_box(node.text_content());
+    black_box(node.inner_html());
+    black_box(node.attributes());
+}
+
 library_benchmark_group!(
     name = comparison_group;
-    benchmarks = bench_onego, bench_onego_first_element, bench_onego_no_store, bench_tl, bench_scraper, bench_lexbor
+    benchmarks = /*bench_onego, bench_onego_no_store, bench_onego_first_element,*/ bench_tl, /*bench_tl_first_element, bench_scraper, bench_scraper_first_element, bench_lexbor, bench_lexbor_first_element*/
 );
 
 main!(library_benchmark_groups = comparison_group);

@@ -673,4 +673,39 @@ mod tests {
             )])
         )
     }
+
+    const POSTS: &str = r#"<div class="article"><a href="/post/0"><b>Post</b> &lt;0&gt;</a></div><div class="article"><a href="/post/1"><b>Post</b> &lt;1&gt;</a></div>"#;
+
+    #[test]
+    fn test_first_anchor_in_list_selection() {
+        let mut reader = Reader::new(POSTS);
+
+        let queries = &[Query::first("div.article a", Save::all()).build()];
+
+        let manager = FsmManager::new(RustStore::new(false), queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let map = parser.matches().root.children;
+        assert_eq!(
+            map,
+            HashMap::from([(
+                "div.article a",
+                SelectionValue {
+                    kind: ValueKind::SingleItem,
+                    list: vec![Element {
+                        name: "a",
+                        id: None,
+                        class: None,
+                        attributes: vec![("href", Some("/post/0"))],
+                        inner_html: Some("<b>Post</b> &lt;0&gt;"),
+                        text_content: Some("Post &lt;0&gt;".to_string()),
+                        children: HashMap::new(),
+                    },],
+                }
+            )])
+        )
+    }
 }

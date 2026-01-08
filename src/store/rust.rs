@@ -1,4 +1,4 @@
-use crate::css::{SelectionKind, SelectionPart};
+use crate::css::SelectionKind;
 
 use super::header::{QueryError, Store};
 use crate::{QuerySection, dbg_print, mut_prt_unchecked};
@@ -353,7 +353,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
 #[cfg(test)]
 mod tests {
 
-    use crate::{XHtmlElement, css::Save, utils::Reader};
+    use crate::{XHtmlElement, css::Save, css::SelectionPart, utils::Reader};
 
     use super::*;
 

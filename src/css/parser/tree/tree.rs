@@ -1,6 +1,3 @@
-use smallvec::SmallVec;
-use smallvec::smallvec;
-
 use crate::Save;
 use crate::css::parser::tree::selection::QuerySection;
 
@@ -35,7 +32,7 @@ impl NextPosition {
 #[derive(Debug)]
 pub struct Query<'query> {
     list: Box<[QuerySection<'query>]>,
-    pub(crate) exit_at_section_end: usize,
+    pub(crate) exit_at_section_end: Option<usize>,
 }
 
 impl<'query> Query<'query> {
@@ -203,21 +200,12 @@ impl<'query> QueryBuilder<'query> {
         self
     }
 
-    fn exit_at_section(&self) -> usize {
+    fn exit_at_section(&self) -> Option<usize> {
         // returns the position in the selection tree where it can early exit
         // TODO: I should add a required flag for QuerySections, so that the first selection is nulled
         //  -> Basicly you can't return the first section without a perticular section behind added
         //  -> If you come back to the section without saving the required section,
         //      then you delete the saved data and you start over.
-
-        fn early_exist_when_done_with_section(section: &SelectionPart) -> bool {
-            match &section.kind {
-                SelectionKind::All(_) => true,
-
-                // This is it need's to find the </{element}> to get either inner_html or text_content
-                SelectionKind::First(save) => *save != Save::none(),
-            }
-        }
 
         fn search_for_single_exit_section(
             index: usize,
@@ -229,8 +217,15 @@ impl<'query> QueryBuilder<'query> {
                 return None;
             }
             let section = &list[index];
-            if early_exist_when_done_with_section(section) {
-                return None;
+            let stop_here = match &section.kind {
+                //BUG: you can only early exit when the ALL of them have been found, thus the parent must be awaited for
+                SelectionKind::All(_) => return None,
+
+                // This is it need's to find the </{element}> to get either inner_html or text_content
+                SelectionKind::First(save) => *save != Save::none(),
+            };
+            if stop_here {
+                return Some(index);
             }
 
             if section.children.is_empty() {
@@ -262,7 +257,7 @@ impl<'query> QueryBuilder<'query> {
 
         // BUG: I'm intentially adding this bug, because to actually solve this
         //  I would need to be able to check if all descandants in my fsm tree was saved to early exit
-        search_for_single_exit_section(0, &self.list).unwrap_or(0)
+        search_for_single_exit_section(0, &self.list)
     }
 
     pub fn build(self) -> Query<'query> {
@@ -527,7 +522,13 @@ mod tests {
     #[test]
     fn test_early_exit_basic() {
         let query = Query::first("section", Save::default()).build();
-        assert_eq!(query.exit_at_section_end, 0);
+        assert_eq!(query.exit_at_section_end, Some(0));
+    }
+
+    #[test]
+    fn test_failing_early_exit_basic() {
+        let query = Query::all("section", Save::default()).build();
+        assert_eq!(query.exit_at_section_end, None);
     }
 
     #[test]
@@ -565,13 +566,13 @@ mod tests {
                 ]
             })
             .build();
-        assert_eq!(query.exit_at_section_end, 1);
+        assert_eq!(query.exit_at_section_end, Some(1));
     }
 
     #[test]
     fn test_early_exit_big_list_deepest_exit() {
         let query = Query::first("section", Save::default()).build();
-        assert_eq!(query.exit_at_section_end, 0);
+        assert_eq!(query.exit_at_section_end, Some(0));
 
         let query = Query::first("section", Save::default())
             .first("div > p", Save::default())
@@ -581,13 +582,13 @@ mod tests {
             .first("> figcaption", Save::default())
             .first("a", Save::none())
             .build();
-        assert_eq!(query.exit_at_section_end, 6);
+        assert_eq!(query.exit_at_section_end, Some(6));
     }
 
     #[test]
     fn test_early_exit_big_tree_with_fully_valid_exits() {
         let query = Query::first("section", Save::default()).build();
-        assert_eq!(query.exit_at_section_end, 0);
+        assert_eq!(query.exit_at_section_end, Some(0));
 
         let query = Query::first("section", Save::default())
             .first("div > p", Save::default())
@@ -605,6 +606,6 @@ mod tests {
                 ]
             })
             .build();
-        assert_eq!(query.exit_at_section_end, 1);
+        assert_eq!(query.exit_at_section_end, Some(1));
     }
 }

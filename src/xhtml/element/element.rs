@@ -2,7 +2,6 @@ use super::pair::Pair;
 use super::tokenizer::ElementAttributeToken;
 use crate::utils::QuoteKind;
 use crate::utils::Reader;
-use smallvec::SmallVec;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Attribute<'a> {

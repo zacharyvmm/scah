@@ -107,17 +107,18 @@ mod tests {
         let queries = &[Query::first("a", Save::all()).build()];
         let map = parse(HTML, queries);
 
-        assert_eq!(map["a"].value()?, &Element {
-            name: "a",
-            class: None,
-            id: None,
-            attributes: vec![
-                ("href", Some("link1")),
-            ],
-            inner_html: Some("Link 1"),
-            text_content: Some("Link 1".to_string()),
-            children: HashMap::new(),
-        });
+        assert_eq!(
+            map["a"].value()?,
+            &Element {
+                name: "a",
+                class: None,
+                id: None,
+                attributes: vec![("href", Some("link1")),],
+                inner_html: Some("Link 1"),
+                text_content: Some("Link 1".to_string()),
+                children: HashMap::new(),
+            }
+        );
         println!("{:#?}", map);
         Ok(())
     }
