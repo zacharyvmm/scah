@@ -61,7 +61,8 @@ def parse_gazpacho(html:str, query:str):
 
 def parse_onego(html:str, query:str):
     assert(onego)
-    result = onego.parse(html, {query: {}})
+    q = onego.Query.all(query, onego.Save.all()).build()
+    result = onego.parse(html, q)
     try:
         return result['children'][query]
     except (KeyError, TypeError):
