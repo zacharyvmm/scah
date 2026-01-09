@@ -22,37 +22,14 @@ fn generate_html(count: usize) -> String {
 }
 
 fn bench_comparison(c: &mut Criterion) {
-    let mut group = c.benchmark_group("text_extraction_comparison");
+    let mut group = c.benchmark_group("simple_first_selection_comparison");
 
     for size in [100, 1_000, 10_000].iter() {
         let content = generate_html(*size);
         group.throughput(Throughput::Bytes(content.len() as u64));
 
-        group.bench_with_input(BenchmarkId::new("onego", size), &content, |b, html| {
-            b.iter(|| {
-                let queries = &[Query::all(QUERY, Save::all()).build()];
-                let res = parse(html, queries);
-                for element in res[QUERY].iter().unwrap() {
-                    black_box(&element.attributes);
-                    black_box(&element.inner_html);
-                    black_box(&element.text_content);
-                }
-            })
-        });
-
         group.bench_with_input(
-            BenchmarkId::new("onego_no_store", size),
-            &content,
-            |b, html| {
-                b.iter(|| {
-                    let queries = &[Query::all(black_box(QUERY), Save::none()).build()];
-                    let res = black_box(fake_parse(html, queries));
-                })
-            },
-        );
-
-        group.bench_with_input(
-            BenchmarkId::new("onego_first_element", size),
+            BenchmarkId::new("onego", size),
             &content,
             |b, html| {
                 b.iter(|| {
@@ -68,25 +45,8 @@ fn bench_comparison(c: &mut Criterion) {
             },
         );
 
-        group.bench_with_input(BenchmarkId::new("tl", size), &content, |b, html| {
-            b.iter(|| {
-                let dom = tl::parse(html, ParserOptions::default()).unwrap();
-                let parser = dom.parser();
-                let query = dom.query_selector(QUERY).unwrap();
-
-                for node_handle in query {
-                    if let Some(node) = node_handle.get(parser) {
-                        let attributes = node.as_tag().unwrap().attributes();
-                        black_box(attributes.get("href"));
-                        black_box(node.inner_html(parser));
-                        black_box(node.inner_text(parser));
-                    }
-                }
-            })
-        });
-
         group.bench_with_input(
-            BenchmarkId::new("tl_first_element", size),
+            BenchmarkId::new("tl", size),
             &content,
             |b, html| {
                 b.iter(|| {
@@ -104,21 +64,8 @@ fn bench_comparison(c: &mut Criterion) {
             },
         );
 
-        group.bench_with_input(BenchmarkId::new("scraper", size), &content, |b, html| {
-            b.iter(|| {
-                let document = Html::parse_document(html);
-                let selector = Selector::parse(QUERY).unwrap();
-
-                for element in document.select(&selector) {
-                    black_box(element.attr("href"));
-                    black_box(element.inner_html());
-                    black_box(element.text().collect::<Vec<&str>>());
-                }
-            })
-        });
-
         group.bench_with_input(
-            BenchmarkId::new("scraper_first_element", size),
+            BenchmarkId::new("scraper", size),
             &content,
             |b, html| {
                 b.iter(|| {
@@ -133,22 +80,8 @@ fn bench_comparison(c: &mut Criterion) {
             },
         );
 
-        group.bench_with_input(BenchmarkId::new("lexbor", size), &content, |b, html| {
-            b.iter(|| {
-                let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
-                let nodes = doc.select(QUERY);
-
-                for node in nodes.iter() {
-                    // TODO: I need to add attributes and innerhtml for lexbor
-                    black_box(node.text_content());
-                    black_box(node.inner_html());
-                    black_box(node.attributes());
-                }
-            })
-        });
-
         group.bench_with_input(
-            BenchmarkId::new("lexbor_first_element", size),
+            BenchmarkId::new("lexbor", size),
             &content,
             |b, html| {
                 b.iter(|| {

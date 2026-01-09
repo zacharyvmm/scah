@@ -22,11 +22,23 @@ tl = "0.7.8"
 pretty_assertions = "1.4.1"
 
 [[bench]]
-name = "memory_bench"
+name = "memory_bench_simple_all"
+path = "benches/simple/all/memory_bench.rs"
 harness = false
 
 [[bench]]
-name = "speed_bench"
+name = "memory_bench_simple_first"
+path = "benches/simple/first/memory_bench.rs"
+harness = false
+
+[[bench]]
+name = "speed_bench_simple_all"
+path = "benches/simple/all/speed_bench.rs"
+harness = false
+
+[[bench]]
+name = "speed_bench_simple_first"
+path = "benches/simple/first/speed_bench.rs"
 harness = false
 
 [profile.release]
