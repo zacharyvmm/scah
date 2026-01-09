@@ -1,8 +1,8 @@
 use gungraun::{LibraryBenchmarkConfig, library_benchmark, library_benchmark_group, main};
 use std::hint::black_box;
 
-const MAX_ELEMENT_LEN:usize = 1000;
-const QUERY:&str = black_box("a");
+const MAX_ELEMENT_LEN: usize = 1000;
+const QUERY: &str = black_box("a");
 
 fn setup_html() -> String {
     let mut html = String::new();
@@ -100,9 +100,27 @@ fn bench_lexbor(html: String) {
     }
 }
 
+use lol_html::{HtmlRewriter, Settings, element};
+#[library_benchmark]
+#[bench::lol_html(setup_html())]
+fn bench_lol_html(html: String) {
+    let mut rewriter = HtmlRewriter::new(
+        Settings {
+            element_content_handlers: vec![element!(QUERY, |el| {
+                black_box(el.get_attribute("href"));
+                Ok(())
+            })],
+            ..Settings::default()
+        },
+        |_: &[u8]| {},
+    );
+    rewriter.write(html.as_bytes()).unwrap();
+    rewriter.end().unwrap();
+}
+
 library_benchmark_group!(
     name = comparison_group;
-    benchmarks = bench_onego, bench_tl, bench_scraper, bench_lexbor
+    benchmarks = bench_onego, bench_tl, bench_scraper, bench_lexbor, bench_lol_html
 );
 
 main!(library_benchmark_groups = comparison_group);

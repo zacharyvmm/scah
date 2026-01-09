@@ -1,11 +1,12 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use lexbor_css::HtmlDocument;
+use lol_html::{HtmlRewriter, Settings, element};
 use onego::{Query, Save, fake_parse, parse};
 use scraper::{Html, Selector};
 use std::hint::black_box;
 use tl::ParserOptions;
 
-const QUERY:&str = black_box("a");
+const QUERY: &str = black_box("a");
 
 fn generate_html(count: usize) -> String {
     let mut html = String::with_capacity(count * 100);
@@ -92,6 +93,23 @@ fn bench_comparison(c: &mut Criterion) {
                     black_box(node.inner_html());
                     black_box(node.attributes());
                 }
+            })
+        });
+
+        group.bench_with_input(BenchmarkId::new("lol_html", size), &content, |b, html| {
+            b.iter(|| {
+                let mut rewriter = HtmlRewriter::new(
+                    Settings {
+                        element_content_handlers: vec![element!(QUERY, |el| {
+                            black_box(el.get_attribute("href"));
+                            Ok(())
+                        })],
+                        ..Settings::default()
+                    },
+                    |_: &[u8]| {},
+                );
+                rewriter.write(html.as_bytes()).unwrap();
+                rewriter.end().unwrap();
             })
         });
     }

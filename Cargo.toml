@@ -14,11 +14,16 @@ path = "src/lib.rs"
 smallvec = "1.15.1"
 
 [dev-dependencies]
+# Benchmarking Tools
 gungraun = "0.17"
 criterion = { version = "0.8.1", features = ["html_reports"] }
+
+# Competitor libraries
 lexbor_css = { git = "https://github.com/zacharyvmm/lexbor-rust-css-selection.git" }
 scraper = "0.25.0"
 tl = "0.7.8"
+lol_html = "2.7.1"
+
 pretty_assertions = "1.4.1"
 
 [[bench]]

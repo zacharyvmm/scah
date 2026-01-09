@@ -1,11 +1,26 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use lexbor_css::HtmlDocument;
+use lol_html::errors::RewritingError;
+use lol_html::{HtmlRewriter, Settings, element};
 use onego::{Query, Save, fake_parse, parse};
 use scraper::{Html, Selector};
+use std::error::Error;
+use std::fmt;
 use std::hint::black_box;
 use tl::ParserOptions;
 
-const QUERY:&str = black_box("a");
+#[derive(Debug)]
+struct StopParsing;
+
+impl fmt::Display for StopParsing {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Stop parsing")
+    }
+}
+
+impl Error for StopParsing {}
+
+const QUERY: &str = black_box("a");
 
 fn generate_html(count: usize) -> String {
     let mut html = String::with_capacity(count * 100);
@@ -28,74 +43,87 @@ fn bench_comparison(c: &mut Criterion) {
         let content = generate_html(*size);
         group.throughput(Throughput::Bytes(content.len() as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("onego", size),
-            &content,
-            |b, html| {
-                b.iter(|| {
-                    let queries = &[Query::first(black_box(QUERY), Save::all()).build()];
+        group.bench_with_input(BenchmarkId::new("onego", size), &content, |b, html| {
+            b.iter(|| {
+                let queries = &[Query::first(black_box(QUERY), Save::all()).build()];
 
-                    let res = parse(&html, queries);
+                let res = parse(&html, queries);
 
-                    let element = res[QUERY].value().unwrap();
-                    black_box(&element.attributes);
-                    black_box(&element.inner_html);
-                    black_box(&element.text_content);
-                })
-            },
-        );
+                let element = res[QUERY].value().unwrap();
+                black_box(&element.attributes);
+                black_box(&element.inner_html);
+                black_box(&element.text_content);
+            })
+        });
 
-        group.bench_with_input(
-            BenchmarkId::new("tl", size),
-            &content,
-            |b, html| {
-                b.iter(|| {
-                    let dom = tl::parse(html, ParserOptions::default()).unwrap();
-                    let parser = dom.parser();
-                    let node_handle = dom.query_selector(QUERY).unwrap().next().unwrap();
+        group.bench_with_input(BenchmarkId::new("tl", size), &content, |b, html| {
+            b.iter(|| {
+                let dom = tl::parse(html, ParserOptions::default()).unwrap();
+                let parser = dom.parser();
+                let node_handle = dom.query_selector(QUERY).unwrap().next().unwrap();
 
-                    if let Some(node) = node_handle.get(parser) {
-                        let attributes = node.as_tag().unwrap().attributes();
-                        black_box(attributes.get("href"));
-                        black_box(node.inner_html(parser));
-                        black_box(node.inner_text(parser));
+                if let Some(node) = node_handle.get(parser) {
+                    let attributes = node.as_tag().unwrap().attributes();
+                    black_box(attributes.get("href"));
+                    black_box(node.inner_html(parser));
+                    black_box(node.inner_text(parser));
+                }
+            })
+        });
+
+        group.bench_with_input(BenchmarkId::new("scraper", size), &content, |b, html| {
+            b.iter(|| {
+                let document = Html::parse_document(html);
+                let selector = Selector::parse(QUERY).unwrap();
+
+                let element = document.select(&selector).next().unwrap();
+                black_box(element.attr("href"));
+                black_box(element.inner_html());
+                black_box(element.text().collect::<Vec<&str>>());
+            })
+        });
+
+        group.bench_with_input(BenchmarkId::new("lexbor", size), &content, |b, html| {
+            b.iter(|| {
+                let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
+                let nodes = doc.select(QUERY);
+
+                let node = nodes.iter().next().unwrap();
+                // TODO: I need to add attributes and innerhtml for lexbor
+                black_box(node.text_content());
+                black_box(node.inner_html());
+                black_box(node.attributes());
+            })
+        });
+
+        group.bench_with_input(BenchmarkId::new("lol_html", size), &content, |b, html| {
+            b.iter(|| {
+                let mut rewriter = HtmlRewriter::new(
+                    Settings {
+                        element_content_handlers: vec![element!(QUERY, |el| {
+                            black_box(el.get_attribute("href"));
+                            Err(Box::new(StopParsing))
+                        })],
+                        ..Settings::default()
+                    },
+                    |_: &[u8]| {},
+                );
+                let res = rewriter.write(html.as_bytes());
+                match res {
+                    Err(RewritingError::ContentHandlerError(e)) => {
+                        if e.downcast_ref::<StopParsing>().is_some() {
+                            return;
+                        }
+                        panic!("Unexpected error: {}", e);
                     }
-                })
-            },
-        );
-
-        group.bench_with_input(
-            BenchmarkId::new("scraper", size),
-            &content,
-            |b, html| {
-                b.iter(|| {
-                    let document = Html::parse_document(html);
-                    let selector = Selector::parse(QUERY).unwrap();
-
-                    let element = document.select(&selector).next().unwrap();
-                    black_box(element.attr("href"));
-                    black_box(element.inner_html());
-                    black_box(element.text().collect::<Vec<&str>>());
-                })
-            },
-        );
-
-        group.bench_with_input(
-            BenchmarkId::new("lexbor", size),
-            &content,
-            |b, html| {
-                b.iter(|| {
-                    let doc = HtmlDocument::new(html.as_str()).expect("Failed to parse HTML");
-                    let nodes = doc.select(QUERY);
-
-                    let node = nodes.iter().next().unwrap();
-                    // TODO: I need to add attributes and innerhtml for lexbor
-                    black_box(node.text_content());
-                    black_box(node.inner_html());
-                    black_box(node.attributes());
-                })
-            },
-        );
+                    Ok(_) => {
+                        // If we didn't find anything, we must call end() to finish
+                        rewriter.end().unwrap();
+                    }
+                    Err(e) => panic!("Unexpected rewriting error: {}", e),
+                }
+            })
+        });
     }
     group.finish();
 }
