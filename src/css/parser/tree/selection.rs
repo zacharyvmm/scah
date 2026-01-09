@@ -2,7 +2,7 @@ use super::super::fsm::Fsm;
 use super::super::lexer::Lexer;
 use crate::utils::Reader;
 
-#[derive(PartialEq, Debug, Default)]
+#[derive(PartialEq, Debug, Default, Clone, Copy)]
 pub struct Save {
     // attributes: bool, // If your saving this has to be on
     pub inner_html: bool,
@@ -39,7 +39,7 @@ impl Save {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum SelectionKind {
     First(Save),
     All(Save),
@@ -54,14 +54,13 @@ impl SelectionKind {
     }
 }
 
-#[derive(PartialEq, Debug)]
-pub struct SelectionPart<'query> {
-    pub source: &'query str,
-    pub(crate) fsms: Vec<Fsm<'query>>,
+#[derive(PartialEq, Debug, Clone)]
+pub struct SelectionPart<S> {
+    pub source: S,
     pub kind: SelectionKind,
 
-    pub(crate) parent: Option<usize>, // real index
-    pub(crate) children: Vec<usize>,  // offset
+    pub parent: Option<usize>, // real index
+    pub children: Vec<usize>,  // offset
 }
 
 #[derive(Debug)]
@@ -80,32 +79,28 @@ impl<'query> QuerySection<'query> {
     }
 }
 
-impl<'query> SelectionPart<'query> {
-    pub fn new(query: &'query str, mode: SelectionKind) -> Self {
-        let reader = &mut Reader::new(query);
-        let mut selection = Self {
+impl<S> SelectionPart<S> {
+    pub fn new(query: S, mode: SelectionKind) -> Self {
+        Self {
             source: query,
-            fsms: Vec::new(),
             kind: mode,
             parent: None,
             children: Vec::new(),
-        };
+        }
+    }
+}
 
+impl<'query> SelectionPart<&'query str> {
+    pub fn build(self) -> QuerySection<'query> {
+        let reader = &mut Reader::new(self.source);
+        let mut fsms = Vec::new();
         while let Some((combinator, element)) = Lexer::next(reader) {
-            selection.fsms.push(Fsm::new(combinator, element));
+            fsms.push(Fsm::new(combinator, element));
         }
 
-        selection
-    }
-
-    pub fn len(&self) -> usize {
-        self.fsms.len()
-    }
-
-    pub fn build(self) -> QuerySection<'query> {
         QuerySection {
             source: self.source,
-            fsms: self.fsms.into_boxed_slice(),
+            fsms: fsms.into_boxed_slice(),
             kind: self.kind,
             parent: self.parent,
             children: self.children.into_boxed_slice(),

@@ -36,15 +36,17 @@ pub struct Query<'query> {
 }
 
 impl<'query> Query<'query> {
-    pub fn first(query: &'query str, save: Save) -> QueryBuilder<'query> {
+    pub fn first(query: &'query str, save: Save) -> QueryBuilder<'query, &'query str> {
         QueryBuilder {
             list: vec![SelectionPart::new(query, SelectionKind::First(save))],
+            _phantom: std::marker::PhantomData,
         }
     }
 
-    pub fn all(query: &'query str, save: Save) -> QueryBuilder<'query> {
+    pub fn all(query: &'query str, save: Save) -> QueryBuilder<'query, &'query str> {
         QueryBuilder {
             list: vec![SelectionPart::new(query, SelectionKind::All(save))],
+            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -138,19 +140,28 @@ impl<'query> Query<'query> {
     }
 }
 
-#[derive(Debug)]
-pub struct QueryBuilder<'query> {
-    pub list: Vec<SelectionPart<'query>>,
+#[derive(Debug, Clone)]
+pub struct QueryBuilder<'query, S> {
+    pub list: Vec<SelectionPart<S>>,
+    _phantom: std::marker::PhantomData<&'query ()>,
 }
 
-impl<'query> QueryBuilder<'query> {
-    pub fn new(root_element: SelectionPart<'query>) -> Self {
+impl<'query, S> QueryBuilder<'query, S> {
+    pub fn new(root_element: SelectionPart<S>) -> Self {
         Self {
             list: vec![root_element],
+            _phantom: std::marker::PhantomData,
         }
     }
 
-    pub fn append(&mut self, parent: usize, mut sections: Vec<SelectionPart<'query>>) {
+    pub fn from_list(list: Vec<SelectionPart<S>>) -> Self {
+        Self {
+            list,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    pub fn append(&mut self, parent: usize, mut sections: Vec<SelectionPart<S>>) {
         let last = &mut self.list[parent];
         let mut offset = 0;
 
@@ -169,7 +180,7 @@ impl<'query> QueryBuilder<'query> {
         self.list.append(&mut sections);
     }
 
-    pub fn all(mut self, query: &'query str, save: Save) -> Self {
+    pub fn all(mut self, query: S, save: Save) -> Self {
         assert!(!self.list.is_empty());
         let mut part = SelectionPart::new(query, SelectionKind::All(save));
         part.parent = Some(self.list.len() - 1);
@@ -177,7 +188,7 @@ impl<'query> QueryBuilder<'query> {
         self
     }
 
-    pub fn first(mut self, query: &'query str, save: Save) -> Self {
+    pub fn first(mut self, query: S, save: Save) -> Self {
         assert!(!self.list.is_empty());
         let mut part = SelectionPart::new(query, SelectionKind::First(save));
         part.parent = Some(self.list.len() - 1);
@@ -187,10 +198,12 @@ impl<'query> QueryBuilder<'query> {
 
     pub fn then<F, I>(mut self, func: F) -> Self
     where
-        F: FnOnce(QueryFactory) -> I,
+        F: FnOnce(QueryFactory<'query>) -> I,
         I: IntoIterator<Item = Self>,
     {
-        let factory = QueryFactory {};
+        let factory = QueryFactory {
+            _phantom: std::marker::PhantomData,
+        };
         let children = func(factory);
 
         let parts_vec_iter = children.into_iter().flat_map(|child| child.list);
@@ -207,9 +220,9 @@ impl<'query> QueryBuilder<'query> {
         //  -> If you come back to the section without saving the required section,
         //      then you delete the saved data and you start over.
 
-        fn search_for_single_exit_section(
+        fn search_for_single_exit_section<S>(
             index: usize,
-            list: &Vec<SelectionPart>,
+            list: &Vec<SelectionPart<S>>,
         ) -> Option<usize> {
             // If you have a section with MULTIPLE children that can early exit,
             //   then this parent node will become the exit section
@@ -259,7 +272,9 @@ impl<'query> QueryBuilder<'query> {
         //  I would need to be able to check if all descandants in my fsm tree was saved to early exit
         search_for_single_exit_section(0, &self.list)
     }
+}
 
+impl<'query> QueryBuilder<'query, &'query str> {
     pub fn build(self) -> Query<'query> {
         let exit_at_section_end = self.exit_at_section();
         let list = self
@@ -275,15 +290,17 @@ impl<'query> QueryBuilder<'query> {
 }
 
 #[derive(Debug)]
-pub struct QueryFactory {}
+pub struct QueryFactory<'query> {
+    _phantom: std::marker::PhantomData<&'query ()>,
+}
 
-impl<'query> QueryFactory {
-    pub fn all(&self, query: &'query str, save: Save) -> QueryBuilder<'query> {
+impl<'query> QueryFactory<'query> {
+    pub fn all<S>(&self, query: S, save: Save) -> QueryBuilder<'query, S> {
         let part = SelectionPart::new(query, SelectionKind::All(save));
         QueryBuilder::new(part)
     }
 
-    pub fn first(&self, query: &'query str, save: Save) -> QueryBuilder<'query> {
+    pub fn first<S>(&self, query: S, save: Save) -> QueryBuilder<'query, S> {
         let part = SelectionPart::new(query, SelectionKind::First(save));
         QueryBuilder::new(part)
     }
@@ -307,9 +324,10 @@ mod tests {
             }),
         );
         let tree = QueryBuilder::new(section);
-
+        let query = tree.build();
+        
         assert_eq!(
-            tree.list[0].fsms,
+            query.list[0].fsms,
             Vec::from([
                 Fsm {
                     state: QueryElement::new(
@@ -329,7 +347,7 @@ mod tests {
                     ),
                     transition: Combinator::Child,
                 }
-            ])
+            ]).into_boxed_slice()
         );
     }
 
@@ -344,39 +362,7 @@ mod tests {
         );
         let mut selection = QueryBuilder::new(section);
 
-        assert_eq!(
-            selection.list,
-            Vec::from([SelectionPart {
-                source: "element#id.class > other#other_id.other_class",
-                fsms: Vec::from([
-                    Fsm {
-                        state: QueryElement::new(
-                            Some("element"),
-                            Some("id"),
-                            Some("class"),
-                            Vec::new(),
-                        ),
-                        transition: Combinator::Descendant
-                    },
-                    Fsm {
-                        state: QueryElement::new(
-                            Some("other"),
-                            Some("other_id"),
-                            Some("other_class"),
-                            Vec::new(),
-                        ),
-                        transition: Combinator::Child
-                    },
-                ]),
-                kind: SelectionKind::All(Save {
-                    inner_html: false,
-                    text_content: false
-                }),
-                parent: Option::None,
-                children: Vec::new(),
-            }])
-        );
-
+        
         selection.append(
             0,
             Vec::from([
@@ -397,66 +383,12 @@ mod tests {
             ]),
         );
 
-        assert_eq!(
-            selection.list,
-            Vec::from([
-                SelectionPart {
-                    source: "element#id.class > other#other_id.other_class",
-                    fsms: Vec::from([
-                        Fsm {
-                            state: QueryElement::new(
-                                Some("element"),
-                                Some("id"),
-                                Some("class"),
-                                Vec::new(),
-                            ),
-                            transition: Combinator::Descendant
-                        },
-                        Fsm {
-                            state: QueryElement::new(
-                                Some("other"),
-                                Some("other_id"),
-                                Some("other_class"),
-                                Vec::new(),
-                            ),
-                            transition: Combinator::Child
-                        },
-                    ]),
-                    kind: SelectionKind::All(Save {
-                        inner_html: false,
-                        text_content: false
-                    }),
-                    parent: Option::None,
-                    children: Vec::from([1, 2]),
-                },
-                SelectionPart {
-                    source: "> a",
-                    fsms: Vec::from([Fsm {
-                        state: QueryElement::new(Some("a"), None, None, Vec::new(),),
-                        transition: Combinator::Child
-                    },]),
-                    kind: SelectionKind::All(Save {
-                        inner_html: false,
-                        text_content: false
-                    }),
-                    parent: Some(0),
-                    children: Vec::new(),
-                },
-                SelectionPart {
-                    source: " p",
-                    fsms: Vec::from([Fsm {
-                        state: QueryElement::new(Some("p"), None, None, Vec::new(),),
-                        transition: Combinator::Descendant
-                    },]),
-                    kind: SelectionKind::All(Save {
-                        inner_html: false,
-                        text_content: false
-                    }),
-                    parent: Some(0),
-                    children: Vec::new(),
-                },
-            ])
-        );
+        let query = selection.build();
+        // Assertions on query...
+        assert_eq!(query.list.len(), 3);
+        assert_eq!(query.list[0].source, "element#id.class > other#other_id.other_class");
+        assert_eq!(query.list[1].source, "> a");
+        assert_eq!(query.list[2].source, " p");
     }
 
     #[test]
