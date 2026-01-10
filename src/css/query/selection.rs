@@ -4,6 +4,7 @@ use super::task::{FsmState, ScopedFsm};
 use crate::css::Save;
 use crate::css::parser::tree::Query;
 use crate::css::query::task::Fsm;
+use crate::store::reserve::Reserve;
 use crate::{XHtmlElement, dbg_print};
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
@@ -13,7 +14,7 @@ use crate::xhtml::text_content::TextContent;
 type StartIdx = Option<usize>;
 
 #[derive(Debug)]
-struct EndTagSaveContent<E> {
+pub(crate) struct EndTagSaveContent<E> {
     element: *mut E,
     on_depth: super::DepthSize,
     inner_html: StartIdx,
@@ -32,10 +33,10 @@ type EndTagEventVec<E> = Vec<EndTagSaveContent<E>>;
 
 #[derive(Debug)]
 pub struct SelectionRunner<'a, 'query, E> {
-    selection_tree: &'a Query<'query>,
-    fsm: FsmState<E>,
-    scoped_fsms: ScopedFsmVec<E>,
-    on_close_tag_events: EndTagEventVec<E>,
+    pub(crate) selection_tree: &'a Query<'query>,
+    pub(crate) fsm: FsmState<E>,
+    pub(crate) scoped_fsms: ScopedFsmVec<E>,
+    pub(crate) on_close_tag_events: EndTagEventVec<E>,
 }
 
 impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
@@ -66,7 +67,7 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
         }
     }
 
-    fn save_element<S>(
+    pub fn save_element<S>(
         on_close_tag_events: &mut EndTagEventVec<E>,
         tree: &Query<'query>,
         store: &mut S,
@@ -81,7 +82,8 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
     where
         S: Store<'html, 'query, E = E>,
     {
-        debug_assert!(fsm.is_save_point(tree));
+        // I can't check for this anymore, since the save is not instant and the fsm position is moved afterwards
+        //debug_assert!(fsm.is_save_point(tree));
 
         let section = tree.get_section(fsm.get_section());
 
@@ -116,14 +118,12 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
         Ok(())
     }
 
-    pub fn next<S>(
+    pub fn next(
         &mut self,
-        store: &mut S,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
+        reserve: &mut Reserve<E>,
     ) -> Result<(), QueryError<'_>>
-    where
-        S: Store<'html, 'query, E = E>,
     {
         // STEP 1: check scoped tasks
         let mut new_scoped_fsms: ScopedFsmVec<E> = Vec::new();
@@ -156,14 +156,18 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
             let mut new_scoped_fsm = fsm.clone();
 
             if new_scoped_fsm.is_save_point(self.selection_tree) {
-                Self::save_element(
-                    &mut self.on_close_tag_events,
-                    self.selection_tree,
-                    store,
-                    element.clone(),
-                    document_position,
-                    &mut new_scoped_fsm,
-                )?;
+                // Self::save_element(
+                //     &mut self.on_close_tag_events,
+                //     self.selection_tree,
+                //     store,
+                //     element.clone(),
+                //     document_position,
+                //     &mut new_scoped_fsm,
+                // )?;
+                
+                let position = self.scoped_fsms.len() - 1 + new_scoped_fsms.len();
+
+                reserve.push(new_scoped_fsm.parent, Some(position));
                 dbg_print!("Scoped FSM ({i}) Saved `{:?}`", element);
             }
 
@@ -177,6 +181,7 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
             }
 
             new_scoped_fsms.push(new_scoped_fsm);
+
 
             dbg_print!(">> Scoped FSM's: {:#?}", self.scoped_fsms)
         }
@@ -208,14 +213,16 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
 
             if fsm.is_save_point(self.selection_tree) {
                 fsm.end = true;
-                Self::save_element(
-                    &mut self.on_close_tag_events,
-                    self.selection_tree,
-                    store,
-                    element.clone(),
-                    document_position,
-                    fsm,
-                )?;
+                // Self::save_element(
+                //     &mut self.on_close_tag_events,
+                //     self.selection_tree,
+                //     store,
+                //     element.clone(),
+                //     document_position,
+                //     fsm,
+                // )?;
+
+                reserve.push(fsm.parent, None);
 
                 dbg_print!("FSM Saved `{:?}`", element);
             }
@@ -339,7 +346,7 @@ mod tests {
     use crate::css::parser::element::QueryElement;
     use crate::css::parser::fsm::Fsm;
     use crate::css::parser::tree::{Position, Query, Save, SelectionPart};
-    use crate::store::{Element, RustStore, SelectionValue, Store, ValueKind};
+    use crate::store::{Element, RustStore, SelectionValue, Store, ValueKind, reserve};
     use crate::utils::Reader;
     use crate::{XHtmlElement, mut_prt_unchecked};
     use smallvec::smallvec;
@@ -352,11 +359,11 @@ mod tests {
         let selection_tree = &Query::all("div a", Save::none()).build();
 
         let mut store = RustStore::new(false);
+        let mut reserve = Reserve::new();
 
         let mut selection = SelectionRunner::new(selection_tree);
 
         let _ = selection.next(
-            &mut store,
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -368,6 +375,7 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 0,
             },
+            &mut reserve
         );
 
         assert_eq!(store.root.children, HashMap::new());
@@ -392,7 +400,6 @@ mod tests {
         );
 
         let _ = selection.next(
-            &mut store,
             &XHtmlElement {
                 name: "a",
                 id: None,
@@ -404,6 +411,7 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 1,
             },
+            &mut reserve
         );
 
         assert_eq!(
@@ -447,10 +455,10 @@ mod tests {
             .build();
 
         let mut store = RustStore::new(false);
+        let mut reserve = Reserve::new();
         let mut selection = SelectionRunner::new(selection_tree);
 
         let _ = selection.next(
-            &mut store,
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -462,6 +470,7 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 0,
             },
+            &mut reserve
         );
 
         assert_eq!(store.root.children, HashMap::new());
@@ -487,7 +496,6 @@ mod tests {
         );
 
         let _ = selection.next(
-            &mut store,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -499,6 +507,7 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 1,
             },
+            &mut reserve
         );
 
         assert_eq!(
@@ -560,13 +569,13 @@ mod tests {
         let selection_tree = Query::first("div", Save::none()).build();
 
         let mut store = RustStore::new(false);
+        let mut reserve = Reserve::new();
         let mut selection = SelectionRunner::new(&selection_tree);
 
         let reader = Reader::new("<div></div>");
         let mut content = TextContent::new();
 
         let _ = selection.next(
-            &mut store,
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -578,6 +587,7 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 0,
             },
+            &mut reserve
         );
         content.set_start(4);
         println!("{:?}", store);

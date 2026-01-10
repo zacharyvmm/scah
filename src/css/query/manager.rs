@@ -1,6 +1,7 @@
 use super::selection::SelectionRunner;
 use crate::XHtmlElement;
 use crate::css::parser::tree::Query;
+use crate::store::reserve::{Reserve, Fsm};
 use crate::store::Store;
 
 pub(crate) struct DocumentPosition {
@@ -18,7 +19,8 @@ where
     S: Store<'html, 'query>,
 {
     store: S,
-    sessions: Runner<'query, S::E>,
+    runners: Runner<'query, S::E>,
+    reserve: Reserve<S::E>,
 }
 
 impl<'html, 'query: 'html, S, E> FsmManager<'html, 'query, S>
@@ -28,18 +30,61 @@ where
     pub fn new(s: S, queries: &'query [Query<'query>]) -> Self {
         // BUG: the memory moves afterwards
         Self {
-            sessions: queries
+            runners: queries
                 .iter()
                 .map(|query| SelectionRunner::new(query))
                 .collect(),
             store: s,
+            reserve: Reserve::new(),
         }
     }
 
+    fn save_element_from_reservation(&mut self, reservation: Fsm<E>, xhtml_element: XHtmlElement<'html>, position: &DocumentPosition) {
+        let runner = &mut self.runners[reservation.section];
+
+        let _ = match reservation.index {
+            None => SelectionRunner::save_element(
+                &mut runner.on_close_tag_events,
+                runner.selection_tree,
+                &mut self.store,
+                xhtml_element,
+                position,
+                &mut runner.fsm,
+            ),
+            Some(i) => SelectionRunner::save_element(
+                &mut runner.on_close_tag_events,
+                runner.selection_tree,
+                &mut self.store,
+                xhtml_element,
+                position,
+                &mut runner.scoped_fsms[i],
+            ),
+        };
+    }
+
     pub fn next(&mut self, xhtml_element: XHtmlElement<'html>, position: &DocumentPosition) {
-        for session in self.sessions.iter_mut() {
-            let _ = session.next(&mut self.store, &xhtml_element, position);
+        for (index, session) in self.runners.iter_mut().enumerate() {
+            self.reserve.set_section(index);
+            let _ = session.next(&xhtml_element, position, &mut self.reserve);
         }
+
+
+        match self.reserve.list.len() {
+            0 => {},
+            1 => {
+                let reservation = self.reserve.list.pop().unwrap();
+                self.save_element_from_reservation(reservation, xhtml_element, position);
+            },
+            len => {
+                for _ in 0..len-2 {
+                    let reservation = self.reserve.list.pop().unwrap();
+                    self.save_element_from_reservation(reservation, xhtml_element.clone(), position);
+                }
+
+                let reservation = self.reserve.list.pop().unwrap();
+                self.save_element_from_reservation(reservation, xhtml_element, position);
+            }
+        };
     }
 
     pub fn back(
@@ -50,7 +95,7 @@ where
         content: &crate::xhtml::text_content::TextContent,
     ) -> bool {
         let mut remove_indices = vec![];
-        for (index, session) in self.sessions.iter_mut().enumerate() {
+        for (index, session) in self.runners.iter_mut().enumerate() {
             let early_exit = session.early_exit();
             let back = session.back(&mut self.store, xhtml_element, position, reader, content);
 
@@ -59,10 +104,10 @@ where
             }
         }
         for idx in remove_indices {
-            self.sessions.remove(idx);
+            self.runners.remove(idx);
         }
 
-        self.sessions.is_empty()
+        self.runners.is_empty()
     }
 
     pub fn matches(self) -> S {

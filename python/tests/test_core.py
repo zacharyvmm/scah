@@ -35,10 +35,10 @@ def test_nested_selection():
     assert anchor['textContent'] == "World"
 
 def test_branching_selection():
-    def branch(x):
-        return [x.all('a', Save.all()), x.all('p', Save.all())]
-
-    q = Query.all("#world", Save.all()).then(branch).build()
+    q = Query.all("#world", Save.all())\
+        .then(lambda world: [
+            world.all('a', Save.all()), world.all('p', Save.all())
+        ]).build()
     result = parse(HTML, q)
     
     assert "#world" in result
