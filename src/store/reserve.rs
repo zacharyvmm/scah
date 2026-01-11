@@ -25,14 +25,16 @@ impl Reserve {
     }
 
     pub fn push(&mut self, parent: usize, index: Option<usize>) {
-        if !self.list.iter().any(|i| i.parent == parent) {
-            let fsm = Fsm {
-                parent,
-                section: self.section,
-                index,
-            };
-            self.list.push(fsm);
+        if self.list.iter().any(|i| i.parent == parent) {
+            return;
         }
+
+        let fsm = Fsm {
+            parent,
+            section: self.section,
+            index,
+        };
+        self.list.push(fsm);
     }
 
     #[inline]
