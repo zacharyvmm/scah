@@ -26,6 +26,6 @@ fn main() {
         "Time elapsed: {:?} ({}s), Tags Found: {:#?}",
         duration,
         duration.as_secs_f64(),
-        map["a"].value().unwrap()
+        map[0]["a"] //.value().unwrap()
     );
 }

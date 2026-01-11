@@ -1,10 +1,8 @@
-use ::onego::{
-    Attribute, QueryError, SelectionKind, Store, XHtmlElement, QuerySection,
-};
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
 use crate::element::Element;
 use crate::selection::Selection;
+use ::onego::{Attribute, QueryError, QuerySection, SelectionKind, Store, XHtmlElement};
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyList};
 
 macro_rules! mut_prt_unchecked {
     ($e:expr) => {{
@@ -30,7 +28,7 @@ impl<'py> PythonStore<'py> {
             dict.set_class(class);
         }
 
-        for Attribute { name, value } in element.attributes {
+        for Attribute { key: name, value } in element.attributes {
             dict.set_attribute(name, value);
         }
     }

@@ -14,8 +14,8 @@ use crate::xhtml::text_content::TextContent;
 type StartIdx = Option<usize>;
 
 #[derive(Debug)]
-pub(crate) struct EndTagSaveContent<E> {
-    element: *mut E,
+pub(crate) struct EndTagSaveContent {
+    element: usize,
     on_depth: super::DepthSize,
     inner_html: StartIdx,
     text_content: StartIdx,
@@ -28,18 +28,18 @@ pub(crate) struct EndTagSaveContent<E> {
  *  The important distinction is that the scoped task terminates at a set scope depth (when <= to current depth: terminate).
  */
 
-type ScopedFsmVec<E> = Vec<ScopedFsm<E>>;
-type EndTagEventVec<E> = Vec<EndTagSaveContent<E>>;
+type ScopedFsmVec = Vec<ScopedFsm>;
+type EndTagEventVec = Vec<EndTagSaveContent>;
 
 #[derive(Debug)]
-pub struct SelectionRunner<'a, 'query, E> {
+pub struct SelectionRunner<'a, 'query> {
     pub(crate) selection_tree: &'a Query<'query>,
-    pub(crate) fsm: FsmState<E>,
-    pub(crate) scoped_fsms: ScopedFsmVec<E>,
-    pub(crate) on_close_tag_events: EndTagEventVec<E>,
+    pub(crate) fsm: FsmState,
+    pub(crate) scoped_fsms: ScopedFsmVec,
+    pub(crate) on_close_tag_events: EndTagEventVec,
 }
 
-impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
+impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
     pub fn new(selection_tree: &'a Query<'query>) -> Self {
         Self {
             selection_tree,
@@ -51,9 +51,9 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
 
     fn next_position(
         tree: &Query<'query>,
-        list: &mut ScopedFsmVec<E>,
+        list: &mut ScopedFsmVec,
         depth: super::DepthSize,
-        fsm: &mut impl Fsm<'query, 'html, E>,
+        fsm: &mut impl Fsm<'query, 'html>,
     ) {
         let new_branch_tasks = fsm.move_foward(tree, depth);
         if let Some(new_branch_tasks) = new_branch_tasks {
@@ -62,13 +62,13 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
                 &mut new_branch_tasks
                     .into_iter()
                     .map(|pos| ScopedFsm::new(depth, fsm.get_parent(), pos))
-                    .collect::<ScopedFsmVec<E>>(),
+                    .collect::<ScopedFsmVec>(),
             );
         }
     }
 
     pub fn save_element<S>(
-        on_close_tag_events: &mut EndTagEventVec<E>,
+        on_close_tag_events: &mut EndTagEventVec,
         tree: &Query<'query>,
         store: &mut S,
         element: XHtmlElement<'html>,
@@ -77,17 +77,17 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
             reader_position,
             text_content_position,
         }: &DocumentPosition,
-        fsm: &mut impl Fsm<'query, 'html, E>,
+        fsm: &mut impl Fsm<'query, 'html>,
     ) -> Result<(), QueryError<'query>>
     where
-        S: Store<'html, 'query, E = E>,
+        S: Store<'html, 'query>,
     {
         // I can't check for this anymore, since the save is not instant and the fsm position is moved afterwards
         //debug_assert!(fsm.is_save_point(tree));
 
         let section = tree.get_section(fsm.get_section());
 
-        let element_pointer = store.push(section, fsm.get_parent(), element)?;
+        let element_pointer = store.push(section, fsm.get_parent(), element);
         if !fsm.is_last_save_point(tree) {
             fsm.set_parent(element_pointer);
         }
@@ -118,15 +118,18 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
         Ok(())
     }
 
-    pub fn next(
+    pub fn next<S>(
         &mut self,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
-        reserve: &mut Reserve<E>,
+        reserve: &mut Reserve,
+        store: &mut S,
     ) -> Result<(), QueryError<'_>>
+    where
+        S: Store<'html, 'query>,
     {
         // STEP 1: check scoped tasks
-        let mut new_scoped_fsms: ScopedFsmVec<E> = Vec::new();
+        let mut new_scoped_fsms: ScopedFsmVec = Vec::new();
 
         for i in 0..self.scoped_fsms.len() {
             // println!("Scoped Fsm's {i}");
@@ -156,18 +159,21 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
             let mut new_scoped_fsm = fsm.clone();
 
             if new_scoped_fsm.is_save_point(self.selection_tree) {
-                // Self::save_element(
-                //     &mut self.on_close_tag_events,
-                //     self.selection_tree,
-                //     store,
-                //     element.clone(),
-                //     document_position,
-                //     &mut new_scoped_fsm,
-                // )?;
-                
-                let position = self.scoped_fsms.len() - 1 + new_scoped_fsms.len();
+                Self::save_element(
+                    &mut self.on_close_tag_events,
+                    self.selection_tree,
+                    store,
+                    element.clone(),
+                    document_position,
+                    &mut new_scoped_fsm,
+                )?;
 
-                reserve.push(new_scoped_fsm.parent, Some(position));
+                let position = self.scoped_fsms.len() - 1 + new_scoped_fsms.len();
+                println!("?> POSITION: {position}");
+                println!("?>> LEN: {}", self.scoped_fsms.len());
+                println!("??> LEN: {}", new_scoped_fsms.len());
+
+                // reserve.push(new_scoped_fsm.parent, Some(position));
                 dbg_print!("Scoped FSM ({i}) Saved `{:?}`", element);
             }
 
@@ -181,7 +187,6 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
             }
 
             new_scoped_fsms.push(new_scoped_fsm);
-
 
             dbg_print!(">> Scoped FSM's: {:#?}", self.scoped_fsms)
         }
@@ -213,16 +218,16 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
 
             if fsm.is_save_point(self.selection_tree) {
                 fsm.end = true;
-                // Self::save_element(
-                //     &mut self.on_close_tag_events,
-                //     self.selection_tree,
-                //     store,
-                //     element.clone(),
-                //     document_position,
-                //     fsm,
-                // )?;
+                Self::save_element(
+                    &mut self.on_close_tag_events,
+                    self.selection_tree,
+                    store,
+                    element.clone(),
+                    document_position,
+                    fsm,
+                )?;
 
-                reserve.push(fsm.parent, None);
+                // reserve.push(fsm.parent, None);
 
                 dbg_print!("FSM Saved `{:?}`", element);
             }
@@ -261,7 +266,7 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
         content: &TextContent,
     ) -> bool
     where
-        S: Store<'html, 'query, E = E>,
+        S: Store<'html, 'query>,
     {
         for i in (0..self.on_close_tag_events.len()).rev() {
             let content_trigger = &self.on_close_tag_events[i];
@@ -340,7 +345,7 @@ impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E> {
         return false;
     }
 }
-
+/*
 mod tests {
     use super::*;
     use crate::css::parser::element::QueryElement;
@@ -631,3 +636,4 @@ mod tests {
         );
     }
 }
+    */

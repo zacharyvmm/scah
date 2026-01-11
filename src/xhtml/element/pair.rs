@@ -17,7 +17,7 @@ impl<'a> Pair<'a> {
     pub fn get_final_equal_value(&mut self) -> Option<Attribute<'a>> {
         if let Self::Equal(key) = self {
             return Some(Attribute {
-                name: *key,
+                key: *key,
                 value: None,
             });
         }
@@ -34,7 +34,7 @@ impl<'a> Pair<'a> {
 
             Self::Equal(key) => {
                 let ret = Some(Attribute {
-                    name: *key,
+                    key: *key,
                     value: None,
                 });
 
@@ -45,7 +45,7 @@ impl<'a> Pair<'a> {
 
             Self::AssignValue(key) => {
                 let ret = Some(Attribute {
-                    name: *key,
+                    key: *key,
                     value: Some(content),
                 });
 

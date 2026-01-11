@@ -11,23 +11,19 @@ impl<'html, 'query: 'html> Store<'html, 'query> for FakeStore {
     fn new(_context: Self::Context) -> Self {
         Self {}
     }
-    fn root(&mut self) -> *mut Self::E {
-        std::ptr::null_mut()
-    }
-    fn push<'key>(
+    fn push(
         &mut self,
         _selection: &QuerySection<'query>,
-        _from: *mut Self::E,
+        _from: usize,
         _element: XHtmlElement<'html>,
-    ) -> Result<*mut Self::E, QueryError<'key>> {
-        Ok(std::ptr::null_mut())
+    ) -> usize {
+        0
     }
     fn set_content(
         &mut self,
-        _element: *mut Self::E,
+        _element: usize,
         _inner_html: Option<&'html str>,
         _text_content: Option<String>,
-    ) -> () {
-        ()
+    ) {
     }
 }

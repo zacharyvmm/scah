@@ -325,7 +325,7 @@ mod tests {
         );
         let tree = QueryBuilder::new(section);
         let query = tree.build();
-        
+
         assert_eq!(
             query.list[0].fsms,
             Vec::from([
@@ -347,7 +347,8 @@ mod tests {
                     ),
                     transition: Combinator::Child,
                 }
-            ]).into_boxed_slice()
+            ])
+            .into_boxed_slice()
         );
     }
 
@@ -362,7 +363,6 @@ mod tests {
         );
         let mut selection = QueryBuilder::new(section);
 
-        
         selection.append(
             0,
             Vec::from([
@@ -386,7 +386,10 @@ mod tests {
         let query = selection.build();
         // Assertions on query...
         assert_eq!(query.list.len(), 3);
-        assert_eq!(query.list[0].source, "element#id.class > other#other_id.other_class");
+        assert_eq!(
+            query.list[0].source,
+            "element#id.class > other#other_id.other_class"
+        );
         assert_eq!(query.list[1].source, "> a");
         assert_eq!(query.list[2].source, " p");
     }

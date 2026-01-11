@@ -1,6 +1,6 @@
+use crate::selection::Selection;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use crate::selection::Selection;
 
 pub trait Element {
     type MapPointer;
