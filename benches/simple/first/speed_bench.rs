@@ -47,9 +47,12 @@ fn bench_comparison(c: &mut Criterion) {
             b.iter(|| {
                 let queries = &[Query::first(black_box(QUERY), Save::all()).build()];
 
-                let res = parse(&html, queries);
+                let arena = parse(&html, queries);
+                let root = &arena[0];
 
-                let element = res[QUERY].value().unwrap();
+                let element_index = root[QUERY].value().unwrap();
+                let element = &arena[element_index];
+
                 black_box(&element.attributes);
                 black_box(&element.inner_html);
                 black_box(&element.text_content);

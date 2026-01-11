@@ -32,8 +32,13 @@ fn bench_comparison(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("onego", size), &content, |b, html| {
             b.iter(|| {
                 let queries = &[Query::all(QUERY, Save::all()).build()];
-                let res = parse(html, queries);
-                for element in res[QUERY].iter().unwrap() {
+                let arena = parse(&html, queries);
+                let root = &arena[0];
+                let indices = root[QUERY].iter().unwrap();
+
+                //assert_eq!(iterator.count(), MAX_ELEMENT_LEN);
+
+                for element in indices.map(|i| &arena[*i]) {
                     black_box(&element.attributes);
                     black_box(&element.inner_html);
                     black_box(&element.text_content);
