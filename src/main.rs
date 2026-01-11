@@ -15,9 +15,10 @@ fn main() {
 
     let start = Instant::now();
 
-    let queries = &[Query::first("a", Save::all()).build()];
+    let queries = &[Query::all("a", Save::all()).build()];
 
-    let map = parse(content.as_str(), queries);
+    let arena = parse(content.as_str(), queries);
+    let root = &arena[0];
     // assert_eq!(map["a"].len()?, 7);
     // println!("{:#?}", map);
 
@@ -26,6 +27,6 @@ fn main() {
         "Time elapsed: {:?} ({}s), Tags Found: {:#?}",
         duration,
         duration.as_secs_f64(),
-        map[0]["a"] //.value().unwrap()
+        root["a"].iter().unwrap().count()
     );
 }

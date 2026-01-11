@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use super::element::element::XHtmlTag;
 use super::text_content::TextContent;
 use crate::css::DocumentPosition;
@@ -9,6 +11,7 @@ use crate::utils::Reader;
 pub struct XHtmlParser<'html, 'query, S>
 where
     S: Store<'html, 'query>,
+    S::E: Default + Debug + Eq + Copy
 {
     position: DocumentPosition,
     pub content: TextContent<'html>,
@@ -18,6 +21,7 @@ where
 impl<'html, 'query, S> XHtmlParser<'html, 'query, S>
 where
     S: Store<'html, 'query>,
+    S::E: Default + Debug + Eq + Copy
 {
     pub fn new(selectors: FsmManager<'query, 'html, S>) -> Self {
         return Self {

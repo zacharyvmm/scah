@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use super::manager::DocumentPosition;
 use super::task::{FsmState, ScopedFsm};
 //use super::tree::MatchTree;
@@ -14,8 +16,8 @@ use crate::xhtml::text_content::TextContent;
 type StartIdx = Option<usize>;
 
 #[derive(Debug)]
-pub(crate) struct EndTagSaveContent {
-    element: usize,
+pub(crate) struct EndTagSaveContent<E> {
+    element: E,
     on_depth: super::DepthSize,
     inner_html: StartIdx,
     text_content: StartIdx,
@@ -28,22 +30,26 @@ pub(crate) struct EndTagSaveContent {
  *  The important distinction is that the scoped task terminates at a set scope depth (when <= to current depth: terminate).
  */
 
-type ScopedFsmVec = Vec<ScopedFsm>;
-type EndTagEventVec = Vec<EndTagSaveContent>;
+type ScopedFsmVec<E> = Vec<ScopedFsm<E>>;
+type EndTagEventVec<E> = Vec<EndTagSaveContent<E>>;
 
 #[derive(Debug)]
-pub struct SelectionRunner<'a, 'query> {
+pub struct SelectionRunner<'a, 'query, E>
+where E: Debug
+{
     pub(crate) selection_tree: &'a Query<'query>,
-    pub(crate) fsm: FsmState,
-    pub(crate) scoped_fsms: ScopedFsmVec,
-    pub(crate) on_close_tag_events: EndTagEventVec,
+    pub(crate) fsm: FsmState<E>,
+    pub(crate) scoped_fsms: ScopedFsmVec<E>,
+    pub(crate) on_close_tag_events: EndTagEventVec<E>,
 }
 
-impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
+impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E>
+where E: Default + Copy + Debug
+{
     pub fn new(selection_tree: &'a Query<'query>) -> Self {
         Self {
             selection_tree,
-            fsm: FsmState::new(),
+            fsm: FsmState::<E>::new(),
             scoped_fsms: Vec::new(),
             on_close_tag_events: Vec::new(),
         }
@@ -51,9 +57,9 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
     fn next_position(
         tree: &Query<'query>,
-        list: &mut ScopedFsmVec,
+        list: &mut ScopedFsmVec<E>,
         depth: super::DepthSize,
-        fsm: &mut impl Fsm<'query, 'html>,
+        fsm: &mut impl Fsm<'query, 'html, E>,
     ) {
         let new_branch_tasks = fsm.move_foward(tree, depth);
         if let Some(new_branch_tasks) = new_branch_tasks {
@@ -62,13 +68,13 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
                 &mut new_branch_tasks
                     .into_iter()
                     .map(|pos| ScopedFsm::new(depth, fsm.get_parent(), pos))
-                    .collect::<ScopedFsmVec>(),
+                    .collect::<ScopedFsmVec<E>>(),
             );
         }
     }
 
     pub fn save_element<S>(
-        on_close_tag_events: &mut EndTagEventVec,
+        on_close_tag_events: &mut EndTagEventVec<E>,
         tree: &Query<'query>,
         store: &mut S,
         element: XHtmlElement<'html>,
@@ -77,10 +83,10 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             reader_position,
             text_content_position,
         }: &DocumentPosition,
-        fsm: &mut impl Fsm<'query, 'html>,
+        fsm: &mut impl Fsm<'query, 'html, E>,
     ) -> Result<(), QueryError<'query>>
     where
-        S: Store<'html, 'query>,
+        S: Store<'html, 'query, E = E>,
     {
         // I can't check for this anymore, since the save is not instant and the fsm position is moved afterwards
         //debug_assert!(fsm.is_save_point(tree));
@@ -122,14 +128,14 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         &mut self,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
-        reserve: &mut Reserve,
+        reserve: &mut Reserve<E>,
         store: &mut S,
     ) -> Result<(), QueryError<'_>>
     where
-        S: Store<'html, 'query>,
+        S: Store<'html, 'query, E = E>,
     {
         // STEP 1: check scoped tasks
-        let mut new_scoped_fsms: ScopedFsmVec = Vec::new();
+        let mut new_scoped_fsms: ScopedFsmVec<E> = Vec::new();
 
         for i in 0..self.scoped_fsms.len() {
             // println!("Scoped Fsm's {i}");
@@ -266,7 +272,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         content: &TextContent,
     ) -> bool
     where
-        S: Store<'html, 'query>,
+        S: Store<'html, 'query, E = E>,
     {
         for i in (0..self.on_close_tag_events.len()).rev() {
             let content_trigger = &self.on_close_tag_events[i];

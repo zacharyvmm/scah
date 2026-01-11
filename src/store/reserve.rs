@@ -2,8 +2,8 @@
 // Also the added benefit is that I can remove duplicate saving
 
 #[derive(Debug)]
-pub struct Fsm {
-    pub parent: usize,
+pub struct Fsm<E> {
+    pub parent: E,
     pub section: usize,
 
     // None means it's the main fsm
@@ -12,11 +12,13 @@ pub struct Fsm {
 }
 
 #[derive(Debug)]
-pub struct Reserve {
-    pub list: Vec<Fsm>,
+pub struct Reserve<E> {
+    pub list: Vec<Fsm<E>>,
     section: usize,
 }
-impl Reserve {
+impl<E> Reserve<E>
+where E: Eq
+{
     pub fn new() -> Self {
         Self {
             list: vec![],
@@ -24,7 +26,7 @@ impl Reserve {
         }
     }
 
-    pub fn push(&mut self, parent: usize, index: Option<usize>) {
+    pub fn push(&mut self, parent: E, index: Option<usize>) {
         if self.list.iter().any(|i| i.parent == parent) {
             return;
         }

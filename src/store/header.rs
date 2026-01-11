@@ -8,12 +8,12 @@ pub trait Store<'html, 'query> {
     fn push(
         &mut self,
         selection: &QuerySection<'query>,
-        from: usize,
+        from: Self::E,
         element: XHtmlElement<'html>,
-    ) -> usize;
+    ) -> Self::E;
     fn set_content(
         &mut self,
-        element: usize,
+        element: Self::E,
         inner_html: Option<&'html str>,
         text_content: Option<String>,
     );

@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use super::selection::SelectionRunner;
@@ -13,22 +14,24 @@ pub(crate) struct DocumentPosition {
 }
 
 //type Runner<'query, E> = SmallVec<[SelectionRunner<'query, 'query, E>; 1]>;
-type Runner<'query> = Vec<SelectionRunner<'query, 'query>>;
+type Runner<'query, E> = Vec<SelectionRunner<'query, 'query, E>>;
 
 #[derive(Debug)]
 pub struct FsmManager<'html, 'query: 'html, S>
 where
     S: Store<'html, 'query>,
+    S::E: Debug + Copy + Default
 {
     store: S,
-    runners: Runner<'query>,
-    reserve: Reserve,
+    runners: Runner<'query, S::E>,
+    reserve: Reserve<S::E>,
     index: &'html u8,
 }
 
 impl<'html, 'query: 'html, S, E> FsmManager<'html, 'query, S>
 where
     S: Store<'html, 'query, E = E>,
+    E: Debug + Copy + Default + Eq
 {
     pub fn new(s: S, queries: &'query [Query<'query>]) -> Self {
         // BUG: the memory moves afterwards
@@ -36,7 +39,7 @@ where
             runners: queries
                 .iter()
                 .map(|query| SelectionRunner::new(query))
-                .collect(),
+                .collect::<Runner<'query, S::E>>(),
             store: s,
             reserve: Reserve::new(),
             index: &0,
@@ -45,7 +48,7 @@ where
 
     fn save_element_from_reservation(
         &mut self,
-        reservation: Fsm,
+        reservation: Fsm<E>,
         xhtml_element: XHtmlElement<'html>,
         position: &DocumentPosition,
     ) {

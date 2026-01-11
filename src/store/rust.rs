@@ -117,7 +117,7 @@ pub struct RustStore<'html, 'query> {
 }
 
 impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
-    type E = Element<'html, 'query>;
+    type E = usize;
     type Context = bool;
 
     fn new(_: Self::Context) -> Self {

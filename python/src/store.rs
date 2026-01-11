@@ -43,7 +43,7 @@ impl<'py> PythonStore<'py> {
 }
 
 impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
-    type E = PyDict;
+    type E = *mut PyDict;
     type Context = Python<'py>;
 
     fn new(context: Self::Context) -> Self {
@@ -52,18 +52,14 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
         }
     }
 
-    fn root(&mut self) -> *mut Self::E {
-        self.root.as_ptr() as *mut Self::E
-    }
-
-    fn push<'key>(
+    fn push(
         &mut self,
         selection: &QuerySection<'query>,
-        mut from: *mut Self::E,
+        mut from: Self::E,
         element: XHtmlElement<'html>,
-    ) -> Result<*mut Self::E, QueryError<'key>> {
+    ) -> Self::E {
         if from.is_null() {
-            from = self.root.as_ptr() as *mut Self::E;
+            from = self.root.as_ptr() as Self::E;
         }
         let mut new_element = PyDict::new(self.root.py());
         Self::copy_from_element(&mut new_element, element);
@@ -112,7 +108,7 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
                 Err(_) => unreachable!("Empty List"),
             };
 
-            return Ok(pointer);
+            return pointer;
         }
 
         let pointer = from_element.set_child(
@@ -127,15 +123,15 @@ impl<'py, 'html, 'query: 'html> Store<'html, 'query> for PythonStore<'py> {
             },
         );
 
-        Ok(pointer)
+        pointer
     }
 
     fn set_content<'key>(
         &mut self,
-        element: *mut Self::E,
+        element: Self::E,
         inner_html: Option<&'html str>,
         text_content: Option<String>,
-    ) -> () {
+    ) {
         use pyo3::ffi::PyObject;
         let ele_any = unsafe { Bound::from_borrowed_ptr(self.root.py(), element as *mut PyObject) };
         let ele_dict = ele_any
