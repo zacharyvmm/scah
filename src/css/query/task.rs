@@ -1,29 +1,18 @@
 use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{NextPosition, NextPositions, Position, Query};
+use crate::store::ROOT;
 use smallvec::SmallVec;
-use std::ptr;
 
-#[derive(PartialEq)]
-pub struct FsmState<E> {
-    pub(super) parent: *mut E,
+#[derive(PartialEq, Debug)]
+pub struct FsmState {
+    pub(super) parent: usize,
     pub(super) position: Position,
     pub(super) depths: SmallVec<[super::DepthSize; 10]>,
     pub(super) end: bool, // This is a flag to say is a save point and this might be the end
 }
 
-impl<E> std::fmt::Debug for FsmState<E> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FsmState")
-            .field("parent", &self.parent)
-            .field("position", &self.position)
-            .field("depths", &self.depths)
-            .field("end", &self.end)
-            .finish()
-    }
-}
-
-pub trait Fsm<'query, 'html, E> {
+pub trait Fsm<'query, 'html> {
     fn next(
         &self,
         tree: &Query<'query>,
@@ -45,16 +34,16 @@ pub trait Fsm<'query, 'html, E> {
     fn is_save_point(&self, tree: &Query<'query>) -> bool;
     fn is_last_save_point(&self, tree: &Query<'query>) -> bool;
 
-    fn get_parent(&self) -> *mut E;
-    fn set_parent(&mut self, value: *mut E);
+    fn get_parent(&self) -> usize;
+    fn set_parent(&mut self, value: usize);
     fn get_section(&self) -> usize;
     fn set_end_false(&mut self);
 }
 
-impl<'query, E> FsmState<E> {
+impl<'query> FsmState {
     pub fn new() -> Self {
         Self {
-            parent: ptr::null_mut(),
+            parent: ROOT,
             position: Position { section: 0, fsm: 0 },
             depths: SmallVec::new(),
             end: false,
@@ -68,7 +57,7 @@ impl<'query, E> FsmState<E> {
     }
 }
 
-impl<'query, 'html, E> Fsm<'query, 'html, E> for FsmState<E> {
+impl<'query, 'html> Fsm<'query, 'html> for FsmState {
     fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
         let fsm = tree.get(&self.position);
         let last_depth = *self.depths.last().unwrap_or(&0);
@@ -151,11 +140,11 @@ impl<'query, 'html, E> Fsm<'query, 'html, E> for FsmState<E> {
         tree.is_last_save_point(&self.position)
     }
 
-    fn get_parent(&self) -> *mut E {
+    fn get_parent(&self) -> usize {
         self.parent
     }
 
-    fn set_parent(&mut self, value: *mut E) {
+    fn set_parent(&mut self, value: usize) {
         self.parent = value;
     }
 
@@ -168,41 +157,19 @@ impl<'query, 'html, E> Fsm<'query, 'html, E> for FsmState<E> {
     }
 }
 
-#[derive(PartialEq)]
-pub struct ScopedFsm<E> {
+#[derive(PartialEq, Clone, Debug)]
+pub struct ScopedFsm {
     pub scope_depth: super::DepthSize,
-    pub parent: *mut E,
+    pub parent: usize,
     pub position: Position,
 }
 
-impl<'query, E> Clone for ScopedFsm<E> {
-    fn clone(&self) -> Self {
+impl<'query> ScopedFsm {
+    pub fn new(scope_depth: super::DepthSize, parent: usize, position: Position) -> Self {
         Self {
-            scope_depth: self.scope_depth,
-            parent: self.parent,
-            position: self.position,
-        }
-    }
-}
-
-impl<E> std::fmt::Debug for ScopedFsm<E> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ScopedFsm")
-            .field("scope_depth", &self.scope_depth)
-            // This will print the raw memory address (e.g., 0x7ff...)
-            // It is safe because we are not dereferencing it.
-            .field("parent", &self.parent)
-            .field("position", &self.position)
-            .finish()
-    }
-}
-
-impl<'query, E> ScopedFsm<E> {
-    pub fn new(depth: super::DepthSize, parent: *mut E, position: Position) -> Self {
-        Self {
-            scope_depth: depth,
-            parent: parent,
-            position: position,
+            scope_depth,
+            parent,
+            position,
         }
     }
 
@@ -211,7 +178,7 @@ impl<'query, E> ScopedFsm<E> {
     }
 }
 
-impl<'query, 'html, E> Fsm<'query, 'html, E> for ScopedFsm<E> {
+impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm {
     fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
         let fsm = tree.get(&self.position);
         fsm.next(element, depth, self.scope_depth)
@@ -273,11 +240,11 @@ impl<'query, 'html, E> Fsm<'query, 'html, E> for ScopedFsm<E> {
         tree.is_last_save_point(&self.position)
     }
 
-    fn get_parent(&self) -> *mut E {
+    fn get_parent(&self) -> usize {
         self.parent
     }
 
-    fn set_parent(&mut self, value: *mut E) {
+    fn set_parent(&mut self, value: usize) {
         self.parent = value;
     }
 
@@ -300,7 +267,7 @@ mod tests {
     fn test_fsm_next_descendant() {
         let selection_tree = Query::all("div a", Save::none()).build();
 
-        let mut state = FsmState::<Element>::new();
+        let mut state = FsmState::new();
         let mut next: bool = false;
 
         next = state.next(

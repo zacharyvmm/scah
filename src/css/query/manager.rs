@@ -1,8 +1,10 @@
+use std::marker::PhantomData;
+
 use super::selection::SelectionRunner;
 use crate::XHtmlElement;
 use crate::css::parser::tree::Query;
-use crate::store::reserve::{Reserve, Fsm};
 use crate::store::Store;
+use crate::store::reserve::{Fsm, Reserve};
 
 pub(crate) struct DocumentPosition {
     pub reader_position: usize,
@@ -11,7 +13,7 @@ pub(crate) struct DocumentPosition {
 }
 
 //type Runner<'query, E> = SmallVec<[SelectionRunner<'query, 'query, E>; 1]>;
-type Runner<'query, E> = Vec<SelectionRunner<'query, 'query, E>>;
+type Runner<'query> = Vec<SelectionRunner<'query, 'query>>;
 
 #[derive(Debug)]
 pub struct FsmManager<'html, 'query: 'html, S>
@@ -19,8 +21,9 @@ where
     S: Store<'html, 'query>,
 {
     store: S,
-    runners: Runner<'query, S::E>,
-    reserve: Reserve<S::E>,
+    runners: Runner<'query>,
+    reserve: Reserve,
+    index: &'html u8,
 }
 
 impl<'html, 'query: 'html, S, E> FsmManager<'html, 'query, S>
@@ -36,49 +39,64 @@ where
                 .collect(),
             store: s,
             reserve: Reserve::new(),
+            index: &0,
         }
     }
 
-    fn save_element_from_reservation(&mut self, reservation: Fsm<E>, xhtml_element: XHtmlElement<'html>, position: &DocumentPosition) {
+    fn save_element_from_reservation(
+        &mut self,
+        reservation: Fsm,
+        xhtml_element: XHtmlElement<'html>,
+        position: &DocumentPosition,
+    ) {
         let runner = &mut self.runners[reservation.section];
 
         let _ = match reservation.index {
-            None => SelectionRunner::save_element(
-                &mut runner.on_close_tag_events,
-                runner.selection_tree,
-                &mut self.store,
-                xhtml_element,
-                position,
-                &mut runner.fsm,
-            ),
-            Some(i) => SelectionRunner::save_element(
-                &mut runner.on_close_tag_events,
-                runner.selection_tree,
-                &mut self.store,
-                xhtml_element,
-                position,
-                &mut runner.scoped_fsms[i],
-            ),
+            None => {
+                println!("Saving too FSM");
+                SelectionRunner::save_element(
+                    &mut runner.on_close_tag_events,
+                    runner.selection_tree,
+                    &mut self.store,
+                    xhtml_element,
+                    position,
+                    &mut runner.fsm,
+                )
+            }
+            Some(i) => {
+                println!("Saving too ScopedFSM {i}");
+                SelectionRunner::save_element(
+                    &mut runner.on_close_tag_events,
+                    runner.selection_tree,
+                    &mut self.store,
+                    xhtml_element,
+                    position,
+                    &mut runner.scoped_fsms[i],
+                )
+            }
         };
     }
 
     pub fn next(&mut self, xhtml_element: XHtmlElement<'html>, position: &DocumentPosition) {
         for (index, session) in self.runners.iter_mut().enumerate() {
             self.reserve.set_section(index);
-            let _ = session.next(&xhtml_element, position, &mut self.reserve);
+            let _ = session.next(&xhtml_element, position, &mut self.reserve, &mut self.store);
         }
 
-
         match self.reserve.list.len() {
-            0 => {},
+            0 => {}
             1 => {
                 let reservation = self.reserve.list.pop().unwrap();
                 self.save_element_from_reservation(reservation, xhtml_element, position);
-            },
+            }
             len => {
-                for _ in 0..len-2 {
+                for _ in 0..len - 2 {
                     let reservation = self.reserve.list.pop().unwrap();
-                    self.save_element_from_reservation(reservation, xhtml_element.clone(), position);
+                    self.save_element_from_reservation(
+                        reservation,
+                        xhtml_element.clone(),
+                        position,
+                    );
                 }
 
                 let reservation = self.reserve.list.pop().unwrap();
@@ -124,11 +142,11 @@ mod tests {
     fn runner_size() {
         println!(
             "Vec size: {}",
-            std::mem::size_of::<Vec<SelectionRunner<'static, 'static, Element>>>()
+            std::mem::size_of::<Vec<SelectionRunner<'static, 'static>>>()
         );
         println!(
             "Inline size: {}",
-            std::mem::size_of::<SmallVec<[SelectionRunner<'static, 'static, Element>; 1]>>()
+            std::mem::size_of::<SmallVec<[SelectionRunner<'static, 'static>; 1]>>()
         );
     }
 }

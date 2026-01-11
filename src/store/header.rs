@@ -5,19 +5,18 @@ pub trait Store<'html, 'query> {
     type E;
     type Context;
     fn new(context: Self::Context) -> Self;
-    fn root(&mut self) -> *mut Self::E;
-    fn push<'key>(
+    fn push(
         &mut self,
         selection: &QuerySection<'query>,
-        from: *mut Self::E,
+        from: usize,
         element: XHtmlElement<'html>,
-    ) -> Result<*mut Self::E, QueryError<'key>>;
+    ) -> usize;
     fn set_content(
         &mut self,
-        element: *mut Self::E,
+        element: usize,
         inner_html: Option<&'html str>,
         text_content: Option<String>,
-    ) -> ();
+    );
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,3 +26,5 @@ pub enum QueryError<'key> {
     NotAList,
     IndexOutOfBounds { index: usize, len: usize },
 }
+
+pub const ROOT: usize = 0;

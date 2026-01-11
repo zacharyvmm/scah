@@ -4,7 +4,7 @@ use crate::xhtml::element::element::{Attribute, XHtmlElement};
 
 impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
     fn eq(&self, other: &Attribute<'b>) -> bool {
-        if self.name != other.name {
+        if self.name != other.key {
             return false;
         }
 
@@ -71,7 +71,7 @@ mod tests {
                 kind: AttributeSelectionKind::Exact,
             },
             Attribute {
-                name: "hello",
+                key: "hello",
                 value: Some("World")
             }
         );
@@ -96,15 +96,15 @@ mod tests {
                 class: Some("hello world"),
                 attributes: Vec::from([
                     Attribute {
-                        name: "key1",
+                        key: "key1",
                         value: Some("value1")
                     },
                     Attribute {
-                        name: "key2",
+                        key: "key2",
                         value: Some("value2")
                     },
                     Attribute {
-                        name: "selected",
+                        key: "selected",
                         value: Some("true")
                     },
                 ])
@@ -131,15 +131,15 @@ mod tests {
                 class: Some("text-white underline-green p-4"),
                 attributes: Vec::from([
                     Attribute {
-                        name: "key1",
+                        key: "key1",
                         value: Some("value1")
                     },
                     Attribute {
-                        name: "href",
+                        key: "href",
                         value: Some("/search")
                     },
                     Attribute {
-                        name: "selected",
+                        key: "selected",
                         value: Some("true")
                     },
                 ])

@@ -18,11 +18,11 @@ impl<'html> TextContent<'html> {
         }
     }
 
-    pub fn start_recording(&mut self){
+    pub fn start_recording(&mut self) {
         self.recording = true;
     }
 
-    pub fn stop_recording(&mut self){
+    pub fn stop_recording(&mut self) {
         self.recording = false;
     }
 
@@ -88,7 +88,7 @@ mod tests {
         assert_eq!(content.list, vec!["Hello"]);
 
         content.stop_recording();
-        
+
         content.set_start(0);
         content.push(&reader, 5);
         assert_eq!(content.list, vec!["Hello"]);
@@ -98,6 +98,5 @@ mod tests {
         content.set_start(0);
         content.push(&reader, 5);
         assert_eq!(content.list, vec!["Hello", "Hello"]);
-
     }
 }

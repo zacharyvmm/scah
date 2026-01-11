@@ -1,6 +1,6 @@
-use ::onego::{QueryBuilder, SelectionPart, SelectionKind};
-use pyo3::prelude::*;
 use crate::save::PySave;
+use ::onego::{QueryBuilder, SelectionKind, SelectionPart};
+use pyo3::prelude::*;
 
 #[pyclass]
 #[derive(Clone)]
@@ -16,7 +16,7 @@ impl PyQueryBuilder {
         let mut p = part;
         p.parent = Some(len - 1);
         slf.inner.list.push(p);
-        
+
         slf
     }
 
@@ -26,11 +26,14 @@ impl PyQueryBuilder {
         let mut p = part;
         p.parent = Some(len - 1);
         slf.inner.list.push(p);
-        
+
         slf
     }
 
-    fn then<'a>(mut slf: PyRefMut<'a, Self>, callback: Bound<'a, PyAny>) -> PyResult<PyRefMut<'a, Self>> {
+    fn then<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        callback: Bound<'a, PyAny>,
+    ) -> PyResult<PyRefMut<'a, Self>> {
         let factory = PyQueryFactory {};
         let result = callback.call1((factory,))?;
         let builders: Vec<PyQueryBuilder> = result.extract()?;
@@ -74,7 +77,10 @@ impl PyQueryFactory {
 
     fn first(&self, selector: String, save: PySave) -> PyQueryBuilder {
         PyQueryBuilder {
-            inner: QueryBuilder::new(SelectionPart::new(selector, SelectionKind::First(save.save))),
+            inner: QueryBuilder::new(SelectionPart::new(
+                selector,
+                SelectionKind::First(save.save),
+            )),
         }
     }
 }
@@ -93,14 +99,17 @@ impl PyQueryStatic {
     #[staticmethod]
     pub fn all(selector: String, save: PySave) -> PyQueryBuilder {
         PyQueryBuilder {
-             inner: QueryBuilder::new(SelectionPart::new(selector, SelectionKind::All(save.save))),
+            inner: QueryBuilder::new(SelectionPart::new(selector, SelectionKind::All(save.save))),
         }
     }
 
     #[staticmethod]
     pub fn first(selector: String, save: PySave) -> PyQueryBuilder {
         PyQueryBuilder {
-             inner: QueryBuilder::new(SelectionPart::new(selector, SelectionKind::First(save.save))),
+            inner: QueryBuilder::new(SelectionPart::new(
+                selector,
+                SelectionKind::First(save.save),
+            )),
         }
     }
 }

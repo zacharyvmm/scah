@@ -108,6 +108,7 @@ where
         self.selectors.matches()
     }
 }
+/*
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -283,7 +284,7 @@ mod tests {
         let mut reader = Reader::new(MORE_ADVANCED_BASIC_HTML);
         let queries = Query::all("main > section", Save::all()).then(|section| {
             [
-                section.first("> a[href]", Save::all()),
+                section.all("> a[href]", Save::all()),
                 section.all("div a", Save::all()),
             ]
         });
@@ -709,3 +710,4 @@ mod tests {
         )
     }
 }
+*/

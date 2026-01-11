@@ -4,17 +4,19 @@ use crate::utils::QuoteKind;
 use crate::utils::Reader;
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Attribute<'a> {
-    pub name: &'a str,
-    pub value: Option<&'a str>,
+pub struct Attribute<'html> {
+    pub key: &'html str,
+    pub value: Option<&'html str>,
 }
 
+pub type Attributes<'html> = Vec<Attribute<'html>>;
+
 #[derive(Debug, PartialEq, Clone)]
-pub struct XHtmlElement<'a> {
-    pub name: &'a str,
-    pub id: Option<&'a str>,
-    pub class: Option<&'a str>,
-    pub attributes: Vec<Attribute<'a>>,
+pub struct XHtmlElement<'html> {
+    pub name: &'html str,
+    pub id: Option<&'html str>,
+    pub class: Option<&'html str>,
+    pub attributes: Attributes<'html>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -26,10 +28,10 @@ pub enum XHtmlTag<'a> {
 impl<'a> XHtmlElement<'a> {
     fn add_to_element(&mut self, attribute: Attribute<'a>) -> () {
         if self.name == "" && attribute.value.is_none() {
-            self.name = attribute.name;
-        } else if self.class.is_none() && attribute.name == "class" && attribute.value.is_some() {
+            self.name = attribute.key;
+        } else if self.class.is_none() && attribute.key == "class" && attribute.value.is_some() {
             self.class = attribute.value;
-        } else if self.id.is_none() && attribute.name == "id" && attribute.value.is_some() {
+        } else if self.id.is_none() && attribute.key == "id" && attribute.value.is_some() {
             self.id = attribute.value;
         } else {
             self.attributes.push(attribute);
@@ -57,7 +59,7 @@ impl<'a> XHtmlElement<'a> {
             return true;
         }
         if let Some(last_attribute) = self.attributes.last() {
-            return last_attribute.name == "\\";
+            return last_attribute.key == "\\";
         }
 
         return false;
@@ -176,7 +178,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "key",
+                key: "key",
                 value: Some("value")
             }
         );
@@ -194,7 +196,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "key",
+                key: "key",
                 value: Some("value")
             }
         );
@@ -210,7 +212,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "key",
+                key: "key",
                 value: Some("value")
             }
         );
@@ -226,28 +228,28 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "key",
+                key: "key",
                 value: Some("value")
             }
         );
         assert_eq!(
             element.attributes[1],
             Attribute {
-                name: "key1",
+                key: "key1",
                 value: Some("value1")
             }
         );
         assert_eq!(
             element.attributes[2],
             Attribute {
-                name: "key2",
+                key: "key2",
                 value: Some("value2")
             }
         );
         assert_eq!(
             element.attributes[3],
             Attribute {
-                name: "keey",
+                key: "keey",
                 value: None
             }
         );
@@ -263,7 +265,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "key",
+                key: "key",
                 value: None
             }
         );
@@ -279,7 +281,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "key",
+                key: "key",
                 value: None
             }
         );
@@ -295,7 +297,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "key",
+                key: "key",
                 value: Some("hello\\ world")
             }
         );
@@ -311,7 +313,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "long key with spaces",
+                key: "long key with spaces",
                 value: Some("value")
             }
         );
@@ -327,7 +329,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "long key's with spaces",
+                key: "long key's with spaces",
                 value: Some("value")
             }
         );
@@ -343,7 +345,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: r#"long key\"s with spaces"#,
+                key: r#"long key\"s with spaces"#,
                 value: Some("value")
             }
         );
@@ -361,7 +363,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: r#"long key\"s with spaces"#,
+                key: r#"long key\"s with spaces"#,
                 value: Some(r#"value\"s of an other person \\\\\\ \\\\\ \ \  \""#)
             }
         );
@@ -379,7 +381,7 @@ mod tests {
         assert_eq!(
             element.attributes[0],
             Attribute {
-                name: "target",
+                key: "target",
                 value: Some("_blank")
             }
         );
@@ -387,7 +389,7 @@ mod tests {
         assert_eq!(
             element.attributes[1],
             Attribute {
-                name: "href",
+                key: "href",
                 value: Some("/my_cv.pdf")
             }
         );
@@ -397,7 +399,7 @@ mod tests {
         assert_eq!(
             element.attributes[2],
             Attribute {
-                name: "hello-world",
+                key: "hello-world",
                 value: Some("hello-world")
             }
         );
@@ -419,13 +421,13 @@ mod tests {
                 class: None,
                 attributes: Vec::from([
                     Attribute {
-                        name: "href",
+                        key: "href",
                         value: Some(
                             "https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/crossorigin"
                         )
                     },
                     Attribute {
-                        name: "title",
+                        key: "title",
                         value: Some(
                             "The crossorigin attribute, valid on the <audio>, <img>, <link>, <script>, and <video> elements, provides support for CORS, defining how the element handles cross-origin requests, thereby enabling the configuration of the CORS requests for the element's fetched data. Depending on the element, the attribute can be a CORS settings attribute."
                         )
@@ -447,7 +449,7 @@ mod tests {
                 id: None,
                 class: None,
                 attributes: Vec::from([Attribute {
-                    name: "key",
+                    key: "key",
                     value: Some("value")
                 }]),
             }))
