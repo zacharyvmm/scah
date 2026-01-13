@@ -278,7 +278,7 @@ mod tests {
     fn test_fsm_next_descendant() {
         let selection_tree = Query::all("div a", Save::none()).build();
 
-        let mut state = FsmState::new();
+        let mut state = FsmState::<usize>::new();
         let mut next: bool = false;
 
         next = state.next(

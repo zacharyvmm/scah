@@ -2,6 +2,7 @@ use super::pair::Pair;
 use super::tokenizer::ElementAttributeToken;
 use crate::utils::QuoteKind;
 use crate::utils::Reader;
+use smallvec::SmallVec;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Attribute<'html> {
@@ -10,6 +11,7 @@ pub struct Attribute<'html> {
 }
 
 pub type Attributes<'html> = Vec<Attribute<'html>>;
+//pub type Attributes<'html> = SmallVec<[Attribute<'html>, 3]>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct XHtmlElement<'html> {
@@ -21,13 +23,13 @@ pub struct XHtmlElement<'html> {
 
 #[derive(Debug, PartialEq)]
 pub enum XHtmlTag<'a> {
-    Open(XHtmlElement<'a>),
+    Open,
     Close(&'a str),
 }
 
 impl<'a> XHtmlElement<'a> {
-    fn add_to_element(&mut self, attribute: Attribute<'a>) -> () {
-        if self.name == "" && attribute.value.is_none() {
+    fn add_to_element(&mut self, attribute: Attribute<'a>) {
+        if self.name.is_empty() && attribute.value.is_none() {
             self.name = attribute.key;
         } else if self.class.is_none() && attribute.key == "class" && attribute.value.is_some() {
             self.class = attribute.value;
@@ -64,16 +66,24 @@ impl<'a> XHtmlElement<'a> {
 
         return false;
     }
-}
 
-impl<'a> From<&mut Reader<'a>> for XHtmlElement<'a> {
-    fn from(reader: &mut Reader<'a>) -> Self {
-        let mut element = Self {
+    pub fn new() -> Self {
+        Self {
             name: "",
             id: None,
             class: None,
             attributes: Vec::new(),
-        };
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.name = "";
+        self.id = None;
+        self.class = None;
+        self.attributes.clear();
+    }
+
+    pub fn from(&mut self, reader: &mut Reader<'a>) {
 
         let mut pair = Pair::NewKey;
 
@@ -111,13 +121,13 @@ impl<'a> From<&mut Reader<'a>> for XHtmlElement<'a> {
                     let content_inside_quotes = reader.slice(position..end_position);
 
                     if let Some(attribute) = pair.add_string(content_inside_quotes) {
-                        element.add_to_element(attribute);
+                        self.add_to_element(attribute);
                     }
                 }
 
                 (Option::None, ElementAttributeToken::String(string_value)) => {
                     if let Some(attribute) = pair.add_string(string_value) {
-                        element.add_to_element(attribute);
+                        self.add_to_element(attribute);
                     }
                 }
 
@@ -130,10 +140,8 @@ impl<'a> From<&mut Reader<'a>> for XHtmlElement<'a> {
         }
 
         if let Some(attribute) = pair.get_final_equal_value() {
-            element.add_to_element(attribute);
+            self.add_to_element(attribute);
         }
-
-        return element;
     }
 }
 
@@ -161,7 +169,7 @@ impl<'a> XHtmlTag<'a> {
                 return None;
             }
         }
-        return Some(Self::Open(XHtmlElement::from(reader)));
+        return Some(Self::Open);
     }
 }
 
@@ -172,7 +180,8 @@ mod tests {
     #[test]
     fn test_key_no_quote_and_value_with_quote() {
         let mut reader = Reader::new("p key=\"value\"");
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
         assert_eq!(element.name, "p");
 
         assert_eq!(
@@ -187,7 +196,8 @@ mod tests {
     #[test]
     fn test_key_no_quote_and_value_no_quote() {
         let mut reader = Reader::new("p key=value");
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "p");
 
@@ -205,7 +215,8 @@ mod tests {
     #[test]
     fn test_key_with_quote_and_value_with_quote() {
         let mut reader = Reader::new("p \"key\"=\"value\"");
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "p");
 
@@ -221,7 +232,8 @@ mod tests {
     #[test]
     fn test_multiple_key_value_pairs() {
         let mut reader = Reader::new("p key=\"value\" \"key1\"=value1 \"key2\"=\"value2\" keey");
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "p");
 
@@ -258,7 +270,8 @@ mod tests {
     #[test]
     fn test_key_with_quote_and_no_value() {
         let mut reader = Reader::new("p \"key\"");
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "p");
 
@@ -274,7 +287,8 @@ mod tests {
     #[test]
     fn test_key_no_quote_and_no_value() {
         let mut reader = Reader::new("p key");
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "p");
 
@@ -290,7 +304,8 @@ mod tests {
     #[test]
     fn test_key_no_quote_and_escaped_space_value() {
         let mut reader = Reader::new("p key = hello\\ world");
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "p");
 
@@ -306,7 +321,8 @@ mod tests {
     #[test]
     fn test_long_key_with_spaces() {
         let mut reader = Reader::new("p \"long key with spaces\"=\"value\"");
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "p");
 
@@ -322,7 +338,8 @@ mod tests {
     #[test]
     fn test_long_key_with_spaces_and_different_quote_inside() {
         let mut reader = Reader::new("p \"long key's with spaces\"=\"value\"");
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "p");
 
@@ -338,7 +355,8 @@ mod tests {
     #[test]
     fn test_long_key_with_spaces_and_real_same_quote_inside() {
         let mut reader = Reader::new(r#"p "long key\"s with spaces"="value""#);
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "p");
 
@@ -356,7 +374,8 @@ mod tests {
         let mut reader = Reader::new(
             r#"p "long key\"s with spaces"="value\"s of an other person \\\\\\ \\\\\ \ \  \"""#,
         );
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "p");
 
@@ -374,7 +393,8 @@ mod tests {
         let mut reader = Reader::new(
             "a target=\"_blank\" href=\"/my_cv.pdf\" class=\"px-7 py-3\" hello-world=hello-world",
         );
-        let element = XHtmlElement::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(element.name, "a");
 
@@ -412,10 +432,15 @@ mod tests {
         );
 
         let tag = XHtmlTag::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(
             tag,
-            Some(XHtmlTag::Open(XHtmlElement {
+            Some(XHtmlTag::Open)
+        );
+
+        assert_eq!(element, XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
@@ -433,18 +458,22 @@ mod tests {
                         )
                     }
                 ]),
-            }))
-        );
+            });
     }
 
     #[test]
     fn test_xhtml_tag_open() {
         let mut reader = Reader::new("p key=\"value\"");
         let tag = XHtmlTag::from(&mut reader);
+        let mut element = XHtmlElement::new();
+        element.from(&mut reader);
 
         assert_eq!(
             tag,
-            Some(XHtmlTag::Open(XHtmlElement {
+            Some(XHtmlTag::Open)
+        );
+
+        assert_eq!(element, XHtmlElement {
                 name: "p",
                 id: None,
                 class: None,
@@ -452,8 +481,7 @@ mod tests {
                     key: "key",
                     value: Some("value")
                 }]),
-            }))
-        );
+            });
     }
 
     #[test]

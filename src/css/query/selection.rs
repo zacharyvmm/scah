@@ -6,7 +6,6 @@ use super::task::{FsmState, ScopedFsm};
 use crate::css::Save;
 use crate::css::parser::tree::Query;
 use crate::css::query::task::Fsm;
-use crate::store::reserve::Reserve;
 use crate::{XHtmlElement, dbg_print};
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
@@ -128,7 +127,6 @@ where E: Default + Copy + Debug
         &mut self,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
-        reserve: &mut Reserve<E>,
         store: &mut S,
     ) -> Result<(), QueryError<'_>>
     where
@@ -179,7 +177,6 @@ where E: Default + Copy + Debug
                 println!("?>> LEN: {}", self.scoped_fsms.len());
                 println!("??> LEN: {}", new_scoped_fsms.len());
 
-                // reserve.push(new_scoped_fsm.parent, Some(position));
                 dbg_print!("Scoped FSM ({i}) Saved `{:?}`", element);
             }
 
@@ -232,8 +229,6 @@ where E: Default + Copy + Debug
                     document_position,
                     fsm,
                 )?;
-
-                // reserve.push(fsm.parent, None);
 
                 dbg_print!("FSM Saved `{:?}`", element);
             }

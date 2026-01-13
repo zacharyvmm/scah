@@ -223,18 +223,22 @@ mod tests {
         // Build a tree
         let mut store = RustStore::new(false);
         
-        let title_elem = XHtmlElement::from(&mut Reader::new("h1"));
+        let mut title_elem = XHtmlElement::new();
+        title_elem.from(&mut Reader::new("h1"));
+
         let sel_title = SelectionPart::new("title", SelectionKind::First(Save { inner_html: false, text_content: true })).build();
         let title_idx = store.push(&sel_title, crate::store::ROOT, title_elem);
         store.set_content(title_idx, None, Some("Hello".to_string()));
 
         let sel_items = SelectionPart::new("items", SelectionKind::All(Save { inner_html: false, text_content: true })).build();
         
-        let li1_elem = XHtmlElement::from(&mut Reader::new("li"));
+        let mut li1_elem = XHtmlElement::new();
+        li1_elem.from(&mut Reader::new("li"));
         let li1_idx = store.push(&sel_items, crate::store::ROOT, li1_elem);
         store.set_content(li1_idx, None, Some("First".to_string()));
 
-        let li2_elem = XHtmlElement::from(&mut Reader::new("li"));
+        let mut li2_elem = XHtmlElement::new();
+        li2_elem.from(&mut Reader::new("li"));
         let li2_idx = store.push(&sel_items, crate::store::ROOT, li2_elem);
         store.set_content(li2_idx, None, Some("Second".to_string()));
 
@@ -282,7 +286,8 @@ mod tests {
     #[should_panic(expected = "no entry found for key")]
     fn test_non_existing_key_element_access() {
         let mut store = RustStore::new(false);
-        let title_elem = XHtmlElement::from(&mut Reader::new("h1"));
+        let mut title_elem = XHtmlElement::new();
+        title_elem.from(&mut Reader::new("h1"));
         let sel_title = SelectionPart::new("title", SelectionKind::First(Save { inner_html: false, text_content: true })).build();
         let _ = store.push(&sel_title, crate::store::ROOT, title_elem);
 
@@ -301,7 +306,8 @@ mod tests {
     #[should_panic(expected = "Cannot use usize index on single element")]
     fn test_index_on_single_element_access() {
         let mut store = RustStore::new(false);
-        let title_elem = XHtmlElement::from(&mut Reader::new("h1"));
+        let mut title_elem = XHtmlElement::new();
+        title_elem.from(&mut Reader::new("h1"));
         let sel_title = SelectionPart::new("title", SelectionKind::First(Save { inner_html: false, text_content: true })).build();
         let _ = store.push(&sel_title, crate::store::ROOT, title_elem);
 
@@ -322,11 +328,20 @@ mod tests {
         let mut store = RustStore::new(false);
 
         // SETUP Elements
-        let first = XHtmlElement::from(&mut Reader::new("a class=\"class\""));
-        let second = XHtmlElement::from(&mut Reader::new("span id=\"id\""));
-        let second_extended = XHtmlElement::from(&mut Reader::new("p"));
-        let second_alternate = XHtmlElement::from(&mut Reader::new("p"));
-        let first_alternate = XHtmlElement::from(&mut Reader::new("div"));
+        let mut first = XHtmlElement::new();
+        first.from(&mut Reader::new("a class=\"class\""));
+
+        let mut second = XHtmlElement::new();
+        second.from(&mut Reader::new("span id=\"id\""));
+
+        let mut second_extended = XHtmlElement::new();
+        second_extended.from(&mut Reader::new("p"));
+
+        let mut second_alternate = XHtmlElement::new();
+        second_alternate.from(&mut Reader::new("p"));
+
+        let mut first_alternate = XHtmlElement::new();
+        first_alternate.from(&mut Reader::new("div"));
 
         let selection_first = SelectionPart::new(
             "a",

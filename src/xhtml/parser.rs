@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use super::element::element::XHtmlTag;
 use super::text_content::TextContent;
+use crate::XHtmlElement;
 use crate::css::DocumentPosition;
 use crate::css::FsmManager;
 use crate::dbg_print;
@@ -16,6 +17,7 @@ where
     position: DocumentPosition,
     pub content: TextContent<'html>,
     pub selectors: FsmManager<'html, 'query, S>,
+    element: crate::XHtmlElement<'html>,
 }
 
 impl<'html, 'query, S> XHtmlParser<'html, 'query, S>
@@ -24,15 +26,16 @@ where
     S::E: Default + Debug + Eq + Copy
 {
     pub fn new(selectors: FsmManager<'query, 'html, S>) -> Self {
-        return Self {
+        Self {
             position: DocumentPosition {
                 element_depth: 0,
                 reader_position: 0, // for inner_html
                 text_content_position: 0,
             },
             content: TextContent::new(),
-            selectors: selectors,
-        };
+            selectors,
+            element: XHtmlElement::new()
+        }
     }
 
     pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
@@ -48,24 +51,24 @@ where
 
             while tag.is_none() {
                 self.position.reader_position = reader.get_position();
-                tag = XHtmlTag::from(&mut *reader);
-                if tag.is_none() && self.content.text_start.is_some() {
-                    if let Some(position) = self.content.push(reader, self.position.reader_position)
+                tag = XHtmlTag::from(reader);
+                if let Some(XHtmlTag::Open) = tag {
+                    self.element.from(reader);
+                } else if tag.is_none() && self.content.text_start.is_some()
+                    && let Some(position) = self.content.push(reader, self.position.reader_position)
                     {
                         self.position.text_content_position = position;
                         self.content.set_start(reader.get_position());
                     }
-                }
             }
 
             tag.unwrap()
         };
 
-        if self.content.text_start.is_some() {
-            if let Some(position) = self.content.push(reader, self.position.reader_position) {
+        if self.content.text_start.is_some()
+            && let Some(position) = self.content.push(reader, self.position.reader_position) {
                 self.position.text_content_position = position;
             }
-        }
 
         self.content.set_start(reader.get_position());
 
@@ -74,26 +77,28 @@ where
         let mut early_exit = false;
 
         match tag {
-            XHtmlTag::Open(element) => {
+            XHtmlTag::Open => {
                 self.position.element_depth += 1;
                 self.position.reader_position = reader.get_position();
 
                 dbg_print!(
                     "opening: `{}` ({})",
-                    element.name,
+                    self.element.name,
                     self.position.element_depth
                 );
 
                 let mut remove_depth_after_next = false;
-                if element.is_self_closing() {
+                if self.element.is_self_closing() {
                     remove_depth_after_next = true;
                 }
 
-                self.selectors.next(element, &self.position);
+                self.selectors.next(&self.element, &self.position);
 
                 if remove_depth_after_next {
                     self.position.element_depth -= 1;
                 }
+
+                self.element.clear();
             }
             XHtmlTag::Close(closing_tag) => {
                 dbg_print!("closing: `{closing_tag}` ({})", self.position.element_depth);
