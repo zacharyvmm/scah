@@ -3,7 +3,7 @@ mod tests {
     use std::io::BufReader;
     use std::io::prelude::*;
 
-    use onego::{Element, Query, QueryError, Save, SelectionValue, parse};
+    use onego::{Element, Query, QueryError, Save, parse};
 
     #[test]
     fn test_all_anchor_tags_for_whatwg_html_spec() -> std::io::Result<()> {

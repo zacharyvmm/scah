@@ -84,63 +84,45 @@ impl<'a> XHtmlElement<'a> {
     }
 
     pub fn from(&mut self, reader: &mut Reader<'a>) {
+        let mut assign = false;
+        let mut key = None;
 
-        let mut pair = Pair::NewKey;
-
-        let mut opened_quote: Option<QuoteKind> = None;
-        let mut position = reader.get_position();
-
-        // TODO: I need to refactor this, this is not clean at all
-        while let Some(token) = {
-            let t = ElementAttributeToken::next(reader);
-            if let Some(ElementAttributeToken::CloseElement) = t
-                && opened_quote.is_none()
-            {
-                None
-            } else {
-                t
-            }
-        } {
-            match (&opened_quote, token) {
-                (Option::None, ElementAttributeToken::Quote(kind)) => {
-                    opened_quote = Some(kind);
-                    position = reader.get_position();
-                }
-
-                (Some(previous_quote), ElementAttributeToken::Quote(kind)) => {
-                    if *previous_quote != kind {
-                        continue;
+        while let Some(token) = ElementAttributeToken::next(reader) {
+            match token {
+                ElementAttributeToken::String(string_value) => match key {
+                    None => {
+                        debug_assert!(!assign);
+                        key = Some(string_value);
                     }
-
-                    opened_quote = None;
-
-                    // `"` and `'` are always of size 1
-                    const SIZE_OF_QUOTE: usize = 1;
-
-                    let end_position = reader.get_position() - SIZE_OF_QUOTE;
-                    let content_inside_quotes = reader.slice(position..end_position);
-
-                    if let Some(attribute) = pair.add_string(content_inside_quotes) {
-                        self.add_to_element(attribute);
+                    Some(k) => {
+                        if assign {
+                            self.add_to_element(Attribute {
+                                key: k,
+                                value: Some(string_value),
+                            });
+                            key = None;
+                        } else {
+                            self.add_to_element(Attribute {
+                                key: k,
+                                value: None,
+                            });
+                            key = Some(string_value)
+                        }
+                        assign = false;
                     }
-                }
+                },
 
-                (Option::None, ElementAttributeToken::String(string_value)) => {
-                    if let Some(attribute) = pair.add_string(string_value) {
-                        self.add_to_element(attribute);
-                    }
+                ElementAttributeToken::Equal => {
+                    assign = true;
                 }
-
-                (_, ElementAttributeToken::Equal) => {
-                    pair.set_assign_value();
-                }
-
-                (_, _) => (),
             }
         }
 
-        if let Some(attribute) = pair.get_final_equal_value() {
-            self.add_to_element(attribute);
+        if let Some(attribute) = key {
+            self.add_to_element(Attribute {
+                key: attribute,
+                value: None,
+            });
         }
     }
 }
@@ -435,12 +417,11 @@ mod tests {
         let mut element = XHtmlElement::new();
         element.from(&mut reader);
 
-        assert_eq!(
-            tag,
-            Some(XHtmlTag::Open)
-        );
+        assert_eq!(tag, Some(XHtmlTag::Open));
 
-        assert_eq!(element, XHtmlElement {
+        assert_eq!(
+            element,
+            XHtmlElement {
                 name: "a",
                 id: None,
                 class: None,
@@ -458,7 +439,8 @@ mod tests {
                         )
                     }
                 ]),
-            });
+            }
+        );
     }
 
     #[test]
@@ -468,12 +450,11 @@ mod tests {
         let mut element = XHtmlElement::new();
         element.from(&mut reader);
 
-        assert_eq!(
-            tag,
-            Some(XHtmlTag::Open)
-        );
+        assert_eq!(tag, Some(XHtmlTag::Open));
 
-        assert_eq!(element, XHtmlElement {
+        assert_eq!(
+            element,
+            XHtmlElement {
                 name: "p",
                 id: None,
                 class: None,
@@ -481,7 +462,8 @@ mod tests {
                     key: "key",
                     value: Some("value")
                 }]),
-            });
+            }
+        );
     }
 
     #[test]

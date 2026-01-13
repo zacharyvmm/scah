@@ -16,42 +16,36 @@ impl<'a> Pair<'a> {
     // If the string ends with a `key` without a value then this would get the final value
     pub fn get_final_equal_value(&mut self) -> Option<Attribute<'a>> {
         if let Self::Equal(key) = self {
-            return Some(Attribute {
-                key: *key,
-                value: None,
-            });
+            return Some(Attribute { key, value: None });
         }
 
-        return None;
+        None
     }
 
     pub fn add_string(&mut self, content: &'a str) -> Option<Attribute<'a>> {
         match self {
             Self::NewKey => {
                 *self = Self::Equal(content);
-                return None;
+                None
             }
 
             Self::Equal(key) => {
-                let ret = Some(Attribute {
-                    key: *key,
-                    value: None,
-                });
+                let ret = Some(Attribute { key, value: None });
 
                 *self = Self::Equal(content);
 
-                return ret;
+                ret
             }
 
             Self::AssignValue(key) => {
                 let ret = Some(Attribute {
-                    key: *key,
+                    key,
                     value: Some(content),
                 });
 
                 *self = Self::NewKey;
 
-                return ret;
+                ret
             }
         }
     }

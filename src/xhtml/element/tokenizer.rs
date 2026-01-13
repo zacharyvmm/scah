@@ -4,10 +4,13 @@ use crate::utils::Reader;
 #[derive(Debug, PartialEq)]
 pub enum ElementAttributeToken<'a> {
     String(&'a str),
-    Quote(QuoteKind),
-    CloseElement,
     Equal,
 }
+
+const DOUBLEQUOTE: u8 = b'"';
+const SINGLEQUOTE: u8 = b'\'';
+const EQUAL: u8 = b'=';
+const END_OF_ELEMENT: u8 = b'>';
 
 impl<'a> ElementAttributeToken<'a> {
     pub fn next(reader: &mut Reader<'a>) -> Option<Self> {
@@ -15,20 +18,34 @@ impl<'a> ElementAttributeToken<'a> {
 
         let start_pos = reader.get_position();
 
-        return match reader.next()? {
-            b'"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
-            b'\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
-            b'=' => Some(Self::Equal),
-            b'>' => Some(Self::CloseElement),
+        match reader.next()? {
+            DOUBLEQUOTE => {
+                let star_position = reader.get_position();
+                reader.next_while(|c| c != DOUBLEQUOTE);
+                let content_inside_quotes = reader.slice(star_position..reader.get_position());
+                reader.skip();
+
+                Some(Self::String(content_inside_quotes))
+            }
+            SINGLEQUOTE => {
+                let star_position = reader.get_position();
+                reader.next_while(|c| c != SINGLEQUOTE);
+                let content_inside_quotes = reader.slice(star_position..reader.get_position());
+                reader.skip();
+
+                Some(Self::String(content_inside_quotes))
+            }
+            EQUAL => Some(Self::Equal),
+            END_OF_ELEMENT => None,
             _ => {
                 // Find end of word
                 reader.next_while(|c| {
                     // if in string the
-                    !matches!(c, b' ' | b'"' | b'\'' | b'=' | b'>')
+                    !matches!(c, b' ' | DOUBLEQUOTE | SINGLEQUOTE | EQUAL | END_OF_ELEMENT)
                 });
                 return Some(Self::String(reader.slice(start_pos..reader.get_position())));
             }
-        };
+        }
     }
 }
 
@@ -49,43 +66,17 @@ mod tests {
 
         assert_eq!(next_value, ElementAttributeToken::String("key"));
 
-        // -----
         next_iter = ElementAttributeToken::next(&mut reader);
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
         assert_eq!(next_value, ElementAttributeToken::Equal);
 
-        // -----
-        next_iter = ElementAttributeToken::next(&mut reader);
-        assert!(next_iter.is_some());
-
-        next_value = next_iter.unwrap();
-        assert_eq!(
-            next_value,
-            ElementAttributeToken::Quote(QuoteKind::DoubleQuoted)
-        );
-
-        // -----
         next_iter = ElementAttributeToken::next(&mut reader);
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
         assert_eq!(next_value, ElementAttributeToken::String("value"));
-
-        // -----
-        next_iter = ElementAttributeToken::next(&mut reader);
-        assert!(next_iter.is_some());
-
-        next_value = next_iter.unwrap();
-        assert_eq!(
-            next_value,
-            ElementAttributeToken::Quote(QuoteKind::DoubleQuoted)
-        );
-
-        // -----
-        next_iter = ElementAttributeToken::next(&mut reader);
-        assert!(!next_iter.is_some());
     }
 
     // TOKENIZER / FSM attribute robustness tests

@@ -19,7 +19,7 @@ type Runner<'query, E> = Vec<SelectionRunner<'query, 'query, E>>;
 pub struct FsmManager<'html, 'query: 'html, S>
 where
     S: Store<'html, 'query>,
-    S::E: Debug + Copy + Default
+    S::E: Debug + Copy + Default,
 {
     store: S,
     runners: Runner<'query, S::E>,
@@ -28,7 +28,7 @@ where
 impl<'html, 'query: 'html, S, E> FsmManager<'html, 'query, S>
 where
     S: Store<'html, 'query, E = E>,
-    E: Debug + Copy + Default + Eq
+    E: Debug + Copy + Default + Eq,
 {
     pub fn new(s: S, queries: &'query [Query<'query>]) -> Self {
         // BUG: the memory moves afterwards
@@ -41,7 +41,11 @@ where
         }
     }
 
-    pub(crate) fn next(&mut self, xhtml_element: &XHtmlElement<'html>, position: &DocumentPosition) {
+    pub(crate) fn next(
+        &mut self,
+        xhtml_element: &XHtmlElement<'html>,
+        position: &DocumentPosition,
+    ) {
         for session in self.runners.iter_mut() {
             let _ = session.next(&xhtml_element, position, &mut self.store);
         }

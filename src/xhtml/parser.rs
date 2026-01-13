@@ -12,7 +12,7 @@ use crate::utils::Reader;
 pub struct XHtmlParser<'html, 'query, S>
 where
     S: Store<'html, 'query>,
-    S::E: Default + Debug + Eq + Copy
+    S::E: Default + Debug + Eq + Copy,
 {
     position: DocumentPosition,
     pub content: TextContent<'html>,
@@ -23,7 +23,7 @@ where
 impl<'html, 'query, S> XHtmlParser<'html, 'query, S>
 where
     S: Store<'html, 'query>,
-    S::E: Default + Debug + Eq + Copy
+    S::E: Default + Debug + Eq + Copy,
 {
     pub fn new(selectors: FsmManager<'query, 'html, S>) -> Self {
         Self {
@@ -34,7 +34,7 @@ where
             },
             content: TextContent::new(),
             selectors,
-            element: XHtmlElement::new()
+            element: XHtmlElement::new(),
         }
     }
 
@@ -54,21 +54,23 @@ where
                 tag = XHtmlTag::from(reader);
                 if let Some(XHtmlTag::Open) = tag {
                     self.element.from(reader);
-                } else if tag.is_none() && self.content.text_start.is_some()
+                } else if tag.is_none()
+                    && self.content.text_start.is_some()
                     && let Some(position) = self.content.push(reader, self.position.reader_position)
-                    {
-                        self.position.text_content_position = position;
-                        self.content.set_start(reader.get_position());
-                    }
+                {
+                    self.position.text_content_position = position;
+                    self.content.set_start(reader.get_position());
+                }
             }
 
             tag.unwrap()
         };
 
         if self.content.text_start.is_some()
-            && let Some(position) = self.content.push(reader, self.position.reader_position) {
-                self.position.text_content_position = position;
-            }
+            && let Some(position) = self.content.push(reader, self.position.reader_position)
+        {
+            self.position.text_content_position = position;
+        }
 
         self.content.set_start(reader.get_position());
 

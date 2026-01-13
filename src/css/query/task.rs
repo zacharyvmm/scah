@@ -8,7 +8,8 @@ use smallvec::SmallVec;
 
 #[derive(PartialEq, Debug)]
 pub struct FsmState<E>
-where E: Debug
+where
+    E: Debug,
 {
     pub(super) parent: E,
     pub(super) position: Position,
@@ -45,8 +46,9 @@ pub trait Fsm<'query, 'html, E> {
     fn set_end_false(&mut self);
 }
 
-impl<'query, E> FsmState<E> 
-where E: Default + Copy + Debug
+impl<'query, E> FsmState<E>
+where
+    E: Default + Copy + Debug,
 {
     pub fn new() -> Self {
         Self {
@@ -65,7 +67,8 @@ where E: Default + Copy + Debug
 }
 
 impl<'query, 'html, E> Fsm<'query, 'html, E> for FsmState<E>
-where E: Copy + Debug
+where
+    E: Copy + Debug,
 {
     fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
         let fsm = tree.get(&self.position);
@@ -188,7 +191,8 @@ impl<'query, E> ScopedFsm<E> {
 }
 
 impl<'query, 'html, E> Fsm<'query, 'html, E> for ScopedFsm<E>
-where E: Copy
+where
+    E: Copy,
 {
     fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
         let fsm = tree.get(&self.position);

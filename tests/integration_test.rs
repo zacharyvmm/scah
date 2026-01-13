@@ -1,7 +1,7 @@
 mod tests {
     use std::collections::HashMap;
 
-    use onego::{Element, Query, QueryError, Save, SelectionValue, parse};
+    use onego::{Attribute, Element, Query, QueryError, Save, parse};
     const HTML: &str = r#"
 <!DOCTYPE html>
 <html>
@@ -50,12 +50,15 @@ mod tests {
         let selection_tree = Query::all("main > section#id", Save::all());
 
         let queries = &[selection_tree.build()];
-        let map = parse(HTML, queries);
+        let arena = parse(HTML, queries);
+        let root = &arena[0];
 
-        let list = &map["main > section#id"];
+        let indices = root["main > section#id"].iter().unwrap();
+        let mut list = indices.map(|i| &arena[*i]);
+
         println!("{:#?}", list);
 
-        let last = &list[list.len()? - 1];
+        let last = list.clone().last().unwrap();
 
         assert!(last.inner_html.is_some());
         assert_eq!(
@@ -69,7 +72,7 @@ mod tests {
             r#"Not selected (main has no red-background class)"#
         );
 
-        let first = &list[0];
+        let first = list.next().unwrap();
         assert_eq!(
             first.inner_html.unwrap().trim(),
             r#"<!-- These 3 links will be selected by the selector -->
@@ -95,31 +98,40 @@ mod tests {
     #[test]
     fn test_html_page_all_anchor_tag_selection<'key>() -> Result<(), QueryError<'key>> {
         let queries = &[Query::all("a", Save::all()).build()];
-        let map = parse(HTML, queries);
+        let arena = parse(HTML, queries);
+        let root = &arena[0];
 
-        assert_eq!(map["a"].len()?, 7);
-        println!("{:#?}", map);
+        let indices = root["a"].iter().unwrap();
+        let list = indices.map(|i| &arena[*i]);
+
+        assert_eq!(list.clone().count(), 7);
+        println!("List: {:#?}", list.collect::<Vec<_>>());
         Ok(())
     }
 
     #[test]
     fn test_html_page_first_anchor_tag_selection<'key>() -> Result<(), QueryError<'key>> {
         let queries = &[Query::first("a", Save::all()).build()];
-        let map = parse(HTML, queries);
+        let arena = parse(HTML, queries);
+        let root = &arena[0];
+
+        let child = &root["main > section#id"];
 
         assert_eq!(
-            map["a"].value()?,
-            &Element {
+            arena[child.value()?],
+            Element {
                 name: "a",
                 class: None,
                 id: None,
-                attributes: vec![("href", Some("link1")),],
+                attributes: vec![Attribute {
+                    key: "href",
+                    value: Some("link1")
+                }],
                 inner_html: Some("Link 1"),
                 text_content: Some("Link 1".to_string()),
-                children: HashMap::new(),
+                children: Vec::new(),
             }
         );
-        println!("{:#?}", map);
         Ok(())
     }
 
@@ -127,9 +139,13 @@ mod tests {
     fn test_html_page_all_anchor_tag_starting_with_link_selection<'key>()
     -> Result<(), QueryError<'key>> {
         let queries = &[Query::all("a[href^=link]", Save::all()).build()];
-        let map = parse(HTML, queries);
+        let arena = parse(HTML, queries);
+        let root = &arena[0];
 
-        assert_eq!(map["a[href^=link]"].len()?, 3);
+        let indices = root["a[href^=link]"].iter().unwrap();
+        let list = indices.map(|i| &arena[*i]);
+
+        assert_eq!(list.count(), 3);
         Ok(())
     }
 
@@ -137,18 +153,26 @@ mod tests {
     fn test_html_page_children_valid_anchor_tags_in_main<'key>() -> Result<(), QueryError<'key>> {
         let queries = &[Query::all("main > section > a[href]", Save::all()).build()];
 
-        let map = parse(HTML, queries);
+        let arena = parse(HTML, queries);
+        let root = &arena[0];
 
-        assert_eq!(map["main > section > a[href]"].len()?, 5);
+        let indices = root["main > section > a[href]"].iter().unwrap();
+        let list = indices.map(|i| &arena[*i]);
+
+        assert_eq!(list.count(), 5);
         Ok(())
     }
 
     #[test]
     fn test_html_page_single_main<'key>() -> Result<(), QueryError<'key>> {
         let queries = &[Query::all("main.red-background > section#id", Save::all()).build()];
-        let map = parse(HTML, queries);
+        let arena = parse(HTML, queries);
+        let root = &arena[0];
 
-        assert_eq!(map["main.red-background > section#id"].len()?, 1);
+        let indices = root["main.red-background > section#id"].iter().unwrap();
+        let list = indices.map(|i| &arena[*i]);
+
+        assert_eq!(list.count(), 1);
         Ok(())
     }
 
@@ -164,10 +188,14 @@ mod tests {
             .build();
         // let query = QueryBuilder::new().all("main").then(|query| [query.all("> a[href]"), query.all("div a")]).build();
 
-        let q = [query];
-        let map = parse(HTML, &q);
+        let q = &[query];
+        let arena = parse(HTML, q);
+        let root = &arena[0];
 
-        println!("Map: {:#?}", map);
+        let indices = root["main > section"].iter().unwrap();
+        let list = indices.map(|i| &arena[*i]);
+
+        println!("List: {:#?}", list.collect::<Vec<_>>());
         Ok(())
     }
 }

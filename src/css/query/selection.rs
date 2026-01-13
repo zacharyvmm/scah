@@ -34,7 +34,8 @@ type EndTagEventVec<E> = Vec<EndTagSaveContent<E>>;
 
 #[derive(Debug)]
 pub struct SelectionRunner<'a, 'query, E>
-where E: Debug
+where
+    E: Debug,
 {
     pub(crate) selection_tree: &'a Query<'query>,
     pub(crate) fsm: FsmState<E>,
@@ -43,7 +44,8 @@ where E: Debug
 }
 
 impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E>
-where E: Default + Copy + Debug
+where
+    E: Default + Copy + Debug,
 {
     pub fn new(selection_tree: &'a Query<'query>) -> Self {
         Self {

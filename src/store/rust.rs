@@ -62,7 +62,7 @@ impl<'query> Index<usize> for Child<'query> {
     }
 }
 
-type Children<'query> = Vec<Child<'query>>; 
+type Children<'query> = Vec<Child<'query>>;
 
 #[derive(Debug, PartialEq)]
 pub struct Element<'html, 'query> {
@@ -106,7 +106,9 @@ impl<'html, 'query> Index<&'query str> for Element<'html, 'query> {
     type Output = Child<'query>;
 
     fn index(&self, key: &'query str) -> &Self::Output {
-        let index = self.index_of_child_with_key(key).expect("no entry found for key");
+        let index = self
+            .index_of_child_with_key(key)
+            .expect("no entry found for key");
         &self.children[index]
     }
 }
@@ -222,16 +224,30 @@ mod tests {
     fn test_element_access() -> Result<(), QueryError<'static>> {
         // Build a tree
         let mut store = RustStore::new(false);
-        
+
         let mut title_elem = XHtmlElement::new();
         title_elem.from(&mut Reader::new("h1"));
 
-        let sel_title = SelectionPart::new("title", SelectionKind::First(Save { inner_html: false, text_content: true })).build();
+        let sel_title = SelectionPart::new(
+            "title",
+            SelectionKind::First(Save {
+                inner_html: false,
+                text_content: true,
+            }),
+        )
+        .build();
         let title_idx = store.push(&sel_title, crate::store::ROOT, title_elem);
         store.set_content(title_idx, None, Some("Hello".to_string()));
 
-        let sel_items = SelectionPart::new("items", SelectionKind::All(Save { inner_html: false, text_content: true })).build();
-        
+        let sel_items = SelectionPart::new(
+            "items",
+            SelectionKind::All(Save {
+                inner_html: false,
+                text_content: true,
+            }),
+        )
+        .build();
+
         let mut li1_elem = XHtmlElement::new();
         li1_elem.from(&mut Reader::new("li"));
         let li1_idx = store.push(&sel_items, crate::store::ROOT, li1_elem);
@@ -257,7 +273,10 @@ mod tests {
             store.arena[*first_idx].text_content,
             Some("First".to_string())
         );
-        assert_eq!(store.arena[doc["items"][0]].text_content, Some("First".to_string()));
+        assert_eq!(
+            store.arena[doc["items"][0]].text_content,
+            Some("First".to_string())
+        );
 
         // Iterators for All Selections
         let items_iter1 = doc.get("items")?.iter()?;
@@ -288,7 +307,14 @@ mod tests {
         let mut store = RustStore::new(false);
         let mut title_elem = XHtmlElement::new();
         title_elem.from(&mut Reader::new("h1"));
-        let sel_title = SelectionPart::new("title", SelectionKind::First(Save { inner_html: false, text_content: true })).build();
+        let sel_title = SelectionPart::new(
+            "title",
+            SelectionKind::First(Save {
+                inner_html: false,
+                text_content: true,
+            }),
+        )
+        .build();
         let _ = store.push(&sel_title, crate::store::ROOT, title_elem);
 
         let doc = &store.arena[0];
@@ -308,16 +334,23 @@ mod tests {
         let mut store = RustStore::new(false);
         let mut title_elem = XHtmlElement::new();
         title_elem.from(&mut Reader::new("h1"));
-        let sel_title = SelectionPart::new("title", SelectionKind::First(Save { inner_html: false, text_content: true })).build();
+        let sel_title = SelectionPart::new(
+            "title",
+            SelectionKind::First(Save {
+                inner_html: false,
+                text_content: true,
+            }),
+        )
+        .build();
         let _ = store.push(&sel_title, crate::store::ROOT, title_elem);
 
         let doc = &store.arena[0];
 
         assert!(doc.get("title").unwrap().iter().is_err());
-        
+
         let _ = doc["title"][0];
     }
-    
+
     #[test]
     fn test_build_tree() {
         /*

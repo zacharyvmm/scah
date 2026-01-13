@@ -59,7 +59,8 @@ impl<'a> Reader<'a> {
     where
         F: Fn(u8) -> bool,
     {
-        while self.position < self.source.len() {
+        let len = self.source.len();
+        while self.position < len {
             let b = self.source[self.position];
             let should_continue = condition(b);
 
@@ -82,14 +83,9 @@ impl<'a> Reader<'a> {
             return true;
         }
 
-        if self.source[self.position..]
+        self.source[self.position..]
             .iter()
             .all(|b| b.is_ascii_whitespace())
-        {
-            return true;
-        }
-
-        return false;
     }
 }
 
