@@ -18,6 +18,7 @@ where
     pub content: TextContent<'html>,
     pub selectors: FsmManager<'html, 'query, S>,
     element: crate::XHtmlElement<'html>,
+    in_script: bool,
 }
 
 impl<'html, 'query, S> XHtmlParser<'html, 'query, S>
@@ -26,19 +27,43 @@ where
     S::E: Default + Debug + Eq + Copy,
 {
     pub fn new(selectors: FsmManager<'query, 'html, S>) -> Self {
+        let mut content = TextContent::new();
+        content.start_recording();
         Self {
             position: DocumentPosition {
                 element_depth: 0,
                 reader_position: 0, // for inner_html
-                text_content_position: 0,
+                text_content_position: usize::MAX,
             },
-            content: TextContent::new(),
+            content,
             selectors,
             element: XHtmlElement::new(),
+            in_script: false,
         }
     }
 
     pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
+        if self.in_script {
+            loop {
+                reader.next_while(|c| c != b'<');
+                if reader.peek().is_none() {
+                    return false;
+                }
+
+                if reader.match_ignore_case("</script>") {
+                    if self.content.text_start.is_some() {
+                        if let Some(position) = self.content.push(reader, reader.get_position()) {
+                            self.position.text_content_position = position;
+                        }
+                    }
+                    self.in_script = false;
+                    break;
+                } else {
+                    reader.skip();
+                }
+            }
+        }
+
         // move until it finds the first `<`
         reader.next_while(|c| c != b'<');
 
@@ -80,6 +105,10 @@ where
 
         match tag {
             XHtmlTag::Open => {
+                if self.element.name.eq_ignore_ascii_case("script") {
+                    self.in_script = true;
+                }
+
                 self.position.element_depth += 1;
                 self.position.reader_position = reader.get_position();
 
@@ -119,14 +148,14 @@ where
         self.selectors.matches()
     }
 }
-/*
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use super::*;
     use crate::css::{FsmManager, Query, Save, SelectionKind, SelectionPart};
-    use crate::store::{Element, RustStore, SelectionValue, Store, ValueKind};
+    use crate::store::ChildIndex;
+    use crate::store::{Element, RustStore, Store};
     use crate::utils::Reader;
     use crate::xhtml::element::element::{Attribute, XHtmlElement};
     use pretty_assertions::{assert_eq, assert_ne};
@@ -159,34 +188,24 @@ mod tests {
             // println!("{:?}", parser.selectors);
         }
 
-        let root = *parser.selectors.matches().root;
+        let store = parser.matches();
+        let root = &store.arena[0];
 
-        assert_eq!(
-            root,
-            Element {
-                name: "root",
-                id: None,
-                class: None,
-                attributes: vec![],
-                inner_html: None,
-                text_content: None,
-                children: HashMap::from([(
-                    "p.indent > .bold",
-                    SelectionValue {
-                        kind: ValueKind::List,
-                        list: vec![Element {
-                            name: "span",
-                            id: Some("name"),
-                            class: Some("bold"),
-                            attributes: vec![],
-                            inner_html: None,
-                            text_content: None,
-                            children: HashMap::new(),
-                        }]
-                    }
-                )])
-            }
-        )
+        assert_eq!(root.name, "root");
+        assert_eq!(root.children.len(), 1);
+        let child_node = &root.children[0];
+        assert_eq!(child_node.query, "p.indent > .bold");
+
+        let indices = match &child_node.index {
+            ChildIndex::Many(indices) => indices,
+            _ => panic!("Expected list"),
+        };
+        assert_eq!(indices.len(), 1);
+        let span = &store.arena[indices[0]];
+
+        assert_eq!(span.name, "span");
+        assert_eq!(span.id, Some("name"));
+        assert_eq!(span.class, Some("bold"));
     }
 
     #[test]
@@ -309,134 +328,63 @@ mod tests {
 
         while parser.next(&mut reader) {}
 
-        let map = parser.matches().root.children;
-        //println!("Map: {:#?}", map);
-        assert_eq!(
-            map,
-            HashMap::from([(
-                "main > section",
-                SelectionValue {
-                    kind: ValueKind::List,
-                    list: vec![
-                        Element {
-                            name: "section",
-                            id: None,
-                            class: None,
-                            attributes: vec![],
-                            inner_html: Some(
-                                r#"
-                    <a href="https://hello.com">Hello</a>
-                    <div>
-                        <a href="https://world.com">World</a>
-                    </div>
-                "#
-                            ),
-                            text_content: Some("Hello World".to_string()),
-                            children: HashMap::from([
-                                (
-                                    "div a",
-                                    SelectionValue {
-                                        kind: ValueKind::List,
-                                        list: vec![Element {
-                                            name: "a",
-                                            id: None,
-                                            class: None,
-                                            attributes: vec![("href", Some("https://world.com"))],
-                                            inner_html: Some("World"),
-                                            text_content: Some("World".to_string()),
-                                            children: HashMap::new(),
-                                        },]
-                                    }
-                                ),
-                                (
-                                    "> a[href]",
-                                    SelectionValue {
-                                        kind: ValueKind::SingleItem,
-                                        list: vec![Element {
-                                            name: "a",
-                                            id: None,
-                                            class: None,
-                                            attributes: vec![("href", Some("https://hello.com"))],
-                                            inner_html: Some("Hello"),
-                                            text_content: Some("Hello".to_string()),
-                                            children: HashMap::new(),
-                                        }]
-                                    }
-                                )
-                            ]),
-                        },
-                        Element {
-                            name: "section",
-                            id: None,
-                            class: None,
-                            attributes: vec![],
-                            inner_html: Some(
-                                r#"
-                    <a href="https://hello2.com">Hello2</a>
+        let store = parser.matches();
+        let root = &store.arena[0];
 
-                    <div>
-                        <a href="https://world2.com">World2</a>
-                        <div>
-                            <a href="https://world3.com">World3</a>
-                        </div>
-                    </div>
-                "#
-                            ),
-                            text_content: Some("Hello2 World2 World3".to_string()),
-                            children: HashMap::from([
-                                (
-                                    "div a",
-                                    SelectionValue {
-                                        kind: ValueKind::List,
-                                        list: vec![
-                                            Element {
-                                                name: "a",
-                                                id: None,
-                                                class: None,
-                                                attributes: vec![(
-                                                    "href",
-                                                    Some("https://world2.com")
-                                                )],
-                                                inner_html: Some("World2"),
-                                                text_content: Some("World2".to_string()),
-                                                children: HashMap::new(),
-                                            },
-                                            Element {
-                                                name: "a",
-                                                id: None,
-                                                class: None,
-                                                attributes: vec![(
-                                                    "href",
-                                                    Some("https://world3.com")
-                                                )],
-                                                inner_html: Some("World3"),
-                                                text_content: Some("World3".to_string()),
-                                                children: HashMap::new(),
-                                            },
-                                        ]
-                                    }
-                                ),
-                                (
-                                    "> a[href]",
-                                    SelectionValue {
-                                        kind: ValueKind::SingleItem,
-                                        list: vec![Element {
-                                            name: "a",
-                                            id: None,
-                                            class: None,
-                                            attributes: vec![("href", Some("https://hello2.com"))],
-                                            inner_html: Some("Hello2"),
-                                            text_content: Some("Hello2".to_string()),
-                                            children: HashMap::new(),
-                                        },]
-                                    }
-                                )
-                            ]),
-                        },
-                    ]
-                }
-            ),])
+        // main > section
+        let sections_idx = &root["main > section"];
+        let sections: Vec<&Element> = sections_idx
+            .iter()
+            .unwrap()
+            .map(|i| &store.arena[*i])
+            .collect();
+        assert_eq!(sections.len(), 2);
+
+        // Section 1
+        let s1 = sections[0];
+        assert_eq!(s1.text_content, Some("Hello World".to_string()));
+
+        let s1_div_a: Vec<&Element> = s1["div a"]
+            .iter()
+            .unwrap()
+            .map(|i| &store.arena[*i])
+            .collect();
+        assert_eq!(s1_div_a.len(), 1);
+        assert_eq!(s1_div_a[0].text_content, Some("World".to_string()));
+        assert_eq!(s1_div_a[0].attributes[0].value, Some("https://world.com"));
+
+        let s1_direct_a: Vec<&Element> = s1["> a[href]"]
+            .iter()
+            .unwrap()
+            .map(|i| &store.arena[*i])
+            .collect();
+        assert_eq!(s1_direct_a.len(), 1);
+        assert_eq!(s1_direct_a[0].text_content, Some("Hello".to_string()));
+        assert_eq!(
+            s1_direct_a[0].attributes[0].value,
+            Some("https://hello.com")
         );
+
+        // Section 2
+        let s2 = sections[1];
+        assert_eq!(s2.text_content, Some("Hello2 World2 World3".to_string()));
+
+        let s2_div_a: Vec<&Element> = s2["div a"]
+            .iter()
+            .unwrap()
+            .map(|i| &store.arena[*i])
+            .collect();
+        assert_eq!(s2_div_a.len(), 2);
+        assert_eq!(s2_div_a[0].text_content, Some("World2".to_string()));
+        assert_eq!(s2_div_a[1].text_content, Some("World3".to_string()));
+
+        let s2_direct_a: Vec<&Element> = s2["> a[href]"]
+            .iter()
+            .unwrap()
+            .map(|i| &store.arena[*i])
+            .collect();
+        assert_eq!(s2_direct_a.len(), 1);
+        assert_eq!(s2_direct_a[0].text_content, Some("Hello2".to_string()));
     }
 
     const BASIC_HTML_WITH_SCRIPT: &str = r#"
@@ -469,18 +417,13 @@ mod tests {
             // println!("{:?}", parser.selectors);
         }
 
-        let map = parser.matches().root.children;
-        //println!("Matches: {:#?}", map);
-        assert_eq!(
-            map,
-            HashMap::from([(
-                "div",
-                SelectionValue {
-                    kind: ValueKind::List,
-                    list: vec![],
-                }
-            )])
-        )
+        let store = parser.matches();
+        let root = &store.arena[0];
+
+        // It should NOT find any div
+        if let Ok(div_idx) = root.get("div") {
+            assert_eq!(div_idx.iter().unwrap().count(), 0);
+        }
     }
 
     const BASIC_HTML_WITH_SELF_CLOSING_TAG: &str = r#"
@@ -512,54 +455,29 @@ mod tests {
 
         let mut parser = XHtmlParser::new(manager);
 
-        // STEP 1
-        //let mut continue_parser = parser.next(&mut reader);
-
         println!("{:?}", queries);
 
-        while parser.next(&mut reader) {
-            // println!("{:?}", parser.selectors);
-        }
+        while parser.next(&mut reader) {}
 
-        let map = parser.matches().root.children;
-        //println!("Matches: {:#?}", map);
-        assert_eq!(
-            map,
-            HashMap::from([(
-                "form > p > input",
-                SelectionValue {
-                    kind: ValueKind::List,
-                    list: vec![
-                        Element {
-                            name: "input",
-                            id: Some("name"),
-                            class: None,
-                            attributes: vec![
-                                ("type", Some("text")),
-                                ("name", Some("user_name")),
-                                ("/", None),
-                            ],
-                            inner_html: None,
-                            text_content: None,
-                            children: HashMap::new(),
-                        },
-                        Element {
-                            name: "input",
-                            id: Some("mail"),
-                            class: None,
-                            attributes: vec![
-                                ("type", Some("email")),
-                                ("name", Some("user_email")),
-                                ("/", None),
-                            ],
-                            inner_html: None,
-                            text_content: None,
-                            children: HashMap::new(),
-                        },
-                    ],
-                }
-            )])
-        )
+        let store = parser.matches();
+        let root = &store.arena[0];
+
+        let inputs: Vec<&Element> = root["form > p > input"]
+            .iter()
+            .unwrap()
+            .map(|i| &store.arena[*i])
+            .collect();
+        assert_eq!(inputs.len(), 2);
+
+        assert_eq!(inputs[0].name, "input");
+        assert_eq!(inputs[0].id, Some("name"));
+        assert_eq!(inputs[0].attributes[0].key, "type");
+        assert_eq!(inputs[0].attributes[0].value, Some("text"));
+
+        assert_eq!(inputs[1].name, "input");
+        assert_eq!(inputs[1].id, Some("mail"));
+        assert_eq!(inputs[1].attributes[0].key, "type");
+        assert_eq!(inputs[1].attributes[0].value, Some("email"));
     }
 
     #[test]
@@ -586,45 +504,20 @@ mod tests {
             // println!("{:?}", parser.selectors);
         }
 
-        let map = parser.matches().root.children;
-        //println!("Matches: {:#?}", map);
-        assert_eq!(
-            map,
-            HashMap::from([(
-                "form > p > input",
-                SelectionValue {
-                    kind: ValueKind::List,
-                    list: vec![
-                        Element {
-                            name: "input",
-                            id: Some("name"),
-                            class: None,
-                            attributes: vec![
-                                ("type", Some("text")),
-                                ("name", Some("user_name")),
-                                ("/", None),
-                            ],
-                            inner_html: None,
-                            text_content: None,
-                            children: HashMap::new(),
-                        },
-                        Element {
-                            name: "input",
-                            id: Some("mail"),
-                            class: None,
-                            attributes: vec![
-                                ("type", Some("email")),
-                                ("name", Some("user_email")),
-                                ("/", None),
-                            ],
-                            inner_html: None,
-                            text_content: None,
-                            children: HashMap::new(),
-                        },
-                    ],
-                }
-            )])
-        )
+        let store = parser.matches();
+        let root = &store.arena[0];
+
+        let inputs: Vec<&Element> = root["form > p > input"]
+            .iter()
+            .unwrap()
+            .map(|i| &store.arena[*i])
+            .collect();
+        assert_eq!(inputs.len(), 2);
+        assert_eq!(inputs[0].text_content, None);
+        assert_eq!(inputs[0].inner_html, None);
+
+        assert_eq!(inputs[1].text_content, None);
+        assert_eq!(inputs[1].inner_html, None);
     }
 
     const BASIC_ANCHOR_LIST: &str = r#"
@@ -645,45 +538,19 @@ mod tests {
 
         while parser.next(&mut reader) {}
 
-        let map = parser.matches().root.children;
-        assert_eq!(
-            map,
-            HashMap::from([(
-                "a",
-                SelectionValue {
-                    kind: ValueKind::List,
-                    list: vec![
-                        Element {
-                            name: "a",
-                            id: None,
-                            class: None,
-                            attributes: vec![],
-                            inner_html: Some("Hello 1"),
-                            text_content: Some("Hello 1".to_string()),
-                            children: HashMap::new(),
-                        },
-                        Element {
-                            name: "a",
-                            id: None,
-                            class: None,
-                            attributes: vec![],
-                            inner_html: Some("Hello 2"),
-                            text_content: Some("Hello 2".to_string()),
-                            children: HashMap::new(),
-                        },
-                        Element {
-                            name: "a",
-                            id: None,
-                            class: None,
-                            attributes: vec![],
-                            inner_html: Some("Hello 3"),
-                            text_content: Some("Hello 3".to_string()),
-                            children: HashMap::new(),
-                        },
-                    ],
-                }
-            )])
-        )
+        let store = parser.matches();
+        let root = &store.arena[0];
+
+        let anchors: Vec<&Element> = root["a"]
+            .iter()
+            .unwrap()
+            .map(|i| &store.arena[*i])
+            .collect();
+        assert_eq!(anchors.len(), 3);
+
+        assert_eq!(anchors[0].text_content, Some("Hello 1".to_string()));
+        assert_eq!(anchors[1].text_content, Some("Hello 2".to_string()));
+        assert_eq!(anchors[2].text_content, Some("Hello 3".to_string()));
     }
 
     const POSTS: &str = r#"<div class="article"><a href="/post/0"><b>Post</b> &lt;0&gt;</a></div><div class="article"><a href="/post/1"><b>Post</b> &lt;1&gt;</a></div>"#;
@@ -700,25 +567,15 @@ mod tests {
 
         while parser.next(&mut reader) {}
 
-        let map = parser.matches().root.children;
-        assert_eq!(
-            map,
-            HashMap::from([(
-                "div.article a",
-                SelectionValue {
-                    kind: ValueKind::SingleItem,
-                    list: vec![Element {
-                        name: "a",
-                        id: None,
-                        class: None,
-                        attributes: vec![("href", Some("/post/0"))],
-                        inner_html: Some("<b>Post</b> &lt;0&gt;"),
-                        text_content: Some("Post &lt;0&gt;".to_string()),
-                        children: HashMap::new(),
-                    },],
-                }
-            )])
-        )
+        let store = parser.matches();
+        let root = &store.arena[0];
+
+        let anchor_idx = root.get("div.article a").unwrap().value().unwrap();
+        let anchor = &store.arena[anchor_idx];
+
+        assert_eq!(anchor.name, "a");
+        assert_eq!(anchor.attributes[0].value, Some("/post/0"));
+        assert_eq!(anchor.inner_html, Some("<b>Post</b> &lt;0&gt;"));
+        assert_eq!(anchor.text_content, Some("Post &lt;0&gt;".to_string()));
     }
 }
-*/

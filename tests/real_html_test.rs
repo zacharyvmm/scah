@@ -31,7 +31,7 @@ mod tests {
         let queries = &[Query::all("a", Save::all()).build()];
         let map = parse(&contents, queries);
 
-        //assert_eq!(map["a"].len().unwrap(), 3879);
+        assert_eq!(map[0]["a"].iter().unwrap().count(), 3848);
         //println!("{:#?}", map);
 
         Ok(())

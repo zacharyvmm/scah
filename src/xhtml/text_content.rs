@@ -13,9 +13,12 @@ impl<'html> TextContent<'html> {
         Self {
             list: Vec::new(),
             text_start: None,
-            recording: true,
-            //recording: false,
+            recording: false,
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.list.is_empty()
     }
 
     pub fn start_recording(&mut self) {

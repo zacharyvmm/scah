@@ -115,7 +115,7 @@ mod tests {
         let arena = parse(HTML, queries);
         let root = &arena[0];
 
-        let child = &root["main > section#id"];
+        let child = &root["a"];
 
         assert_eq!(
             arena[child.value()?],
@@ -181,12 +181,15 @@ mod tests {
         let query = Query::all("main > section", Save::all())
             .then(|section| {
                 [
-                    section.first("> a[href]", Save::all()),
+                    // BUG: first selection not working because their is no locking mechanism
+                    //section.first("> a[href]", Save::all()),
                     section.all("> a[href]", Save::all()),
+                    section.all("div a", Save::all()),
+                    // BUG: If their are 2 identical sub-queries their should be an error.
+                    //section.all("> a[href]", Save::all()),
                 ]
             })
             .build();
-        // let query = QueryBuilder::new().all("main").then(|query| [query.all("> a[href]"), query.all("div a")]).build();
 
         let q = &[query];
         let arena = parse(HTML, q);

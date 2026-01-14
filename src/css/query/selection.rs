@@ -174,11 +174,6 @@ where
                     &mut new_scoped_fsm,
                 )?;
 
-                let position = self.scoped_fsms.len() - 1 + new_scoped_fsms.len();
-                println!("?> POSITION: {position}");
-                println!("?>> LEN: {}", self.scoped_fsms.len());
-                println!("??> LEN: {}", new_scoped_fsms.len());
-
                 dbg_print!("Scoped FSM ({i}) Saved `{:?}`", element);
             }
 
@@ -209,6 +204,11 @@ where
 
             let is_descendant_combinator = fsm.is_descendant(self.selection_tree);
             let last_save_point = fsm.is_last_save_point(self.selection_tree);
+            let section_kind = self
+                .selection_tree
+                .get_section_selection_kind(fsm.get_section());
+            let is_all = matches!(section_kind, crate::css::SelectionKind::All(_));
+            let is_root = fsm.position.section == 0 && fsm.position.fsm == 0;
 
             if is_descendant_combinator && !last_save_point {
                 // This should only be done if the task is not done (meaning it will move forward)
@@ -217,6 +217,10 @@ where
                     fsm.parent,
                     fsm.position,
                 ));
+            } else if is_all && !is_root {
+                let scope = fsm.depths.last().copied().unwrap_or(0);
+                self.scoped_fsms
+                    .push(ScopedFsm::new(scope, fsm.parent, fsm.position));
             }
 
             // let parent: *mut E = fsm.parent;
@@ -285,7 +289,14 @@ where
                 };
                 let text_content = {
                     if let Some(start_idx) = content_trigger.text_content {
-                        if start_idx == content.get_position() {
+                        if start_idx == usize::MAX {
+                            if content.is_empty() {
+                                None
+                            } else {
+                                let slice = content.join(0..);
+                                Some(slice)
+                            }
+                        } else if start_idx == content.get_position() {
                             // No new text content was added after the element opened
                             None
                         } else {
@@ -348,26 +359,25 @@ where
         return false;
     }
 }
-/*
 mod tests {
     use super::*;
+    use crate::XHtmlElement;
     use crate::css::parser::element::QueryElement;
     use crate::css::parser::fsm::Fsm;
     use crate::css::parser::tree::{Position, Query, Save, SelectionPart};
-    use crate::store::{Element, RustStore, SelectionValue, Store, ValueKind, reserve};
+    use crate::store::{Child, ChildIndex};
+    use crate::store::{Element, RustStore, Store};
     use crate::utils::Reader;
-    use crate::{XHtmlElement, mut_prt_unchecked};
     use smallvec::smallvec;
     use std::collections::HashMap;
 
-    const NULL_POINTER: *mut crate::Element = std::ptr::null_mut::<crate::Element>();
+    const NULL_PARENT: usize = 0;
 
     #[test]
     fn test_fsm_next_descendant() {
         let selection_tree = &Query::all("div a", Save::none()).build();
 
         let mut store = RustStore::new(false);
-        let mut reserve = Reserve::new();
 
         let mut selection = SelectionRunner::new(selection_tree);
 
@@ -383,15 +393,15 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 0,
             },
-            &mut reserve
+            &mut store,
         );
 
-        assert_eq!(store.root.children, HashMap::new());
+        assert!(store.arena[0].children.is_empty());
 
         assert_eq!(
             selection.fsm,
             FsmState {
-                parent: NULL_POINTER,
+                parent: NULL_PARENT,
                 position: Position { section: 0, fsm: 1 },
                 depths: smallvec![0],
                 end: false,
@@ -402,7 +412,7 @@ mod tests {
             selection.scoped_fsms.to_vec(),
             vec![ScopedFsm {
                 scope_depth: 0,
-                parent: NULL_POINTER,
+                parent: NULL_PARENT,
                 position: Position { section: 0, fsm: 0 },
             }]
         );
@@ -419,27 +429,18 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 1,
             },
-            &mut reserve
+            &mut store,
         );
 
-        assert_eq!(
-            store.root.children,
-            HashMap::from([(
-                "div a",
-                SelectionValue {
-                    kind: ValueKind::List,
-                    list: vec![Element {
-                        name: "a",
-                        id: None,
-                        class: None,
-                        attributes: vec![],
-                        inner_html: None,
-                        text_content: None,
-                        children: HashMap::new(),
-                    },]
-                }
-            )])
-        );
+        assert_eq!(store.arena[0].children.len(), 1);
+        let child = &store.arena[0].children[0];
+        assert_eq!(child.query, "div a");
+        match &child.index {
+            ChildIndex::Many(indices) => assert_eq!(indices, &vec![1]),
+            _ => panic!("Expected Many"),
+        }
+
+        assert_eq!(store.arena[1].name, "a");
 
         // assert_eq!(
         //     selection.tasks,
@@ -448,11 +449,18 @@ mod tests {
 
         assert_eq!(
             selection.scoped_fsms.to_vec(),
-            vec![ScopedFsm {
-                scope_depth: 0,
-                parent: NULL_POINTER,
-                position: Position { section: 0, fsm: 0 },
-            },]
+            vec![
+                ScopedFsm {
+                    scope_depth: 0,
+                    parent: NULL_PARENT,
+                    position: Position { section: 0, fsm: 0 },
+                },
+                ScopedFsm {
+                    scope_depth: 0,
+                    parent: NULL_PARENT,
+                    position: Position { section: 0, fsm: 1 },
+                }
+            ]
         );
     }
 
@@ -463,7 +471,6 @@ mod tests {
             .build();
 
         let mut store = RustStore::new(false);
-        let mut reserve = Reserve::new();
         let mut selection = SelectionRunner::new(selection_tree);
 
         let _ = selection.next(
@@ -478,15 +485,15 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 0,
             },
-            &mut reserve
+            &mut store,
         );
 
-        assert_eq!(store.root.children, HashMap::new());
+        assert!(store.arena[0].children.is_empty());
 
         assert_eq!(
             selection.fsm,
             FsmState {
-                parent: NULL_POINTER,
+                parent: NULL_PARENT,
                 position: Position { section: 0, fsm: 1 },
                 depths: smallvec![0],
                 end: false,
@@ -498,7 +505,7 @@ mod tests {
             selection.scoped_fsms[0],
             ScopedFsm {
                 scope_depth: 0,
-                parent: NULL_POINTER,
+                parent: NULL_PARENT,
                 position: Position { section: 0, fsm: 0 },
             }
         );
@@ -515,32 +522,22 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 1,
             },
-            &mut reserve
+            &mut store,
         );
 
-        assert_eq!(
-            store.root.children,
-            HashMap::from([(
-                "div p.class",
-                SelectionValue {
-                    kind: ValueKind::SingleItem,
-                    list: vec![Element {
-                        name: "p",
-                        id: None,
-                        class: Some("class"),
-                        attributes: vec![],
-                        inner_html: None,
-                        text_content: None,
-                        children: HashMap::new(),
-                    },]
-                }
-            )])
-        );
+        assert_eq!(store.arena[0].children.len(), 1);
+        let child = &store.arena[0].children[0];
+        assert_eq!(child.query, "div p.class");
+        match &child.index {
+            ChildIndex::One(idx) => assert_eq!(*idx, 1),
+            _ => panic!("Expected One"),
+        }
+        assert_eq!(store.arena[1].name, "p");
 
         assert_eq!(
             selection.fsm,
             FsmState {
-                parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
+                parent: 1,
                 position: Position { section: 2, fsm: 0 },
                 depths: smallvec![0, 1],
                 end: false,
@@ -553,19 +550,19 @@ mod tests {
                 // ` div`
                 ScopedFsm {
                     scope_depth: 0,
-                    parent: NULL_POINTER,
+                    parent: NULL_PARENT,
                     position: Position { section: 0, fsm: 0 },
                 },
                 // ` p.class`
                 ScopedFsm {
                     scope_depth: 1,
-                    parent: NULL_POINTER,
+                    parent: NULL_PARENT,
                     position: Position { section: 0, fsm: 1 },
                 },
                 // `> span`
                 ScopedFsm {
                     scope_depth: 1,
-                    parent: mut_prt_unchecked!(&store.root.children["div p.class"].list[0]),
+                    parent: 1,
                     position: Position { section: 1, fsm: 0 },
                 },
             ]
@@ -577,7 +574,6 @@ mod tests {
         let selection_tree = Query::first("div", Save::none()).build();
 
         let mut store = RustStore::new(false);
-        let mut reserve = Reserve::new();
         let mut selection = SelectionRunner::new(&selection_tree);
 
         let reader = Reader::new("<div></div>");
@@ -595,7 +591,7 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 0,
             },
-            &mut reserve
+            &mut store,
         );
         content.set_start(4);
         println!("{:?}", store);
@@ -606,7 +602,7 @@ mod tests {
         assert_eq!(
             selection.fsm,
             FsmState {
-                parent: NULL_POINTER,
+                parent: NULL_PARENT,
                 position: Position { section: 0, fsm: 0 },
                 depths: smallvec![0],
                 end: true,
@@ -631,7 +627,7 @@ mod tests {
         assert_eq!(
             selection.fsm,
             FsmState {
-                parent: NULL_POINTER,
+                parent: NULL_PARENT,
                 position: Position { section: 0, fsm: 0 },
                 depths: smallvec![],
                 end: true,
@@ -639,4 +635,3 @@ mod tests {
         );
     }
 }
-    */

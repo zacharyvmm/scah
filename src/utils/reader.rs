@@ -30,30 +30,6 @@ impl<'a> Reader<'a> {
         return self.source.get(self.position).copied();
     }
 
-    // NOTE: Escaping characters has a significant cost
-    // #[inline]
-    // pub fn next_while<F>(&mut self, condition: F)
-    // where F: Fn(u8) -> bool {
-    //     while self.position < self.source.len() {
-    //         let b = self.source[self.position];
-    //         let should_continue = if last_escape_character {
-    //             last_escape_character = false;
-    //             true
-    //         } else if b == ESCAPE_CHARACTER {
-    //             last_escape_character = true;
-    //             true
-    //         } else {
-    //             condition(b)
-    //         };
-
-    //         if should_continue {
-    //             self.position += 1;
-    //         } else {
-    //             break;
-    //         }
-    //     }
-    // }
-
     #[inline]
     pub fn next_while<F>(&mut self, condition: F)
     where
@@ -86,6 +62,14 @@ impl<'a> Reader<'a> {
         self.source[self.position..]
             .iter()
             .all(|b| b.is_ascii_whitespace())
+    }
+
+    pub fn match_ignore_case(&self, s: &str) -> bool {
+        if self.position + s.len() > self.source.len() {
+            return false;
+        }
+        let slice = &self.source[self.position..self.position + s.len()];
+        slice.eq_ignore_ascii_case(s.as_bytes())
     }
 }
 
