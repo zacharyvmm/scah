@@ -70,12 +70,12 @@ def parse_onego(html:str, query:str):
 
 
 PARSERS = {
+    "OneGo": parse_onego,
     "BS4 (html.parser)": parse_bs4_htmlparser,
     "BS4 (lxml)": parse_bs4_lxml,
     "Selectolax": parse_selectolax,
     "Parsel": parse_parsel,
     "Gazpacho": parse_gazpacho,
-    "OneGo": parse_onego,
 }
 
 def get_available_parsers():

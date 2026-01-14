@@ -27,7 +27,7 @@ impl<'query> Fsm<'query> {
         if &self.state == element {
             return match self.transition {
                 Combinator::Child => last_depth + 1 == current_depth,
-                Combinator::Descendant => true,
+                Combinator::Descendant => last_depth == 0 || current_depth != last_depth,
 
                 // BUG: I need to know if it's the element right after
                 // TODO: After first Fail it goes back
@@ -39,7 +39,6 @@ impl<'query> Fsm<'query> {
                 Combinator::Namespace => panic!("Why are you using Namespace Selector ???"),
             };
         }
-        // println!(">>>>>>>>>>>>>>> '{:?}' != '{:?}'", self.state, element);
 
         return false;
     }

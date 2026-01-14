@@ -162,17 +162,16 @@ impl<'query, S> QueryBuilder<'query, S> {
     }
 
     pub fn append(&mut self, parent: usize, mut sections: Vec<SelectionPart<S>>) {
+        let base_offset = self.list.len() - parent;
         let last = &mut self.list[parent];
-        let mut offset = 0;
 
         for (index, section) in sections.iter_mut().enumerate() {
             let new_parent_index = match &section.parent {
                 None => {
-                    last.children.push(index + 1);
-                    offset += 1;
+                    last.children.push(index + base_offset);
                     parent
                 }
-                Some(p) => *p + offset + parent,
+                Some(p) => *p + parent + base_offset,
             };
             section.parent = Some(new_parent_index);
         }
@@ -182,16 +181,20 @@ impl<'query, S> QueryBuilder<'query, S> {
 
     pub fn all(mut self, query: S, save: Save) -> Self {
         assert!(!self.list.is_empty());
+        let parent_index = self.list.len() - 1;
+        self.list[parent_index].children.push(1); // offset of 1
         let mut part = SelectionPart::new(query, SelectionKind::All(save));
-        part.parent = Some(self.list.len() - 1);
+        part.parent = Some(parent_index);
         self.list.push(part);
         self
     }
 
     pub fn first(mut self, query: S, save: Save) -> Self {
         assert!(!self.list.is_empty());
+        let parent_index = self.list.len() - 1;
+        self.list[parent_index].children.push(1); // offset of 1
         let mut part = SelectionPart::new(query, SelectionKind::First(save));
-        part.parent = Some(self.list.len() - 1);
+        part.parent = Some(parent_index);
         self.list.push(part);
         self
     }
@@ -206,10 +209,10 @@ impl<'query, S> QueryBuilder<'query, S> {
         };
         let children = func(factory);
 
-        let parts_vec_iter = children.into_iter().flat_map(|child| child.list);
-
         let current_index = self.list.len() - 1;
-        self.append(current_index, parts_vec_iter.collect());
+        for child in children {
+            self.append(current_index, child.list);
+        }
         self
     }
 

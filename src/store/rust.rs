@@ -115,7 +115,7 @@ impl<'html, 'query> Index<&'query str> for Element<'html, 'query> {
 
 #[derive(Debug, PartialEq)]
 pub struct RustStore<'html, 'query> {
-    pub(crate) arena: Vec<Element<'html, 'query>>,
+    pub arena: Vec<Element<'html, 'query>>,
 }
 
 impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
