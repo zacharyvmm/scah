@@ -14,14 +14,14 @@ const END_OF_ELEMENT: u8 = b'>';
 
 impl<'a> ElementAttributeToken<'a> {
     pub fn next(reader: &mut Reader<'a>) -> Option<Self> {
-        reader.next_while(|c| c.is_ascii_whitespace());
+        reader.next_while_char(b' ');
 
         let start_pos = reader.get_position();
 
         match reader.next()? {
             DOUBLEQUOTE => {
                 let star_position = reader.get_position();
-                reader.next_while(|c| c != DOUBLEQUOTE);
+                reader.next_until(DOUBLEQUOTE);
                 let content_inside_quotes = reader.slice(star_position..reader.get_position());
                 reader.skip();
 
@@ -29,7 +29,7 @@ impl<'a> ElementAttributeToken<'a> {
             }
             SINGLEQUOTE => {
                 let star_position = reader.get_position();
-                reader.next_while(|c| c != SINGLEQUOTE);
+                reader.next_until(SINGLEQUOTE);
                 let content_inside_quotes = reader.slice(star_position..reader.get_position());
                 reader.skip();
 
@@ -39,10 +39,13 @@ impl<'a> ElementAttributeToken<'a> {
             END_OF_ELEMENT => None,
             _ => {
                 // Find end of word
-                reader.next_while(|c| {
-                    // if in string the
-                    !matches!(c, b' ' | DOUBLEQUOTE | SINGLEQUOTE | EQUAL | END_OF_ELEMENT)
-                });
+                reader.next_until_char_list(&[
+                    b' ',
+                    DOUBLEQUOTE,
+                    SINGLEQUOTE,
+                    EQUAL,
+                    END_OF_ELEMENT,
+                ]);
                 return Some(Self::String(reader.slice(start_pos..reader.get_position())));
             }
         }

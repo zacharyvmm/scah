@@ -130,11 +130,11 @@ impl<'a> XHtmlElement<'a> {
 // TODO: Parse the closing tag for the XHtmlTag
 impl<'a> XHtmlTag<'a> {
     pub fn from(reader: &mut Reader<'a>) -> Option<Self> {
-        reader.next_while(|c| c.is_ascii_whitespace() || c == b'<');
+        reader.next_while_char_list(&[b' ', b'<']);
         if let Some(character) = reader.peek() {
             if character == b'/' {
                 let start = reader.get_position() + 1;
-                reader.next_while(|c| c != b'>');
+                reader.next_until(b'>');
 
                 let end = reader.get_position();
                 reader.skip();
@@ -146,7 +146,7 @@ impl<'a> XHtmlTag<'a> {
                 return Some(Self::Close(reader.slice(start..end).trim()));
             } else if character == b'!' {
                 // This is a comment
-                reader.next_while(|c| c != b'>');
+                reader.next_until(b'>');
                 reader.skip();
                 return None;
             }

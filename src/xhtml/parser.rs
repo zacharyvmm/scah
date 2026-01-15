@@ -45,7 +45,7 @@ where
     pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
         if self.in_script {
             loop {
-                reader.next_while(|c| c != b'<');
+                reader.next_until(b'<');
                 if reader.peek().is_none() {
                     return false;
                 }
@@ -65,7 +65,7 @@ where
         }
 
         // move until it finds the first `<`
-        reader.next_while(|c| c != b'<');
+        reader.next_until(b'<');
 
         if reader.peek().is_none() {
             return false;
