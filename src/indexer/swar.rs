@@ -1,31 +1,34 @@
-fn mask(haystack: u64, needle: u8) -> u64 {
-    const LOW_BIT_MASK: u64 = 0x0101010101010101;
-    const HIGH_BIT_MASK: u64 = 0x8080808080808080;
+const LOW_BIT_MASK: u64 = 0x0101010101010101;
+const HIGH_BIT_MASK: u64 = 0x8080808080808080;
 
-    let mask = (needle as u64) * LOW_BIT_MASK;
+#[inline(always)]
+fn compare(haystack: u64, needle: u8) -> u64 {
+    let pattern = (needle as u64) * LOW_BIT_MASK;
+    let comparison = haystack ^ pattern;
 
-    let comparison = haystack ^ mask;
-
-    let potential_matches = comparison.wrapping_sub(LOW_BIT_MASK) & !comparison;
-
-    let only_high_bit_match = potential_matches & HIGH_BIT_MASK;
-
-    only_high_bit_match
+    comparison.wrapping_sub(LOW_BIT_MASK) & !comparison
 }
 
 fn structural_mask(haystack: u64) -> u64 {
-    mask(haystack, b'<')
-        | mask(haystack, b'>')
-        | mask(haystack, b' ')
-        | mask(haystack, b'"')
-        | mask(haystack, b'\'')
-        | mask(haystack, b'=')
-        | mask(haystack, b'/')
+    let matches = compare(haystack, b'<')
+        | compare(haystack, b'>')
+        | compare(haystack, b' ')
+        | compare(haystack, b'"')
+        | compare(haystack, b'\'')
+        | compare(haystack, b'=')
+        | compare(haystack, b'/');
+
+    // Apply HIGH_BIT_MASK only once at the end
+    matches & HIGH_BIT_MASK
 }
 
+// Assume that 1/8
+const RATIO_DENOMINATOR: usize = 8;
+
 fn _parse(buffer: &[u8]) -> Vec<u32> {
-    let mut out: Vec<u32> = Vec::new();
+    let mut out: Vec<u32> = Vec::with_capacity(buffer.len() / RATIO_DENOMINATOR);
     let ptr = buffer.as_ptr();
+
     // Iterate only up to original length
     let len = buffer.len() - 8;
 
@@ -38,7 +41,9 @@ fn _parse(buffer: &[u8]) -> Vec<u32> {
 
         let mut matches = structural_mask(word);
         while matches != 0 {
-            let index = (matches.trailing_zeros() / 8) + i as u32;
+            //let byte_offset = matches.trailing_zeros() / 8;
+            let byte_offset = matches.trailing_zeros() >> 3;
+            let index = byte_offset + i as u32;
             out.push(index);
             matches &= matches - 1;
         }
@@ -52,12 +57,13 @@ fn _parse(buffer: &[u8]) -> Vec<u32> {
 fn buffer(input: &str) -> Vec<u8> {
     let mut buffer = input.as_bytes().to_vec();
 
+    // Add 8 (64/8 = 8) null bytes to the end
     buffer.extend_from_slice(&[0u8; 8]);
 
     buffer
 }
 
-fn parse(input: &str) -> Vec<u32> {
+pub fn parse(input: &str) -> Vec<u32> {
     let buffer = buffer(input);
     let indices = _parse(&buffer);
     indices
