@@ -32,7 +32,7 @@ impl<'a> Reader<'a> {
 
     #[inline]
     #[deprecated]
-    pub fn next_while<F>(&mut self, condition: F)
+    pub fn next_while_legacy<F>(&mut self, condition: F)
     where
         F: Fn(u8) -> bool,
     {
@@ -43,7 +43,7 @@ impl<'a> Reader<'a> {
     }
 
     #[inline]
-    pub fn next_while_char_list(&mut self, characters: &[u8]) {
+    pub fn next_while_list(&mut self, characters: &[u8]) {
         let len = self.source.len();
         while self.position < len && characters.contains(&self.source[self.position]) {
             self.position += 1;
@@ -51,7 +51,7 @@ impl<'a> Reader<'a> {
     }
 
     #[inline]
-    pub fn next_while_char(&mut self, character: u8) {
+    pub fn next_while(&mut self, character: u8) {
         let len = self.source.len();
         while self.position < len && self.source[self.position] == character {
             self.position += 1;
@@ -59,7 +59,7 @@ impl<'a> Reader<'a> {
     }
 
     #[inline]
-    pub fn next_until_char_list(&mut self, characters: &[u8]) {
+    pub fn next_until_list(&mut self, characters: &[u8]) {
         let len = self.source.len();
         while self.position < len && !characters.contains(&self.source[self.position]) {
             self.position += 1;
@@ -168,11 +168,11 @@ mod tests {
         let mut deprecated_reader = Reader::new(&my_string);
         let mut new_reader = Reader::new(&my_string);
 
-        deprecated_reader.next_while(|c| !matches!(c, b' ' | b'#' | b'.' | b'['));
-        new_reader.next_until_char_list(&[b' ', b'#', b'.', b'[']);
+        deprecated_reader.next_while_legacy(|c| !matches!(c, b' ' | b'#' | b'.' | b'['));
+        new_reader.next_until_list(&[b' ', b'#', b'.', b'[']);
         assert_eq!(deprecated_reader.position, new_reader.position);
 
-        deprecated_reader.next_while(|c| c != b' ');
+        deprecated_reader.next_while_legacy(|c| c != b' ');
         new_reader.next_until(b' ');
         assert_eq!(deprecated_reader.position, new_reader.position);
     }
@@ -183,12 +183,12 @@ mod tests {
         let mut deprecated_reader = Reader::new(&my_string);
         let mut new_reader = Reader::new(&my_string);
 
-        deprecated_reader.next_while(|c| matches!(c, b' ' | b'#' | b'.' | b'['));
-        new_reader.next_while_char_list(&[b' ', b'#', b'.', b'[']);
+        deprecated_reader.next_while_legacy(|c| matches!(c, b' ' | b'#' | b'.' | b'['));
+        new_reader.next_while_list(&[b' ', b'#', b'.', b'[']);
         assert_eq!(deprecated_reader.position, new_reader.position);
 
-        deprecated_reader.next_while(|c| c == b' ');
-        new_reader.next_while_char(b' ');
+        deprecated_reader.next_while_legacy(|c| c == b' ');
+        new_reader.next_while(b' ');
         assert_eq!(deprecated_reader.position, new_reader.position);
     }
 }

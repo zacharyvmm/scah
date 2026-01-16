@@ -1,4 +1,5 @@
 mod css;
+mod indexer;
 mod store;
 mod utils;
 mod xhtml;

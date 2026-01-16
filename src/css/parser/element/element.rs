@@ -140,7 +140,7 @@ impl<'a> SelectionKeyWords<'a> {
             _ => {
                 // Find end of word
                 // POTENTIAL BUG ??? |> I'm pretty sure this is missing '\'' and '"'
-                reader.next_until_char_list(&[b' ', b'#', b'.', b'[']);
+                reader.next_until_list(&[b' ', b'#', b'.', b'[']);
                 return Some(Self::String(reader.slice(start_pos..reader.get_position())));
             }
         };
@@ -156,7 +156,7 @@ enum SelectionAttributeToken<'a> {
 
 impl<'a> SelectionAttributeToken<'a> {
     pub fn next(reader: &mut Reader<'a>) -> Option<Self> {
-        reader.next_while_char(b' ');
+        reader.next_while(b' ');
 
         let start_pos = reader.get_position();
 
@@ -176,7 +176,7 @@ impl<'a> SelectionAttributeToken<'a> {
             b']' => None,
             _ => {
                 // Find end of word
-                reader.next_until_char_list(&[
+                reader.next_until_list(&[
                     b' ', b'"', b'\'', b'=', b']', b'~', b'|', b'^', b'$', b'*',
                 ]);
 

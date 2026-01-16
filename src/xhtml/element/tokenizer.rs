@@ -14,7 +14,7 @@ const END_OF_ELEMENT: u8 = b'>';
 
 impl<'a> ElementAttributeToken<'a> {
     pub fn next(reader: &mut Reader<'a>) -> Option<Self> {
-        reader.next_while_char(b' ');
+        reader.next_while(b' ');
 
         let start_pos = reader.get_position();
 
@@ -39,13 +39,7 @@ impl<'a> ElementAttributeToken<'a> {
             END_OF_ELEMENT => None,
             _ => {
                 // Find end of word
-                reader.next_until_char_list(&[
-                    b' ',
-                    DOUBLEQUOTE,
-                    SINGLEQUOTE,
-                    EQUAL,
-                    END_OF_ELEMENT,
-                ]);
+                reader.next_until_list(&[b' ', DOUBLEQUOTE, SINGLEQUOTE, EQUAL, END_OF_ELEMENT]);
                 return Some(Self::String(reader.slice(start_pos..reader.get_position())));
             }
         }

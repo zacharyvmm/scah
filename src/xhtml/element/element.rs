@@ -130,7 +130,7 @@ impl<'a> XHtmlElement<'a> {
 // TODO: Parse the closing tag for the XHtmlTag
 impl<'a> XHtmlTag<'a> {
     pub fn from(reader: &mut Reader<'a>) -> Option<Self> {
-        reader.next_while_char_list(&[b' ', b'<']);
+        reader.next_while_list(&[b' ', b'<']);
         if let Some(character) = reader.peek() {
             if character == b'/' {
                 let start = reader.get_position() + 1;
