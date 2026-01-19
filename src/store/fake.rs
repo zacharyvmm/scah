@@ -1,6 +1,6 @@
 // This is to examine the performance cost of the Store
 
-use super::header::{QueryError, Store};
+use super::Store;
 use crate::{QuerySection, XHtmlElement};
 
 pub struct FakeStore {}

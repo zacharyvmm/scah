@@ -150,15 +150,12 @@ where
 }
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
-    use crate::css::{FsmManager, Query, Save, SelectionKind, SelectionPart};
+    use crate::css::{FsmManager, Query, Save};
     use crate::store::ChildIndex;
     use crate::store::{Element, RustStore, Store};
     use crate::utils::Reader;
-    use crate::xhtml::element::element::{Attribute, XHtmlElement};
-    use pretty_assertions::{assert_eq, assert_ne};
+    use pretty_assertions::assert_eq;
 
     const BASIC_HTML: &str = r#"
         <html>

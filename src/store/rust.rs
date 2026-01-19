@@ -1,8 +1,8 @@
 use crate::css::SelectionKind;
 use crate::xhtml::element::element::Attributes;
 
-use super::header::{QueryError, Store};
-use crate::{QuerySection, dbg_print, mut_prt_unchecked};
+use super::{QueryError, Store};
+use crate::{QuerySection, dbg_print};
 use std::ops::Index;
 
 #[derive(Debug, PartialEq)]

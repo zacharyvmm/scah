@@ -72,6 +72,7 @@ impl<'html> TextContent<'html> {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

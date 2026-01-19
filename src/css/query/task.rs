@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{NextPosition, NextPositions, Position, Query};
-use crate::store::ROOT;
 use smallvec::SmallVec;
 
 #[derive(PartialEq, Debug)]
@@ -28,12 +27,12 @@ pub trait Fsm<'query, 'html, E> {
     fn try_back_parent(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str)
     -> bool;
 
-    fn move_foward(
+    fn step_foward(
         &mut self,
         tree: &Query<'query>,
         depth: super::DepthSize,
     ) -> Option<NextPositions>;
-    fn move_backward(&mut self, tree: &Query<'query>);
+    fn step_backward(&mut self, tree: &Query<'query>);
 
     fn is_descendant(&self, tree: &Query<'query>) -> bool;
     fn is_save_point(&self, tree: &Query<'query>) -> bool;
@@ -61,7 +60,7 @@ where
 
     pub fn move_backward_twice(&mut self, tree: &Query<'query>) {
         // Only need one pop, since the current fsm depth was not added to the list
-        self.move_backward(tree);
+        self.step_backward(tree);
         self.position = tree.back(&self.position);
     }
 }
@@ -105,7 +104,7 @@ where
         fsm.back(element, depth, last_depth)
     }
 
-    fn move_foward(
+    fn step_foward(
         &mut self,
         tree: &Query<'query>,
         depth: super::DepthSize,
@@ -131,7 +130,7 @@ where
         }
     }
 
-    fn move_backward(&mut self, tree: &Query<'query>) {
+    fn step_backward(&mut self, tree: &Query<'query>) {
         // BUG: Currently this works for opening a closing element's, but if in a ALL selection
         // The FSM position and make it break
         assert!(self.depths.len() > 0);
@@ -217,7 +216,7 @@ where
         fsm.back(element, depth, self.scope_depth)
     }
 
-    fn move_foward(
+    fn step_foward(
         &mut self,
         tree: &Query<'query>,
         depth: super::DepthSize,
@@ -267,15 +266,15 @@ where
         self.position.section
     }
 
-    fn move_backward(&mut self, _tree: &Query<'query>) {}
+    fn step_backward(&mut self, _tree: &Query<'query>) {}
     fn set_end_false(&mut self) {}
 }
+
+#[cfg(test)]
 mod tests {
     use super::{Fsm, FsmState};
     use crate::Query;
-    use crate::css::parser::tree::{Save, SelectionPart};
-    use crate::store::Element;
-    use crate::utils::Reader;
+    use crate::css::parser::tree::Save;
     use crate::xhtml::element::element::XHtmlElement;
 
     #[test]
@@ -299,7 +298,7 @@ mod tests {
         assert!(next);
 
         // move task
-        state.move_foward(&selection_tree, 0);
+        state.step_foward(&selection_tree, 0);
 
         next = state.next(
             &selection_tree,

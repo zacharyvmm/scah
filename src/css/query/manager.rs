@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-use std::marker::PhantomData;
 
 use super::selection::SelectionRunner;
 use crate::XHtmlElement;
@@ -79,9 +78,9 @@ where
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::super::selection::SelectionRunner;
-    use crate::Element;
     use smallvec::SmallVec;
 
     #[test]

@@ -62,7 +62,7 @@ where
         depth: super::DepthSize,
         fsm: &mut impl Fsm<'query, 'html, E>,
     ) {
-        let new_branch_tasks = fsm.move_foward(tree, depth);
+        let new_branch_tasks = fsm.step_foward(tree, depth);
         if let Some(new_branch_tasks) = new_branch_tasks {
             fsm.set_end_false();
             list.append(
@@ -336,7 +336,7 @@ where
             document_position.element_depth,
             element,
         ) {
-            fsm.move_backward(self.selection_tree);
+            fsm.step_backward(self.selection_tree);
             dbg_print!("FSM out of `{}`", element);
             dbg_print!("SHOULD INVALIDATED PARENT POINTER");
             return true;
@@ -359,17 +359,16 @@ where
         return false;
     }
 }
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::XHtmlElement;
-    use crate::css::parser::element::QueryElement;
-    use crate::css::parser::fsm::Fsm;
-    use crate::css::parser::tree::{Position, Query, Save, SelectionPart};
-    use crate::store::{Child, ChildIndex};
-    use crate::store::{Element, RustStore, Store};
+    use crate::css::parser::tree::{Position, Query, Save};
+    use crate::store::ChildIndex;
+    use crate::store::{RustStore, Store};
     use crate::utils::Reader;
     use smallvec::smallvec;
-    use std::collections::HashMap;
 
     const NULL_PARENT: usize = 0;
 

@@ -1,3 +1,3 @@
 pub mod element;
-mod pair;
+mod element_fsm;
 mod tokenizer;

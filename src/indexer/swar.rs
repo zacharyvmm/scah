@@ -16,13 +16,14 @@ fn structural_mask(haystack: u64) -> u64 {
         | compare(haystack, b'"')
         | compare(haystack, b'\'')
         | compare(haystack, b'=')
-        | compare(haystack, b'/');
+        | compare(haystack, b'/')
+        | compare(haystack, b'!');
 
     // Apply HIGH_BIT_MASK only once at the end
     matches & HIGH_BIT_MASK
 }
 
-// Assume that 1/8
+// Assume that 1/8 of the bytes are structural
 const RATIO_DENOMINATOR: usize = 8;
 
 fn _parse(buffer: &[u8]) -> Vec<u32> {
@@ -33,6 +34,7 @@ fn _parse(buffer: &[u8]) -> Vec<u32> {
     let len = buffer.len() - 8;
 
     let mut i = 0;
+    const STEP: usize = 8; // 64/8 = 8
     while i < len {
         let word = unsafe {
             let as_64_block = ptr.add(i) as *const u64;
@@ -41,14 +43,14 @@ fn _parse(buffer: &[u8]) -> Vec<u32> {
 
         let mut matches = structural_mask(word);
         while matches != 0 {
-            //let byte_offset = matches.trailing_zeros() / 8;
+            //let byte_offset = matches.trailing_zeros() / (STEP as u32);
             let byte_offset = matches.trailing_zeros() >> 3;
             let index = byte_offset + i as u32;
             out.push(index);
             matches &= matches - 1;
         }
 
-        i += 8;
+        i += STEP;
     }
 
     out
@@ -69,6 +71,7 @@ pub fn parse(input: &str) -> Vec<u32> {
     indices
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
