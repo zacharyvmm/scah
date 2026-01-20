@@ -3,6 +3,8 @@ const HIGH_BIT_MASK: u64 = 0x8080808080808080;
 //const ODD_BITS: u64 = 0xAAAAAAAAAAAAAAAA;
 const ODD_BYTES: u64 = 0x0080008000800080;
 
+const LAST_BYTE_ESCAPED: u64 = 0x80;
+
 #[inline(always)]
 fn compare(haystack: u64, needle: u8) -> u64 {
     let pattern = (needle as u64) * LOW_BIT_MASK;
@@ -15,7 +17,7 @@ fn escaped(haystack: u64) -> u64 {
     let backslashes = compare(haystack, b'\\') & HIGH_BIT_MASK;
     let maybe_escaped = backslashes << 8;
 
-    let maybe_escaped_and_odd_bits     = maybe_escaped | ODD_BYTES;
+    let maybe_escaped_and_odd_bits = maybe_escaped | ODD_BYTES;
     let even_series_codes_and_odd_bits = maybe_escaped_and_odd_bits.wrapping_sub(backslashes);
     let escape_and_terminal_code = even_series_codes_and_odd_bits ^ ODD_BYTES;
 
@@ -35,7 +37,7 @@ fn structural_mask(haystack: u64) -> u64 {
         | compare(haystack, b'!');
 
     // Apply HIGH_BIT_MASK only once at the end
-    matches & HIGH_BIT_MASK
+    matches & !escaped(haystack) & HIGH_BIT_MASK
 }
 
 // Assume that 1/8 of the bytes are structural
@@ -147,6 +149,21 @@ mod tests {
     }
 
     #[test]
+    fn test_indexing_for_html_like_string() {
+        let string = r#"<    div   >HEllo World <a href="link" class="\"my class\""> HERe  \</ a href="Fake link<span> Hello </span>"\>\<\a\></a><   /  div >"#;
+        for (i, c) in string.as_bytes().iter().enumerate() {
+            println!("{i}: {}", *c as char);
+        }
+        let indices = parse(string);
+        let expected: Vec<u32> = vec![
+            0, 1, 2, 3, 4, 8, 9, 10, 11, 17, 23, 24, 26, 31, 32, 37, 38, 44, 45, 50, 58, 59, 60,
+            65, 66, 69, 70, 72, 77, 78, 83, 88, 93, 94, 100, 101, 102, 107, 108, 117, 118, 120,
+            121, 122, 123, 124, 125, 126, 127, 131, 132,
+        ];
+        assert_eq!(indices, expected);
+    }
+
+    #[test]
     fn test_find_escaped_characters() {
         let string = b"\\ \\ \\ \\n";
         let num = u64::from_le_bytes(*string);
@@ -154,7 +171,11 @@ mod tests {
 
         let expected = &[0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80];
         let expected = u64::from_le_bytes(*expected);
-        assert_eq!(escaped, expected, "ERR:\nescaped:\t{:064b}\nexpected:\t{:064b}", escaped, expected);
+        assert_eq!(
+            escaped, expected,
+            "ERR:\nescaped:\t{:064b}\nexpected:\t{:064b}",
+            escaped, expected
+        );
     }
 
     #[test]
@@ -167,6 +188,10 @@ mod tests {
         let expected = &[0, 0x80, 0, 0x80, 0, 0, 0, 0x80];
         let expected = u64::from_le_bytes(*expected);
 
-        assert_eq!(escaped, expected, "ERR:\nescaped:\t{:064b}\nexpected:\t{:064b}", escaped, expected);
+        assert_eq!(
+            escaped, expected,
+            "ERR:\nescaped:\t{:064b}\nexpected:\t{:064b}",
+            escaped, expected
+        );
     }
 }
