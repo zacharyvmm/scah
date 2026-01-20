@@ -1,5 +1,7 @@
 const LOW_BIT_MASK: u64 = 0x0101010101010101;
 const HIGH_BIT_MASK: u64 = 0x8080808080808080;
+//const ODD_BITS: u64 = 0xAAAAAAAAAAAAAAAA;
+const ODD_BYTES: u64 = 0x0080008000800080;
 
 #[inline(always)]
 fn compare(haystack: u64, needle: u8) -> u64 {
@@ -7,6 +9,19 @@ fn compare(haystack: u64, needle: u8) -> u64 {
     let comparison = haystack ^ pattern;
 
     comparison.wrapping_sub(LOW_BIT_MASK) & !comparison
+}
+
+fn escaped(haystack: u64) -> u64 {
+    let backslashes = compare(haystack, b'\\') & HIGH_BIT_MASK;
+    let maybe_escaped = backslashes << 8;
+
+    let maybe_escaped_and_odd_bits     = maybe_escaped | ODD_BYTES;
+    let even_series_codes_and_odd_bits = maybe_escaped_and_odd_bits.wrapping_sub(backslashes);
+    let escape_and_terminal_code = even_series_codes_and_odd_bits ^ ODD_BYTES;
+
+    let escaped = escape_and_terminal_code ^ backslashes; // escaped character
+    // let escape = escape_and_terminal_code & backslashes; // the `\` that escaped it
+    escaped
 }
 
 fn structural_mask(haystack: u64) -> u64 {
@@ -129,5 +144,29 @@ mod tests {
         slow_indices.sort();
 
         assert_eq!(indices, slow_indices);
+    }
+
+    #[test]
+    fn test_find_escaped_characters() {
+        let string = b"\\ \\ \\ \\n";
+        let num = u64::from_le_bytes(*string);
+        let escaped = escaped(num);
+
+        let expected = &[0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80];
+        let expected = u64::from_le_bytes(*expected);
+        assert_eq!(escaped, expected, "ERR:\nescaped:\t{:064b}\nexpected:\t{:064b}", escaped, expected);
+    }
+
+    #[test]
+    fn test_find_chained_escaped_characters() {
+        let string = b"\\\\\\n  \\n";
+        let num = u64::from_le_bytes(*string);
+        println!("{:064b}", num);
+        let escaped = escaped(num);
+
+        let expected = &[0, 0x80, 0, 0x80, 0, 0, 0, 0x80];
+        let expected = u64::from_le_bytes(*expected);
+
+        assert_eq!(escaped, expected, "ERR:\nescaped:\t{:064b}\nexpected:\t{:064b}", escaped, expected);
     }
 }
