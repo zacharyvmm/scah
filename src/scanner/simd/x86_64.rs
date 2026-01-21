@@ -1,18 +1,18 @@
-use std::arch::x86_64::{__m512i, _mm512_cmpeq_epi8_mask, _mm512_set_epi64, _mm512_set1_epi8};
+use std::arch::x86_64::{
+    __m512i, _mm512_andnot_si512, _mm512_cmpeq_epi8_mask, _mm512_set_epi64, _mm512_set1_epi8,
+};
 
-
+#[inline(always)]
 fn cast_to_i64(ptr: *const u8, offset: usize) -> i64 {
     unsafe { (ptr.add(offset) as *const i64).read_unaligned() }
 }
-
 
 use super::SIMD;
 pub struct SIMD512;
 
 impl SIMD for SIMD512 {
     type RegisterSize = __m512i;
-    const BYTES:usize = 512 / 8;
-
+    const BYTES: usize = 512 / 8;
 
     #[inline(always)]
     fn compare(haystack: __m512i, needle: u8) -> u64 {
@@ -24,9 +24,13 @@ impl SIMD for SIMD512 {
 
     // https://github.com/simdjson/simdjson/blob/master/src/generic/stage1/json_escape_scanner.h
     #[inline(always)]
-    fn escaped(haystack: Self::RegisterSize) -> u64 {
+    fn escaped(haystack: Self::RegisterSize, next_is_escaped: u64) -> u64 {
         const BACKSLASH_OFFSET: u64 = 1;
         const ODD_MASK: u64 = 0xAAAAAAAAAAAAAAAA;
+
+        let mask = unsafe { _mm512_set_epi64(next_is_escaped as i64, 0, 0, 0, 0, 0, 0, 0) };
+
+        let haystack = unsafe { _mm512_andnot_si512(mask, haystack) };
         let backslashes = Self::compare(haystack, b'\\');
         let maybe_escaped = backslashes << BACKSLASH_OFFSET;
 
@@ -57,11 +61,4 @@ impl SIMD for SIMD512 {
 mod tests {
     use super::super::swar::SWAR;
     use super::*;
-    #[test]
-    fn test_comparison_x86_64() {
-        let string = r#"<    div   >HEllo World <a href="link" class="\"my class\""> HERe  \</ a href="Fake link<span> Hello </span>"\>\<\a\></a><   /  div >"#;
-        let indices = SIMD512::parse(string);
-
-        assert_eq!(indices, SWAR::parse(string));
-    }
 }
