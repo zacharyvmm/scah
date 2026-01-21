@@ -51,8 +51,8 @@ impl Scanner {
             let mut matches = {
                 let mask = T::structural_mask(word);
                 //println!("NExt Escaped: {:064b}", self.next_is_escaped);
-                let escaped = T::escaped(word, self.next_is_escaped);
-                self.next_is_escaped = T::next_is_escaped(escaped);
+                let (escaped, escape) = T::escaped(word, self.next_is_escaped);
+                self.next_is_escaped = T::next_is_escaped(escape);
                 //println!("NExt Escaped: {:064b}", self.next_is_escaped);
 
                 T::filter(mask & !escaped)
@@ -98,5 +98,27 @@ mod tests {
     #[test]
     fn test_dispatch() {
         assert_eq!(CPUID::detect(), CPUID::AVX512BW);
+    }
+
+    #[test]
+    fn test_next_is_escaped_swar() {
+        let mut next_is_escaped = 0;
+        let string = r#"<    div   >HEllo World <a href="link" class="\"my class\""> HERe  \</ a href="Fake link<span> Hello </span>"\>\<\a\></a><   /  div >"#;
+        let buffer = swar::SWAR::buffer(string);
+
+        let expected = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x80, 0, 0, 0];
+
+        for i in 0..17 {
+            let word = swar::SWAR::get_word(buffer.as_ptr(), i * 8);
+            println!("{i}: {}", str::from_utf8(&word.to_le_bytes()).unwrap());
+            let (escaped, escape) = swar::SWAR::escaped(word, next_is_escaped);
+            next_is_escaped = swar::SWAR::next_is_escaped(escape);
+            assert_eq!(
+                next_is_escaped,
+                expected[i],
+                "\n'{}'\n{word:064b}\n{escaped:064b}",
+                str::from_utf8(&word.to_le_bytes()).unwrap()
+            );
+        }
     }
 }

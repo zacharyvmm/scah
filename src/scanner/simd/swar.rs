@@ -16,21 +16,26 @@ impl SIMD for SWAR {
     }
 
     #[inline(always)]
-    fn escaped(haystack: Self::RegisterSize, next_is_escaped: u64) -> u64 {
+    fn next_escape_and_terminal_code(backslashes: u64) -> u64 {
         const BACKSLASH_OFFSET: u64 = 8;
         const ODD_MASK: u64 = 0x0080008000800080;
 
+        let maybe_escaped = backslashes << BACKSLASH_OFFSET;
+        let maybe_escaped_and_odd_bits = maybe_escaped | ODD_MASK;
+        let even_series_codes_and_odd_bits = maybe_escaped_and_odd_bits.wrapping_sub(backslashes);
+        even_series_codes_and_odd_bits ^ ODD_MASK
+    }
+
+    #[inline(always)]
+    fn escaped(haystack: Self::RegisterSize, next_is_escaped: u64) -> (u64, u64) {
         let haystack = haystack & !next_is_escaped;
 
         let backslashes = Self::compare(haystack, b'\\') & HIGH_BIT_MASK;
-        let maybe_escaped = backslashes << BACKSLASH_OFFSET;
+        let escape_and_terminal_code = Self::next_escape_and_terminal_code(backslashes);
 
-        let maybe_escaped_and_odd_bits = maybe_escaped | ODD_MASK;
-        let even_series_codes_and_odd_bits = maybe_escaped_and_odd_bits.wrapping_sub(backslashes);
-        let escape_and_terminal_code = even_series_codes_and_odd_bits ^ ODD_MASK;
-
-        let escaped = escape_and_terminal_code ^ backslashes;
-        escaped
+        let escaped = escape_and_terminal_code ^ (backslashes | next_is_escaped);
+        let escape = escape_and_terminal_code & backslashes;
+        (escaped, escape)
     }
 
     #[inline(always)]
@@ -120,7 +125,7 @@ mod tests {
     fn test_find_escaped_characters() {
         let string = b"\\ \\ \\ \\n";
         let num = u64::from_le_bytes(*string);
-        let escaped = SWAR::escaped(num, 0) & HIGH_BIT_MASK;
+        let escaped = SWAR::escaped(num, 0).0 & HIGH_BIT_MASK;
 
         let expected = &[0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80];
         let expected = u64::from_le_bytes(*expected);
@@ -136,7 +141,7 @@ mod tests {
         let string = b"\\\\\\n  \\n";
         let num = u64::from_le_bytes(*string);
         println!("{:064b}", num);
-        let escaped = SWAR::escaped(num, 0) & HIGH_BIT_MASK;
+        let escaped = SWAR::escaped(num, 0).0 & HIGH_BIT_MASK;
 
         let expected = &[0, 0x80, 0, 0x80, 0, 0, 0, 0x80];
         let expected = u64::from_le_bytes(*expected);

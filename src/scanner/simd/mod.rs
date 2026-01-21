@@ -9,7 +9,8 @@ pub trait SIMD {
 
     fn compare(haystack: Self::RegisterSize, needle: u8) -> u64;
     fn get_word(ptr: *const u8, offset: usize) -> Self::RegisterSize;
-    fn escaped(haystack: Self::RegisterSize, next_is_escaped: u64) -> u64;
+    fn next_escape_and_terminal_code(haystack: u64) -> u64;
+    fn escaped(haystack: Self::RegisterSize, next_is_escaped: u64) -> (u64, u64);
 
     fn buffer(input: &str) -> Vec<u8> {
         let mut buffer = input.as_bytes().to_vec();

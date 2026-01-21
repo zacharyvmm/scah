@@ -23,8 +23,20 @@ impl SIMD for SIMD512 {
     }
 
     // https://github.com/simdjson/simdjson/blob/master/src/generic/stage1/json_escape_scanner.h
+
     #[inline(always)]
-    fn escaped(haystack: Self::RegisterSize, next_is_escaped: u64) -> u64 {
+    fn next_escape_and_terminal_code(backslashes: u64) -> u64 {
+        const BACKSLASH_OFFSET: u64 = 1;
+        const ODD_MASK: u64 = 0xAAAAAAAAAAAAAAAA;
+
+        let maybe_escaped = backslashes << BACKSLASH_OFFSET;
+        let maybe_escaped_and_odd_bits = maybe_escaped | ODD_MASK;
+        let even_series_codes_and_odd_bits = maybe_escaped_and_odd_bits.wrapping_sub(backslashes);
+        even_series_codes_and_odd_bits ^ ODD_MASK
+    }
+
+    #[inline(always)]
+    fn escaped(haystack: Self::RegisterSize, next_is_escaped: u64) -> (u64, u64) {
         const BACKSLASH_OFFSET: u64 = 1;
         const ODD_MASK: u64 = 0xAAAAAAAAAAAAAAAA;
 
@@ -32,14 +44,12 @@ impl SIMD for SIMD512 {
 
         let haystack = unsafe { _mm512_andnot_si512(mask, haystack) };
         let backslashes = Self::compare(haystack, b'\\');
-        let maybe_escaped = backslashes << BACKSLASH_OFFSET;
 
-        let maybe_escaped_and_odd_bits = maybe_escaped | ODD_MASK;
-        let even_series_codes_and_odd_bits = maybe_escaped_and_odd_bits.wrapping_sub(backslashes);
-        let escape_and_terminal_code = even_series_codes_and_odd_bits ^ ODD_MASK;
+        let escape_and_terminal_code = Self::next_escape_and_terminal_code(backslashes);
 
-        let escaped = escape_and_terminal_code ^ backslashes;
-        escaped
+        let escaped = escape_and_terminal_code ^ (backslashes | next_is_escaped);
+        let escape = escape_and_terminal_code & backslashes;
+        (escaped, escape)
     }
 
     #[inline(always)]
