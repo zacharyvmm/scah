@@ -134,9 +134,7 @@ impl<'a> Element<'a> {
 
             let last_state = self.fsm.clone();
 
-            println!("Character: {} ({})", *character as char, i);
             self.fsm.step(*character);
-            println!("States: {:?} and {:?}", last_state, self.fsm);
 
             type FSM = ElementFSM;
             match (last_state, &self.fsm) {

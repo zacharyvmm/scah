@@ -80,6 +80,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::{FsmManager, Query, RustStore, Save, Store};
+
     use super::super::selection::SelectionRunner;
     use smallvec::SmallVec;
 
