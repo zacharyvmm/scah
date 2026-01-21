@@ -7,7 +7,7 @@ pub struct FakeStore {}
 
 impl<'html, 'query: 'html> Store<'html, 'query> for FakeStore {
     type E = usize;
-    type Context = bool;
+    type Context = ();
     fn new(_context: Self::Context) -> Self {
         Self {}
     }

@@ -94,4 +94,11 @@ mod tests {
             std::mem::size_of::<SmallVec<[SelectionRunner<'static, 'static, usize>; 1]>>()
         );
     }
+
+    #[test]
+    fn test_single_element_query() {
+        let query = Query::first("a", Save::all()).build();
+        let q = &[query];
+        let manager = FsmManager::new(RustStore::new(()), q);
+    }
 }

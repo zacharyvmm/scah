@@ -18,7 +18,7 @@ pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
     html: &'html str,
     queries: &'a [Query<'query>],
 ) -> Vec<Element<'html, 'query>> {
-    let selectors = FsmManager::new(RustStore::new(false), queries);
+    let selectors = FsmManager::new(RustStore::new(()), queries);
     let mut parser = XHtmlParser::new(selectors);
 
     let mut reader = Reader::new(html);
@@ -31,7 +31,7 @@ pub fn fake_parse<'a: 'query, 'html: 'query, 'query: 'html>(
     html: &'html str,
     queries: &'a [Query<'query>],
 ) {
-    let selectors = FsmManager::new(FakeStore::new(false), queries);
+    let selectors = FsmManager::new(FakeStore::new(()), queries);
     let mut parser = XHtmlParser::new(selectors);
 
     let mut reader = Reader::new(html);

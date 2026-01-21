@@ -172,7 +172,7 @@ mod tests {
 
         let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
 
-        let manager = FsmManager::new(RustStore::new(false), queries);
+        let manager = FsmManager::new(RustStore::new(()), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -210,7 +210,7 @@ mod tests {
         let mut reader = Reader::new(BASIC_HTML);
 
         let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
-        let manager = FsmManager::new(RustStore::new(false), queries);
+        let manager = FsmManager::new(RustStore::new(()), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -266,7 +266,7 @@ mod tests {
             Query::all("h1 + .indent #name", Save::none()).build(),
         ];
 
-        let manager = FsmManager::new(RustStore::new(false), queries);
+        let manager = FsmManager::new(RustStore::new(()), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -316,7 +316,7 @@ mod tests {
             ]
         });
         let queries = &[queries.build()];
-        let manager = FsmManager::new(RustStore::new(false), queries);
+        let manager = FsmManager::new(RustStore::new(()), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -401,7 +401,7 @@ mod tests {
 
         let queries = &[Query::all("div", Save::none()).build()];
 
-        let manager = FsmManager::new(RustStore::new(false), queries);
+        let manager = FsmManager::new(RustStore::new(()), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -448,7 +448,7 @@ mod tests {
         let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
         let queries = &[Query::all("form > p > input", Save::none()).build()];
 
-        let manager = FsmManager::new(RustStore::new(false), queries);
+        let manager = FsmManager::new(RustStore::new(()), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -488,7 +488,7 @@ mod tests {
 
         let queries = &[Query::all("form > p > input", Save::all()).build()];
 
-        let manager = FsmManager::new(RustStore::new(false), queries);
+        let manager = FsmManager::new(RustStore::new(()), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -529,7 +529,7 @@ mod tests {
 
         let queries = &[Query::all("a", Save::all()).build()];
 
-        let manager = FsmManager::new(RustStore::new(false), queries);
+        let manager = FsmManager::new(RustStore::new(()), queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -558,7 +558,7 @@ mod tests {
 
         let queries = &[Query::first("div.article a", Save::all()).build()];
 
-        let manager = FsmManager::new(RustStore::new(false), queries);
+        let manager = FsmManager::new(RustStore::new(()), queries);
 
         let mut parser = XHtmlParser::new(manager);
 

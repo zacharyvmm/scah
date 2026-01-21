@@ -120,7 +120,7 @@ pub struct RustStore<'html, 'query> {
 
 impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
     type E = usize;
-    type Context = bool;
+    type Context = ();
 
     fn new(_: Self::Context) -> Self {
         Self {
@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn test_element_access() -> Result<(), QueryError<'static>> {
         // Build a tree
-        let mut store = RustStore::new(false);
+        let mut store = RustStore::new(());
 
         let mut title_elem = XHtmlElement::new();
         title_elem.from(&mut Reader::new("h1"));
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "no entry found for key")]
     fn test_non_existing_key_element_access() {
-        let mut store = RustStore::new(false);
+        let mut store = RustStore::new(());
         let mut title_elem = XHtmlElement::new();
         title_elem.from(&mut Reader::new("h1"));
         let sel_title = SelectionPart::new(
@@ -331,7 +331,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Cannot use usize index on single element")]
     fn test_index_on_single_element_access() {
-        let mut store = RustStore::new(false);
+        let mut store = RustStore::new(());
         let mut title_elem = XHtmlElement::new();
         title_elem.from(&mut Reader::new("h1"));
         let sel_title = SelectionPart::new(
@@ -358,7 +358,7 @@ mod tests {
          *      |          \-> p
          *      \-> div
          */
-        let mut store = RustStore::new(false);
+        let mut store = RustStore::new(());
 
         // SETUP Elements
         let mut first = XHtmlElement::new();
