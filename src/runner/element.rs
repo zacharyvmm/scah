@@ -282,6 +282,13 @@ impl<'a> Element<'a> {
                     }
                 }
 
+                (FSM::Quote(QuoteKind::Single), FSM::Quote(QuoteKind::Single))
+                | (FSM::Quote(QuoteKind::Double), FSM::Quote(QuoteKind::Double)) => {
+                    //skips update to start position
+                    // -> `start_position = idx + 1;`
+                    continue;
+                }
+
                 _ => {}
             }
 
