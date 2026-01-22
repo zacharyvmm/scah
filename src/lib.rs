@@ -1,10 +1,9 @@
 mod css;
+mod runner;
 mod scanner;
 mod store;
 mod utils;
 mod xhtml;
-
-use std::collections::HashMap;
 
 use crate::store::{FakeStore, RustStore};
 

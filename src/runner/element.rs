@@ -1,4 +1,20 @@
-#[derive(Debug, PartialEq, Clone)]
+use std::fmt;
+
+struct ByteStr<'a>(&'a [u8]);
+
+impl<'a> fmt::Debug for ByteStr<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "b\"")?;
+        for &b in self.0 {
+            for c in std::ascii::escape_default(b) {
+                write!(f, "{}", c as char)?;
+            }
+        }
+        write!(f, "\"")
+    }
+}
+
+#[derive(PartialEq, Clone)]
 pub struct Attribute<'html> {
     pub key: &'html [u8],
     pub value: Option<&'html [u8]>,
@@ -7,7 +23,7 @@ pub struct Attribute<'html> {
 pub type Attributes<'html> = Vec<Attribute<'html>>;
 //pub type Attributes<'html> = SmallVec<[Attribute<'html>, 3]>;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct XHtmlElement<'html> {
     pub closing: bool,
     pub name: &'html [u8],
@@ -16,8 +32,30 @@ pub struct XHtmlElement<'html> {
     pub attributes: Attributes<'html>,
 }
 
+impl<'html> fmt::Debug for Attribute<'html> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Attribute")
+            .field("key", &ByteStr(self.key))
+            // Map the Option<&[u8]> to Option<ByteStr>
+            .field("value", &self.value.map(ByteStr))
+            .finish()
+    }
+}
+
+impl<'html> fmt::Debug for XHtmlElement<'html> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XHtmlElement")
+            .field("closing", &self.closing)
+            .field("name", &ByteStr(self.name))
+            .field("id", &self.id.map(ByteStr))
+            .field("class", &self.class.map(ByteStr))
+            .field("attributes", &self.attributes)
+            .finish()
+    }
+}
+
 impl<'html> XHtmlElement<'html> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             closing: false,
             name: &[],
@@ -27,12 +65,39 @@ impl<'html> XHtmlElement<'html> {
         }
     }
 
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.name = &[];
         self.id = None;
         self.class = None;
         self.attributes.clear();
         self.closing = false;
+    }
+
+    pub fn is_self_closing(&self) -> bool {
+        if matches!(
+            self.name,
+            b"area"
+                | b"base"
+                | b"br"
+                | b"col"
+                | b"embed"
+                | b"hr"
+                | b"img"
+                | b"input"
+                | b"link"
+                | b"meta"
+                | b"param"
+                | b"source"
+                | b"track"
+                | b"wbr"
+        ) {
+            return true;
+        }
+        if let Some(last_attribute) = self.attributes.last() {
+            return last_attribute.key == b"\\";
+        }
+
+        return false;
     }
 }
 
@@ -93,9 +158,9 @@ impl ElementFSM {
 
 // NOTE: This element only exist while
 pub struct Element<'a> {
-    element: XHtmlElement<'a>,
+    pub element: XHtmlElement<'a>,
     fsm: ElementFSM,
-    index: usize,
+    pub index: usize,
 }
 
 impl<'a> Element<'a> {
@@ -117,7 +182,7 @@ impl<'a> Element<'a> {
         }
     }
 
-    pub fn next(&mut self, string: &'a [u8], indices: &[u32]) {
+    pub fn next(&mut self, string: &'a [u8], indices: &[u32]) -> bool {
         self.element.clear();
 
         let mut label: &'a [u8] = &[];
@@ -156,7 +221,7 @@ impl<'a> Element<'a> {
                     }
 
                     self.index = i + 1;
-                    return;
+                    return true;
                 }
 
                 (FSM::Element, FSM::Element | FSM::Assign) => {
@@ -222,6 +287,8 @@ impl<'a> Element<'a> {
 
             start_position = idx + 1;
         }
+
+        return false;
     }
 }
 
@@ -243,17 +310,21 @@ mod tests {
 
     #[test]
     fn test_element() {
-        let string = "<div class=\"hello-world\"><a href='my-link'></a></div>";
+        let string = "<div class=\"hello-world\"><a href='https://mylink.com'></a></div>";
         let b = string.as_bytes();
         let mut factory = Element::new();
 
         let indices = &[
-            0, 4, 10, 11, 23, 24, 25, 27, 32, 33, 41, 42, 43, 44, 46, 47, 48, 52,
+            0, 4, 10, 11, 23, 24, 25, 27, 32, 33, 40, 41, 52, 53, 54, 55, 57, 58, 59, 63,
         ];
+
+        // let indices = &[
+        //     0, 4, 10, 11, 23, 24, 25, 27, 32, 33, 52, 53, 54, 55, 57, 58, 59, 63,
+        // ];
 
         // for i in indices {
         //     let index = *i as usize;
-        //     print!("{}, ", b[index] as char);
+        //     println!("{index} {}, ", b[index] as char);
         // }
         factory.next(b, indices);
         assert_eq!(
@@ -277,7 +348,7 @@ mod tests {
                 class: None,
                 attributes: vec![Attribute {
                     key: b"href",
-                    value: Some(b"my-link")
+                    value: Some(b"https://mylink.com")
                 }],
             }
         );
