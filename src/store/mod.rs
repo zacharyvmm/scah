@@ -7,8 +7,8 @@ pub use rust::{Child, ChildIndex};
 
 pub(crate) use fake::FakeStore;
 
-use crate::XHtmlElement;
 use crate::css::QuerySection;
+use crate::runner::element::XHtmlElement;
 
 pub trait Store<'html, 'query> {
     type E;

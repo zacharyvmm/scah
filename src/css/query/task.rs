@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
-use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
 use crate::css::parser::tree::{NextPosition, NextPositions, Position, Query};
+use crate::runner::element::XHtmlElement;
 use smallvec::SmallVec;
 
 #[derive(PartialEq, Debug)]
@@ -275,7 +275,7 @@ mod tests {
     use super::{Fsm, FsmState};
     use crate::Query;
     use crate::css::parser::tree::Save;
-    use crate::xhtml::element::element::XHtmlElement;
+    use crate::runner::element::XHtmlElement;
 
     #[test]
     fn test_fsm_next_descendant() {
@@ -288,7 +288,8 @@ mod tests {
             &selection_tree,
             0,
             &XHtmlElement {
-                name: "div",
+                closing: false,
+                name: b"div",
                 id: None,
                 class: None,
                 attributes: vec![],
@@ -304,7 +305,8 @@ mod tests {
             &selection_tree,
             1,
             &XHtmlElement {
-                name: "a",
+                closing: false,
+                name: b"a",
                 id: None,
                 class: None,
                 attributes: vec![],

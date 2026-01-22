@@ -157,13 +157,13 @@ impl ElementFSM {
 }
 
 // NOTE: This element only exist while
-pub struct Element<'a> {
+pub struct ElementFactory<'a> {
     pub element: XHtmlElement<'a>,
     fsm: ElementFSM,
     pub index: usize,
 }
 
-impl<'a> Element<'a> {
+impl<'a> ElementFactory<'a> {
     pub fn new() -> Self {
         Self {
             element: XHtmlElement::new(),
@@ -319,7 +319,7 @@ mod tests {
     fn test_element() {
         let string = "<div class=\"hello-world\"><a href='https://mylink.com'></a></div>";
         let b = string.as_bytes();
-        let mut factory = Element::new();
+        let mut factory = ElementFactory::new();
 
         let indices = &[
             0, 4, 10, 11, 23, 24, 25, 27, 32, 33, 40, 41, 52, 53, 54, 55, 57, 58, 59, 63,

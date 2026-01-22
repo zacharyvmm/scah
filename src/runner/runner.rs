@@ -1,26 +1,21 @@
 use crate::scanner::simd::{SIMD, swar};
 use crate::scanner::{CPUID, Scanner};
-use crate::{Query, Save};
+use crate::{Element, Query, Save};
 
 #[cfg(target_arch = "x86_64")]
 use crate::scanner::simd::x86_64;
 
-use super::element::{Attribute, Attributes, Element, XHtmlElement};
+use super::element::{Attribute, Attributes, ElementFactory, XHtmlElement};
 
 type Runners<'query, E> = Vec<SelectionRunner<'query, 'query, E>>;
 
-use crate::css::SelectionRunner;
+use crate::css::{DocumentPosition, SelectionRunner};
 use crate::store::{RustStore, Store};
 
-struct Runner {}
+pub struct Runner {}
 
-impl<'html, 'query> Runner {
-    pub(crate) fn run(input: &str, queries: &[Query<'query>]) -> Vec<XHtmlElement<'html>> {
-        // let runners = queries
-        //         .iter()
-        //         .map(|query| SelectionRunner::new(query))
-        //         .collect::<Runners<'query, S::E>>();
-
+impl<'html: 'query, 'query: 'html> Runner {
+    pub(crate) fn run(input: &'html str, queries: &[Query<'query>]) -> RustStore<'html, 'query> {
         let indexes = match CPUID::detect() {
             CPUID::AVX512BW => {
                 println!("Using AVX512");
@@ -32,14 +27,25 @@ impl<'html, 'query> Runner {
             }
         };
 
-        let mut factory = Element::new();
+        let mut factory = ElementFactory::new();
 
         let bytes = input.as_bytes();
+
+        let mut store = RustStore::new(());
+        let document_position = DocumentPosition {
+            element_depth: 0,
+            reader_position: 0, // for inner_html
+            text_content_position: usize::MAX,
+        };
+        let mut selection = SelectionRunner::<usize>::new(&queries[0]);
         while factory.next(bytes, &indexes) {
             println!("Element {}: {:#?}", factory.index, factory.element);
+            selection
+                .next(&factory.element, &document_position, &mut store)
+                .unwrap();
         }
 
-        vec![]
+        store
     }
 }
 
@@ -76,9 +82,11 @@ mod tests {
 
     #[test]
     fn test_single_element_query() {
-        let query = Query::first("a", Save::all()).build();
+        let query = Query::all("a", Save::all()).build();
         let queries = &[query];
 
-        Runner::run(MORE_ADVANCED_BASIC_HTML, queries);
+        let arena = Runner::run(MORE_ADVANCED_BASIC_HTML, queries).arena;
+
+        println!("Arena: {:#?}", arena);
     }
 }

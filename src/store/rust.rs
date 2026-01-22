@@ -1,5 +1,5 @@
 use crate::css::SelectionKind;
-use crate::xhtml::element::element::Attributes;
+use crate::runner::element::{Attributes, XHtmlElement};
 
 use super::{QueryError, Store};
 use crate::{QuerySection, dbg_print};
@@ -118,6 +118,10 @@ pub struct RustStore<'html, 'query> {
     pub arena: Vec<Element<'html, 'query>>,
 }
 
+macro_rules! bytes_to_string_unsafe {
+    ( $x:expr ) => {{ unsafe { str::from_utf8_unchecked($x) } }};
+}
+
 impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
     type E = usize;
     type Context = ();
@@ -140,12 +144,20 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
         &mut self,
         selection: &QuerySection<'query>,
         from: usize,
-        element: crate::XHtmlElement<'html>,
+        element: XHtmlElement<'html>,
     ) -> usize {
         let new_element: Element<'html, 'query> = Element {
-            name: element.name,
-            class: element.class,
-            id: element.id,
+            name: bytes_to_string_unsafe!(element.name),
+            class: if element.class.is_some() {
+                Some(bytes_to_string_unsafe!(element.class.unwrap()))
+            } else {
+                None
+            },
+            id: if element.id.is_some() {
+                Some(bytes_to_string_unsafe!(element.id.unwrap()))
+            } else {
+                None
+            },
             attributes: element.attributes,
             inner_html: None,
             text_content: None,
@@ -216,7 +228,8 @@ impl<'html, 'query: 'html> Store<'html, 'query> for RustStore<'html, 'query> {
 #[cfg(test)]
 mod tests {
 
-    use crate::{XHtmlElement, css::Save, css::SelectionPart, utils::Reader};
+    use crate::runner::element::XHtmlElement;
+    use crate::{css::Save, css::SelectionPart, utils::Reader};
 
     use super::*;
 
@@ -225,8 +238,13 @@ mod tests {
         // Build a tree
         let mut store = RustStore::new(());
 
-        let mut title_elem = XHtmlElement::new();
-        title_elem.from(&mut Reader::new("h1"));
+        let title_elem = XHtmlElement {
+            closing: false,
+            name: b"h1",
+            id: None,
+            class: None,
+            attributes: vec![],
+        };
 
         let sel_title = SelectionPart::new(
             "title",
@@ -248,13 +266,23 @@ mod tests {
         )
         .build();
 
-        let mut li1_elem = XHtmlElement::new();
-        li1_elem.from(&mut Reader::new("li"));
+        let li1_elem = XHtmlElement {
+            closing: false,
+            name: b"li",
+            id: None,
+            class: None,
+            attributes: vec![],
+        };
         let li1_idx = store.push(&sel_items, crate::store::ROOT, li1_elem);
         store.set_content(li1_idx, None, Some("First".to_string()));
 
-        let mut li2_elem = XHtmlElement::new();
-        li2_elem.from(&mut Reader::new("li"));
+        let li2_elem = XHtmlElement {
+            closing: false,
+            name: b"li",
+            id: None,
+            class: None,
+            attributes: vec![],
+        };
         let li2_idx = store.push(&sel_items, crate::store::ROOT, li2_elem);
         store.set_content(li2_idx, None, Some("Second".to_string()));
 
@@ -305,8 +333,13 @@ mod tests {
     #[should_panic(expected = "no entry found for key")]
     fn test_non_existing_key_element_access() {
         let mut store = RustStore::new(());
-        let mut title_elem = XHtmlElement::new();
-        title_elem.from(&mut Reader::new("h1"));
+        let title_elem = XHtmlElement {
+            closing: false,
+            name: b"h1",
+            id: None,
+            class: None,
+            attributes: vec![],
+        };
         let sel_title = SelectionPart::new(
             "title",
             SelectionKind::First(Save {
@@ -332,8 +365,13 @@ mod tests {
     #[should_panic(expected = "Cannot use usize index on single element")]
     fn test_index_on_single_element_access() {
         let mut store = RustStore::new(());
-        let mut title_elem = XHtmlElement::new();
-        title_elem.from(&mut Reader::new("h1"));
+        let title_elem = XHtmlElement {
+            closing: false,
+            name: b"h1",
+            id: None,
+            class: None,
+            attributes: vec![],
+        };
         let sel_title = SelectionPart::new(
             "title",
             SelectionKind::First(Save {
@@ -361,20 +399,45 @@ mod tests {
         let mut store = RustStore::new(());
 
         // SETUP Elements
-        let mut first = XHtmlElement::new();
-        first.from(&mut Reader::new("a class=\"class\""));
+        let first = XHtmlElement {
+            closing: false,
+            name: b"a",
+            id: None,
+            class: Some(b"class"),
+            attributes: vec![],
+        };
 
-        let mut second = XHtmlElement::new();
-        second.from(&mut Reader::new("span id=\"id\""));
+        let second = XHtmlElement {
+            closing: false,
+            name: b"span",
+            id: Some(b"id"),
+            class: None,
+            attributes: vec![],
+        };
 
-        let mut second_extended = XHtmlElement::new();
-        second_extended.from(&mut Reader::new("p"));
+        let second_extended = XHtmlElement {
+            closing: false,
+            name: b"p",
+            id: None,
+            class: None,
+            attributes: vec![],
+        };
 
-        let mut second_alternate = XHtmlElement::new();
-        second_alternate.from(&mut Reader::new("p"));
+        let second_alternate = XHtmlElement {
+            closing: false,
+            name: b"p",
+            id: None,
+            class: None,
+            attributes: vec![],
+        };
 
-        let mut first_alternate = XHtmlElement::new();
-        first_alternate.from(&mut Reader::new("div"));
+        let first_alternate = XHtmlElement {
+            closing: false,
+            name: b"div",
+            id: None,
+            class: None,
+            attributes: vec![],
+        };
 
         let selection_first = SelectionPart::new(
             "a",

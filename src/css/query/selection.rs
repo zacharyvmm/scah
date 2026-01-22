@@ -6,7 +6,8 @@ use super::task::{FsmState, ScopedFsm};
 use crate::css::Save;
 use crate::css::parser::tree::Query;
 use crate::css::query::task::Fsm;
-use crate::{XHtmlElement, dbg_print};
+use crate::dbg_print;
+use crate::runner::element::XHtmlElement;
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
 use crate::utils::Reader;
@@ -363,8 +364,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::XHtmlElement;
     use crate::css::parser::tree::{Position, Query, Save};
+    use crate::runner::element::XHtmlElement;
     use crate::store::ChildIndex;
     use crate::store::{RustStore, Store};
     use crate::utils::Reader;
@@ -382,7 +383,8 @@ mod tests {
 
         let _ = selection.next(
             &XHtmlElement {
-                name: "div",
+                closing: false,
+                name: b"div",
                 id: None,
                 class: None,
                 attributes: vec![],
@@ -418,7 +420,8 @@ mod tests {
 
         let _ = selection.next(
             &XHtmlElement {
-                name: "a",
+                closing: false,
+                name: b"a",
                 id: None,
                 class: None,
                 attributes: vec![],
@@ -474,7 +477,8 @@ mod tests {
 
         let _ = selection.next(
             &XHtmlElement {
-                name: "div",
+                closing: false,
+                name: b"div",
                 id: None,
                 class: None,
                 attributes: vec![],
@@ -511,9 +515,10 @@ mod tests {
 
         let _ = selection.next(
             &XHtmlElement {
-                name: "p",
+                closing: false,
+                name: b"p",
                 id: None,
-                class: Some("class"),
+                class: Some(b"class"),
                 attributes: vec![],
             },
             &DocumentPosition {
@@ -580,7 +585,8 @@ mod tests {
 
         let _ = selection.next(
             &XHtmlElement {
-                name: "div",
+                closing: false,
+                name: b"div",
                 id: None,
                 class: None,
                 attributes: vec![],

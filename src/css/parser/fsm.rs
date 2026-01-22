@@ -1,6 +1,6 @@
-use crate::XHtmlElement;
 use crate::css::parser::element::QueryElement;
 use crate::css::parser::lexer::Combinator;
+use crate::runner::element::XHtmlElement;
 
 #[derive(PartialEq, Debug)]
 pub struct Fsm<'query> {
@@ -72,7 +72,8 @@ mod tests {
         );
         assert!(fsm.next(
             &XHtmlElement {
-                name: "a",
+                closing: false,
+                name: b"a",
                 id: None,
                 class: None,
                 attributes: vec![]
@@ -95,7 +96,8 @@ mod tests {
         );
         assert!(fsm.next(
             &XHtmlElement {
-                name: "a",
+                closing: false,
+                name: b"a",
                 id: None,
                 class: None,
                 attributes: vec![]
@@ -118,7 +120,8 @@ mod tests {
         );
         assert!(!fsm.next(
             &XHtmlElement {
-                name: "a",
+                closing: false,
+                name: b"a",
                 id: None,
                 class: None,
                 attributes: vec![]
@@ -141,7 +144,8 @@ mod tests {
         );
         assert!(fsm.next(
             &XHtmlElement {
-                name: "a",
+                closing: false,
+                name: b"a",
                 id: None,
                 class: None,
                 attributes: vec![]
@@ -163,7 +167,8 @@ mod tests {
         );
         assert!(fsm.next(
             &XHtmlElement {
-                name: "a",
+                closing: false,
+                name: b"a",
                 id: None,
                 class: None,
                 attributes: vec![]

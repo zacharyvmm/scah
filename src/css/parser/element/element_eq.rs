@@ -1,10 +1,15 @@
 use super::element::{AttributeSelection, QueryElement};
 use super::string_search::AttributeSelectionKind;
-use crate::xhtml::element::element::{Attribute, XHtmlElement};
+//use crate::xhtml::element::element::{Attribute, XHtmlElement};
+use crate::runner::element::{Attribute, XHtmlElement};
+
+macro_rules! bytes_to_string_unsafe {
+    ( $x:expr ) => {{ unsafe { str::from_utf8_unchecked($x) } }};
+}
 
 impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
     fn eq(&self, other: &Attribute<'b>) -> bool {
-        if self.name != other.key {
+        if self.name != bytes_to_string_unsafe!(other.key) {
             return false;
         }
 
@@ -16,27 +21,28 @@ impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
             return false;
         }
 
-        return self.kind.find(self.value.unwrap(), other.value.unwrap());
+        return self.kind.find(
+            self.value.unwrap(),
+            bytes_to_string_unsafe!(other.value.unwrap()),
+        );
     }
 }
 
 impl<'a, 'b> PartialEq<XHtmlElement<'b>> for QueryElement<'a> {
     fn eq(&self, other: &XHtmlElement<'b>) -> bool {
         if let Some(name) = self.name
-            && name != other.name
+            && name != bytes_to_string_unsafe!(other.name)
         {
             return false;
         }
 
-        if self.id.is_some() && self.id != other.id {
+        if self.id.is_some() && self.id.unwrap() != bytes_to_string_unsafe!(other.id.unwrap()) {
             return false;
         }
 
         if self.class.is_some()
             && (other.class.is_none()
-                || !other
-                    .class
-                    .unwrap()
+                || !bytes_to_string_unsafe!(other.class.unwrap())
                     .split_whitespace()
                     .any(|word| word == self.class.unwrap()))
         {
@@ -71,8 +77,8 @@ mod tests {
                 kind: AttributeSelectionKind::Exact,
             },
             Attribute {
-                key: "hello",
-                value: Some("World")
+                key: b"hello",
+                value: Some(b"World")
             }
         );
     }
@@ -91,21 +97,22 @@ mod tests {
                 }])
             },
             XHtmlElement {
-                name: "hello",
-                id: Some("id"),
-                class: Some("hello world"),
+                closing: false,
+                name: b"hello",
+                id: Some(b"id"),
+                class: Some(b"hello world"),
                 attributes: Vec::from([
                     Attribute {
-                        key: "key1",
-                        value: Some("value1")
+                        key: b"key1",
+                        value: Some(b"value1")
                     },
                     Attribute {
-                        key: "key2",
-                        value: Some("value2")
+                        key: b"key2",
+                        value: Some(b"value2")
                     },
                     Attribute {
-                        key: "selected",
-                        value: Some("true")
+                        key: b"selected",
+                        value: Some(b"true")
                     },
                 ])
             }
@@ -126,21 +133,22 @@ mod tests {
                 }])
             },
             XHtmlElement {
-                name: "a",
-                id: Some("search-link"),
-                class: Some("text-white underline-green p-4"),
+                closing: false,
+                name: b"a",
+                id: Some(b"search-link"),
+                class: Some(b"text-white underline-green p-4"),
                 attributes: Vec::from([
                     Attribute {
-                        key: "key1",
-                        value: Some("value1")
+                        key: b"key1",
+                        value: Some(b"value1")
                     },
                     Attribute {
-                        key: "href",
-                        value: Some("/search")
+                        key: b"href",
+                        value: Some(b"/search")
                     },
                     Attribute {
-                        key: "selected",
-                        value: Some("true")
+                        key: b"selected",
+                        value: Some(b"true")
                     },
                 ])
             }

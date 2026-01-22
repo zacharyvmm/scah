@@ -1,7 +1,8 @@
 // This is to examine the performance cost of the Store
 
 use super::Store;
-use crate::{QuerySection, XHtmlElement};
+use crate::QuerySection;
+use crate::runner::element::XHtmlElement;
 
 pub struct FakeStore {}
 

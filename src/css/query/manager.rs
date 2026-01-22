@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 use super::selection::SelectionRunner;
-use crate::XHtmlElement;
 use crate::css::parser::tree::Query;
+use crate::runner::element::XHtmlElement;
 use crate::store::Store;
 
 pub(crate) struct DocumentPosition {
