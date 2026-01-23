@@ -1,6 +1,6 @@
 use crate::scanner::simd::{SIMD, swar};
 use crate::scanner::{CPUID, Scanner};
-use crate::{Element, Query, Save};
+use crate::{Element, Query, Save, dbg_print};
 
 #[cfg(target_arch = "x86_64")]
 use crate::scanner::simd::x86_64;
@@ -15,14 +15,14 @@ use crate::store::{RustStore, Store};
 pub struct Runner {}
 
 impl<'html: 'query, 'query: 'html> Runner {
-    pub(crate) fn run(input: &'html str, queries: &[Query<'query>]) -> RustStore<'html, 'query> {
+    pub fn run(input: &'html str, queries: &[Query<'query>]) -> RustStore<'html, 'query> {
         let indexes = match CPUID::detect() {
             CPUID::AVX512BW => {
-                println!("Using AVX512");
+                dbg_print!("Using AVX512");
                 Scanner::new().scan::<x86_64::SIMD512>(input)
             }
             CPUID::Other => {
-                println!("Using SWAR");
+                dbg_print!("Using SWAR");
                 Scanner::new().scan::<swar::SWAR>(input)
             }
         };
@@ -39,10 +39,12 @@ impl<'html: 'query, 'query: 'html> Runner {
         };
         let mut selection = SelectionRunner::<usize>::new(&queries[0]);
         while factory.next(bytes, &indexes) {
-            println!("Element {}: {:#?}", factory.index, factory.element);
-            selection
-                .next(&factory.element, &document_position, &mut store)
-                .unwrap();
+            //println!("Element {}: {:#?}", factory.index, factory.element);
+            if !factory.element.closing {
+                selection
+                    .next(&factory.element, &document_position, &mut store)
+                    .unwrap();
+            }
         }
 
         store

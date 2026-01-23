@@ -36,14 +36,6 @@ fn bench_onego(html: String) {
         black_box(&element.text_content);
     }
 }
-// use onego::fake_parse;
-// #[library_benchmark]
-// #[bench::onego_no_store(setup_html())]
-// fn bench_onego_no_store(html: String) {
-//     let queries = &[Query::all(QUERY, Save::none()).build()];
-
-//     let res = black_box(fake_parse(&html, queries));
-// }
 
 use scraper::{Html, Selector};
 #[library_benchmark]

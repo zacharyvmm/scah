@@ -2,7 +2,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use lexbor_css::HtmlDocument;
 use lol_html::errors::RewritingError;
 use lol_html::{HtmlRewriter, Settings, element};
-use onego::{Query, Save, fake_parse, parse};
+use onego::{Query, Save, parse};
 use scraper::{Html, Selector};
 use std::error::Error;
 use std::fmt;
