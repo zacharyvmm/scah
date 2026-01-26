@@ -84,7 +84,7 @@ mod tests {
 
         assert_eq!(
             first_element,
-            QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
+            QueryElement::new(Some(b"element"), Some(b"id"), Some(b"class"), Vec::new(),)
         );
 
         assert_eq!(second_combinator, Combinator::Child);
@@ -92,9 +92,9 @@ mod tests {
         assert_eq!(
             second_element,
             QueryElement::new(
-                Some("other"),
-                Some("other_id"),
-                Some("other_class"),
+                Some(b"other"),
+                Some(b"other_id"),
+                Some(b"other_class"),
                 Vec::new(),
             )
         );
@@ -110,7 +110,7 @@ mod tests {
 
         assert_eq!(
             first_element,
-            QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
+            QueryElement::new(Some(b"element"), Some(b"id"), Some(b"class"), Vec::new(),)
         );
 
         assert_eq!(second_combinator, Combinator::Child);
@@ -118,9 +118,9 @@ mod tests {
         assert_eq!(
             second_element,
             QueryElement::new(
-                Some("other"),
-                Some("other_id"),
-                Some("other_class"),
+                Some(b"other"),
+                Some(b"other_id"),
+                Some(b"other_class"),
                 Vec::new(),
             )
         );

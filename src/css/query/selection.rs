@@ -282,7 +282,11 @@ where
                 // println!("Closing tag save content for `{element}`");
                 let inner_html = {
                     if let Some(start_idx) = content_trigger.inner_html {
-                        let slice = reader.slice(start_idx..document_position.reader_position);
+                        let slice = unsafe {
+                            str::from_utf8_unchecked(
+                                reader.slice(start_idx..document_position.reader_position),
+                            )
+                        };
                         Some(slice)
                     } else {
                         None

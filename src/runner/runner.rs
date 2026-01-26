@@ -1,3 +1,4 @@
+use crate::css::State;
 use crate::scanner::simd::{SIMD, swar};
 use crate::scanner::{CPUID, Scanner};
 use crate::{Element, Query, Save, dbg_print};
@@ -38,6 +39,7 @@ impl<'html: 'query, 'query: 'html> Runner {
             text_content_position: usize::MAX,
         };
         let mut selection = SelectionRunner::<usize>::new(&queries[0]);
+
         while factory.next(bytes, &indexes) {
             //println!("Element {}: {:#?}", factory.index, factory.element);
             if !factory.element.closing {

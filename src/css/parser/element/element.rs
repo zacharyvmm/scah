@@ -6,19 +6,19 @@ use crate::{
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct AttributeSelection<'query> {
-    pub(super) name: &'query str,
-    pub(super) value: Option<&'query str>,
+    pub(super) name: &'query [u8],
+    pub(super) value: Option<&'query [u8]>,
     pub(super) kind: AttributeSelectionKind,
 }
 
 struct KeyValueAttributeSelection<'query> {
-    name: Option<&'query str>,
+    name: Option<&'query [u8]>,
+    value: Option<&'query [u8]>,
     selection_kind: AttributeSelectionKind,
-    value: Option<&'query str>,
 }
 
 impl<'query> KeyValueAttributeSelection<'query> {
-    fn push(&mut self, content_inside_quotes: &'query str) {
+    fn push(&mut self, content_inside_quotes: &'query [u8]) {
         if self.name.is_none() {
             self.name = Some(content_inside_quotes);
         } else if self.value.is_none() {
@@ -115,7 +115,7 @@ impl<'query> From<&mut Reader<'query>> for AttributeSelection<'query> {
 }
 
 enum SelectionKeyWords<'query> {
-    String(&'query str),
+    String(&'query [u8]),
     ID,
     CLASS,
     Quote,
@@ -151,7 +151,7 @@ impl<'a> SelectionKeyWords<'a> {
 }
 
 enum SelectionAttributeToken<'a> {
-    String(&'a str),
+    String(&'a [u8]),
     Quote(QuoteKind),
     Equal,
     StringMatchSelector(AttributeSelectionKind),
@@ -191,9 +191,9 @@ impl<'a> SelectionAttributeToken<'a> {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct QueryElement<'a> {
-    pub name: Option<&'a str>,
-    pub id: Option<&'a str>,
-    pub class: Option<&'a str>,
+    pub name: Option<&'a [u8]>,
+    pub id: Option<&'a [u8]>,
+    pub class: Option<&'a [u8]>,
     pub attributes: Vec<AttributeSelection<'a>>,
 }
 
@@ -204,9 +204,9 @@ pub struct QueryElement<'a> {
 // 2.1.1) The flow should look like this => Reader -> Tokenizer -> ElementIterator -> SelectionIterator
 impl<'a> QueryElement<'a> {
     pub(crate) fn new(
-        name: Option<&'a str>,
-        id: Option<&'a str>,
-        class: Option<&'a str>,
+        name: Option<&'a [u8]>,
+        id: Option<&'a [u8]>,
+        class: Option<&'a [u8]>,
         attributes: Vec<AttributeSelection<'a>>,
     ) -> Self {
         return Self {
@@ -275,9 +275,9 @@ mod tests {
         assert_eq!(
             element,
             QueryElement {
-                name: Some("element"),
-                id: Some("id"),
-                class: Some("class"),
+                name: Some(b"element"),
+                id: Some(b"id"),
+                class: Some(b"class"),
                 attributes: Vec::new(),
             }
         );
@@ -292,12 +292,12 @@ mod tests {
         assert_eq!(
             element,
             QueryElement {
-                name: Some("element"),
-                id: Some("id"),
-                class: Some("class"),
+                name: Some(b"element"),
+                id: Some(b"id"),
+                class: Some(b"class"),
                 attributes: Vec::from([AttributeSelection {
-                    name: "selected",
-                    value: Some("true"),
+                    name: b"selected",
+                    value: Some(b"true"),
                     kind: AttributeSelectionKind::Exact
                 }]),
             }
@@ -313,18 +313,18 @@ mod tests {
         assert_eq!(
             element,
             QueryElement {
-                name: Some("element"),
-                id: Some("id"),
-                class: Some("class"),
+                name: Some(b"element"),
+                id: Some(b"id"),
+                class: Some(b"class"),
                 attributes: Vec::from([
                     AttributeSelection {
-                        name: "href",
-                        value: Some("_blank"),
+                        name: b"href",
+                        value: Some(b"_blank"),
                         kind: AttributeSelectionKind::WhitespaceSeparated
                     },
                     AttributeSelection {
-                        name: "selected",
-                        value: Some("true"),
+                        name: b"selected",
+                        value: Some(b"true"),
                         kind: AttributeSelectionKind::Exact
                     }
                 ]),
@@ -341,12 +341,12 @@ mod tests {
         assert_eq!(
             element,
             QueryElement {
-                name: Some("element"),
-                id: Some("id"),
-                class: Some("class"),
+                name: Some(b"element"),
+                id: Some(b"id"),
+                class: Some(b"class"),
                 attributes: Vec::from([AttributeSelection {
-                    name: "selected",
-                    value: Some("true"),
+                    name: b"selected",
+                    value: Some(b"true"),
                     kind: AttributeSelectionKind::Exact
                 }]),
             }

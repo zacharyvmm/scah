@@ -50,7 +50,8 @@ impl<'html> TextContent<'html> {
         let Some(start_position) = self.text_start else {
             unreachable!("Their has to be a start position set before pushing text content")
         };
-        let text = reader.slice(start_position..end_position).trim();
+        let text =
+            unsafe { str::from_utf8_unchecked(reader.slice(start_position..end_position)) }.trim();
 
         // TODO: In browsers `\n` is ignored and multiple ` ` are tretead as one.
         // If the user wants the textcontent and innerhtml to be in format then I would need to filter the text

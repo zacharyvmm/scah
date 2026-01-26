@@ -34,6 +34,8 @@ impl Scanner {
     pub fn new() -> Self {
         Self { next_is_escaped: 0 }
     }
+    pub fn open_file() {}
+    pub fn from_string() {}
     pub fn scan<T: SIMD>(&mut self, input: &str) -> Vec<u32> {
         let buffer = T::buffer(input);
 

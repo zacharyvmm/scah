@@ -19,10 +19,10 @@ impl<'a> Reader<'a> {
     }
 
     #[inline]
-    pub fn slice(&self, range: Range<usize>) -> &'a str {
+    pub fn slice(&self, range: Range<usize>) -> &'a [u8] {
         // SAFETY: The source was originally a &str, and structural characters are ASCII.
         // We should be careful about slicing in the middle of a UTF-8 character.
-        return unsafe { std::str::from_utf8_unchecked(&self.source[range]) };
+        return &self.source[range];
     }
 
     #[inline]
@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(reader.get_position(), 10);
         assert_eq!(reader.next(), Some(b'd'));
 
-        assert_eq!(reader.slice(0..5), "Hello");
+        assert_eq!(reader.slice(0..5), b"Hello");
     }
 
     #[test]

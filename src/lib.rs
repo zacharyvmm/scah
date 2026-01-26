@@ -13,7 +13,7 @@ use crate::{
 pub use css::{FsmManager, Query, QueryBuilder, QuerySection, Save, SelectionKind, SelectionPart};
 pub use store::{Element, QueryError, Store};
 pub use utils::Reader;
-pub use xhtml::element::element::{Attribute, XHtmlElement};
+//pub use xhtml::element::element::{Attribute, XHtmlElement};
 //pub use xhtml::parser::XHtmlParser;
 
 pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(

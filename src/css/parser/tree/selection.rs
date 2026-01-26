@@ -1,4 +1,4 @@
-use super::super::fsm::Fsm;
+use super::super::fsm::State;
 use super::super::lexer::Lexer;
 use crate::utils::Reader;
 
@@ -66,7 +66,7 @@ pub struct SelectionPart<S> {
 #[derive(Debug)]
 pub struct QuerySection<'query> {
     pub source: &'query str,
-    pub(crate) fsms: Box<[Fsm<'query>]>,
+    pub(crate) fsms: Box<[State<'query>]>,
     pub kind: SelectionKind,
 
     pub(crate) parent: Option<usize>,  // real index
@@ -95,7 +95,7 @@ impl<'query> SelectionPart<&'query str> {
         let reader = &mut Reader::new(self.source);
         let mut fsms = Vec::new();
         while let Some((combinator, element)) = Lexer::next(reader) {
-            fsms.push(Fsm::new(combinator, element));
+            fsms.push(State::new(combinator, element));
         }
 
         QuerySection {

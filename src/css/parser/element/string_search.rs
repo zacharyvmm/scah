@@ -9,13 +9,30 @@ pub enum AttributeSelectionKind {
     Substring,           // [attribute*=value]
 }
 
+pub fn split_whitespace_any(string: &[u8], condition: impl Fn(&[u8]) -> bool) -> bool {
+    let mut start = 0;
+    let mut any = false;
+    for (i, c) in string.iter().enumerate() {
+        if *c == b' ' {
+            any |= condition(&string[start..i]);
+            start = i + 1;
+        }
+    }
+
+    if start < string.len() {
+        any |= condition(&string[start..string.len()]);
+    }
+
+    any
+}
+
 impl AttributeSelectionKind {
-    pub fn find<'a, 'b>(&self, query: &'a str, source: &'b str) -> bool {
+    pub fn find(&self, query: &[u8], source: &[u8]) -> bool {
         match self {
             Self::Exact => query == source,
             Self::Presence => true,
-            Self::WhitespaceSeparated => source.split_whitespace().any(|word| word == query),
-            Self::HyphenSeparated => source.split_whitespace().any(|word| {
+            Self::WhitespaceSeparated => split_whitespace_any(source, |word| word == query),
+            Self::HyphenSeparated => split_whitespace_any(source, |word| {
                 if word == query {
                     return true;
                 }
@@ -25,8 +42,7 @@ impl AttributeSelectionKind {
                 }
 
                 // query is prefix of word with `-` nextup
-                return query == &word[0..query.len()]
-                    && "-" == &word[query.len()..query.len() + 1];
+                return query == &word[0..query.len()] && b'-' == word[query.len()];
             }),
             Self::Prefix => {
                 if query.len() > source.len() {
@@ -41,7 +57,8 @@ impl AttributeSelectionKind {
                 query == &source[(source.len() - query.len())..]
             }
 
-            Self::Substring => source.contains(query),
+            Self::Substring => unsafe { str::from_utf8_unchecked(source) }
+                .contains(unsafe { str::from_utf8_unchecked(query) }),
         }
     }
 }
@@ -53,48 +70,48 @@ mod tests {
     #[test]
     fn test_presence() {
         let kind = AttributeSelectionKind::Presence;
-        assert!(kind.find("", "Hello"));
+        assert!(kind.find(b"", b"Hello"));
     }
 
     #[test]
     fn test_exact() {
         let kind = AttributeSelectionKind::Exact;
-        assert!(kind.find("Hello", "Hello"));
+        assert!(kind.find(b"Hello", b"Hello"));
     }
 
     #[test]
     fn test_whitespace() {
         let kind = AttributeSelectionKind::WhitespaceSeparated;
-        assert!(kind.find("world", "hello world in test"));
+        assert!(kind.find(b"world", b"hello world in test"));
     }
 
     #[test]
     fn test_with_hypen_separated() {
         let kind = AttributeSelectionKind::HyphenSeparated;
-        assert!(kind.find("en", "hello en-world"));
+        assert!(kind.find(b"en", b"hello en-world"));
     }
 
     #[test]
     fn test_without_hypen_separated() {
         let kind = AttributeSelectionKind::HyphenSeparated;
-        assert!(kind.find("en", "hello en world"));
+        assert!(kind.find(b"en", b"hello en world"));
     }
 
     #[test]
     fn test_prefix() {
         let kind = AttributeSelectionKind::Prefix;
-        assert!(kind.find("hello wor", "hello world in test"));
+        assert!(kind.find(b"hello wor", b"hello world in test"));
     }
 
     #[test]
     fn test_suffix() {
         let kind = AttributeSelectionKind::Suffix;
-        assert!(kind.find("ld in test", "hello world in test"));
+        assert!(kind.find(b"ld in test", b"hello world in test"));
     }
 
     #[test]
     fn test_substring() {
         let kind = AttributeSelectionKind::Substring;
-        assert!(kind.find("world", "helloworldintest"));
+        assert!(kind.find(b"world", b"helloworldintest"));
     }
 }

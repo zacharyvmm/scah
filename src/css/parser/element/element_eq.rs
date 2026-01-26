@@ -1,15 +1,11 @@
 use super::element::{AttributeSelection, QueryElement};
-use super::string_search::AttributeSelectionKind;
+use super::string_search::{AttributeSelectionKind, split_whitespace_any};
 //use crate::xhtml::element::element::{Attribute, XHtmlElement};
 use crate::runner::element::{Attribute, XHtmlElement};
 
-macro_rules! bytes_to_string_unsafe {
-    ( $x:expr ) => {{ unsafe { str::from_utf8_unchecked($x) } }};
-}
-
 impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
     fn eq(&self, other: &Attribute<'b>) -> bool {
-        if self.name != bytes_to_string_unsafe!(other.key) {
+        if self.name != other.key {
             return false;
         }
 
@@ -21,43 +17,56 @@ impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
             return false;
         }
 
-        return self.kind.find(
-            self.value.unwrap(),
-            bytes_to_string_unsafe!(other.value.unwrap()),
-        );
+        return self.kind.find(self.value.unwrap(), other.value.unwrap());
     }
 }
 
 impl<'a, 'b> PartialEq<XHtmlElement<'b>> for QueryElement<'a> {
     fn eq(&self, other: &XHtmlElement<'b>) -> bool {
         if let Some(name) = self.name
-            && name != bytes_to_string_unsafe!(other.name)
+            && name != other.name
         {
             return false;
         }
 
-        if self.id.is_some() && self.id.unwrap() != bytes_to_string_unsafe!(other.id.unwrap()) {
+        if self.id.is_some() && self.id.unwrap() != other.id.unwrap() {
             return false;
         }
 
         if self.class.is_some()
             && (other.class.is_none()
-                || !bytes_to_string_unsafe!(other.class.unwrap())
-                    .split_whitespace()
-                    .any(|word| word == self.class.unwrap()))
+                || !split_whitespace_any(other.class.unwrap(), |word| word == self.class.unwrap()))
         {
             return false;
         }
 
-        let other_attributes_conform_to_selector =
-            !self.attributes.iter().all(|selector_attribute| {
-                other
-                    .attributes
-                    .iter()
-                    .any(|xhtml_attribute| selector_attribute == xhtml_attribute)
-            });
-        if other_attributes_conform_to_selector {
-            return false;
+        // let other_attributes_conform_to_selector =
+        //     !self.attributes.iter().all(|selector_attribute| {
+        //         other
+        //             .attributes
+        //             .iter()
+        //             .any(|xhtml_attribute| selector_attribute == xhtml_attribute)
+        //     });
+        // if other_attributes_conform_to_selector {
+        //     return false;
+        // }
+        if !self.attributes.is_empty() {
+            if other.attributes.len() < self.attributes.len() {
+                return false;
+            }
+
+            let mut all = true;
+            for req_attr in &self.attributes {
+                let mut any = false;
+                for elem_attr in &other.attributes {
+                    if req_attr == elem_attr {
+                        any = true;
+                        break;
+                    }
+                }
+                all &= any;
+            }
+            return all;
         }
 
         true
@@ -72,8 +81,8 @@ mod tests {
     fn test_attribute_selection_comparison() {
         assert_eq!(
             AttributeSelection {
-                name: "hello",
-                value: Some("World"),
+                name: b"hello",
+                value: Some(b"World"),
                 kind: AttributeSelectionKind::Exact,
             },
             Attribute {
@@ -87,12 +96,12 @@ mod tests {
     fn test_element_selection_comparison() {
         assert_eq!(
             QueryElement {
-                name: Some("hello"),
-                id: Some("id"),
-                class: Some("world"),
+                name: Some(b"hello"),
+                id: Some(b"id"),
+                class: Some(b"world"),
                 attributes: Vec::from([AttributeSelection {
-                    name: "selected",
-                    value: Some("true"),
+                    name: b"selected",
+                    value: Some(b"true"),
                     kind: AttributeSelectionKind::Exact
                 }])
             },
@@ -123,11 +132,11 @@ mod tests {
     fn test_realistic_search() {
         assert_eq!(
             QueryElement {
-                name: Some("a"),
+                name: Some(b"a"),
                 id: None,
-                class: Some("underline-green"),
+                class: Some(b"underline-green"),
                 attributes: Vec::from([AttributeSelection {
-                    name: "href",
+                    name: b"href",
                     value: None,
                     kind: AttributeSelectionKind::Presence,
                 }])

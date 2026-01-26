@@ -1,7 +1,7 @@
 use crate::Save;
 use crate::css::parser::tree::selection::QuerySection;
 
-use super::super::fsm::Fsm;
+use super::super::fsm::State;
 use super::super::lexer::Combinator;
 use super::selection::SelectionKind;
 use super::selection::SelectionPart;
@@ -50,7 +50,7 @@ impl<'query> Query<'query> {
         }
     }
 
-    pub(crate) fn get(&self, position: &Position) -> &Fsm<'query> {
+    pub(crate) fn get(&self, position: &Position) -> &State<'query> {
         &self.list[position.section].fsms[position.fsm]
     }
 
@@ -332,20 +332,20 @@ mod tests {
         assert_eq!(
             query.list[0].fsms,
             Vec::from([
-                Fsm {
+                State {
                     state: QueryElement::new(
-                        Some("element"),
-                        Some("id"),
-                        Some("class"),
+                        Some(b"element"),
+                        Some(b"id"),
+                        Some(b"class"),
                         Vec::new(),
                     ),
                     transition: Combinator::Descendant,
                 },
-                Fsm {
+                State {
                     state: QueryElement::new(
-                        Some("other"),
-                        Some("other_id"),
-                        Some("other_class"),
+                        Some(b"other"),
+                        Some(b"other_id"),
+                        Some(b"other_class"),
                         Vec::new(),
                     ),
                     transition: Combinator::Child,

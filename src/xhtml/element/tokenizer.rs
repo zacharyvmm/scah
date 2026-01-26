@@ -2,7 +2,7 @@ use crate::utils::Reader;
 
 #[derive(Debug, PartialEq)]
 pub enum ElementAttributeToken<'a> {
-    String(&'a str),
+    String(&'a [u8]),
     Equal,
 }
 
@@ -60,7 +60,7 @@ mod tests {
 
         let mut next_value = next_iter.unwrap();
 
-        assert_eq!(next_value, ElementAttributeToken::String("key"));
+        assert_eq!(next_value, ElementAttributeToken::String(b"key"));
 
         next_iter = ElementAttributeToken::next(&mut reader);
         assert!(next_iter.is_some());
@@ -72,7 +72,7 @@ mod tests {
         assert!(next_iter.is_some());
 
         next_value = next_iter.unwrap();
-        assert_eq!(next_value, ElementAttributeToken::String("value"));
+        assert_eq!(next_value, ElementAttributeToken::String(b"value"));
     }
 
     // TOKENIZER / FSM attribute robustness tests
