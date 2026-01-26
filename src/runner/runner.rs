@@ -20,11 +20,17 @@ impl<'html: 'query, 'query: 'html> Runner {
         let indexes = match CPUID::detect() {
             CPUID::AVX512BW => {
                 dbg_print!("Using AVX512");
-                Scanner::new().scan::<x86_64::SIMD512>(input)
+                let buffer = x86_64::SIMD512::buffer(input);
+                Scanner::new().scan::<x86_64::SIMD512>(
+                    buffer.as_slice(),
+                    buffer.len() + x86_64::SIMD512::BYTES,
+                )
             }
             CPUID::Other => {
                 dbg_print!("Using SWAR");
-                Scanner::new().scan::<swar::SWAR>(input)
+                let buffer = swar::SWAR::buffer(input);
+                Scanner::new()
+                    .scan::<swar::SWAR>(buffer.as_slice(), buffer.len() + swar::SWAR::BYTES)
             }
         };
 

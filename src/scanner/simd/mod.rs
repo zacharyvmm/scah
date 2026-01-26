@@ -9,6 +9,7 @@ pub trait SIMD {
 
     fn compare(haystack: Self::RegisterSize, needle: u8) -> u64;
     fn get_word(ptr: *const u8, offset: usize) -> Self::RegisterSize;
+    fn get_word_aligned(buffer: &[u64], offset: usize) -> Self::RegisterSize;
     fn next_escape_and_terminal_code(haystack: u64) -> u64;
     fn escaped(haystack: Self::RegisterSize, next_is_escaped: u64) -> (u64, u64);
 

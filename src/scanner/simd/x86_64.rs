@@ -65,6 +65,20 @@ impl SIMD for SIMD512 {
 
         unsafe { _mm512_set_epi64(e7, e6, e5, e4, e3, e2, e1, e0) }
     }
+
+    #[inline(always)]
+    fn get_word_aligned(buffer: &[u64], offset: usize) -> Self::RegisterSize {
+        let e0 = (*buffer.get(offset).unwrap_or(&0)) as i64;
+        let e1 = (*buffer.get(offset + 1).unwrap_or(&0)) as i64;
+        let e2 = (*buffer.get(offset + 2).unwrap_or(&0)) as i64;
+        let e3 = (*buffer.get(offset + 3).unwrap_or(&0)) as i64;
+        let e4 = (*buffer.get(offset + 4).unwrap_or(&0)) as i64;
+        let e5 = (*buffer.get(offset + 5).unwrap_or(&0)) as i64;
+        let e6 = (*buffer.get(offset + 6).unwrap_or(&0)) as i64;
+        let e7 = (*buffer.get(offset + 7).unwrap_or(&0)) as i64;
+
+        unsafe { _mm512_set_epi64(e7, e6, e5, e4, e3, e2, e1, e0) }
+    }
 }
 
 #[cfg(test)]

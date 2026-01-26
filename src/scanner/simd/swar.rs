@@ -59,16 +59,24 @@ impl SIMD for SWAR {
         let as_64_block = unsafe { ptr.add(offset) } as *const u64;
         unsafe { as_64_block.read_unaligned() }
     }
+
+    #[inline(always)]
+    fn get_word_aligned(buffer: &[u64], offset: usize) -> Self::RegisterSize {
+        buffer[offset]
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::scanner::Scanner;
     use super::*;
 
     #[test]
     fn test_bulk_swar_indexing() {
         let string = "<div class=\"hello-world\" id=hello-world>Hello World</div>";
-        let indices = super::super::super::scanner::Scanner::new().scan::<SWAR>(string);
+
+        let buffer = SWAR::buffer(string);
+        let indices = Scanner::new().scan::<SWAR>(buffer.as_slice(), buffer.len() - SWAR::BYTES);
 
         let where_open: Vec<u32> = string
             .char_indices()

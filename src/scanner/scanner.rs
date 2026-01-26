@@ -34,17 +34,14 @@ impl Scanner {
     pub fn new() -> Self {
         Self { next_is_escaped: 0 }
     }
-    pub fn open_file() {}
-    pub fn from_string() {}
-    pub fn scan<T: SIMD>(&mut self, input: &str) -> Vec<u32> {
-        let buffer = T::buffer(input);
-
+    // Create a buffer
+    pub fn open_file() {
+        todo!()
+    }
+    pub fn scan<T: SIMD>(&mut self, buffer: &[u8], len: usize) -> Vec<u32> {
         const RATIO_DENOMINATOR: usize = 8;
         let mut out: Vec<u32> = Vec::with_capacity(buffer.len() / RATIO_DENOMINATOR);
         let ptr = buffer.as_ptr();
-
-        // Iterate only up to original length
-        let len = buffer.len() - T::BYTES;
 
         let mut i = 0;
         while i < len {
@@ -52,10 +49,37 @@ impl Scanner {
 
             let mut matches = {
                 let mask = T::structural_mask(word);
-                //println!("NExt Escaped: {:064b}", self.next_is_escaped);
                 let (escaped, escape) = T::escaped(word, self.next_is_escaped);
                 self.next_is_escaped = T::next_is_escaped(escape);
-                //println!("NExt Escaped: {:064b}", self.next_is_escaped);
+
+                T::filter(mask & !escaped)
+            };
+            while matches != 0 {
+                let byte_offset = T::trailing_zeros(matches);
+                let index = byte_offset + i as u32;
+                out.push(index);
+                matches &= matches - 1;
+            }
+
+            i += T::BYTES;
+        }
+
+        out
+    }
+
+    pub fn scan_aligned<T: SIMD>(&mut self, buffer: &[u64], len: usize) -> Vec<u32> {
+        const RATIO_DENOMINATOR: usize = 8;
+        let mut out: Vec<u32> = Vec::with_capacity(buffer.len() / RATIO_DENOMINATOR);
+        let ptr = buffer.as_ptr();
+
+        let mut i = 0;
+        while i < len {
+            let word = T::get_word_aligned(buffer, i / T::BYTES);
+
+            let mut matches = {
+                let mask = T::structural_mask(word);
+                let (escaped, escape) = T::escaped(word, self.next_is_escaped);
+                self.next_is_escaped = T::next_is_escaped(escape);
 
                 T::filter(mask & !escaped)
             };
@@ -85,7 +109,9 @@ mod tests {
         for (i, c) in string.as_bytes().iter().enumerate() {
             println!("{i}: {}", *c as char);
         }
-        let indices = scanner.scan::<swar::SWAR>(string);
+        let buffer = swar::SWAR::buffer(string);
+        let indices =
+            scanner.scan::<swar::SWAR>(buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
         let expected: Vec<u32> = vec![
             0, 1, 2, 3, 4, 8, 9, 10, 11, 17, 23, 24, 26, 31, 32, 37, 38, 44, 45, 50, 58, 59, 60,
             65, 66, 69, 70, 72, 77, 78, 83, 88, 93, 94, 100, 101, 102, 107, 108, 117, 118, 120,
@@ -93,7 +119,8 @@ mod tests {
         ];
         assert_eq!(indices, expected);
 
-        let indices = scanner.scan::<x86_64::SIMD512>(string);
+        let indices = scanner
+            .scan::<x86_64::SIMD512>(buffer.as_slice(), buffer.len() - x86_64::SIMD512::BYTES);
         assert_eq!(indices, expected);
     }
 
@@ -122,5 +149,54 @@ mod tests {
                 str::from_utf8(&word.to_le_bytes()).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn test_no_allocation_simd() {
+        let string = r#"<    div   >HEllo World <a href="link" class="\"my class\""> HERe  \</ a href="Fake link<span> Hello </span>"\>\<\a\></a><   /  div >"#;
+        let (before, bytes, after) = unsafe { string.as_bytes().align_to::<u64>() };
+
+        let buf_before = {
+            let mut list = [0; 8];
+            for i in 0..before.len() {
+                list[i] = before[i];
+            }
+            list
+        };
+
+        let buf_after = {
+            let mut list = [0; 8];
+            let start = after.len();
+            for i in start..8 {
+                list[i] = after[i - start];
+            }
+            list
+        };
+
+        let mut no_copy_indices: Vec<u32> = Scanner::new().scan::<swar::SWAR>(&buf_before, 8);
+        let mut len = before.len() as u32;
+
+        let mut indices: Vec<u32> = Scanner::new()
+            .scan_aligned::<swar::SWAR>(bytes, bytes.len() * 8)
+            .iter()
+            .map(|i| *i + len)
+            .collect();
+        len += (bytes.len() * 8) as u32;
+
+        let extra_space = 8 - after.len() as u32;
+        let mut aindices = Scanner::new()
+            .scan::<swar::SWAR>(&buf_after, 8)
+            .iter()
+            .map(|i| *i + len - extra_space)
+            .collect();
+
+        no_copy_indices.append(&mut indices);
+        no_copy_indices.append(&mut aindices);
+
+        let buffer = swar::SWAR::buffer(string);
+        let buf_indices =
+            Scanner::new().scan::<swar::SWAR>(buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
+
+        assert_eq!(no_copy_indices, buf_indices);
     }
 }
