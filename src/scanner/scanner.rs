@@ -38,9 +38,7 @@ impl Scanner {
     pub fn open_file() {
         todo!()
     }
-    pub fn scan<T: SIMD>(&mut self, buffer: &[u8], len: usize) -> Vec<u32> {
-        const RATIO_DENOMINATOR: usize = 8;
-        let mut out: Vec<u32> = Vec::with_capacity(buffer.len() / RATIO_DENOMINATOR);
+    pub fn scan<T: SIMD>(&mut self, out: &mut Vec<u32>, offset:u32, buffer: &[u8], len: usize) {
         let ptr = buffer.as_ptr();
 
         let mut i = 0;
@@ -56,21 +54,16 @@ impl Scanner {
             };
             while matches != 0 {
                 let byte_offset = T::trailing_zeros(matches);
-                let index = byte_offset + i as u32;
+                let index = byte_offset + offset + i as u32;
                 out.push(index);
                 matches &= matches - 1;
             }
 
             i += T::BYTES;
         }
-
-        out
     }
 
-    pub fn scan_aligned<T: SIMD>(&mut self, buffer: &[u64], len: usize) -> Vec<u32> {
-        const RATIO_DENOMINATOR: usize = 8;
-        let mut out: Vec<u32> = Vec::with_capacity(buffer.len() / RATIO_DENOMINATOR);
-
+    pub fn scan_aligned<T: SIMD>(&mut self, out: &mut Vec<u32>, offset: u32, buffer: &[u64], len: usize) {
         let mut i = 0;
         while i < len {
             let word = T::get_word_aligned(buffer, i / T::BYTES);
@@ -84,15 +77,13 @@ impl Scanner {
             };
             while matches != 0 {
                 let byte_offset = T::trailing_zeros(matches);
-                let index = byte_offset + i as u32;
+                let index = byte_offset + offset + i as u32;
                 out.push(index);
                 matches &= matches - 1;
             }
 
             i += T::BYTES;
         }
-
-        out
     }
 }
 
@@ -109,19 +100,22 @@ mod tests {
             println!("{i}: {}", *c as char);
         }
         let buffer = swar::SWAR::buffer(string);
-        let indices =
-            scanner.scan::<swar::SWAR>(buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
+        const RATIO_DENOMINATOR: usize = 8;
+        let mut out: Vec<u32> = Vec::with_capacity(buffer.len() / RATIO_DENOMINATOR);
+
+        scanner.scan::<swar::SWAR>(&mut out, 0, buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
         let expected: Vec<u32> = vec![
             0, 1, 2, 3, 4, 8, 9, 10, 11, 17, 23, 24, 26, 31, 32, 37, 38, 44, 45, 50, 58, 59, 60,
             65, 66, 69, 70, 72, 77, 78, 83, 88, 93, 94, 100, 101, 102, 107, 108, 117, 118, 120,
             121, 122, 123, 124, 125, 126, 127, 131, 132,
         ];
-        assert_eq!(indices, expected);
+        assert_eq!(out, expected);
 
         let buffer = x86_64::SIMD512::buffer(string);
-        let indices = scanner
-            .scan::<x86_64::SIMD512>(buffer.as_slice(), buffer.len() - x86_64::SIMD512::BYTES);
-        assert_eq!(indices, expected);
+        let mut out: Vec<u32> = Vec::with_capacity(buffer.len() / RATIO_DENOMINATOR);
+        scanner
+            .scan::<x86_64::SIMD512>(&mut out, 0, buffer.as_slice(), buffer.len() - x86_64::SIMD512::BYTES);
+        assert_eq!(out, expected);
     }
 
     #[test]
@@ -175,29 +169,20 @@ mod tests {
         };
 
         let mut scanner = Scanner::new();
-        let mut no_copy_indices: Vec<u32> = scanner.scan::<swar::SWAR>(&buf_before, 8);
-        let mut len = before.len() as u32;
+        const RATIO_DENOMINATOR: usize = 8;
+        let mut indices: Vec<u32> = Vec::with_capacity(string.len() / RATIO_DENOMINATOR);
+        scanner.scan::<swar::SWAR>(&mut indices, 0, &buf_before, 8);
+        scanner
+            .scan_aligned::<swar::SWAR>(&mut indices, before.len()  as u32, bytes, bytes.len() * 8);
 
-        let indices = scanner
-            .scan_aligned::<swar::SWAR>(bytes, bytes.len() * 8)
-            .into_iter()
-            .map(|i| i + len);
-
-        no_copy_indices.extend(indices);
-        len += (bytes.len() * 8) as u32;
-
-        let aindices = scanner
-            .scan::<swar::SWAR>(&buf_after, 8)
-            .into_iter()
-            .map(|i| i + len);
-
-        no_copy_indices.extend(aindices);
+        scanner
+            .scan::<swar::SWAR>(&mut indices, (before.len() + bytes.len() * 8) as u32, &buf_after, 8);
 
         let buffer = swar::SWAR::buffer(string);
-        let buf_indices =
-            Scanner::new().scan::<swar::SWAR>(buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
+        let mut buf_indices: Vec<u32> = Vec::with_capacity(string.len() / RATIO_DENOMINATOR);
+        Scanner::new().scan::<swar::SWAR>(&mut buf_indices, 0, buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
 
-        assert_eq!(no_copy_indices, buf_indices);
+        assert_eq!(indices, buf_indices);
     }
 
     #[test]
@@ -224,39 +209,26 @@ mod tests {
         };
 
         let mut scanner = Scanner::new();
+        const RATIO_DENOMINATOR: usize = 8;
+        let mut indices: Vec<u32> = Vec::with_capacity(string.len() / RATIO_DENOMINATOR);
     
-        let mut no_copy_indices: Vec<u32> = scanner.scan::<swar::SWAR>(&buf_before, 8);
-        println!("BEfORE: {:?}", no_copy_indices);
-        let mut len = before.len() as u32;
+        scanner.scan::<swar::SWAR>(&mut indices, 0, &buf_before, 8);
+        scanner
+            .scan_aligned::<x86_64::SIMD512>(&mut indices, before.len() as u32, bytes, bytes.len() * 8);
 
-        let mut indices: Vec<u32> = scanner
-            .scan_aligned::<x86_64::SIMD512>(bytes, bytes.len() * 8)
-            .iter()
-            .map(|i| *i + len)
-            .collect();
-        len += (bytes.len() * 8) as u32;
-        println!("ALIGNED: {:?}", indices);
-
-        let mut aindices = scanner
-            .scan::<swar::SWAR>(&buf_after, 8)
-            .iter()
-            .map(|i| *i + len)
-            .collect();
-
-        println!("AFTER: {:?}", aindices);
-
-        no_copy_indices.append(&mut indices);
-        no_copy_indices.append(&mut aindices);
+        scanner
+            .scan::<swar::SWAR>(&mut indices, (before.len() + bytes.len() * 8) as u32, &buf_after, 8);
 
         let buffer = swar::SWAR::buffer(string);
-        let buf_indices =
-            Scanner::new().scan::<swar::SWAR>(buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
+        let mut buf_indices: Vec<u32> = Vec::with_capacity(string.len() / RATIO_DENOMINATOR);
+        Scanner::new().scan::<swar::SWAR>(&mut buf_indices, 0, buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
 
         let buffer = x86_64::SIMD512::buffer(string);
-        let buf_indices_simd = Scanner::new()
-            .scan::<x86_64::SIMD512>(buffer.as_slice(), buffer.len() - x86_64::SIMD512::BYTES);
+        let mut buf_indices_simd: Vec<u32> = Vec::with_capacity(string.len() / RATIO_DENOMINATOR);
+        Scanner::new()
+            .scan::<x86_64::SIMD512>(&mut buf_indices_simd, 0, buffer.as_slice(), buffer.len() - x86_64::SIMD512::BYTES);
 
         assert_eq!(buf_indices_simd, buf_indices);
-        assert_eq!(no_copy_indices, buf_indices);
+        assert_eq!(indices, buf_indices);
     }
 }

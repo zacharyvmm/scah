@@ -23,10 +23,15 @@ impl<'html: 'query, 'query: 'html> Runner {
             CPUID::AVX512BW => {
                 dbg_print!("Using AVX512");
                 let buffer = x86_64::SIMD512::buffer(input);
+                const RATIO_DENOMINATOR: usize = 8;
+                let mut out: Vec<u32> = Vec::with_capacity(input.len() / RATIO_DENOMINATOR);
                 Scanner::new().scan::<x86_64::SIMD512>(
+                    &mut out,
+                    0,
                     buffer.as_slice(),
                     buffer.len() - x86_64::SIMD512::BYTES,
-                )
+                );
+                out
             }
             CPUID::Other => {
                 dbg_print!("Using SWAR");
@@ -47,25 +52,25 @@ impl<'html: 'query, 'query: 'html> Runner {
 
                 // let mut scanner = Scanner::new();
 
-                // let mut no_copy_indices: Vec<u32> = scanner.scan::<swar::SWAR>(&buf_before, 8);
-                // std::hint::black_box(no_copy_indices);
-                // let mut len = before.len() as u32;
+                // const RATIO_DENOMINATOR: usize = 8;
+                // let mut out: Vec<u32> = Vec::with_capacity(input.len() / RATIO_DENOMINATOR);
 
-                // let indices = scanner
-                //     .scan_aligned::<swar::SWAR>(bytes, bytes.len() * 8);
+                // scanner.scan::<swar::SWAR>(&mut out, 0, &buf_before, 8);
 
-                // //no_copy_indices.extend(indices);
-                // len += (bytes.len() * 8) as u32;
+                // scanner
+                //     .scan_aligned::<swar::SWAR>(&mut out, before.len() as u32, bytes, bytes.len() * 8);
 
-                // let aindices = scanner
-                //     .scan::<swar::SWAR>(&buf_after, 8);
-                // std::hint::black_box(aindices);
-                // //no_copy_indices.extend(aindices);
+                // scanner
+                //     .scan::<swar::SWAR>(&mut out, (before.len() + bytes.len() * 8) as u32, &buf_after, 8);
 
-                //indices
                 let buffer = swar::SWAR::buffer(input);
+                const RATIO_DENOMINATOR: usize = 8;
+                let mut out: Vec<u32> = Vec::with_capacity(input.len() / RATIO_DENOMINATOR);
                 Scanner::new()
-                    .scan::<swar::SWAR>(buffer.as_slice(), buffer.len() - swar::SWAR::BYTES)
+                    .scan::<swar::SWAR>(&mut out, 0, buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
+
+                out
+
             }
         };
 

@@ -76,7 +76,9 @@ mod tests {
         let string = "<div class=\"hello-world\" id=hello-world>Hello World</div>";
 
         let buffer = SWAR::buffer(string);
-        let indices = Scanner::new().scan::<SWAR>(buffer.as_slice(), buffer.len() - SWAR::BYTES);
+        const RATIO_DENOMINATOR: usize = 8;
+        let mut indices: Vec<u32> = Vec::with_capacity(string.len() / RATIO_DENOMINATOR);
+        Scanner::new().scan::<SWAR>(&mut indices, 0, buffer.as_slice(), buffer.len() - SWAR::BYTES);
 
         let where_open: Vec<u32> = string
             .char_indices()
