@@ -119,6 +119,7 @@ mod tests {
         ];
         assert_eq!(indices, expected);
 
+        let buffer = x86_64::SIMD512::buffer(string);
         let indices = scanner
             .scan::<x86_64::SIMD512>(buffer.as_slice(), buffer.len() - x86_64::SIMD512::BYTES);
         assert_eq!(indices, expected);
@@ -152,24 +153,25 @@ mod tests {
     }
 
     #[test]
-    fn test_no_allocation_simd() {
+    fn test_no_allocation_swar() {
         let string = r#"<    div   >HEllo World <a href="link" class="\"my class\""> HERe  \</ a href="Fake link<span> Hello </span>"\>\<\a\></a><   /  div >"#;
         let (before, bytes, after) = unsafe { string.as_bytes().align_to::<u64>() };
+        println!(
+            "BEFORE: {}, ALIGNED: {}, AFTER: {}",
+            before.len(),
+            bytes.len() * 8,
+            after.len()
+        );
 
         let buf_before = {
-            let mut list = [0; 8];
-            for i in 0..before.len() {
-                list[i] = before[i];
-            }
+            let mut list = [0u8; 8];
+            list[..before.len()].copy_from_slice(before);
             list
         };
 
         let buf_after = {
-            let mut list = [0; 8];
-            let start = after.len();
-            for i in start..8 {
-                list[i] = after[i - start];
-            }
+            let mut list = [0u8; 8];
+            list[after.len()..].copy_from_slice(after);
             list
         };
 
@@ -197,6 +199,65 @@ mod tests {
         let buf_indices =
             Scanner::new().scan::<swar::SWAR>(buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
 
+        assert_eq!(no_copy_indices, buf_indices);
+    }
+
+    #[test]
+    fn test_no_allocation_simd() {
+        let string = r#"<    div   >HEllo World <a href="link" class="\"my class\""> HERe  \</ a href="Fake link<span> Hello </span>"\>\<\a\></a><   /  div >"#;
+        let (before, bytes, after) = unsafe { string.as_bytes().align_to::<u64>() };
+        println!(
+            "BEFORE: {}, ALIGNED: {}, AFTER: {}",
+            before.len(),
+            bytes.len() * 8,
+            after.len()
+        );
+
+        let buf_before = {
+            let mut list = [0u8; 8];
+            list[..before.len()].copy_from_slice(before);
+            list
+        };
+
+        let buf_after = {
+            let mut list = [0u8; 8];
+            list[after.len()..].copy_from_slice(after);
+            list
+        };
+
+        let mut no_copy_indices: Vec<u32> = Scanner::new().scan::<swar::SWAR>(&buf_before, 8);
+        println!("BEfORE: {:?}", no_copy_indices);
+        let mut len = before.len() as u32;
+
+        let mut indices: Vec<u32> = Scanner::new()
+            .scan_aligned::<x86_64::SIMD512>(bytes, bytes.len() * 8)
+            .iter()
+            .map(|i| *i + len)
+            .collect();
+        len += (bytes.len() * 8) as u32;
+        println!("ALIGNED: {:?}", indices);
+
+        let extra_space = 8 - after.len() as u32;
+        let mut aindices = Scanner::new()
+            .scan::<swar::SWAR>(&buf_after, 8)
+            .iter()
+            .map(|i| *i + len - extra_space)
+            .collect();
+
+        println!("AFTER: {:?}", aindices);
+
+        no_copy_indices.append(&mut indices);
+        no_copy_indices.append(&mut aindices);
+
+        let buffer = swar::SWAR::buffer(string);
+        let buf_indices =
+            Scanner::new().scan::<swar::SWAR>(buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
+
+        let buffer = x86_64::SIMD512::buffer(string);
+        let buf_indices_simd = Scanner::new()
+            .scan::<x86_64::SIMD512>(buffer.as_slice(), buffer.len() - x86_64::SIMD512::BYTES);
+
+        assert_eq!(buf_indices_simd, buf_indices);
         assert_eq!(no_copy_indices, buf_indices);
     }
 }
