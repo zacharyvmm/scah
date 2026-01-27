@@ -1,6 +1,7 @@
 use crate::css::State;
 use crate::scanner::simd::{SIMD, swar};
 use crate::scanner::{CPUID, Scanner};
+use crate::xhtml::text_content::TextContent;
 use crate::{Element, Query, Save, dbg_print};
 
 #[cfg(target_arch = "x86_64")]
@@ -10,7 +11,7 @@ use super::element::{Attribute, Attributes, ElementFactory, XHtmlElement};
 
 type Runners<'query, E> = Vec<SelectionRunner<'query, 'query, E>>;
 
-use crate::css::{DocumentPosition, SelectionRunner};
+use crate::css::{SelectionRunner, DocumentPosition};
 use crate::store::{RustStore, Store};
 
 pub struct Runner {}
@@ -79,19 +80,31 @@ impl<'html: 'query, 'query: 'html> Runner {
         let bytes = input.as_bytes();
 
         let mut store = RustStore::new(());
-        let document_position = DocumentPosition {
+        let mut document_position = DocumentPosition {
             element_depth: 0,
             reader_position: 0, // for inner_html
             text_content_position: usize::MAX,
         };
         let mut selection = SelectionRunner::<usize>::new(&queries[0]);
 
+        let mut content = TextContent::new();
+
+        content.set_start(0);
         while factory.next(bytes, &indexes) {
             //println!("Element {}: {:#?}", factory.index, factory.element);
+            document_position.reader_position = factory.element_end;
+
+            content.push(bytes, factory.element_start);
+            content.set_start(factory.element_end);
+
+
+            content.set_start(factory.index);
             if !factory.element.closing {
                 selection
                     .next(&factory.element, &document_position, &mut store)
                     .unwrap();
+            } else {
+                selection.back(&mut store, unsafe{str::from_utf8_unchecked(factory.element.name)}, &document_position, bytes, &content);
             }
         }
 

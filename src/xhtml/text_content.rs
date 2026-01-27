@@ -42,7 +42,7 @@ impl<'html> TextContent<'html> {
         self.list.len() - 1
     }
 
-    pub fn push(&mut self, reader: &Reader<'html>, end_position: usize) -> Option<usize> {
+    pub fn push(&mut self, reader: &'html [u8], end_position: usize) -> Option<usize> {
         if !self.recording {
             return None;
         }
@@ -51,7 +51,7 @@ impl<'html> TextContent<'html> {
             unreachable!("Their has to be a start position set before pushing text content")
         };
         let text =
-            unsafe { str::from_utf8_unchecked(reader.slice(start_position..end_position)) }.trim();
+            unsafe { str::from_utf8_unchecked(&reader[start_position..end_position]) }.trim();
 
         // TODO: In browsers `\n` is ignored and multiple ` ` are tretead as one.
         // If the user wants the textcontent and innerhtml to be in format then I would need to filter the text
@@ -80,28 +80,28 @@ mod tests {
     #[test]
     fn test_textcontent_record_when_needed() {
         let mut content = TextContent::new();
-        let reader = Reader::new("Hello World");
+        let reader = b"Hello World";
         content.set_start(0);
         content.set_start(0);
-        content.push(&reader, 5);
+        content.push(reader, 5);
 
         assert!(content.list.is_empty());
         content.start_recording();
 
         content.set_start(0);
-        content.push(&reader, 5);
+        content.push(reader, 5);
         assert_eq!(content.list, vec!["Hello"]);
 
         content.stop_recording();
 
         content.set_start(0);
-        content.push(&reader, 5);
+        content.push(reader, 5);
         assert_eq!(content.list, vec!["Hello"]);
 
         content.start_recording();
 
         content.set_start(0);
-        content.push(&reader, 5);
+        content.push(reader, 5);
         assert_eq!(content.list, vec!["Hello", "Hello"]);
     }
 }

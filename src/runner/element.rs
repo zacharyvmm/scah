@@ -161,6 +161,10 @@ pub struct ElementFactory<'a> {
     pub element: XHtmlElement<'a>,
     fsm: ElementFSM,
     pub index: usize,
+
+    // outer_html
+    pub element_start: usize,
+    pub element_end: usize,
 }
 
 impl<'a> ElementFactory<'a> {
@@ -169,6 +173,8 @@ impl<'a> ElementFactory<'a> {
             element: XHtmlElement::new(),
             fsm: ElementFSM::default(),
             index: 0,
+            element_start: 0,
+            element_end: 0,
         }
     }
 
@@ -207,6 +213,7 @@ impl<'a> ElementFactory<'a> {
                 (FSM::None, FSM::Element) => {
                     // TODO: set inner_html OPEN marker
                     // TODO: set text_content CLOSE marker
+                    self.element_start = idx;
                 }
 
                 // ELEMENT CLOSE EVENT
@@ -221,6 +228,7 @@ impl<'a> ElementFactory<'a> {
                     }
 
                     self.index = i + 1;
+                    self.element_end = idx;
                     return true;
                 }
 

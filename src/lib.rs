@@ -10,7 +10,7 @@ use crate::{
     store::{FakeStore, RustStore},
 };
 
-pub use css::{FsmManager, Query, QueryBuilder, QuerySection, Save, SelectionKind, SelectionPart};
+pub use css::{Query, QueryBuilder, QuerySection, Save, SelectionKind, SelectionPart};
 pub use store::{Element, QueryError, Store};
 pub use utils::Reader;
 //pub use xhtml::element::element::{Attribute, XHtmlElement};

@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use super::manager::DocumentPosition;
 use super::task::{FsmState, ScopedFsm};
 //use super::tree::MatchTree;
 use crate::css::Save;
@@ -12,6 +11,13 @@ use crate::runner::element::XHtmlElement;
 use crate::store::{QueryError, Store};
 use crate::utils::Reader;
 use crate::xhtml::text_content::TextContent;
+
+
+pub struct DocumentPosition {
+    pub reader_position: usize,
+    pub text_content_position: usize,
+    pub element_depth: crate::css::query::DepthSize,
+}
 
 type StartIdx = Option<usize>;
 
@@ -270,7 +276,7 @@ where
         store: &mut S,
         element: &'html str,
         document_position: &DocumentPosition,
-        reader: &Reader<'html>,
+        reader: &'html [u8],
         content: &TextContent,
     ) -> bool
     where
@@ -284,7 +290,7 @@ where
                     if let Some(start_idx) = content_trigger.inner_html {
                         let slice = unsafe {
                             str::from_utf8_unchecked(
-                                reader.slice(start_idx..document_position.reader_position),
+                                &reader[start_idx..document_position.reader_position],
                             )
                         };
                         Some(slice)
@@ -584,7 +590,7 @@ mod tests {
         let mut store = RustStore::new(());
         let mut selection = SelectionRunner::new(&selection_tree);
 
-        let reader = Reader::new("<div></div>");
+        let reader = b"<div></div>";
         let mut content = TextContent::new();
 
         let _ = selection.next(
@@ -618,7 +624,7 @@ mod tests {
             }
         );
 
-        content.push(&reader, 4);
+        content.push(reader, 4);
         let _ = selection.back(
             &mut store,
             "div",
@@ -627,7 +633,7 @@ mod tests {
                 text_content_position: 0,
                 element_depth: 0,
             },
-            &reader,
+            reader,
             &content,
         );
 
