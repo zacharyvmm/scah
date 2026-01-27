@@ -17,20 +17,55 @@ pub struct Runner {}
 
 impl<'html: 'query, 'query: 'html> Runner {
     pub fn run(input: &'html str, queries: &[Query<'query>]) -> RustStore<'html, 'query> {
-        let indexes = match CPUID::detect() {
+        //let detect = CPUID::detect();
+        let detect = CPUID::Other;
+        let indexes = match detect {
             CPUID::AVX512BW => {
                 dbg_print!("Using AVX512");
                 let buffer = x86_64::SIMD512::buffer(input);
                 Scanner::new().scan::<x86_64::SIMD512>(
                     buffer.as_slice(),
-                    buffer.len() + x86_64::SIMD512::BYTES,
+                    buffer.len() - x86_64::SIMD512::BYTES,
                 )
             }
             CPUID::Other => {
                 dbg_print!("Using SWAR");
+
+                // let (before, bytes, after) = unsafe { input.as_bytes().align_to::<u64>() };
+
+                // let buf_before = {
+                //     let mut list = [0u8; 8];
+                //     list[..before.len()].copy_from_slice(before);
+                //     list
+                // };
+
+                // let buf_after = {
+                //     let mut list = [0u8; 8];
+                //     list[..after.len()].copy_from_slice(after);
+                //     list
+                // };
+
+                // let mut scanner = Scanner::new();
+
+                // let mut no_copy_indices: Vec<u32> = scanner.scan::<swar::SWAR>(&buf_before, 8);
+                // std::hint::black_box(no_copy_indices);
+                // let mut len = before.len() as u32;
+
+                // let indices = scanner
+                //     .scan_aligned::<swar::SWAR>(bytes, bytes.len() * 8);
+
+                // //no_copy_indices.extend(indices);
+                // len += (bytes.len() * 8) as u32;
+
+                // let aindices = scanner
+                //     .scan::<swar::SWAR>(&buf_after, 8);
+                // std::hint::black_box(aindices);
+                // //no_copy_indices.extend(aindices);
+
+                //indices
                 let buffer = swar::SWAR::buffer(input);
                 Scanner::new()
-                    .scan::<swar::SWAR>(buffer.as_slice(), buffer.len() + swar::SWAR::BYTES)
+                    .scan::<swar::SWAR>(buffer.as_slice(), buffer.len() - swar::SWAR::BYTES)
             }
         };
 
@@ -98,5 +133,6 @@ mod tests {
         let arena = Runner::run(MORE_ADVANCED_BASIC_HTML, queries).arena;
 
         println!("Arena: {:#?}", arena);
+        assert!(false, "Missing implementation of test");
     }
 }

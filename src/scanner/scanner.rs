@@ -70,7 +70,6 @@ impl Scanner {
     pub fn scan_aligned<T: SIMD>(&mut self, buffer: &[u64], len: usize) -> Vec<u32> {
         const RATIO_DENOMINATOR: usize = 8;
         let mut out: Vec<u32> = Vec::with_capacity(buffer.len() / RATIO_DENOMINATOR);
-        let ptr = buffer.as_ptr();
 
         let mut i = 0;
         while i < len {
@@ -171,29 +170,28 @@ mod tests {
 
         let buf_after = {
             let mut list = [0u8; 8];
-            list[after.len()..].copy_from_slice(after);
+            list[..after.len()].copy_from_slice(after);
             list
         };
 
-        let mut no_copy_indices: Vec<u32> = Scanner::new().scan::<swar::SWAR>(&buf_before, 8);
+        let mut scanner = Scanner::new();
+        let mut no_copy_indices: Vec<u32> = scanner.scan::<swar::SWAR>(&buf_before, 8);
         let mut len = before.len() as u32;
 
-        let mut indices: Vec<u32> = Scanner::new()
+        let indices = scanner
             .scan_aligned::<swar::SWAR>(bytes, bytes.len() * 8)
-            .iter()
-            .map(|i| *i + len)
-            .collect();
+            .into_iter()
+            .map(|i| i + len);
+
+        no_copy_indices.extend(indices);
         len += (bytes.len() * 8) as u32;
 
-        let extra_space = 8 - after.len() as u32;
-        let mut aindices = Scanner::new()
+        let aindices = scanner
             .scan::<swar::SWAR>(&buf_after, 8)
-            .iter()
-            .map(|i| *i + len - extra_space)
-            .collect();
+            .into_iter()
+            .map(|i| i + len);
 
-        no_copy_indices.append(&mut indices);
-        no_copy_indices.append(&mut aindices);
+        no_copy_indices.extend(aindices);
 
         let buffer = swar::SWAR::buffer(string);
         let buf_indices =
@@ -221,15 +219,17 @@ mod tests {
 
         let buf_after = {
             let mut list = [0u8; 8];
-            list[after.len()..].copy_from_slice(after);
+            list[..after.len()].copy_from_slice(after);
             list
         };
 
-        let mut no_copy_indices: Vec<u32> = Scanner::new().scan::<swar::SWAR>(&buf_before, 8);
+        let mut scanner = Scanner::new();
+    
+        let mut no_copy_indices: Vec<u32> = scanner.scan::<swar::SWAR>(&buf_before, 8);
         println!("BEfORE: {:?}", no_copy_indices);
         let mut len = before.len() as u32;
 
-        let mut indices: Vec<u32> = Scanner::new()
+        let mut indices: Vec<u32> = scanner
             .scan_aligned::<x86_64::SIMD512>(bytes, bytes.len() * 8)
             .iter()
             .map(|i| *i + len)
@@ -237,11 +237,10 @@ mod tests {
         len += (bytes.len() * 8) as u32;
         println!("ALIGNED: {:?}", indices);
 
-        let extra_space = 8 - after.len() as u32;
-        let mut aindices = Scanner::new()
+        let mut aindices = scanner
             .scan::<swar::SWAR>(&buf_after, 8)
             .iter()
-            .map(|i| *i + len - extra_space)
+            .map(|i| *i + len)
             .collect();
 
         println!("AFTER: {:?}", aindices);
