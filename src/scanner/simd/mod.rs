@@ -7,7 +7,7 @@ pub trait SIMD {
     type RegisterSize: Copy;
     const BYTES: usize;
 
-    fn compare(haystack: Self::RegisterSize, needle: u8) -> u64;
+    //fn compare(haystack: Self::RegisterSize, needle: u8) -> u64;
     fn get_word(ptr: *const u8, offset: usize) -> Self::RegisterSize;
     fn get_word_aligned(buffer: &[u64], offset: usize) -> Self::RegisterSize;
     fn next_escape_and_terminal_code(haystack: u64) -> u64;
@@ -19,18 +19,7 @@ pub trait SIMD {
         buffer
     }
 
-    fn structural_mask(haystack: Self::RegisterSize) -> u64 {
-        let matches = Self::compare(haystack, b'<')
-            | Self::compare(haystack, b'>')
-            | Self::compare(haystack, b' ')
-            | Self::compare(haystack, b'"')
-            | Self::compare(haystack, b'\'')
-            | Self::compare(haystack, b'=')
-            | Self::compare(haystack, b'/')
-            | Self::compare(haystack, b'!');
-
-        matches
-    }
+    fn structural_mask(haystack: Self::RegisterSize) -> u64;
 
     #[inline(always)]
     fn trailing_zeros(mask: u64) -> u32 {

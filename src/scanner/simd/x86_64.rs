@@ -7,20 +7,20 @@ fn cast_to_i64(ptr: *const u8, offset: usize) -> i64 {
     unsafe { (ptr.add(offset) as *const i64).read_unaligned() }
 }
 
+#[inline(always)]
+fn compare(haystack: __m512i, needle: u8) -> u64 {
+    let pattern: __m512i = unsafe { _mm512_set1_epi8(needle as i8) };
+
+    // returns a u64 (1bit representing a match for every byte)
+    unsafe { _mm512_cmpeq_epi8_mask(haystack, pattern) }
+}
+
 use super::SIMD;
 pub struct SIMD512;
 
 impl SIMD for SIMD512 {
     type RegisterSize = __m512i;
     const BYTES: usize = 512 / 8;
-
-    #[inline(always)]
-    fn compare(haystack: __m512i, needle: u8) -> u64 {
-        let pattern: __m512i = unsafe { _mm512_set1_epi8(needle as i8) };
-
-        // returns a u64 (1bit representing a match for every byte)
-        unsafe { _mm512_cmpeq_epi8_mask(haystack, pattern) }
-    }
 
     // https://github.com/simdjson/simdjson/blob/master/src/generic/stage1/json_escape_scanner.h
 
@@ -43,13 +43,26 @@ impl SIMD for SIMD512 {
         let mask = unsafe { _mm512_set_epi64(next_is_escaped as i64, 0, 0, 0, 0, 0, 0, 0) };
 
         let haystack = unsafe { _mm512_andnot_si512(mask, haystack) };
-        let backslashes = Self::compare(haystack, b'\\');
+        let backslashes = compare(haystack, b'\\');
 
         let escape_and_terminal_code = Self::next_escape_and_terminal_code(backslashes);
 
         let escaped = escape_and_terminal_code ^ (backslashes | next_is_escaped);
         let escape = escape_and_terminal_code & backslashes;
         (escaped, escape)
+    }
+
+    fn structural_mask(haystack: Self::RegisterSize) -> u64 {
+        let matches = compare(haystack, b'<')
+            | compare(haystack, b'>')
+            | compare(haystack, b' ')
+            | compare(haystack, b'"')
+            | compare(haystack, b'\'')
+            | compare(haystack, b'=')
+            | compare(haystack, b'/')
+            | compare(haystack, b'!');
+
+        matches
     }
 
     #[inline(always)]

@@ -12,7 +12,6 @@ use crate::store::{QueryError, Store};
 use crate::utils::Reader;
 use crate::xhtml::text_content::TextContent;
 
-
 pub struct DocumentPosition {
     pub reader_position: usize,
     pub text_content_position: usize,

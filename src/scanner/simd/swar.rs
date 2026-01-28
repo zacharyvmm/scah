@@ -1,18 +1,50 @@
 use super::SIMD;
-
 const HIGH_BIT_MASK: u64 = 0x8080808080808080;
+const LOW_BIT_MASK: u64 = 0x0101010101010101;
+
+#[inline(always)]
+fn compare(haystack: u64, needle: u8) -> u64 {
+    let pattern = (needle as u64) * LOW_BIT_MASK;
+    let comparison = haystack ^ pattern;
+
+    comparison.wrapping_sub(LOW_BIT_MASK) & !comparison
+}
+
+#[inline(always)]
+fn compare_range(haystack: u64, range: std::ops::Range<u8>) -> u64 {
+    const LOW_7_BITS: u64 = 0x7F7F7F7F7F7F7F7F;
+    let low_bounds = LOW_BIT_MASK * range.start as u64;
+    let high_bounds = LOW_BIT_MASK * (range.end as u64);
+
+    let res_low = (haystack | HIGH_BIT_MASK).wrapping_sub(low_bounds);
+    let res_high = (high_bounds | HIGH_BIT_MASK).wrapping_sub(haystack & LOW_7_BITS);
+
+    res_low & res_high
+}
 pub struct SWAR;
 impl SIMD for SWAR {
     type RegisterSize = u64;
     const BYTES: usize = u64::BITS as usize / 8;
 
-    #[inline(always)]
-    fn compare(haystack: Self::RegisterSize, needle: u8) -> u64 {
-        const LOW_BIT_MASK: u64 = 0x0101010101010101;
-        let pattern = (needle as u64) * LOW_BIT_MASK;
-        let comparison = haystack ^ pattern;
+    // fn structural_mask(haystack: Self::RegisterSize) -> u64 {
+    //     let matches = compare(haystack, b'<')
+    //         | compare(haystack, b'>')
+    //         | compare(haystack, b' ')
+    //         | compare(haystack, b'"')
+    //         | compare(haystack, b'\'')
+    //         | compare(haystack, b'=')
+    //         | compare(haystack, b'/')
+    //         | compare(haystack, b'!');
 
-        comparison.wrapping_sub(LOW_BIT_MASK) & !comparison
+    //     matches
+    // }
+
+    fn structural_mask(haystack: Self::RegisterSize) -> u64 {
+        let matches = compare_range(haystack, b' '..b'"') // ` `, `!`, `"`
+            | compare_range(haystack, b'<'..b'>') // `<`, `=`, `>`
+            | compare(haystack, b'\'') | compare(haystack, b'/');
+
+        matches
     }
 
     #[inline(always)]
@@ -30,7 +62,7 @@ impl SIMD for SWAR {
     fn escaped(haystack: Self::RegisterSize, next_is_escaped: u64) -> (u64, u64) {
         let haystack = haystack & !next_is_escaped;
 
-        let backslashes = Self::compare(haystack, b'\\') & HIGH_BIT_MASK;
+        let backslashes = compare(haystack, b'\\') & HIGH_BIT_MASK;
         let escape_and_terminal_code = Self::next_escape_and_terminal_code(backslashes);
 
         let escaped = escape_and_terminal_code ^ (backslashes | next_is_escaped);
@@ -78,7 +110,12 @@ mod tests {
         let buffer = SWAR::buffer(string);
         const RATIO_DENOMINATOR: usize = 8;
         let mut indices: Vec<u32> = Vec::with_capacity(string.len() / RATIO_DENOMINATOR);
-        Scanner::new().scan::<SWAR>(&mut indices, 0, buffer.as_slice(), buffer.len() - SWAR::BYTES);
+        Scanner::new().scan::<SWAR>(
+            &mut indices,
+            0,
+            buffer.as_slice(),
+            buffer.len() - SWAR::BYTES,
+        );
 
         let where_open: Vec<u32> = string
             .char_indices()
@@ -129,6 +166,26 @@ mod tests {
         slow_indices.sort();
 
         assert_eq!(indices, slow_indices);
+    }
+
+    #[test]
+    fn test_html() {
+        let string = "ello </s";
+        let expected_indices = vec![4, 5, 6];
+        // let string = "<<<< <<<";
+        // let expected_indices = vec![0, 1, 2, 3, 4, 5, 6, 7];
+
+        let buffer = SWAR::buffer(string);
+        const RATIO_DENOMINATOR: usize = 8;
+        let mut indices: Vec<u32> = Vec::with_capacity(string.len() / RATIO_DENOMINATOR);
+        Scanner::new().scan::<SWAR>(
+            &mut indices,
+            0,
+            buffer.as_slice(),
+            buffer.len() - SWAR::BYTES,
+        );
+
+        assert_eq!(indices, expected_indices);
     }
 
     #[test]

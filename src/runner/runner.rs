@@ -11,7 +11,7 @@ use super::element::{Attribute, Attributes, ElementFactory, XHtmlElement};
 
 type Runners<'query, E> = Vec<SelectionRunner<'query, 'query, E>>;
 
-use crate::css::{SelectionRunner, DocumentPosition};
+use crate::css::{DocumentPosition, SelectionRunner};
 use crate::store::{RustStore, Store};
 
 pub struct Runner {}
@@ -67,11 +67,14 @@ impl<'html: 'query, 'query: 'html> Runner {
                 let buffer = swar::SWAR::buffer(input);
                 const RATIO_DENOMINATOR: usize = 8;
                 let mut out: Vec<u32> = Vec::with_capacity(input.len() / RATIO_DENOMINATOR);
-                Scanner::new()
-                    .scan::<swar::SWAR>(&mut out, 0, buffer.as_slice(), buffer.len() - swar::SWAR::BYTES);
+                Scanner::new().scan::<swar::SWAR>(
+                    &mut out,
+                    0,
+                    buffer.as_slice(),
+                    buffer.len() - swar::SWAR::BYTES,
+                );
 
                 out
-
             }
         };
 
@@ -89,6 +92,11 @@ impl<'html: 'query, 'query: 'html> Runner {
 
         let mut content = TextContent::new();
 
+        // let mut elements = vec![];
+        // while factory.next(bytes, &indexes) {
+        //     elements.push(factory.element.clone());
+        // }
+
         content.set_start(0);
         while factory.next(bytes, &indexes) {
             //println!("Element {}: {:#?}", factory.index, factory.element);
@@ -97,14 +105,19 @@ impl<'html: 'query, 'query: 'html> Runner {
             content.push(bytes, factory.element_start);
             content.set_start(factory.element_end);
 
-
             content.set_start(factory.index);
             if !factory.element.closing {
                 selection
                     .next(&factory.element, &document_position, &mut store)
                     .unwrap();
             } else {
-                selection.back(&mut store, unsafe{str::from_utf8_unchecked(factory.element.name)}, &document_position, bytes, &content);
+                selection.back(
+                    &mut store,
+                    unsafe { str::from_utf8_unchecked(factory.element.name) },
+                    &document_position,
+                    bytes,
+                    &content,
+                );
             }
         }
 
