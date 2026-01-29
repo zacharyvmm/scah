@@ -10,7 +10,7 @@ use crate::runner::element::XHtmlElement;
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
 use crate::utils::Reader;
-use crate::xhtml::text_content::TextContent;
+use crate::xhtml::text_content::{self, TextContent};
 
 pub struct DocumentPosition {
     pub reader_position: usize,
@@ -21,8 +21,8 @@ pub struct DocumentPosition {
 type StartIdx = Option<usize>;
 
 #[derive(Debug)]
-pub(crate) struct EndTagSaveContent<E> {
-    element: E,
+pub(crate) struct EndTagSaveContent {
+    element: usize,
     on_depth: super::DepthSize,
     inner_html: StartIdx,
     text_content: StartIdx,
@@ -35,28 +35,24 @@ pub(crate) struct EndTagSaveContent<E> {
  *  The important distinction is that the scoped task terminates at a set scope depth (when <= to current depth: terminate).
  */
 
-type ScopedFsmVec<E> = Vec<ScopedFsm<E>>;
-type EndTagEventVec<E> = Vec<EndTagSaveContent<E>>;
+type ScopedFsmVec = Vec<ScopedFsm>;
+type EndTagEventVec = Vec<EndTagSaveContent>;
 
 #[derive(Debug)]
-pub struct SelectionRunner<'a, 'query, E>
-where
-    E: Debug,
+pub struct SelectionRunner<'a, 'query>
 {
     pub(crate) selection_tree: &'a Query<'query>,
-    pub(crate) fsm: FsmState<E>,
-    pub(crate) scoped_fsms: ScopedFsmVec<E>,
-    pub(crate) on_close_tag_events: EndTagEventVec<E>,
+    pub(crate) fsm: FsmState,
+    pub(crate) scoped_fsms: ScopedFsmVec,
+    pub(crate) on_close_tag_events: EndTagEventVec,
 }
 
-impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E>
-where
-    E: Default + Copy + Debug,
+impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query>
 {
     pub fn new(selection_tree: &'a Query<'query>) -> Self {
         Self {
             selection_tree,
-            fsm: FsmState::<E>::new(),
+            fsm: FsmState::new(),
             scoped_fsms: Vec::new(),
             on_close_tag_events: Vec::new(),
         }
@@ -64,9 +60,9 @@ where
 
     fn next_position(
         tree: &Query<'query>,
-        list: &mut ScopedFsmVec<E>,
+        list: &mut ScopedFsmVec,
         depth: super::DepthSize,
-        fsm: &mut impl Fsm<'query, 'html, E>,
+        fsm: &mut impl Fsm<'query, 'html>,
     ) {
         let new_branch_tasks = fsm.step_foward(tree, depth);
         if let Some(new_branch_tasks) = new_branch_tasks {
@@ -75,32 +71,30 @@ where
                 &mut new_branch_tasks
                     .into_iter()
                     .map(|pos| ScopedFsm::new(depth, fsm.get_parent(), pos))
-                    .collect::<ScopedFsmVec<E>>(),
+                    .collect::<ScopedFsmVec>(),
             );
         }
     }
 
-    pub fn save_element<S>(
-        on_close_tag_events: &mut EndTagEventVec<E>,
+    pub fn save_element(
+        on_close_tag_events: &mut EndTagEventVec,
         tree: &Query<'query>,
-        store: &mut S,
+        store: &mut Store<'html, 'query>,
         element: XHtmlElement<'html>,
         &DocumentPosition {
             element_depth,
             reader_position,
             text_content_position,
         }: &DocumentPosition,
-        fsm: &mut impl Fsm<'query, 'html, E>,
+        fsm: &mut impl Fsm<'query, 'html>,
     ) -> Result<(), QueryError<'query>>
-    where
-        S: Store<'html, 'query, E = E>,
     {
         // I can't check for this anymore, since the save is not instant and the fsm position is moved afterwards
         //debug_assert!(fsm.is_save_point(tree));
 
         let section = tree.get_section(fsm.get_section());
 
-        let element_pointer = store.push(section, fsm.get_parent(), element);
+        let element_pointer = store.push( section, fsm.get_parent(), element);
         if !fsm.is_last_save_point(tree) {
             fsm.set_parent(element_pointer);
         }
@@ -131,17 +125,15 @@ where
         Ok(())
     }
 
-    pub fn next<S>(
+    pub fn next(
         &mut self,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
-        store: &mut S,
+        store: &mut Store<'html, 'query>,
     ) -> Result<(), QueryError<'_>>
-    where
-        S: Store<'html, 'query, E = E>,
     {
         // STEP 1: check scoped tasks
-        let mut new_scoped_fsms: ScopedFsmVec<E> = Vec::new();
+        let mut new_scoped_fsms: ScopedFsmVec = Vec::new();
 
         for i in 0..self.scoped_fsms.len() {
             // println!("Scoped Fsm's {i}");
@@ -270,17 +262,15 @@ where
         false
     }
 
-    pub fn back<S>(
+    pub fn back(
         &mut self,
-        store: &mut S,
+        store: &mut Store<'html, 'query>,
         element: &'html str,
         document_position: &DocumentPosition,
         reader: &'html [u8],
-        content: &TextContent,
     ) -> bool
-    where
-        S: Store<'html, 'query, E = E>,
     {
+        let text_content_position = store.text_content.get_position();
         for i in (0..self.on_close_tag_events.len()).rev() {
             let content_trigger = &self.on_close_tag_events[i];
             if content_trigger.on_depth == document_position.element_depth {
@@ -297,28 +287,27 @@ where
                         None
                     }
                 };
-                let text_content = {
+                let from = {
                     if let Some(start_idx) = content_trigger.text_content {
                         if start_idx == usize::MAX {
-                            if content.is_empty() {
+                            if text_content_position == 0 {
                                 None
                             } else {
-                                let slice = content.join(0..);
-                                Some(slice)
+                                Some(0)
                             }
-                        } else if start_idx == content.get_position() {
+                        } else if start_idx == text_content_position {
                             // No new text content was added after the element opened
                             None
                         } else {
                             // to skip the text content before the element (When the start was just opened, thus thier was no text content yet)
-                            let slice = content.join((start_idx + 1)..);
-                            Some(slice)
+                            Some(start_idx + 1)
                         }
                     } else {
                         None
                     }
                 };
-                store.set_content(content_trigger.element, inner_html, text_content);
+
+                Store::set_content(store, content_trigger.element, inner_html, from);
                 self.on_close_tag_events.remove(i);
             }
         }
@@ -376,7 +365,7 @@ mod tests {
     use crate::css::parser::tree::{Position, Query, Save};
     use crate::runner::element::XHtmlElement;
     use crate::store::ChildIndex;
-    use crate::store::{RustStore, Store};
+    use crate::store::{Store};
     use crate::utils::Reader;
     use smallvec::smallvec;
 
@@ -386,7 +375,7 @@ mod tests {
     fn test_fsm_next_descendant() {
         let selection_tree = &Query::all("div a", Save::none()).build();
 
-        let mut store = RustStore::new(());
+        let mut store = Store::new();
 
         let mut selection = SelectionRunner::new(selection_tree);
 
@@ -406,7 +395,7 @@ mod tests {
             &mut store,
         );
 
-        assert!(store.arena[0].children.is_empty());
+        assert!(store.elements[0].children.is_empty());
 
         assert_eq!(
             selection.fsm,
@@ -443,15 +432,15 @@ mod tests {
             &mut store,
         );
 
-        assert_eq!(store.arena[0].children.len(), 1);
-        let child = &store.arena[0].children[0];
+        assert_eq!(store.elements[0].children.len(), 1);
+        let child = &store.elements[0].children[0];
         assert_eq!(child.query, "div a");
         match &child.index {
-            ChildIndex::Many(indices) => assert_eq!(indices, &vec![1]),
+            ChildIndex::Many(indices) => assert_eq!(indices, &vec![1usize]),
             _ => panic!("Expected Many"),
         }
 
-        assert_eq!(store.arena[1].name, "a");
+        assert_eq!(store.elements[1].name, "a");
 
         // assert_eq!(
         //     selection.tasks,
@@ -481,7 +470,7 @@ mod tests {
             .then(|p| [p.first("span", Save::none()), p.first("a", Save::none())])
             .build();
 
-        let mut store = RustStore::new(());
+        let mut store = Store::new();
         let mut selection = SelectionRunner::new(selection_tree);
 
         let _ = selection.next(
@@ -500,7 +489,7 @@ mod tests {
             &mut store,
         );
 
-        assert!(store.arena[0].children.is_empty());
+        assert!(store.elements[0].children.is_empty());
 
         assert_eq!(
             selection.fsm,
@@ -538,14 +527,14 @@ mod tests {
             &mut store,
         );
 
-        assert_eq!(store.arena[0].children.len(), 1);
-        let child = &store.arena[0].children[0];
+        assert_eq!(store.elements[0].children.len(), 1);
+        let child = &store.elements[0].children[0];
         assert_eq!(child.query, "div p.class");
         match &child.index {
             ChildIndex::One(idx) => assert_eq!(*idx, 1),
             _ => panic!("Expected One"),
         }
-        assert_eq!(store.arena[1].name, "p");
+        assert_eq!(store.elements[1].name, "p");
 
         assert_eq!(
             selection.fsm,
@@ -586,11 +575,10 @@ mod tests {
     fn test_simple_open_close() {
         let selection_tree = Query::first("div", Save::none()).build();
 
-        let mut store = RustStore::new(());
+        let mut store = Store::new();
         let mut selection = SelectionRunner::new(&selection_tree);
 
         let reader = b"<div></div>";
-        let mut content = TextContent::new();
 
         let _ = selection.next(
             &XHtmlElement {
@@ -607,7 +595,7 @@ mod tests {
             },
             &mut store,
         );
-        content.set_start(4);
+        store.text_content.set_start(4);
         println!("{:?}", store);
         println!("{:?}", selection.fsm);
 
@@ -623,7 +611,7 @@ mod tests {
             }
         );
 
-        content.push(reader, 4);
+        store.text_content.push(reader, 4);
         let _ = selection.back(
             &mut store,
             "div",
@@ -633,7 +621,6 @@ mod tests {
                 element_depth: 0,
             },
             reader,
-            &content,
         );
 
         assert!(selection.scoped_fsms.is_empty());

@@ -17,8 +17,11 @@ fn main() {
 
     let queries = &[Query::all("a", Save::all()).build()];
 
-    let arena = parse(content.as_str(), queries);
-    let root = &arena[0];
+    let store = parse(&content, queries);
+
+    //assert_eq!(iterator.count(), MAX_ELEMENT_LEN);
+    let root_element = &store.elements[0];
+
     // assert_eq!(map["a"].len()?, 7);
     // println!("{:#?}", map);
 
@@ -27,6 +30,6 @@ fn main() {
         "Time elapsed: {:?} ({}s), Tags Found: {:#?}",
         duration,
         duration.as_secs_f64(),
-        root["a"].iter().unwrap().count()
+        root_element.select("a").iter().unwrap().count()
     );
 }

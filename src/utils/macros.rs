@@ -17,3 +17,15 @@ macro_rules! dbg_print {
         }
     }
 }
+
+#[macro_export]
+#[deprecated(note = "To be removed")]
+macro_rules! to_str {
+    ($e:expr) => {{
+        #[inline(always)]
+        fn to_str(bytes: &[u8]) -> &str {
+            unsafe { str::from_utf8_unchecked(bytes) }
+        }
+        to_str($e)
+    }};
+}

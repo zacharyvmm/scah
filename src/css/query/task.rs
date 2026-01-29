@@ -6,17 +6,15 @@ use crate::runner::element::XHtmlElement;
 use smallvec::SmallVec;
 
 #[derive(PartialEq, Debug)]
-pub struct FsmState<E>
-where
-    E: Debug,
+pub struct FsmState
 {
-    pub(super) parent: E,
+    pub(super) parent: usize,
     pub(super) position: Position,
     pub(super) depths: SmallVec<[super::DepthSize; 10]>,
     pub(super) end: bool, // This is a flag to say is a save point and this might be the end
 }
 
-pub trait Fsm<'query, 'html, E> {
+pub trait Fsm<'query, 'html> {
     fn next(
         &self,
         tree: &Query<'query>,
@@ -38,20 +36,18 @@ pub trait Fsm<'query, 'html, E> {
     fn is_save_point(&self, tree: &Query<'query>) -> bool;
     fn is_last_save_point(&self, tree: &Query<'query>) -> bool;
 
-    fn get_parent(&self) -> E;
-    fn set_parent(&mut self, value: E);
+    fn get_parent(&self) -> usize;
+    fn set_parent(&mut self, value: usize);
 
     fn get_section(&self) -> usize;
     fn set_end_false(&mut self);
 }
 
-impl<'query, E> FsmState<E>
-where
-    E: Default + Copy + Debug,
+impl<'query> FsmState
 {
     pub fn new() -> Self {
         Self {
-            parent: E::default(),
+            parent: 0,
             position: Position { section: 0, fsm: 0 },
             depths: SmallVec::new(),
             end: false,
@@ -65,9 +61,7 @@ where
     }
 }
 
-impl<'query, 'html, E> Fsm<'query, 'html, E> for FsmState<E>
-where
-    E: Copy + Debug,
+impl<'query, 'html> Fsm<'query, 'html> for FsmState
 {
     fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
         let fsm = tree.get(&self.position);
@@ -151,11 +145,11 @@ where
         tree.is_last_save_point(&self.position)
     }
 
-    fn get_parent(&self) -> E {
+    fn get_parent(&self) -> usize {
         self.parent
     }
 
-    fn set_parent(&mut self, value: E) {
+    fn set_parent(&mut self, value: usize) {
         self.parent = value;
     }
 
@@ -169,14 +163,14 @@ where
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub struct ScopedFsm<E> {
+pub struct ScopedFsm {
     pub scope_depth: super::DepthSize,
-    pub parent: E,
+    pub parent: usize,
     pub position: Position,
 }
 
-impl<'query, E> ScopedFsm<E> {
-    pub fn new(scope_depth: super::DepthSize, parent: E, position: Position) -> Self {
+impl<'query> ScopedFsm {
+    pub fn new(scope_depth: super::DepthSize, parent: usize, position: Position) -> Self {
         Self {
             scope_depth,
             parent,
@@ -189,9 +183,7 @@ impl<'query, E> ScopedFsm<E> {
     }
 }
 
-impl<'query, 'html, E> Fsm<'query, 'html, E> for ScopedFsm<E>
-where
-    E: Copy,
+impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm
 {
     fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
         let fsm = tree.get(&self.position);
@@ -254,11 +246,11 @@ where
         tree.is_last_save_point(&self.position)
     }
 
-    fn get_parent(&self) -> E {
+    fn get_parent(&self) -> usize {
         self.parent
     }
 
-    fn set_parent(&mut self, value: E) {
+    fn set_parent(&mut self, value: usize) {
         self.parent = value;
     }
 
@@ -281,7 +273,7 @@ mod tests {
     fn test_fsm_next_descendant() {
         let selection_tree = Query::all("div a", Save::none()).build();
 
-        let mut state = FsmState::<usize>::new();
+        let mut state = FsmState::new();
         let mut next: bool = false;
 
         next = state.next(

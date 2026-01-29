@@ -24,16 +24,25 @@ use onego::{Query, Save, parse};
 fn bench_onego(html: String) {
     let queries = &[Query::all(QUERY, Save::all()).build()];
 
-    let arena = parse(&html, queries);
-    let root = &arena[0];
-    let indices = root[QUERY].iter().unwrap();
+    let store = parse(&html, queries);
 
     //assert_eq!(iterator.count(), MAX_ELEMENT_LEN);
+    let root_element = &store.elements[0];
 
-    for element in indices.map(|i| &arena[*i]) {
-        black_box(&element.attributes);
+    for element in root_element
+        .select(QUERY)
+        .iter()
+        .unwrap()
+        .map(|i| &store.elements[*i])
+    {
         black_box(&element.inner_html);
-        black_box(&element.text_content);
+        black_box(store.attributes(&element));
+        let text_content = if let Some(content) = store.text_content(&element) {
+            content.join(" ")
+        } else {
+            String::from("")
+        };
+        black_box(text_content);
     }
 }
 

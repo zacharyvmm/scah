@@ -9,15 +9,15 @@ use crate::scanner::simd::x86_64;
 
 use super::element::{Attribute, Attributes, ElementFactory, XHtmlElement};
 
-type Runners<'query, E> = Vec<SelectionRunner<'query, 'query, E>>;
+type Runners<'query> = Vec<SelectionRunner<'query, 'query>>;
 
 use crate::css::{DocumentPosition, SelectionRunner};
-use crate::store::{RustStore, Store};
+use crate::store::Store;
 
 pub struct Runner {}
 
-impl<'html: 'query, 'query: 'html> Runner {
-    pub fn run(input: &'html str, queries: &[Query<'query>]) -> RustStore<'html, 'query> {
+impl<'a: 'html, 'html: 'query, 'query: 'html> Runner {
+    pub fn run(input: &'html str, queries: &'a [Query<'query>]) -> Store<'html, 'query> {
         //let detect = CPUID::detect();
         let detect = CPUID::Other;
         let indexes = match detect {
@@ -82,45 +82,43 @@ impl<'html: 'query, 'query: 'html> Runner {
 
         let bytes = input.as_bytes();
 
-        let mut store = RustStore::new(());
+        let mut store = Store::new();
+
         let mut document_position = DocumentPosition {
             element_depth: 0,
             reader_position: 0, // for inner_html
             text_content_position: usize::MAX,
         };
-        let mut selection = SelectionRunner::<usize>::new(&queries[0]);
-
-        let mut content = TextContent::new();
+        let mut selection = SelectionRunner::new(&queries[0]);
 
         // let mut elements = vec![];
         // while factory.next(bytes, &indexes) {
         //     elements.push(factory.element.clone());
         // }
 
-        content.set_start(0);
+        store.text_content.start_recording();
+        store.text_content.set_start(0);
         while factory.next(bytes, &indexes) {
             //println!("Element {}: {:#?}", factory.index, factory.element);
-            document_position.reader_position = factory.element_end;
+            let after_end_of_element = factory.element_end + 1;
+            store.text_content.push(bytes, factory.element_start);
+            store.text_content.set_start(after_end_of_element);
 
-            content.push(bytes, factory.element_start);
-            content.set_start(factory.element_end);
-
-            content.set_start(factory.index);
             if !factory.element.closing {
+                document_position.reader_position = after_end_of_element;
                 selection
                     .next(&factory.element, &document_position, &mut store)
                     .unwrap();
             } else {
+                document_position.reader_position = factory.element_start;
                 selection.back(
                     &mut store,
                     unsafe { str::from_utf8_unchecked(factory.element.name) },
                     &document_position,
                     bytes,
-                    &content,
                 );
             }
         }
-
         store
     }
 }
@@ -143,7 +141,7 @@ mod tests {
 
             <main>
                 <section>
-                    <a href="https://hello2.com">Hello2</a>
+                    <a href="https://hello2.com" active>Hello2</a>
 
                     <div>
                         <a href="https://world2.com">World2</a>
@@ -161,9 +159,9 @@ mod tests {
         let query = Query::all("a", Save::all()).build();
         let queries = &[query];
 
-        let arena = Runner::run(MORE_ADVANCED_BASIC_HTML, queries).arena;
+        let store = Runner::run(MORE_ADVANCED_BASIC_HTML, queries);
 
-        println!("Arena: {:#?}", arena);
+        println!("Elements: {:#?}", store.elements);
         assert!(false, "Missing implementation of test");
     }
 }

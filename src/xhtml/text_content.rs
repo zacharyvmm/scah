@@ -1,7 +1,7 @@
 use crate::utils::Reader;
-use std::ops::RangeFrom;
+use std::ops::Range;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TextContent<'html> {
     pub(super) list: Vec<&'html str>,
     pub(super) text_start: Option<usize>,
@@ -68,8 +68,8 @@ impl<'html> TextContent<'html> {
     }
 
     // It's assumed that you want from a start point to the current end of the text content list
-    pub fn join(&self, range: RangeFrom<usize>) -> String {
-        self.list[range].join(" ")
+    pub fn slice(&self, range: Range<usize>) -> &'_ [&'html str] {
+        &self.list[range]
     }
 }
 
