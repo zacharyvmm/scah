@@ -1,24 +1,24 @@
 use crate::utils::Reader;
-use std::ops::Range;
+use std::ops::{Range, RangeFrom};
 
 #[derive(Debug, PartialEq)]
-pub struct TextContent<'html> {
-    pub(super) list: Vec<&'html str>,
+pub struct TextContent {
+    pub(super) content: String,
     pub(super) text_start: Option<usize>,
     recording: bool,
 }
 
-impl<'html> TextContent<'html> {
-    pub fn new() -> Self {
+impl TextContent {
+    pub fn new(capacity: usize) -> Self {
         Self {
-            list: Vec::new(),
+            content: String::with_capacity(capacity),
             text_start: None,
             recording: false,
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.list.is_empty()
+        self.content.is_empty()
     }
 
     pub fn start_recording(&mut self) {
@@ -37,12 +37,12 @@ impl<'html> TextContent<'html> {
     }
 
     pub fn get_position(&self) -> usize {
-        assert!(!self.list.is_empty());
+        assert!(!self.content.is_empty());
         // BUG: the position is off by one
-        self.list.len() - 1
+        self.content.len() - 2
     }
 
-    pub fn push(&mut self, reader: &'html [u8], end_position: usize) -> Option<usize> {
+    pub fn push(&mut self, reader: &[u8], end_position: usize) -> Option<usize> {
         if !self.recording {
             return None;
         }
@@ -63,13 +63,13 @@ impl<'html> TextContent<'html> {
             return None;
         }
 
-        self.list.push(text);
+        self.content.push_str(text);
+        self.content.push(' ');
         Some(self.get_position())
     }
 
-    // It's assumed that you want from a start point to the current end of the text content list
-    pub fn slice(&self, range: Range<usize>) -> &'_ [&'html str] {
-        &self.list[range]
+    pub fn slice(&self, range: Range<usize>) -> &str {
+        &self.content[range]
     }
 }
 
@@ -79,29 +79,29 @@ mod tests {
 
     #[test]
     fn test_textcontent_record_when_needed() {
-        let mut content = TextContent::new();
+        let mut text = TextContent::new(11);
         let reader = b"Hello World";
-        content.set_start(0);
-        content.set_start(0);
-        content.push(reader, 5);
+        text.set_start(0);
+        text.set_start(0);
+        text.push(reader, 5);
 
-        assert!(content.list.is_empty());
-        content.start_recording();
+        assert!(text.content.is_empty());
+        text.start_recording();
 
-        content.set_start(0);
-        content.push(reader, 5);
-        assert_eq!(content.list, vec!["Hello"]);
+        text.set_start(0);
+        text.push(reader, 5);
+        assert_eq!(text.content.trim(), "Hello".to_string());
 
-        content.stop_recording();
+        text.stop_recording();
 
-        content.set_start(0);
-        content.push(reader, 5);
-        assert_eq!(content.list, vec!["Hello"]);
+        text.set_start(0);
+        text.push(reader, 5);
+        assert_eq!(text.content.trim(), "Hello".to_string());
 
-        content.start_recording();
+        text.start_recording();
 
-        content.set_start(0);
-        content.push(reader, 5);
-        assert_eq!(content.list, vec!["Hello", "Hello"]);
+        text.set_start(0);
+        text.push(reader, 5);
+        assert_eq!(text.content.trim(), "Hello Hello".to_string());
     }
 }

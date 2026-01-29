@@ -82,7 +82,7 @@ impl<'a: 'html, 'html: 'query, 'query: 'html> Runner {
 
         let bytes = input.as_bytes();
 
-        let mut store = Store::new();
+        let mut store = Store::new(bytes.len());
 
         let mut document_position = DocumentPosition {
             element_depth: 0,
@@ -104,13 +104,12 @@ impl<'a: 'html, 'html: 'query, 'query: 'html> Runner {
             store.text_content.push(bytes, factory.element_start);
             store.text_content.set_start(after_end_of_element);
 
+            document_position.reader_position = after_end_of_element;
             if !factory.element.closing {
-                document_position.reader_position = after_end_of_element;
                 selection
                     .next(&factory.element, &document_position, &mut store)
                     .unwrap();
             } else {
-                document_position.reader_position = factory.element_start;
                 selection.back(
                     &mut store,
                     unsafe { str::from_utf8_unchecked(factory.element.name) },
@@ -163,5 +162,27 @@ mod tests {
 
         println!("Elements: {:#?}", store.elements);
         assert!(false, "Missing implementation of test");
+    }
+
+    #[test]
+    fn test_bench_mark() {
+        fn generate_html(count: usize) -> String {
+            let mut html = String::with_capacity(count * 100);
+            html.push_str("<html><body><div id='content'>");
+            for i in 0..count {
+                // Added some entities (&lt;) and bold tags (<b>) to make text extraction work harder
+                html.push_str(&format!(
+                    r#"<div class="article"><a href="/post/{}"><b>Post</b> &lt;{}&gt;</a></div>"#,
+                    i, i
+                ));
+            }
+            html.push_str("</div></body></html>");
+            html
+        }
+
+        let string = generate_html(100);
+        let queries = [Query::all("a", Save::all()).build()];
+        let store = Runner::run(&string, &queries);
+        println!("TExT COntent: {:#?}", store.text_content);
     }
 }

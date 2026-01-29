@@ -80,7 +80,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query>
         on_close_tag_events: &mut EndTagEventVec,
         tree: &Query<'query>,
         store: &mut Store<'html, 'query>,
-        element: XHtmlElement<'html>,
+        element: &XHtmlElement<'html>,
         &DocumentPosition {
             element_depth,
             reader_position,
@@ -167,7 +167,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query>
                     &mut self.on_close_tag_events,
                     self.selection_tree,
                     store,
-                    element.clone(),
+                    element,
                     document_position,
                     &mut new_scoped_fsm,
                 )?;
@@ -229,7 +229,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query>
                     &mut self.on_close_tag_events,
                     self.selection_tree,
                     store,
-                    element.clone(),
+                    element,
                     document_position,
                     fsm,
                 )?;
@@ -307,7 +307,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query>
                     }
                 };
 
-                Store::set_content(store, content_trigger.element, inner_html, from);
+                store.set_content(content_trigger.element, inner_html, from);
                 self.on_close_tag_events.remove(i);
             }
         }
@@ -375,7 +375,7 @@ mod tests {
     fn test_fsm_next_descendant() {
         let selection_tree = &Query::all("div a", Save::none()).build();
 
-        let mut store = Store::new();
+        let mut store = Store::new(10);
 
         let mut selection = SelectionRunner::new(selection_tree);
 
@@ -470,7 +470,7 @@ mod tests {
             .then(|p| [p.first("span", Save::none()), p.first("a", Save::none())])
             .build();
 
-        let mut store = Store::new();
+        let mut store = Store::new(10);
         let mut selection = SelectionRunner::new(selection_tree);
 
         let _ = selection.next(
@@ -575,7 +575,7 @@ mod tests {
     fn test_simple_open_close() {
         let selection_tree = Query::first("div", Save::none()).build();
 
-        let mut store = Store::new();
+        let mut store = Store::new(10);
         let mut selection = SelectionRunner::new(&selection_tree);
 
         let reader = b"<div></div>";

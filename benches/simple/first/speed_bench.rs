@@ -54,9 +54,9 @@ fn bench_comparison(c: &mut Criterion) {
                 let element_index = root_element.select(QUERY)[0];
                 let element = &store.elements[element_index];
 
-                black_box(&element.inner_html);
+                black_box(element.inner_html);
+                black_box(store.text_content(&element));
                 black_box(store.attributes(&element));
-                black_box(store.text_content(&element).unwrap().join(" "));
             })
         });
 

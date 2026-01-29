@@ -35,14 +35,9 @@ fn bench_onego(html: String) {
         .unwrap()
         .map(|i| &store.elements[*i])
     {
-        black_box(&element.inner_html);
+        black_box(element.inner_html);
+        black_box(store.text_content(&element));
         black_box(store.attributes(&element));
-        let text_content = if let Some(content) = store.text_content(&element) {
-            content.join(" ")
-        } else {
-            String::from("")
-        };
-        black_box(text_content);
     }
 }
 

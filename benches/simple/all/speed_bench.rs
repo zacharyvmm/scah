@@ -37,15 +37,16 @@ fn bench_comparison(c: &mut Criterion) {
                 //assert_eq!(iterator.count(), MAX_ELEMENT_LEN);
                 let root_element = &store.elements[0];
 
-                for element in root_element
-                    .select(QUERY)
-                    .iter()
-                    .unwrap()
-                    .map(|i| &store.elements[*i])
-                {
+                // for element in root_element
+                //     .select(QUERY)
+                //     .iter()
+                //     .unwrap()
+                //     .map(|i| &store.elements[*i])
+                // {
+                for element in &store.elements[2..]{
                     black_box(element.inner_html);
+                    black_box(store.text_content(&element));
                     black_box(store.attributes(element));
-                    black_box(store.text_content(element).unwrap_or(&[]).join(" "));
                 }
             })
         });

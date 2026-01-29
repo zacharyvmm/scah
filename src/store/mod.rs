@@ -78,9 +78,9 @@ pub struct Element<'html, 'query> {
     pub class: Option<&'html str>,
     pub id: Option<&'html str>,
     pub inner_html: Option<&'html str>,
-    text_content: Option<Range<usize>>,
+    pub text_content: Option<Range<u32>>,
     // Store Selection directly to enable Index trait
-    attributes: Option<Range<usize>>,
+    attributes: Range<u32>,
     pub children: Children<'query>,
 }
 
@@ -113,47 +113,52 @@ impl<'html, 'query, 'key> Element<'html, 'query> {
 #[derive(Debug, PartialEq)]
 pub struct Store<'html, 'query> {
     pub elements: Vec<Element<'html, 'query>>,
-    pub(crate) text_content: TextContent<'html>,
     pub(crate) attributes: Vec<Attribute<'html>>,
+    pub text_content: TextContent,
 }
+const NULL_RANGE: Range<u32> = 0..0;
 
 impl<'html, 'query: 'html> Store<'html, 'query> {
-    pub fn new() -> Self {
-        Self {
-            elements: vec![Element {
+    pub fn new(capacity:  usize) -> Self {
+        let mut elements = Vec::with_capacity(capacity/3);
+        elements.push(Element {
                 name: "root",
                 class: None,
                 id: None,
-                attributes: None,
                 inner_html: None,
+                attributes: NULL_RANGE,
                 text_content: None,
                 children: vec![],
-            }],
-            text_content: TextContent::new(),
-            attributes: vec![],
-        }
-    }
-    pub fn text_content(&self, element: &Element<'html, 'query>) -> Option<&[&str]> {
-        if let Some(range) = &element.text_content {
-            Some(self.text_content.slice(range.clone()))
-        } else {
-            None
+            });
+        Self {
+            elements,
+            text_content: TextContent::new(capacity/3),
+            attributes: Vec::with_capacity(capacity/3),
         }
     }
 
+    pub fn text_content(&self, element: &Element<'html, 'query>) -> Option<&str> {
+        if let Some(content) = &element.text_content {
+            let start = content.start as usize;
+            let end = content.end as usize;
+            Some(&self.text_content.slice(start..end))
+        } else {None}
+    }
+
     pub fn attributes(&self, element: &Element<'html, 'query>) -> Option<&[Attribute<'html>]> {
-        if let Some(range) = &element.attributes {
-            Some(&self.attributes[range.clone()])
-        } else {
-            None
+        if element.attributes.start == element.attributes.end {
+            return None;
         }
+        let start = element.attributes.start as usize;
+        let end = element.attributes.end as usize;
+        Some(&self.attributes[start..end])
     }
 
     pub fn push(
         &mut self,
         selection: &QuerySection<'query>,
         from: usize,
-        mut element: XHtmlElement<'html>,
+        element: &XHtmlElement<'html>,
     ) -> usize {
         let new_element: Element<'html, 'query> = Element {
             name: to_str!(element.name),
@@ -171,11 +176,12 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             text_content: None,
             attributes: {
                 if element.attributes.is_empty() {
-                    None
+                    NULL_RANGE
                 } else {
-                    let start = self.attributes.len();
-                    self.attributes.append(&mut element.attributes);
-                    Some(start..self.attributes.len())
+                    let start = self.attributes.len() as u32;
+                    self.attributes.extend(element.attributes.clone());
+                    let end = self.attributes.len() as u32;
+                    start..end
                 }
             },
             children: Vec::new(),
@@ -227,7 +233,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         index
     }
 
-    pub fn set_content<'key>(
+    pub fn set_content(
         &mut self,
         element: usize,
         inner_html: Option<&'html str>,
@@ -239,7 +245,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         let ele = &mut self.elements[element];
         ele.inner_html = inner_html;
         ele.text_content = if let Some(from) = text_content_from {
-            Some(from..self.text_content.get_position())
+            Some((from as u32)..(self.text_content.get_position() as u32))
         } else {
             None
         };
