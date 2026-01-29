@@ -17,8 +17,8 @@ fn main() {
 
     let queries = &[Query::all("a", Save::all()).build()];
 
-    let arena = parse(content.as_str(), queries);
-    let root = &arena[0];
+    let store = parse(content.as_str(), queries);
+    let root = &store.arena[0];
     // assert_eq!(map["a"].len()?, 7);
     // println!("{:#?}", map);
 

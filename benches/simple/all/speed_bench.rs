@@ -1,7 +1,7 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use lexbor_css::HtmlDocument;
 use lol_html::{HtmlRewriter, Settings, element};
-use onego::{Query, Save, fake_parse, parse};
+use onego::{Query, Save, parse};
 use scraper::{Html, Selector};
 use std::hint::black_box;
 use tl::ParserOptions;
@@ -32,16 +32,16 @@ fn bench_comparison(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("onego", size), &content, |b, html| {
             b.iter(|| {
                 let queries = &[Query::all(QUERY, Save::all()).build()];
-                let arena = parse(&html, queries);
-                let root = &arena[0];
+                let store = parse(&html, queries);
+                let root = &store.arena[0];
                 let indices = root[QUERY].iter().unwrap();
 
                 //assert_eq!(iterator.count(), MAX_ELEMENT_LEN);
 
-                for element in indices.map(|i| &arena[*i]) {
+                for element in indices.map(|i| &store.arena[*i]) {
                     black_box(&element.attributes);
                     black_box(&element.inner_html);
-                    black_box(&element.text_content);
+                    black_box(store.text_content(&element));
                 }
             })
         });

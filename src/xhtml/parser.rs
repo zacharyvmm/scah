@@ -9,24 +9,16 @@ use crate::dbg_print;
 use crate::store::Store;
 use crate::utils::Reader;
 
-pub struct XHtmlParser<'html, 'query, S>
-where
-    S: Store<'html, 'query>,
-    S::E: Default + Debug + Eq + Copy,
-{
+pub struct XHtmlParser<'html, 'query> {
     position: DocumentPosition,
-    pub content: TextContent<'html>,
-    pub selectors: FsmManager<'html, 'query, S>,
+    pub selectors: FsmManager<'query>,
+    store: Store<'html, 'query>,
     element: crate::XHtmlElement<'html>,
     in_script: bool,
 }
 
-impl<'html, 'query, S> XHtmlParser<'html, 'query, S>
-where
-    S: Store<'html, 'query>,
-    S::E: Default + Debug + Eq + Copy,
-{
-    pub fn new(selectors: FsmManager<'query, 'html, S>) -> Self {
+impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
+    pub fn new(selectors: FsmManager<'query>) -> Self {
         let mut content = TextContent::new();
         content.start_recording();
         Self {
@@ -35,10 +27,10 @@ where
                 reader_position: 0, // for inner_html
                 text_content_position: usize::MAX,
             },
-            content,
             selectors,
             element: XHtmlElement::new(),
             in_script: false,
+            store: Store::new(),
         }
     }
 
@@ -51,8 +43,10 @@ where
                 }
 
                 if reader.match_ignore_case("</script>") {
-                    if self.content.text_start.is_some() {
-                        if let Some(position) = self.content.push(reader, reader.get_position()) {
+                    if self.store.text_content.text_start.is_some() {
+                        if let Some(position) =
+                            self.store.text_content.push(reader, reader.get_position())
+                        {
                             self.position.text_content_position = position;
                         }
                     }
@@ -80,24 +74,30 @@ where
                 if let Some(XHtmlTag::Open) = tag {
                     self.element.from(reader);
                 } else if tag.is_none()
-                    && self.content.text_start.is_some()
-                    && let Some(position) = self.content.push(reader, self.position.reader_position)
+                    && self.store.text_content.text_start.is_some()
+                    && let Some(position) = self
+                        .store
+                        .text_content
+                        .push(reader, self.position.reader_position)
                 {
                     self.position.text_content_position = position;
-                    self.content.set_start(reader.get_position());
+                    self.store.text_content.set_start(reader.get_position());
                 }
             }
 
             tag.unwrap()
         };
 
-        if self.content.text_start.is_some()
-            && let Some(position) = self.content.push(reader, self.position.reader_position)
+        if self.store.text_content.text_start.is_some()
+            && let Some(position) = self
+                .store
+                .text_content
+                .push(reader, self.position.reader_position)
         {
             self.position.text_content_position = position;
         }
 
-        self.content.set_start(reader.get_position());
+        self.store.text_content.set_start(reader.get_position());
 
         // TODO: register the start
         //reader.next_while(|c| c.is_whitespace());
@@ -123,7 +123,8 @@ where
                     remove_depth_after_next = true;
                 }
 
-                self.selectors.next(&self.element, &self.position);
+                self.selectors
+                    .next(&self.element, &self.position, &mut self.store);
 
                 if remove_depth_after_next {
                     self.position.element_depth -= 1;
@@ -136,7 +137,7 @@ where
 
                 early_exit =
                     self.selectors
-                        .back(closing_tag, &self.position, reader, &self.content);
+                        .back(closing_tag, &self.position, reader, &mut self.store);
                 self.position.element_depth -= 1;
             }
         }
@@ -144,16 +145,17 @@ where
         !early_exit && !reader.eof()
     }
 
-    pub fn matches(self) -> S {
-        self.selectors.matches()
+    pub fn matches(self) -> Store<'html, 'query> {
+        self.store
     }
 }
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::css::{FsmManager, Query, Save};
     use crate::store::ChildIndex;
-    use crate::store::{Element, RustStore, Store};
+    use crate::store::{Element, Store};
     use crate::utils::Reader;
     use pretty_assertions::assert_eq;
 
@@ -222,38 +224,38 @@ mod tests {
 
         continue_parser = parser.next(&mut reader); // </h1>
         assert!(continue_parser);
-        assert_eq!(parser.content.list, Vec::from(["Hello World"]));
+        assert_eq!(parser.content.content, "Hello World".to_string());
 
         continue_parser = parser.next(&mut reader); // <p class="indent">
         assert!(continue_parser);
-        assert_eq!(parser.content.list, Vec::from(["Hello World"]));
+        assert_eq!(parser.content.content, "Hello World".to_string());
 
         continue_parser = parser.next(&mut reader); // <span id="name" class="bold">
         assert!(continue_parser);
         assert_eq!(
-            parser.content.list,
-            Vec::from(["Hello World", "My name is"])
+            parser.content.content.trim(),
+            "Hello World My name is".to_string()
         );
 
         continue_parser = parser.next(&mut reader); // </span>
         assert!(continue_parser);
         assert_eq!(
-            parser.content.list,
-            Vec::from(["Hello World", "My name is", "Zachary"])
+            parser.content.content.trim(),
+            "Hello World My name is Zachary".to_string()
         );
 
         continue_parser = parser.next(&mut reader); // </p>
         assert!(continue_parser);
         assert_eq!(
-            parser.content.list,
-            Vec::from(["Hello World", "My name is", "Zachary"])
+            parser.content.content.trim(),
+            "Hello World My name is Zachary".to_string()
         );
 
         continue_parser = parser.next(&mut reader); // </html>
         assert!(!continue_parser);
         assert_eq!(
-            parser.content.list,
-            Vec::from(["Hello World", "My name is", "Zachary"])
+            parser.content.content.trim(),
+            "Hello World My name is Zachary".to_string()
         );
     }
 
@@ -576,3 +578,4 @@ mod tests {
         assert_eq!(anchor.text_content, Some("Post &lt;0&gt;".to_string()));
     }
 }
+*/

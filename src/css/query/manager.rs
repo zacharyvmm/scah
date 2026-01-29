@@ -12,31 +12,20 @@ pub(crate) struct DocumentPosition {
 }
 
 //type Runner<'query, E> = SmallVec<[SelectionRunner<'query, 'query, E>; 1]>;
-type Runner<'query, E> = Vec<SelectionRunner<'query, 'query, E>>;
+type Runner<'query> = Vec<SelectionRunner<'query, 'query>>;
 
 #[derive(Debug)]
-pub struct FsmManager<'html, 'query: 'html, S>
-where
-    S: Store<'html, 'query>,
-    S::E: Debug + Copy + Default,
-{
-    store: S,
-    runners: Runner<'query, S::E>,
+pub struct FsmManager<'query> {
+    runners: Runner<'query>,
 }
 
-impl<'html, 'query: 'html, S, E> FsmManager<'html, 'query, S>
-where
-    S: Store<'html, 'query, E = E>,
-    E: Debug + Copy + Default + Eq,
-{
-    pub fn new(s: S, queries: &'query [Query<'query>]) -> Self {
-        // BUG: the memory moves afterwards
+impl<'html, 'query: 'html> FsmManager<'query> {
+    pub fn new(queries: &'query [Query<'query>]) -> Self {
         Self {
             runners: queries
                 .iter()
                 .map(|query| SelectionRunner::new(query))
-                .collect::<Runner<'query, S::E>>(),
-            store: s,
+                .collect::<Runner<'query>>(),
         }
     }
 
@@ -44,9 +33,10 @@ where
         &mut self,
         xhtml_element: &XHtmlElement<'html>,
         position: &DocumentPosition,
+        store: &mut Store<'html, 'query>,
     ) {
         for session in self.runners.iter_mut() {
-            let _ = session.next(&xhtml_element, position, &mut self.store);
+            let _ = session.next(&xhtml_element, position, store);
         }
     }
 
@@ -55,12 +45,12 @@ where
         xhtml_element: &'html str,
         position: &DocumentPosition,
         reader: &crate::utils::Reader<'html>,
-        content: &crate::xhtml::text_content::TextContent,
+        store: &mut Store<'html, 'query>,
     ) -> bool {
         let mut remove_indices = vec![];
         for (index, session) in self.runners.iter_mut().enumerate() {
             let early_exit = session.early_exit();
-            let back = session.back(&mut self.store, xhtml_element, position, reader, content);
+            let back = session.back(store, xhtml_element, position, reader);
 
             if early_exit && back {
                 remove_indices.push(index);
@@ -72,15 +62,11 @@ where
 
         self.runners.is_empty()
     }
-
-    pub fn matches(self) -> S {
-        self.store
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{FsmManager, Query, RustStore, Save, Store};
+    use crate::{FsmManager, Query, Save, Store};
 
     use super::super::selection::SelectionRunner;
     use smallvec::SmallVec;
@@ -89,11 +75,11 @@ mod tests {
     fn runner_size() {
         println!(
             "Vec size: {}",
-            std::mem::size_of::<Vec<SelectionRunner<'static, 'static, usize>>>()
+            std::mem::size_of::<Vec<SelectionRunner<'static, 'static>>>()
         );
         println!(
             "Inline size: {}",
-            std::mem::size_of::<SmallVec<[SelectionRunner<'static, 'static, usize>; 1]>>()
+            std::mem::size_of::<SmallVec<[SelectionRunner<'static, 'static>; 1]>>()
         );
     }
 
@@ -101,6 +87,6 @@ mod tests {
     fn test_single_element_query() {
         let query = Query::first("a", Save::all()).build();
         let q = &[query];
-        let manager = FsmManager::new(RustStore::new(()), q);
+        let manager = FsmManager::new(q);
     }
 }

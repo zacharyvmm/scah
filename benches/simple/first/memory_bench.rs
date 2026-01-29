@@ -37,15 +37,15 @@ use onego::{Query, Save, parse};
 fn bench_onego(html: String) {
     let queries = &[Query::first(QUERY, Save::all()).build()];
 
-    let arena = parse(&html, queries);
-    let root = &arena[0];
+    let store = parse(&html, queries);
+    let root = &store.arena[0];
 
     let element_index = root[QUERY].value().unwrap();
-    let element = &arena[element_index];
+    let element = &store.arena[element_index];
 
     black_box(&element.attributes);
     black_box(&element.inner_html);
-    black_box(&element.text_content);
+    black_box(store.text_content(&element));
 }
 
 use scraper::{Html, Selector};

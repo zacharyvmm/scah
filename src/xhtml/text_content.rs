@@ -1,24 +1,24 @@
 use crate::utils::Reader;
-use std::ops::RangeFrom;
+use std::ops::Range;
 
-#[derive(Debug)]
-pub struct TextContent<'html> {
-    pub(super) list: Vec<&'html str>,
+#[derive(Debug, PartialEq)]
+pub struct TextContent {
+    pub(super) content: String,
     pub(super) text_start: Option<usize>,
     recording: bool,
 }
 
-impl<'html> TextContent<'html> {
+impl TextContent {
     pub fn new() -> Self {
         Self {
-            list: Vec::new(),
+            content: String::new(),
             text_start: None,
             recording: false,
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.list.is_empty()
+        self.content.is_empty()
     }
 
     pub fn start_recording(&mut self) {
@@ -37,12 +37,12 @@ impl<'html> TextContent<'html> {
     }
 
     pub fn get_position(&self) -> usize {
-        assert!(!self.list.is_empty());
+        assert!(!self.content.is_empty());
         // BUG: the position is off by one
-        self.list.len() - 1
+        self.content.len() - 1
     }
 
-    pub fn push(&mut self, reader: &Reader<'html>, end_position: usize) -> Option<usize> {
+    pub fn push<'html>(&mut self, reader: &Reader<'html>, end_position: usize) -> Option<usize> {
         if !self.recording {
             return None;
         }
@@ -62,13 +62,14 @@ impl<'html> TextContent<'html> {
             return None;
         }
 
-        self.list.push(text);
+        self.content.push_str(text);
+        self.content.push(' ');
         Some(self.get_position())
     }
 
     // It's assumed that you want from a start point to the current end of the text content list
-    pub fn join(&self, range: RangeFrom<usize>) -> String {
-        self.list[range].join(" ")
+    pub fn slice(&self, range: Range<usize>) -> &str {
+        &self.content[range]
     }
 }
 
@@ -84,23 +85,23 @@ mod tests {
         content.set_start(0);
         content.push(&reader, 5);
 
-        assert!(content.list.is_empty());
+        assert!(content.content.is_empty());
         content.start_recording();
 
         content.set_start(0);
         content.push(&reader, 5);
-        assert_eq!(content.list, vec!["Hello"]);
+        assert_eq!(content.content, "Hello".to_string());
 
         content.stop_recording();
 
         content.set_start(0);
         content.push(&reader, 5);
-        assert_eq!(content.list, vec!["Hello"]);
+        assert_eq!(content.content, "Hello".to_string());
 
         content.start_recording();
 
         content.set_start(0);
         content.push(&reader, 5);
-        assert_eq!(content.list, vec!["Hello", "Hello"]);
+        assert_eq!(content.content, "Hello Hello".to_string());
     }
 }

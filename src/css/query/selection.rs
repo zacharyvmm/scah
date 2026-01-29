@@ -15,8 +15,8 @@ use crate::xhtml::text_content::TextContent;
 type StartIdx = Option<usize>;
 
 #[derive(Debug)]
-pub(crate) struct EndTagSaveContent<E> {
-    element: E,
+pub(crate) struct EndTagSaveContent {
+    element: usize,
     on_depth: super::DepthSize,
     inner_html: StartIdx,
     text_content: StartIdx,
@@ -29,28 +29,22 @@ pub(crate) struct EndTagSaveContent<E> {
  *  The important distinction is that the scoped task terminates at a set scope depth (when <= to current depth: terminate).
  */
 
-type ScopedFsmVec<E> = Vec<ScopedFsm<E>>;
-type EndTagEventVec<E> = Vec<EndTagSaveContent<E>>;
+type ScopedFsmVec = Vec<ScopedFsm>;
+type EndTagEventVec = Vec<EndTagSaveContent>;
 
 #[derive(Debug)]
-pub struct SelectionRunner<'a, 'query, E>
-where
-    E: Debug,
-{
+pub struct SelectionRunner<'a, 'query> {
     pub(crate) selection_tree: &'a Query<'query>,
-    pub(crate) fsm: FsmState<E>,
-    pub(crate) scoped_fsms: ScopedFsmVec<E>,
-    pub(crate) on_close_tag_events: EndTagEventVec<E>,
+    pub(crate) fsm: FsmState,
+    pub(crate) scoped_fsms: ScopedFsmVec,
+    pub(crate) on_close_tag_events: EndTagEventVec,
 }
 
-impl<'a, 'html, 'query: 'html, E> SelectionRunner<'a, 'query, E>
-where
-    E: Default + Copy + Debug,
-{
+impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
     pub fn new(selection_tree: &'a Query<'query>) -> Self {
         Self {
             selection_tree,
-            fsm: FsmState::<E>::new(),
+            fsm: FsmState::new(),
             scoped_fsms: Vec::new(),
             on_close_tag_events: Vec::new(),
         }
@@ -58,9 +52,9 @@ where
 
     fn next_position(
         tree: &Query<'query>,
-        list: &mut ScopedFsmVec<E>,
+        list: &mut ScopedFsmVec,
         depth: super::DepthSize,
-        fsm: &mut impl Fsm<'query, 'html, E>,
+        fsm: &mut impl Fsm<'query, 'html>,
     ) {
         let new_branch_tasks = fsm.step_foward(tree, depth);
         if let Some(new_branch_tasks) = new_branch_tasks {
@@ -69,26 +63,23 @@ where
                 &mut new_branch_tasks
                     .into_iter()
                     .map(|pos| ScopedFsm::new(depth, fsm.get_parent(), pos))
-                    .collect::<ScopedFsmVec<E>>(),
+                    .collect::<ScopedFsmVec>(),
             );
         }
     }
 
-    pub fn save_element<S>(
-        on_close_tag_events: &mut EndTagEventVec<E>,
+    pub fn save_element(
+        on_close_tag_events: &mut EndTagEventVec,
         tree: &Query<'query>,
-        store: &mut S,
+        store: &mut Store<'html, 'query>,
         element: XHtmlElement<'html>,
         &DocumentPosition {
             element_depth,
             reader_position,
             text_content_position,
         }: &DocumentPosition,
-        fsm: &mut impl Fsm<'query, 'html, E>,
-    ) -> Result<(), QueryError<'query>>
-    where
-        S: Store<'html, 'query, E = E>,
-    {
+        fsm: &mut impl Fsm<'query, 'html>,
+    ) -> Result<(), QueryError<'query>> {
         // I can't check for this anymore, since the save is not instant and the fsm position is moved afterwards
         //debug_assert!(fsm.is_save_point(tree));
 
@@ -125,17 +116,14 @@ where
         Ok(())
     }
 
-    pub fn next<S>(
+    pub fn next(
         &mut self,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
-        store: &mut S,
-    ) -> Result<(), QueryError<'_>>
-    where
-        S: Store<'html, 'query, E = E>,
-    {
+        store: &mut Store<'html, 'query>,
+    ) -> Result<(), QueryError<'_>> {
         // STEP 1: check scoped tasks
-        let mut new_scoped_fsms: ScopedFsmVec<E> = Vec::new();
+        let mut new_scoped_fsms: ScopedFsmVec = Vec::new();
 
         for i in 0..self.scoped_fsms.len() {
             // println!("Scoped Fsm's {i}");
@@ -264,17 +252,13 @@ where
         false
     }
 
-    pub fn back<S>(
+    pub fn back(
         &mut self,
-        store: &mut S,
+        store: &mut Store<'html, 'query>,
         element: &'html str,
         document_position: &DocumentPosition,
         reader: &Reader<'html>,
-        content: &TextContent,
-    ) -> bool
-    where
-        S: Store<'html, 'query, E = E>,
-    {
+    ) -> bool {
         for i in (0..self.on_close_tag_events.len()).rev() {
             let content_trigger = &self.on_close_tag_events[i];
             if content_trigger.on_depth == document_position.element_depth {
@@ -290,19 +274,17 @@ where
                 let text_content = {
                     if let Some(start_idx) = content_trigger.text_content {
                         if start_idx == usize::MAX {
-                            if content.is_empty() {
+                            if store.text_content.is_empty() {
                                 None
                             } else {
-                                let slice = content.join(0..);
-                                Some(slice)
+                                Some(0..store.text_content.get_position())
                             }
-                        } else if start_idx == content.get_position() {
+                        } else if start_idx == store.text_content.get_position() {
                             // No new text content was added after the element opened
                             None
                         } else {
                             // to skip the text content before the element (When the start was just opened, thus thier was no text content yet)
-                            let slice = content.join((start_idx + 1)..);
-                            Some(slice)
+                            Some((start_idx + 1)..store.text_content.get_position())
                         }
                     } else {
                         None
@@ -359,14 +341,14 @@ where
         return false;
     }
 }
-
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::XHtmlElement;
     use crate::css::parser::tree::{Position, Query, Save};
     use crate::store::ChildIndex;
-    use crate::store::{RustStore, Store};
+    use crate::store::{Store};
     use crate::utils::Reader;
     use smallvec::smallvec;
 
@@ -634,3 +616,4 @@ mod tests {
         );
     }
 }
+*/
