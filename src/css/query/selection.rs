@@ -341,14 +341,13 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         return false;
     }
 }
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::XHtmlElement;
     use crate::css::parser::tree::{Position, Query, Save};
     use crate::store::ChildIndex;
-    use crate::store::{Store};
+    use crate::store::Store;
     use crate::utils::Reader;
     use smallvec::smallvec;
 
@@ -358,7 +357,7 @@ mod tests {
     fn test_fsm_next_descendant() {
         let selection_tree = &Query::all("div a", Save::none()).build();
 
-        let mut store = RustStore::new(());
+        let mut store = Store::new();
 
         let mut selection = SelectionRunner::new(selection_tree);
 
@@ -451,7 +450,7 @@ mod tests {
             .then(|p| [p.first("span", Save::none()), p.first("a", Save::none())])
             .build();
 
-        let mut store = RustStore::new(());
+        let mut store = Store::new();
         let mut selection = SelectionRunner::new(selection_tree);
 
         let _ = selection.next(
@@ -554,7 +553,7 @@ mod tests {
     fn test_simple_open_close() {
         let selection_tree = Query::first("div", Save::none()).build();
 
-        let mut store = RustStore::new(());
+        let mut store = Store::new();
         let mut selection = SelectionRunner::new(&selection_tree);
 
         let reader = Reader::new("<div></div>");
@@ -600,7 +599,6 @@ mod tests {
                 element_depth: 0,
             },
             &reader,
-            &content,
         );
 
         assert!(selection.scoped_fsms.is_empty());
@@ -616,4 +614,3 @@ mod tests {
         );
     }
 }
-*/

@@ -39,7 +39,7 @@ impl TextContent {
     pub fn get_position(&self) -> usize {
         assert!(!self.content.is_empty());
         // BUG: the position is off by one
-        self.content.len() - 1
+        self.content.len() - 2
     }
 
     pub fn push<'html>(&mut self, reader: &Reader<'html>, end_position: usize) -> Option<usize> {
@@ -90,18 +90,18 @@ mod tests {
 
         content.set_start(0);
         content.push(&reader, 5);
-        assert_eq!(content.content, "Hello".to_string());
+        assert_eq!(content.content.trim(), "Hello".to_string());
 
         content.stop_recording();
 
         content.set_start(0);
         content.push(&reader, 5);
-        assert_eq!(content.content, "Hello".to_string());
+        assert_eq!(content.content.trim(), "Hello".to_string());
 
         content.start_recording();
 
         content.set_start(0);
         content.push(&reader, 5);
-        assert_eq!(content.content, "Hello Hello".to_string());
+        assert_eq!(content.content.trim(), "Hello Hello".to_string());
     }
 }

@@ -149,7 +149,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         self.store
     }
 }
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,7 +173,7 @@ mod tests {
 
         let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
 
-        let manager = FsmManager::new(RustStore::new(()), queries);
+        let manager = FsmManager::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -212,7 +211,7 @@ mod tests {
         let mut reader = Reader::new(BASIC_HTML);
 
         let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
-        let manager = FsmManager::new(RustStore::new(()), queries);
+        let manager = FsmManager::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -224,37 +223,37 @@ mod tests {
 
         continue_parser = parser.next(&mut reader); // </h1>
         assert!(continue_parser);
-        assert_eq!(parser.content.content, "Hello World".to_string());
+        assert_eq!(parser.store.text_content.content, "Hello World".to_string());
 
         continue_parser = parser.next(&mut reader); // <p class="indent">
         assert!(continue_parser);
-        assert_eq!(parser.content.content, "Hello World".to_string());
+        assert_eq!(parser.store.text_content.content, "Hello World".to_string());
 
         continue_parser = parser.next(&mut reader); // <span id="name" class="bold">
         assert!(continue_parser);
         assert_eq!(
-            parser.content.content.trim(),
+            parser.store.text_content.content.trim(),
             "Hello World My name is".to_string()
         );
 
         continue_parser = parser.next(&mut reader); // </span>
         assert!(continue_parser);
         assert_eq!(
-            parser.content.content.trim(),
+            parser.store.text_content.content.trim(),
             "Hello World My name is Zachary".to_string()
         );
 
         continue_parser = parser.next(&mut reader); // </p>
         assert!(continue_parser);
         assert_eq!(
-            parser.content.content.trim(),
+            parser.store.text_content.content.trim(),
             "Hello World My name is Zachary".to_string()
         );
 
         continue_parser = parser.next(&mut reader); // </html>
         assert!(!continue_parser);
         assert_eq!(
-            parser.content.content.trim(),
+            parser.store.text_content.content.trim(),
             "Hello World My name is Zachary".to_string()
         );
     }
@@ -268,7 +267,7 @@ mod tests {
             Query::all("h1 + .indent #name", Save::none()).build(),
         ];
 
-        let manager = FsmManager::new(RustStore::new(()), queries);
+        let manager = FsmManager::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -318,7 +317,7 @@ mod tests {
             ]
         });
         let queries = &[queries.build()];
-        let manager = FsmManager::new(RustStore::new(()), queries);
+        let manager = FsmManager::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -341,7 +340,7 @@ mod tests {
 
         // Section 1
         let s1 = sections[0];
-        assert_eq!(s1.text_content, Some("Hello World".to_string()));
+        assert_eq!(store.text_content(s1), Some("Hello World"));
 
         let s1_div_a: Vec<&Element> = s1["div a"]
             .iter()
@@ -349,7 +348,7 @@ mod tests {
             .map(|i| &store.arena[*i])
             .collect();
         assert_eq!(s1_div_a.len(), 1);
-        assert_eq!(s1_div_a[0].text_content, Some("World".to_string()));
+        assert_eq!(store.text_content(s1_div_a[0]), Some("World"));
         assert_eq!(s1_div_a[0].attributes[0].value, Some("https://world.com"));
 
         let s1_direct_a: Vec<&Element> = s1["> a[href]"]
@@ -358,7 +357,7 @@ mod tests {
             .map(|i| &store.arena[*i])
             .collect();
         assert_eq!(s1_direct_a.len(), 1);
-        assert_eq!(s1_direct_a[0].text_content, Some("Hello".to_string()));
+        assert_eq!(store.text_content(s1_direct_a[0]), Some("Hello"));
         assert_eq!(
             s1_direct_a[0].attributes[0].value,
             Some("https://hello.com")
@@ -366,7 +365,7 @@ mod tests {
 
         // Section 2
         let s2 = sections[1];
-        assert_eq!(s2.text_content, Some("Hello2 World2 World3".to_string()));
+        assert_eq!(store.text_content(s2), Some("Hello2 World2 World3"));
 
         let s2_div_a: Vec<&Element> = s2["div a"]
             .iter()
@@ -374,8 +373,8 @@ mod tests {
             .map(|i| &store.arena[*i])
             .collect();
         assert_eq!(s2_div_a.len(), 2);
-        assert_eq!(s2_div_a[0].text_content, Some("World2".to_string()));
-        assert_eq!(s2_div_a[1].text_content, Some("World3".to_string()));
+        assert_eq!(store.text_content(s2_div_a[0]), Some("World2"));
+        assert_eq!(store.text_content(s2_div_a[1]), Some("World3"));
 
         let s2_direct_a: Vec<&Element> = s2["> a[href]"]
             .iter()
@@ -383,7 +382,7 @@ mod tests {
             .map(|i| &store.arena[*i])
             .collect();
         assert_eq!(s2_direct_a.len(), 1);
-        assert_eq!(s2_direct_a[0].text_content, Some("Hello2".to_string()));
+        assert_eq!(store.text_content(s2_direct_a[0]), Some("Hello2"));
     }
 
     const BASIC_HTML_WITH_SCRIPT: &str = r#"
@@ -403,7 +402,7 @@ mod tests {
 
         let queries = &[Query::all("div", Save::none()).build()];
 
-        let manager = FsmManager::new(RustStore::new(()), queries);
+        let manager = FsmManager::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -450,7 +449,7 @@ mod tests {
         let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
         let queries = &[Query::all("form > p > input", Save::none()).build()];
 
-        let manager = FsmManager::new(RustStore::new(()), queries);
+        let manager = FsmManager::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -490,7 +489,7 @@ mod tests {
 
         let queries = &[Query::all("form > p > input", Save::all()).build()];
 
-        let manager = FsmManager::new(RustStore::new(()), queries);
+        let manager = FsmManager::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -531,7 +530,7 @@ mod tests {
 
         let queries = &[Query::all("a", Save::all()).build()];
 
-        let manager = FsmManager::new(RustStore::new(()), queries);
+        let manager = FsmManager::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -547,9 +546,9 @@ mod tests {
             .collect();
         assert_eq!(anchors.len(), 3);
 
-        assert_eq!(anchors[0].text_content, Some("Hello 1".to_string()));
-        assert_eq!(anchors[1].text_content, Some("Hello 2".to_string()));
-        assert_eq!(anchors[2].text_content, Some("Hello 3".to_string()));
+        assert_eq!(store.text_content(anchors[0]), Some("Hello 1"));
+        assert_eq!(store.text_content(anchors[1]), Some("Hello 2"));
+        assert_eq!(store.text_content(anchors[2]), Some("Hello 3"));
     }
 
     const POSTS: &str = r#"<div class="article"><a href="/post/0"><b>Post</b> &lt;0&gt;</a></div><div class="article"><a href="/post/1"><b>Post</b> &lt;1&gt;</a></div>"#;
@@ -560,7 +559,7 @@ mod tests {
 
         let queries = &[Query::first("div.article a", Save::all()).build()];
 
-        let manager = FsmManager::new(RustStore::new(()), queries);
+        let manager = FsmManager::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -575,7 +574,6 @@ mod tests {
         assert_eq!(anchor.name, "a");
         assert_eq!(anchor.attributes[0].value, Some("/post/0"));
         assert_eq!(anchor.inner_html, Some("<b>Post</b> &lt;0&gt;"));
-        assert_eq!(anchor.text_content, Some("Post &lt;0&gt;".to_string()));
+        assert_eq!(store.text_content(anchor), Some("Post &lt;0&gt;"));
     }
 }
-*/
