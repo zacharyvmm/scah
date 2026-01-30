@@ -25,12 +25,12 @@ fn bench_onego(html: String) {
     let queries = &[Query::all(QUERY, Save::all()).build()];
 
     let store = parse(&html, queries);
-    let root = &store.arena[0];
+    let root = &store.elements[0];
     let indices = root[QUERY].iter().unwrap();
 
     //assert_eq!(iterator.count(), MAX_ELEMENT_LEN);
 
-    for element in indices.map(|i| &store.arena[*i]) {
+    for element in indices.map(|i| &store.elements[*i]) {
         black_box(&element.attributes);
         black_box(&element.inner_html);
         black_box(store.text_content(&element));

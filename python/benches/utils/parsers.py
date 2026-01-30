@@ -63,10 +63,7 @@ def parse_onego(html:str, query:str):
     assert(onego)
     q = onego.Query.all(query, onego.Save.all()).build()
     result = onego.parse(html, q)
-    try:
-        return result['children'][query]
-    except (KeyError, TypeError):
-        return []
+    return result
 
 
 PARSERS = {

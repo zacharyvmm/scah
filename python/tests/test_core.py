@@ -1,6 +1,6 @@
-from onego import Query, Save, parse
 import pytest
 
+from onego import Query, Save, parse
 HTML = """
 <span class="hello" id="world" hello="world">
     Hello <a href="https://www.example.com">World</a>
@@ -9,6 +9,9 @@ HTML = """
     My <a href="https://www.example.com">Example</a> or <a href="https://www.notexample.com">Not Example</a>
 </p>
 """
+#HTML = memoryview(bytes(HTML, "utf-8"))
+q = Query.all("#world", Save.all()).all("a", Save.all()).build()
+result = parse(HTML, q)
 
 def test_nested_selection():
     q = Query.all("#world", Save.all()).all("a", Save.all()).build()

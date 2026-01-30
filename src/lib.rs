@@ -7,7 +7,7 @@ mod xhtml;
 use std::collections::HashMap;
 
 pub use css::{FsmManager, Query, QueryBuilder, QuerySection, Save, SelectionKind, SelectionPart};
-pub use store::{Element, QueryError, Store};
+pub use store::{Element, QueryError, Store, ChildIndex};
 pub use utils::Reader;
 pub use xhtml::element::element::{Attribute, XHtmlElement};
 pub use xhtml::parser::XHtmlParser;
@@ -17,7 +17,7 @@ pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
     queries: &'a [Query<'query>],
 ) -> Store<'html, 'query> {
     let selectors = FsmManager::new(queries);
-    let mut parser = XHtmlParser::new(selectors);
+    let mut parser = XHtmlParser::with_capacity(selectors, html.len());
 
     let mut reader = Reader::new(html);
     while parser.next(&mut reader) {}

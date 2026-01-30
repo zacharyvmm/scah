@@ -5,7 +5,6 @@ use std::ops::Range;
 pub struct TextContent {
     pub(super) content: String,
     pub(super) text_start: Option<usize>,
-    recording: bool,
 }
 
 impl TextContent {
@@ -13,7 +12,13 @@ impl TextContent {
         Self {
             content: String::new(),
             text_start: None,
-            recording: false,
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            content: String::with_capacity(capacity),
+            text_start: None,
         }
     }
 
@@ -21,18 +26,7 @@ impl TextContent {
         self.content.is_empty()
     }
 
-    pub fn start_recording(&mut self) {
-        self.recording = true;
-    }
-
-    pub fn stop_recording(&mut self) {
-        self.recording = false;
-    }
-
     pub fn set_start(&mut self, start: usize) {
-        if !self.recording {
-            return;
-        }
         self.text_start = Some(start);
     }
 
@@ -43,9 +37,6 @@ impl TextContent {
     }
 
     pub fn push<'html>(&mut self, reader: &Reader<'html>, end_position: usize) -> Option<usize> {
-        if !self.recording {
-            return None;
-        }
         // It has to be inside an element, so this is an impossible case other than at initialization
         let Some(start_position) = self.text_start else {
             unreachable!("Their has to be a start position set before pushing text content")
@@ -70,6 +61,10 @@ impl TextContent {
     // It's assumed that you want from a start point to the current end of the text content list
     pub fn slice(&self, range: Range<usize>) -> &str {
         &self.content[range]
+    }
+
+    pub fn data(self) -> String {
+        self.content
     }
 }
 

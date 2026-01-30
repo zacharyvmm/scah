@@ -376,7 +376,7 @@ mod tests {
             &mut store,
         );
 
-        assert!(store.arena[0].children.is_empty());
+        assert!(store.elements[0].children.is_empty());
 
         assert_eq!(
             selection.fsm,
@@ -412,15 +412,15 @@ mod tests {
             &mut store,
         );
 
-        assert_eq!(store.arena[0].children.len(), 1);
-        let child = &store.arena[0].children[0];
+        assert_eq!(store.elements[0].children.len(), 1);
+        let child = &store.elements[0].children[0];
         assert_eq!(child.query, "div a");
         match &child.index {
             ChildIndex::Many(indices) => assert_eq!(indices, &vec![1]),
             _ => panic!("Expected Many"),
         }
 
-        assert_eq!(store.arena[1].name, "a");
+        assert_eq!(store.elements[1].name, "a");
 
         // assert_eq!(
         //     selection.tasks,
@@ -468,7 +468,7 @@ mod tests {
             &mut store,
         );
 
-        assert!(store.arena[0].children.is_empty());
+        assert!(store.elements[0].children.is_empty());
 
         assert_eq!(
             selection.fsm,
@@ -505,14 +505,14 @@ mod tests {
             &mut store,
         );
 
-        assert_eq!(store.arena[0].children.len(), 1);
-        let child = &store.arena[0].children[0];
+        assert_eq!(store.elements[0].children.len(), 1);
+        let child = &store.elements[0].children[0];
         assert_eq!(child.query, "div p.class");
         match &child.index {
             ChildIndex::One(idx) => assert_eq!(*idx, 1),
             _ => panic!("Expected One"),
         }
-        assert_eq!(store.arena[1].name, "p");
+        assert_eq!(store.elements[1].name, "p");
 
         assert_eq!(
             selection.fsm,

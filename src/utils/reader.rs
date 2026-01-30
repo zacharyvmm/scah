@@ -13,6 +13,13 @@ impl<'a> Reader<'a> {
         };
     }
 
+    pub fn from_bytes(input: &'a [u8]) -> Self {
+        return Self {
+            source: input,
+            position: 0,
+        };
+    }
+
     #[inline]
     pub fn get_position(&self) -> usize {
         return self.position;
