@@ -1,7 +1,7 @@
-use ::onego::{FsmManager, QueryBuilder, Reader, SelectionPart, Store, XHtmlParser, ChildIndex};
+use ::onego::{ChildIndex, FsmManager, QueryBuilder, Reader, SelectionPart, Store, XHtmlParser};
+use pyo3::buffer::PyBuffer;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyMemoryView};
-use pyo3::buffer::PyBuffer;
 
 mod element;
 mod query;
@@ -11,7 +11,7 @@ mod view;
 
 use crate::query::{PyQuery, PyQueryBuilder, PyQueryFactory, PyQueryStatic};
 use crate::save::PySave;
-use view::{string_buffer_to_memory_view, get_memoryview_from_str};
+use view::{get_memoryview_from_u8, string_buffer_to_memory_view};
 //use crate::store::PythonStore;
 
 use std::ops::Range;
@@ -24,7 +24,7 @@ pub struct Attribute {
     value: OptionalStrRange,
 }
 
-#[pyclass(name="Element")]
+#[pyclass(name = "Element")]
 pub struct PyElement {
     base: Py<PyMemoryView>,
     text_content_tape: Py<PyMemoryView>,
@@ -42,21 +42,22 @@ pub struct PyElement {
 #[pyfunction]
 fn parse<'py>(
     py: Python<'py>,
-    html: &str,
-    //html: Bound<'py, PyMemoryView>,
+    html: Bound<'py, PyMemoryView>,
     queries: Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyList>> {
-    // let html_bytes = {
-    //     let buffer = PyBuffer::<u8>::get(&html)?;
-    //     if !buffer.is_c_contiguous() {
-    //         return Err(pyo3::exceptions::PyValueError::new_err("MemoryView is not contiguous"));
-    //     }
-    //     let slice = unsafe {
-    //         std::slice::from_raw_parts(buffer.buf_ptr() as *const u8, buffer.len_bytes())
-    //     };
+    let html_bytes = {
+        let buffer = PyBuffer::<u8>::get(&html)?;
+        if !buffer.is_c_contiguous() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "MemoryView is not contiguous",
+            ));
+        }
+        let slice = unsafe {
+            std::slice::from_raw_parts(buffer.buf_ptr() as *const u8, buffer.len_bytes())
+        };
 
-    //     slice
-    // };
+        slice
+    };
 
     let mut py_queries: Vec<PyQuery> = Vec::new();
 
@@ -102,9 +103,9 @@ fn parse<'py>(
     }
 
     let selectors = FsmManager::new(&built_queries);
-    let mut parser = XHtmlParser::with_capacity(selectors, html.len());
+    let mut parser = XHtmlParser::with_capacity(selectors, html_bytes.len());
 
-    let mut reader = Reader::new(&html);
+    let mut reader = Reader::from_bytes(html_bytes);
     while parser.next(&mut reader) {}
 
     let store = parser.matches();
@@ -114,7 +115,7 @@ fn parse<'py>(
     let mut list = Vec::with_capacity(store.elements.len());
 
     #[inline]
-    fn substring_range(parent: &str, substring: &str) -> Range<usize> {
+    fn substring_range(parent: &[u8], substring: &str) -> Range<usize> {
         let parent_ptr = parent.as_ptr();
         let sub_ptr = substring.as_ptr();
 
@@ -125,7 +126,7 @@ fn parse<'py>(
     }
 
     #[inline]
-    fn optional_substring_range(parent: &str, substring: Option<&str>) -> Option<Range<usize>> {
+    fn optional_substring_range(parent: &[u8], substring: Option<&str>) -> Option<Range<usize>> {
         if let Some(substring) = substring {
             Some(substring_range(parent, substring))
         } else {
@@ -133,28 +134,41 @@ fn parse<'py>(
         }
     }
 
-    let base_ref: &Py<PyMemoryView> = &unsafe { get_memoryview_from_str(py, html) }?.unbind();
+    let base_ref: &Py<PyMemoryView> = &unsafe { get_memoryview_from_u8(py, html_bytes) }?.unbind();
 
     for element in store.elements {
         list.push(PyElement {
             base: base_ref.clone_ref(py),
             text_content_tape: text_content_view_ref.clone_ref(py),
 
-            name: substring_range(&html, element.name),
-            id: optional_substring_range(&html, element.id),
-            class: optional_substring_range(&html, element.class),
-            inner_html: optional_substring_range(&html, element.inner_html),
+            name: substring_range(html_bytes, element.name),
+            id: optional_substring_range(html_bytes, element.id),
+            class: optional_substring_range(html_bytes, element.class),
+            inner_html: optional_substring_range(html_bytes, element.inner_html),
             text_content: element.text_content,
 
-            attributes: element.attributes.iter().map(|a| Attribute {
-                key: substring_range(html, a.key),
-                value: optional_substring_range(html, a.value),
-            }).collect(),
+            attributes: element
+                .attributes
+                .iter()
+                .map(|a| Attribute {
+                    key: substring_range(html_bytes, a.key),
+                    value: optional_substring_range(html_bytes, a.value),
+                })
+                .collect(),
 
-            children: element.children.into_iter().map(|c| (substring_range(&html, c.query), match c.index {
-                ChildIndex::One(index) => vec![index],
-                ChildIndex::Many(vec) => vec,
-            })).collect()
+            children: element
+                .children
+                .into_iter()
+                .map(|c| {
+                    (
+                        substring_range(html_bytes, c.query),
+                        match c.index {
+                            ChildIndex::One(index) => vec![index],
+                            ChildIndex::Many(vec) => vec,
+                        },
+                    )
+                })
+                .collect(),
         });
     }
 

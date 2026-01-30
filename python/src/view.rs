@@ -1,6 +1,6 @@
 use pyo3::ffi::{PyBUF_READ, PyMemoryView_FromMemory};
-use pyo3::{CastIntoError, prelude::*};
 use pyo3::types::{PyByteArray, PyBytes, PyCapsule, PyMemoryView};
+use pyo3::{CastIntoError, prelude::*};
 use std::ffi::CStr;
 
 pub fn string_buffer_to_memory_view(
@@ -17,17 +17,22 @@ pub fn string_buffer_to_memory_view(
 
     let object = unsafe { PyMemoryView_FromMemory(ptr, len, PyBUF_READ) };
 
-    let res = unsafe {Bound::from_owned_ptr_or_err(py, object)?.cast_into::<PyMemoryView>()};
+    let res = unsafe { Bound::from_owned_ptr_or_err(py, object)?.cast_into::<PyMemoryView>() };
     if res.is_err() {
         return Err(PyErr::fetch(py));
     }
     Ok(res.unwrap())
 }
 
-pub unsafe fn get_memoryview_from_str<'a>(py: Python<'a>, text: &'a str) -> PyResult<Bound<'a, PyMemoryView>> {
+pub unsafe fn get_memoryview_from_u8<'a>(
+    py: Python<'a>,
+    text: &'a [u8],
+) -> PyResult<Bound<'a, PyMemoryView>> {
     // INSANELY unsafe, but I'll assume that the user doesn't mess with the underling string
-    let object = unsafe { PyMemoryView_FromMemory(text.as_ptr() as *mut i8, text.len() as isize, PyBUF_READ) };
-    let res = unsafe {Bound::from_owned_ptr_or_err(py, object)?.cast_into::<PyMemoryView>()};
+    let object = unsafe {
+        PyMemoryView_FromMemory(text.as_ptr() as *mut i8, text.len() as isize, PyBUF_READ)
+    };
+    let res = unsafe { Bound::from_owned_ptr_or_err(py, object)?.cast_into::<PyMemoryView>() };
     if res.is_err() {
         return Err(PyErr::fetch(py));
     }

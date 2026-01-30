@@ -62,7 +62,7 @@ def parse_gazpacho(html:str, query:str):
 def parse_onego(html:str, query:str):
     assert(onego)
     q = onego.Query.all(query, onego.Save.all()).build()
-    result = onego.parse(html, q)
+    result = onego.parse(memoryview(bytes(html, "utf-8")), q)
     return result
 
 
