@@ -7,7 +7,7 @@ mod xhtml;
 use std::collections::HashMap;
 
 pub use css::{FsmManager, Query, QueryBuilder, QuerySection, Save, SelectionKind, SelectionPart};
-pub use store::{Element, QueryError, Store, ChildIndex};
+pub use store::{ChildIndex, Element, QueryError, Store};
 pub use utils::Reader;
 pub use xhtml::element::element::{Attribute, XHtmlElement};
 pub use xhtml::parser::XHtmlParser;

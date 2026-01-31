@@ -10,8 +10,8 @@ mod view;
 
 use crate::query::{PyQuery, PyQueryBuilder, PyQueryFactory, PyQueryStatic};
 use crate::save::PySave;
-use element::{Attribute, PyElement, PyStore};
-use view::{get_memoryview_from_u8, SharedString};
+use element::{PyAttribute, PyElement, PyStore};
+use view::{SharedString, get_memoryview_from_u8};
 
 use std::ops::Range;
 
@@ -108,7 +108,9 @@ fn parse<'py>(
 
     let data = store.text_content.data();
     println!("TEXTCONTENT: {:#?}", str::from_utf8(&data).unwrap());
-    let text_content_rc = SharedString{inner: data.into_boxed_slice()};
+    let text_content_rc = SharedString {
+        inner: data.into_boxed_slice(),
+    };
     let text_content_view = text_content_rc.as_view(py)?;
     // let data = store.text_content.data();
     // let text_content_view = get_memoryview_from_u8(py, &data)?;
@@ -120,6 +122,13 @@ fn parse<'py>(
     let base_ref = base.as_unbound();
 
     for element in store.elements {
+        let attributes_iterator = element.attributes.iter().map(|a| PyAttribute {
+            base: base_ref.clone_ref(py),
+            key: substring_range(html_bytes, a.key),
+            value: optional_substring_range(html_bytes, a.value),
+        });
+        let attributes = PyList::new(py, attributes_iterator)?;
+
         list.push(PyElement {
             base: base_ref.clone_ref(py),
             text_content_tape: text_content_view_ref.clone_ref(py),
@@ -130,14 +139,7 @@ fn parse<'py>(
             inner_html: optional_substring_range(html_bytes, element.inner_html),
             text_content: element.text_content,
 
-            attributes: element
-                .attributes
-                .iter()
-                .map(|a| Attribute {
-                    key: substring_range(html_bytes, a.key),
-                    value: optional_substring_range(html_bytes, a.value),
-                })
-                .collect(),
+            attributes: attributes.unbind(),
 
             children: element
                 .children
@@ -155,7 +157,7 @@ fn parse<'py>(
         });
     }
 
-    Ok(PyStore{
+    Ok(PyStore {
         elements: PyList::new(py, list)?.unbind(),
         text_content: text_content_rc,
     })
@@ -170,6 +172,7 @@ fn onego(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyQueryStatic>()?;
     m.add_class::<PyQueryFactory>()?;
     m.add_class::<PyElement>()?;
+    m.add_class::<PyAttribute>()?;
     m.add_class::<PyStore>()?;
     Ok(())
 }

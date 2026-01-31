@@ -68,7 +68,7 @@ impl TextContent {
     }
 
     pub fn to_string(self) -> Result<String, std::string::FromUtf8Error> {
-        String::from_utf8(self.content) 
+        String::from_utf8(self.content)
     }
 }
 

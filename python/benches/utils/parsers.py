@@ -57,7 +57,7 @@ def parse_parsel(html:str, query:str):
 def parse_gazpacho(html:str, query:str):
     assert(GazpachoSoup)
     soup = GazpachoSoup(html)
-    return soup.find(query)
+    return soup.find(query, mode='all')
 
 def parse_onego(html:str, query:str):
     assert(onego)

@@ -35,7 +35,6 @@ impl ChildIndex {
     }
 }
 
-
 impl Index<usize> for ChildIndex {
     type Output = usize;
 
@@ -146,21 +145,19 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
-        let mut arena = Vec::with_capacity(capacity/3);
-        arena.push(
-            Element {
-                name: "root",
-                class: None,
-                id: None,
-                attributes: vec![],
-                inner_html: None,
-                text_content: None,
-                children: vec![],
-            }
-        );
+        let mut arena = Vec::with_capacity(capacity / 3);
+        arena.push(Element {
+            name: "root",
+            class: None,
+            id: None,
+            attributes: vec![],
+            inner_html: None,
+            text_content: None,
+            children: vec![],
+        });
         Self {
             elements: arena,
-            text_content: TextContent::with_capacity(capacity/3),
+            text_content: TextContent::with_capacity(capacity / 3),
         }
     }
 
