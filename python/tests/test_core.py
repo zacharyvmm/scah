@@ -9,9 +9,12 @@ HTML = """
     My <a href="https://www.example.com">Example</a> or <a href="https://www.notexample.com">Not Example</a>
 </p>
 """
-#HTML = memoryview(bytes(HTML, "utf-8"))
+HTML = memoryview(bytes(HTML, "utf-8"))
 q = Query.all("#world", Save.all()).all("a", Save.all()).build()
 result = parse(HTML, q)
+
+result[1].name.tobytes()
+result[1].text_content.tobytes()
 
 def test_nested_selection():
     q = Query.all("#world", Save.all()).all("a", Save.all()).build()

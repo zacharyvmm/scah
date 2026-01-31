@@ -6,45 +6,21 @@ use pyo3::types::{PyDict, PyList, PyMemoryView};
 mod element;
 mod query;
 mod save;
-mod selection;
 mod view;
 
 use crate::query::{PyQuery, PyQueryBuilder, PyQueryFactory, PyQueryStatic};
 use crate::save::PySave;
-use view::{get_memoryview_from_u8, string_buffer_to_memory_view};
-//use crate::store::PythonStore;
+use element::{Attribute, PyElement, PyStore};
+use view::{get_memoryview_from_u8, SharedString};
 
 use std::ops::Range;
-
-type StrRange = Range<usize>;
-type OptionalStrRange = Option<StrRange>;
-
-pub struct Attribute {
-    key: StrRange,
-    value: OptionalStrRange,
-}
-
-#[pyclass(name = "Element")]
-pub struct PyElement {
-    base: Py<PyMemoryView>,
-    text_content_tape: Py<PyMemoryView>,
-
-    name: StrRange,
-    class: OptionalStrRange,
-    id: OptionalStrRange,
-    attributes: Vec<Attribute>,
-    children: Vec<(StrRange, Vec<usize>)>,
-
-    inner_html: OptionalStrRange,
-    text_content: OptionalStrRange,
-}
 
 #[pyfunction]
 fn parse<'py>(
     py: Python<'py>,
     html: Bound<'py, PyMemoryView>,
     queries: Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyList>> {
+) -> PyResult<PyStore> {
     let html_bytes = {
         let buffer = PyBuffer::<u8>::get(&html)?;
         if !buffer.is_c_contiguous() {
@@ -109,10 +85,6 @@ fn parse<'py>(
     while parser.next(&mut reader) {}
 
     let store = parser.matches();
-    let text_content_view = string_buffer_to_memory_view(py, store.text_content.data())?;
-    let text_content_view_ref: &Py<PyMemoryView> = text_content_view.as_unbound();
-
-    let mut list = Vec::with_capacity(store.elements.len());
 
     #[inline]
     fn substring_range(parent: &[u8], substring: &str) -> Range<usize> {
@@ -134,7 +106,18 @@ fn parse<'py>(
         }
     }
 
-    let base_ref: &Py<PyMemoryView> = &unsafe { get_memoryview_from_u8(py, html_bytes) }?.unbind();
+    let data = store.text_content.data();
+    println!("TEXTCONTENT: {:#?}", str::from_utf8(&data).unwrap());
+    let text_content_rc = SharedString{inner: data.into_boxed_slice()};
+    let text_content_view = text_content_rc.as_view(py)?;
+    // let data = store.text_content.data();
+    // let text_content_view = get_memoryview_from_u8(py, &data)?;
+    let text_content_view_ref = text_content_view.as_unbound();
+
+    let mut list = Vec::with_capacity(store.elements.len());
+
+    let base = get_memoryview_from_u8(py, html_bytes)?;
+    let base_ref = base.as_unbound();
 
     for element in store.elements {
         list.push(PyElement {
@@ -172,7 +155,10 @@ fn parse<'py>(
         });
     }
 
-    Ok(PyList::new(py, list)?)
+    Ok(PyStore{
+        elements: PyList::new(py, list)?.unbind(),
+        text_content: text_content_rc,
+    })
 }
 
 #[pymodule]
@@ -184,5 +170,6 @@ fn onego(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyQueryStatic>()?;
     m.add_class::<PyQueryFactory>()?;
     m.add_class::<PyElement>()?;
+    m.add_class::<PyStore>()?;
     Ok(())
 }

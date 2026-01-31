@@ -3,21 +3,21 @@ use std::ops::Range;
 
 #[derive(Debug, PartialEq)]
 pub struct TextContent {
-    pub(super) content: String,
+    pub(super) content: Vec<u8>,
     pub(super) text_start: Option<usize>,
 }
 
 impl TextContent {
     pub fn new() -> Self {
         Self {
-            content: String::new(),
+            content: Vec::new(),
             text_start: None,
         }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            content: String::with_capacity(capacity),
+            content: Vec::with_capacity(capacity),
             text_start: None,
         }
     }
@@ -53,18 +53,22 @@ impl TextContent {
             return None;
         }
 
-        self.content.push_str(text);
-        self.content.push(' ');
+        self.content.extend_from_slice(text.as_bytes());
+        self.content.push(b' ');
         Some(self.get_position())
     }
 
     // It's assumed that you want from a start point to the current end of the text content list
     pub fn slice(&self, range: Range<usize>) -> &str {
-        &self.content[range]
+        unsafe { str::from_utf8_unchecked(&self.content[range]) }
     }
 
-    pub fn data(self) -> String {
+    pub fn data(self) -> Vec<u8> {
         self.content
+    }
+
+    pub fn to_string(self) -> Result<String, std::string::FromUtf8Error> {
+        String::from_utf8(self.content) 
     }
 }
 
