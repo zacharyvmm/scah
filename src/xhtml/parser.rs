@@ -19,8 +19,6 @@ pub struct XHtmlParser<'html, 'query> {
 
 impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     pub fn new(selectors: FsmManager<'query>) -> Self {
-        let mut content = TextContent::new();
-        content.start_recording();
         Self {
             position: DocumentPosition {
                 element_depth: 0,
@@ -31,6 +29,20 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             element: XHtmlElement::new(),
             in_script: false,
             store: Store::new(),
+        }
+    }
+
+    pub fn with_capacity(selectors: FsmManager<'query>, capacity: usize) -> Self {
+        Self {
+            position: DocumentPosition {
+                element_depth: 0,
+                reader_position: 0, // for inner_html
+                text_content_position: usize::MAX,
+            },
+            selectors,
+            element: XHtmlElement::new(),
+            in_script: false,
+            store: Store::with_capacity(capacity),
         }
     }
 
@@ -187,7 +199,7 @@ mod tests {
         }
 
         let store = parser.matches();
-        let root = &store.arena[0];
+        let root = &store.elements[0];
 
         assert_eq!(root.name, "root");
         assert_eq!(root.children.len(), 1);
@@ -199,7 +211,7 @@ mod tests {
             _ => panic!("Expected list"),
         };
         assert_eq!(indices.len(), 1);
-        let span = &store.arena[indices[0]];
+        let span = &store.elements[indices[0]];
 
         assert_eq!(span.name, "span");
         assert_eq!(span.id, Some("name"));
@@ -327,14 +339,14 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let root = &store.arena[0];
+        let root = &store.elements[0];
 
         // main > section
         let sections_idx = &root["main > section"];
         let sections: Vec<&Element> = sections_idx
             .iter()
             .unwrap()
-            .map(|i| &store.arena[*i])
+            .map(|i| &store.elements[*i])
             .collect();
         assert_eq!(sections.len(), 2);
 
@@ -345,7 +357,7 @@ mod tests {
         let s1_div_a: Vec<&Element> = s1["div a"]
             .iter()
             .unwrap()
-            .map(|i| &store.arena[*i])
+            .map(|i| &store.elements[*i])
             .collect();
         assert_eq!(s1_div_a.len(), 1);
         assert_eq!(store.text_content(s1_div_a[0]), Some("World"));
@@ -354,7 +366,7 @@ mod tests {
         let s1_direct_a: Vec<&Element> = s1["> a[href]"]
             .iter()
             .unwrap()
-            .map(|i| &store.arena[*i])
+            .map(|i| &store.elements[*i])
             .collect();
         assert_eq!(s1_direct_a.len(), 1);
         assert_eq!(store.text_content(s1_direct_a[0]), Some("Hello"));
@@ -370,7 +382,7 @@ mod tests {
         let s2_div_a: Vec<&Element> = s2["div a"]
             .iter()
             .unwrap()
-            .map(|i| &store.arena[*i])
+            .map(|i| &store.elements[*i])
             .collect();
         assert_eq!(s2_div_a.len(), 2);
         assert_eq!(store.text_content(s2_div_a[0]), Some("World2"));
@@ -379,7 +391,7 @@ mod tests {
         let s2_direct_a: Vec<&Element> = s2["> a[href]"]
             .iter()
             .unwrap()
-            .map(|i| &store.arena[*i])
+            .map(|i| &store.elements[*i])
             .collect();
         assert_eq!(s2_direct_a.len(), 1);
         assert_eq!(store.text_content(s2_direct_a[0]), Some("Hello2"));
@@ -416,7 +428,7 @@ mod tests {
         }
 
         let store = parser.matches();
-        let root = &store.arena[0];
+        let root = &store.elements[0];
 
         // It should NOT find any div
         if let Ok(div_idx) = root.get("div") {
@@ -458,12 +470,12 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let root = &store.arena[0];
+        let root = &store.elements[0];
 
         let inputs: Vec<&Element> = root["form > p > input"]
             .iter()
             .unwrap()
-            .map(|i| &store.arena[*i])
+            .map(|i| &store.elements[*i])
             .collect();
         assert_eq!(inputs.len(), 2);
 
@@ -503,12 +515,12 @@ mod tests {
         }
 
         let store = parser.matches();
-        let root = &store.arena[0];
+        let root = &store.elements[0];
 
         let inputs: Vec<&Element> = root["form > p > input"]
             .iter()
             .unwrap()
-            .map(|i| &store.arena[*i])
+            .map(|i| &store.elements[*i])
             .collect();
         assert_eq!(inputs.len(), 2);
         assert_eq!(inputs[0].text_content, None);
@@ -537,12 +549,12 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let root = &store.arena[0];
+        let root = &store.elements[0];
 
         let anchors: Vec<&Element> = root["a"]
             .iter()
             .unwrap()
-            .map(|i| &store.arena[*i])
+            .map(|i| &store.elements[*i])
             .collect();
         assert_eq!(anchors.len(), 3);
 
@@ -566,10 +578,10 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let root = &store.arena[0];
+        let root = &store.elements[0];
 
         let anchor_idx = root.get("div.article a").unwrap().value().unwrap();
-        let anchor = &store.arena[anchor_idx];
+        let anchor = &store.elements[anchor_idx];
 
         assert_eq!(anchor.name, "a");
         assert_eq!(anchor.attributes[0].value, Some("/post/0"));

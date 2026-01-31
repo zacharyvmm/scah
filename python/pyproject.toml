@@ -24,6 +24,7 @@ bench = [
     "poethepoet",
 ]
 
+# uv run --all-extras poe bench
 [tool.poe.tasks]
 bench = [
 #    { cmd = "uvx maturin build --release" },

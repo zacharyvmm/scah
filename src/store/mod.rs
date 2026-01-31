@@ -71,6 +71,7 @@ impl<'query> Index<usize> for Child<'query> {
 }
 
 type Children<'query> = Vec<Child<'query>>;
+type StrRange = Range<usize>;
 
 #[derive(Debug, PartialEq)]
 pub struct Element<'html, 'query> {
@@ -123,14 +124,14 @@ impl<'html, 'query> Index<&'query str> for Element<'html, 'query> {
 
 #[derive(Debug, PartialEq)]
 pub struct Store<'html, 'query> {
-    pub arena: Vec<Element<'html, 'query>>,
+    pub elements: Vec<Element<'html, 'query>>,
     pub text_content: TextContent,
 }
 
 impl<'html, 'query: 'html> Store<'html, 'query> {
     pub fn new() -> Self {
         Self {
-            arena: vec![Element {
+            elements: vec![Element {
                 name: "root",
                 class: None,
                 id: None,
@@ -140,6 +141,23 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
                 children: vec![],
             }],
             text_content: TextContent::new(),
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        let mut arena = Vec::with_capacity(capacity / 3);
+        arena.push(Element {
+            name: "root",
+            class: None,
+            id: None,
+            attributes: vec![],
+            inner_html: None,
+            text_content: None,
+            children: vec![],
+        });
+        Self {
+            elements: arena,
+            text_content: TextContent::with_capacity(capacity / 3),
         }
     }
 
@@ -171,13 +189,13 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         // from.children.insert(k, v)
         //println!("Element: {from_element:?}");
 
-        assert!(!self.arena.is_empty());
-        assert!(from < self.arena.len());
+        assert!(!self.elements.is_empty());
+        assert!(from < self.elements.len());
 
-        let index = self.arena.len();
-        self.arena.push(new_element);
+        let index = self.elements.len();
+        self.elements.push(new_element);
 
-        let element = &mut self.arena[from];
+        let element = &mut self.elements[from];
 
         let key_index = element.index_of_child_with_key(selection.source);
 
@@ -219,10 +237,10 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         inner_html: Option<&'html str>,
         text_content: Option<Range<usize>>,
     ) {
-        assert!(!self.arena.is_empty());
-        assert!(element < self.arena.len());
+        assert!(!self.elements.is_empty());
+        assert!(element < self.elements.len());
 
-        let ele = &mut self.arena[element];
+        let ele = &mut self.elements[element];
         ele.inner_html = inner_html;
         ele.text_content = text_content;
     }

@@ -48,10 +48,10 @@ fn bench_comparison(c: &mut Criterion) {
                 let queries = &[Query::first(black_box(QUERY), Save::all()).build()];
 
                 let store = parse(&html, queries);
-                let root = &store.arena[0];
+                let root = &store.elements[0];
 
                 let element_index = root[QUERY].value().unwrap();
-                let element = &store.arena[element_index];
+                let element = &store.elements[element_index];
 
                 black_box(&element.attributes);
                 black_box(&element.inner_html);

@@ -30,7 +30,7 @@ fn test_all_anchor_tags_for_albert_einstein_wikipedia<'q>() -> std::io::Result<(
     let queries = &[Query::all("a", Save::all()).build()];
     let store = parse(&contents, queries);
 
-    assert_eq!(store.arena[0]["a"].iter().unwrap().count(), 3848);
+    assert_eq!(store.elements[0]["a"].iter().unwrap().count(), 3848);
     //println!("{:#?}", map);
 
     Ok(())

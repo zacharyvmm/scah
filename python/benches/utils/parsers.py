@@ -57,16 +57,13 @@ def parse_parsel(html:str, query:str):
 def parse_gazpacho(html:str, query:str):
     assert(GazpachoSoup)
     soup = GazpachoSoup(html)
-    return soup.find(query)
+    return soup.find(query, mode='all')
 
 def parse_onego(html:str, query:str):
     assert(onego)
     q = onego.Query.all(query, onego.Save.all()).build()
-    result = onego.parse(html, q)
-    try:
-        return result['children'][query]
-    except (KeyError, TypeError):
-        return []
+    store = onego.parse(memoryview(bytes(html, "utf-8")), q)
+    return store.elements
 
 
 PARSERS = {
