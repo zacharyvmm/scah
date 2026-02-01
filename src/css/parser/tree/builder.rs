@@ -130,6 +130,8 @@ impl<'query> QueryBuilder<'query> {
                 };
             }
         }
+        self.states.append(&mut other.states);
+        self.selection.append(&mut other.selection);
     }
 
     pub fn then<F, I>(mut self, func: F) -> Self

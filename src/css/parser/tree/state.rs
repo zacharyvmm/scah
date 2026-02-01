@@ -68,6 +68,7 @@ impl<'query> State<'query> {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

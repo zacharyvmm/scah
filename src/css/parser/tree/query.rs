@@ -79,7 +79,7 @@ impl<'query> Position {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Selection<'query> {
     pub(crate) source: &'query str,
 
@@ -187,5 +187,264 @@ impl<'query> Query<'query> {
         let is_last_state = self.queries[position.selection].range.end - 1 == position.state;
 
         is_last_query & is_last_state
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::css::parser::element::{AttributeSelection, AttributeSelectionKind, QueryElement};
+    use crate::css::parser::lexer::Combinator;
+    use crate::css::parser::tree::state::State;
+    use crate::{Query, Save, Selection, SelectionKind};
+
+    #[test]
+    fn test_query_builder_one_selection() {
+        let query = Query::all("a", Save::all()).build();
+
+        assert_eq!(
+            query.states.iter().as_slice(),
+            [State {
+                state: QueryElement {
+                    name: Some("a"),
+                    id: None,
+                    class: None,
+                    attributes: vec![]
+                },
+                transition: Combinator::Descendant,
+            }]
+        );
+
+        assert_eq!(
+            query.queries.iter().as_slice(),
+            [Selection {
+                source: "a",
+                save: Save::all(),
+                kind: SelectionKind::All,
+                parent: None,
+                range: 0..1,
+                next_sibling: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_query_builder_chainned_selection() {
+        let query = Query::first("span", Save::all())
+            .all("a", Save::all())
+            .build();
+
+        assert_eq!(
+            query.states.iter().as_slice(),
+            [
+                State {
+                    state: QueryElement {
+                        name: Some("span"),
+                        id: None,
+                        class: None,
+                        attributes: vec![]
+                    },
+                    transition: Combinator::Descendant,
+                },
+                State {
+                    state: QueryElement {
+                        name: Some("a"),
+                        id: None,
+                        class: None,
+                        attributes: vec![]
+                    },
+                    transition: Combinator::Descendant,
+                }
+            ]
+        );
+
+        assert_eq!(
+            query.queries.iter().as_slice(),
+            [
+                Selection {
+                    source: "span",
+                    save: Save::all(),
+                    kind: SelectionKind::First { locked: false },
+                    parent: None,
+                    range: 0..1,
+                    next_sibling: None,
+                },
+                Selection {
+                    source: "a",
+                    save: Save::all(),
+                    kind: SelectionKind::All,
+                    parent: Some(0),
+                    range: 1..2,
+                    next_sibling: None,
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_query_builder_chainned_multi_element_selection() {
+        let query = Query::first("div > span", Save::all())
+            .all("p > a", Save::all())
+            .build();
+
+        assert_eq!(
+            query.states.iter().as_slice(),
+            [
+                State {
+                    state: QueryElement {
+                        name: Some("div"),
+                        id: None,
+                        class: None,
+                        attributes: vec![]
+                    },
+                    transition: Combinator::Descendant,
+                },
+                State {
+                    state: QueryElement {
+                        name: Some("span"),
+                        id: None,
+                        class: None,
+                        attributes: vec![]
+                    },
+                    transition: Combinator::Child,
+                },
+                State {
+                    state: QueryElement {
+                        name: Some("p"),
+                        id: None,
+                        class: None,
+                        attributes: vec![]
+                    },
+                    transition: Combinator::Descendant,
+                },
+                State {
+                    state: QueryElement {
+                        name: Some("a"),
+                        id: None,
+                        class: None,
+                        attributes: vec![]
+                    },
+                    transition: Combinator::Child,
+                },
+            ]
+        );
+
+        assert_eq!(
+            query.queries.iter().as_slice(),
+            [
+                Selection {
+                    source: "div > span",
+                    save: Save::all(),
+                    kind: SelectionKind::First { locked: false },
+                    parent: None,
+                    range: 0..2,
+                    next_sibling: None,
+                },
+                Selection {
+                    source: "p > a",
+                    save: Save::all(),
+                    kind: SelectionKind::All,
+                    parent: Some(0),
+                    range: 2..4,
+                    next_sibling: None,
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_query_builder_chainned_multi_element_selection_with_branching() {
+        let query = Query::all("main > section", Save::all())
+            .then(|section| {
+                [
+                    section.all("> a[href]", Save::all()),
+                    section.all("div a", Save::all()),
+                ]
+            })
+            .build();
+
+        assert_eq!(
+            query.states.iter().as_slice(),
+            [
+                State {
+                    state: QueryElement {
+                        name: Some("main"),
+                        id: None,
+                        class: None,
+                        attributes: vec![]
+                    },
+                    transition: Combinator::Descendant,
+                },
+                State {
+                    state: QueryElement {
+                        name: Some("section"),
+                        id: None,
+                        class: None,
+                        attributes: vec![]
+                    },
+                    transition: Combinator::Child,
+                },
+                State {
+                    state: QueryElement {
+                        name: Some("a"),
+                        id: None,
+                        class: None,
+                        attributes: vec![AttributeSelection {
+                            name: "href",
+                            value: None,
+                            kind: AttributeSelectionKind::Presence
+                        }]
+                    },
+                    transition: Combinator::Child,
+                },
+                State {
+                    state: QueryElement {
+                        name: Some("div"),
+                        id: None,
+                        class: None,
+                        attributes: vec![]
+                    },
+                    transition: Combinator::Descendant,
+                },
+                State {
+                    state: QueryElement {
+                        name: Some("a"),
+                        id: None,
+                        class: None,
+                        attributes: vec![]
+                    },
+                    transition: Combinator::Descendant,
+                },
+            ]
+        );
+
+        assert_eq!(
+            query.queries.iter().as_slice(),
+            [
+                Selection {
+                    source: "main > section",
+                    save: Save::all(),
+                    kind: SelectionKind::All,
+                    parent: None,
+                    range: 0..2,
+                    next_sibling: None,
+                },
+                Selection {
+                    source: "> a[href]",
+                    save: Save::all(),
+                    kind: SelectionKind::All,
+                    parent: Some(0),
+                    range: 2..3,
+                    next_sibling: Some(2),
+                },
+                Selection {
+                    source: "div a",
+                    save: Save::all(),
+                    kind: SelectionKind::All,
+                    parent: Some(0),
+                    range: 3..5,
+                    next_sibling: None,
+                }
+            ]
+        );
     }
 }

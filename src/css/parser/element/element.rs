@@ -6,9 +6,9 @@ use crate::{
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct AttributeSelection<'query> {
-    pub(super) name: &'query str,
-    pub(super) value: Option<&'query str>,
-    pub(super) kind: AttributeSelectionKind,
+    pub(crate) name: &'query str,
+    pub(crate) value: Option<&'query str>,
+    pub(crate) kind: AttributeSelectionKind,
 }
 
 struct KeyValueAttributeSelection<'query> {
