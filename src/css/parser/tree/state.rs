@@ -1,16 +1,28 @@
+use super::super::lexer::Lexer;
 use crate::XHtmlElement;
 use crate::css::parser::element::QueryElement;
 use crate::css::parser::lexer::Combinator;
+use crate::utils::Reader;
 
-#[derive(PartialEq, Debug)]
-pub struct Fsm<'query> {
+#[derive(PartialEq, Debug, Clone)]
+pub struct State<'query> {
     pub transition: Combinator, // from transition
     pub state: QueryElement<'query>,
 }
 
-impl<'query> Fsm<'query> {
+impl<'query> State<'query> {
     pub fn new(transition: Combinator, state: QueryElement<'query>) -> Self {
         Self { transition, state }
+    }
+
+    pub(super) fn generate_states_from_string(query: &'query str) -> Vec<Self> {
+        let reader = &mut Reader::new(query);
+        let mut states = Vec::new();
+        while let Some((combinator, element)) = Lexer::next(reader) {
+            states.push(Self::new(combinator, element));
+        }
+
+        states
     }
 
     pub fn next(
@@ -61,7 +73,7 @@ mod tests {
 
     #[test]
     fn test_fsm_next_descendant() {
-        let fsm = Fsm::new(
+        let state = State::new(
             Combinator::Descendant,
             QueryElement {
                 name: Some("a"),
@@ -70,7 +82,7 @@ mod tests {
                 attributes: vec![],
             },
         );
-        assert!(fsm.next(
+        assert!(state.next(
             &XHtmlElement {
                 name: "a",
                 id: None,
@@ -84,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_fsm_next_child() {
-        let fsm = Fsm::new(
+        let state = State::new(
             Combinator::Child,
             QueryElement {
                 name: Some("a"),
@@ -93,7 +105,7 @@ mod tests {
                 attributes: vec![],
             },
         );
-        assert!(fsm.next(
+        assert!(state.next(
             &XHtmlElement {
                 name: "a",
                 id: None,
@@ -107,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_fsm_next_child_failed() {
-        let fsm = Fsm::new(
+        let state = State::new(
             Combinator::Child,
             QueryElement {
                 name: Some("a"),
@@ -116,7 +128,7 @@ mod tests {
                 attributes: vec![],
             },
         );
-        assert!(!fsm.next(
+        assert!(!state.next(
             &XHtmlElement {
                 name: "a",
                 id: None,
@@ -130,7 +142,7 @@ mod tests {
 
     #[test]
     fn test_fsm_next_nextsibling() {
-        let fsm = Fsm::new(
+        let state = State::new(
             Combinator::NextSibling,
             QueryElement {
                 name: Some("a"),
@@ -139,7 +151,7 @@ mod tests {
                 attributes: vec![],
             },
         );
-        assert!(fsm.next(
+        assert!(state.next(
             &XHtmlElement {
                 name: "a",
                 id: None,
@@ -152,7 +164,7 @@ mod tests {
     }
     #[test]
     fn test_fsm_next_subsequentsiblings() {
-        let fsm = Fsm::new(
+        let state = State::new(
             Combinator::SubsequentSibling,
             QueryElement {
                 name: Some("a"),
@@ -161,7 +173,7 @@ mod tests {
                 attributes: vec![],
             },
         );
-        assert!(fsm.next(
+        assert!(state.next(
             &XHtmlElement {
                 name: "a",
                 id: None,

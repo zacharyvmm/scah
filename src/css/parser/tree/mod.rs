@@ -1,6 +1,6 @@
-mod selection;
-mod tree;
+mod builder;
+mod query;
+mod state;
 
-pub use selection::{QuerySection, Save, SelectionKind, SelectionPart};
-pub(crate) use tree::{NextPosition, NextPositions, Position};
-pub use tree::{Query, QueryBuilder};
+pub use builder::{QueryBuilder, QueryFactory, Save, SelectionKind};
+pub use query::{Position, Query, Selection};
