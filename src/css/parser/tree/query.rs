@@ -17,7 +17,7 @@ impl<'query> Position {
         debug_assert!(self.state < query.states[query.queries[self.selection].range.clone()].len());
 
         let selection_range = &query.queries[self.selection.clone()].range;
-        if selection_range.end - 1 == self.state {
+        if self.state + 1 < selection_range.end {
             Some(self.state + 1)
         } else {
             None

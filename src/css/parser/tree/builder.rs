@@ -97,6 +97,7 @@ impl<'query> QueryBuilder<'query> {
 
     pub fn append(&mut self, parent: usize, mut other: Self) {
         let state_length = self.states.len();
+        let selection_length = self.selection.len();
 
         let mut last_sibling: Option<usize> = {
             if parent + 1 == self.selection.len() {
@@ -116,14 +117,19 @@ impl<'query> QueryBuilder<'query> {
             query.range.end += state_length;
 
             if let Some(idx) = query.parent {
-                query.parent = Some(idx + parent);
+                query.parent = Some(idx + selection_length);
             } else {
                 query.parent = Some(parent);
 
-                let current_index = parent + index;
+                let current_index = selection_length + index;
                 last_sibling = match last_sibling {
                     Some(sibling) => {
-                        other.selection[sibling].next_sibling = Some(current_index);
+                        if sibling < selection_length {
+                            self.selection[sibling].next_sibling = Some(current_index);
+                        } else {
+                            other.selection[sibling - selection_length].next_sibling =
+                                Some(current_index);
+                        }
                         Some(current_index)
                     }
                     None => Some(current_index),

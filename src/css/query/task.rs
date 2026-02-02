@@ -33,6 +33,8 @@ pub trait Fsm<'query, 'html> {
     fn set_parent(&mut self, value: usize);
 
     fn set_end_false(&mut self);
+
+    fn add_depth(&mut self, depth: super::DepthSize);
 }
 
 impl<'query> FsmState {
@@ -124,6 +126,10 @@ impl<'query, 'html> Fsm<'query, 'html> for FsmState {
     fn set_end_false(&mut self) {
         self.end = false;
     }
+
+    fn add_depth(&mut self, depth: super::DepthSize) {
+        self.depths.push(depth);
+    }
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -192,6 +198,7 @@ impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm {
         self.position.state = value;
     }
 
+    fn add_depth(&mut self, _depth: super::DepthSize) {}
     fn step_backward(&mut self, _tree: &Query<'query>) {}
     fn set_end_false(&mut self) {}
 }

@@ -57,6 +57,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
     ) {
         if let Some(next_state) = fsm.get_position().next_state(tree) {
             fsm.set_state(next_state);
+            fsm.add_depth(depth);
         } else if let Some(child) = fsm.get_position().next_child(tree) {
             fsm.set_position(child);
             fsm.set_end_false();
@@ -301,7 +302,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
         let mut remove_last_x_fsms = 0;
         for scoped_fsm in self.scoped_fsms.iter().rev() {
-            if scoped_fsm.scope_depth < document_position.element_depth {
+            if scoped_fsm.scope_depth <= document_position.element_depth {
                 self.fsm.parent = scoped_fsm.parent;
                 break;
             }
