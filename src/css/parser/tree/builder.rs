@@ -41,6 +41,8 @@ impl Save {
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum SelectionKind {
     All,
+    // BUG:      This is shared thus would not work
+    // SOLUTION: For now the a FIRST selection as a branch of a ALL selection is illegal
     First { locked: bool },
 }
 
@@ -155,7 +157,6 @@ impl<'query> QueryBuilder<'query> {
         self
     }
 
-    /*
     fn exit_at_section(&self) -> Option<usize> {
         // returns the position in the selection tree where it can early exit
         // TODO: I should add a required flag for QuerySections, so that the first selection is nulled
@@ -163,10 +164,7 @@ impl<'query> QueryBuilder<'query> {
         //  -> If you come back to the section without saving the required section,
         //      then you delete the saved data and you start over.
 
-        fn search_for_single_exit_section<S>(
-            index: usize,
-            list: &Vec<SelectionPart<S>>,
-        ) -> Option<usize> {
+        fn search_for_single_exit_section(index: usize, list: &Vec<Selection>) -> Option<usize> {
             // If you have a section with MULTIPLE children that can early exit,
             //   then this parent node will become the exit section
             if index >= list.len() {
@@ -175,32 +173,39 @@ impl<'query> QueryBuilder<'query> {
             let section = &list[index];
             let stop_here = match &section.kind {
                 //BUG: you can only early exit when the ALL of them have been found, thus the parent must be awaited for
-                SelectionKind::All(_) => return None,
+                SelectionKind::All => return None,
 
                 // This is it need's to find the </{element}> to get either inner_html or text_content
-                SelectionKind::First(save) => *save != Save::none(),
+                SelectionKind::First { .. } => section.save != Save::none(),
             };
             if stop_here {
                 return Some(index);
             }
 
-            if section.children.is_empty() {
-                let child_can_early_exit = search_for_single_exit_section(index + 1, list);
-                if child_can_early_exit.is_none() {
-                    return Some(index);
-                }
-                return child_can_early_exit;
+
+            let mut child = index + 1;
+            if child >= list.len() {
+                return Some(index);
             }
 
             let mut child_response: Option<usize> = None;
-            for child in &section.children {
-                let child_can_early_exit = search_for_single_exit_section(index + *child, list);
-                child_response = match child_response {
-                    None => child_can_early_exit,
-                    Some(_) => {
-                        // If their's more than one child that can early exit then
-                        // the parent is chosen
-                        return Some(index);
+            if let Some(parent) = list[child].parent
+                && parent == index
+            {
+                loop {
+                    child_response = match child_response {
+                        None => search_for_single_exit_section(child, list),
+                        Some(_) => {
+                            // If their's more than one child that can early exit then
+                            // the parent is chosen
+                            return Some(index);
+                        }
+                    };
+
+                    if let Some(sibling) = list[child].next_sibling {
+                        child = sibling;
+                    } else {
+                        break;
                     }
                 }
             }
@@ -213,20 +218,19 @@ impl<'query> QueryBuilder<'query> {
 
         // BUG: I'm intentially adding this bug, because to actually solve this
         //  I would need to be able to check if all descandants in my fsm tree was saved to early exit
-        search_for_single_exit_section(0, &self.list)
+        search_for_single_exit_section(0, &self.selection)
     }
-    */
 }
 
 impl<'query> QueryBuilder<'query> {
     pub fn build(self) -> Query<'query> {
-        //let exit_at_section_end = self.exit_at_section();
+        let exit_at_section_end = self.exit_at_section();
         let states_box = self.states.into_boxed_slice();
         let query_box = self.selection.into_boxed_slice();
         Query {
             states: states_box,
             queries: query_box,
-            exit_at_section_end: None,
+            exit_at_section_end,
         }
     }
 }
@@ -239,5 +243,37 @@ impl<'query> QueryFactory {
 
     pub fn first(&self, query: &'query str, save: Save) -> QueryBuilder<'query> {
         Query::first(query, save)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Query, Save};
+
+    #[test]
+    fn test_early_exit() {
+        let query = Query::all("a", Save::all());
+        assert_eq!(query.exit_at_section(), None);
+
+        let query = Query::all("a", Save::none());
+        assert_eq!(query.exit_at_section(), None);
+
+        let query = Query::first("a", Save::all());
+        assert_eq!(query.exit_at_section(), Some(0));
+
+        let query = Query::first("a", Save::none());
+        assert_eq!(query.exit_at_section(), Some(0));
+
+        let query = Query::all("p", Save::all()).first("a", Save::all());
+        assert_eq!(query.exit_at_section(), None);
+
+        let query = Query::first("p", Save::all()).all("a", Save::all());
+        assert_eq!(query.exit_at_section(), Some(0));
+
+        let query = Query::first("p", Save::all()).first("a", Save::all());
+        assert_eq!(query.exit_at_section(), Some(0));
+
+        let query = Query::first("p", Save::none()).first("a", Save::none());
+        assert_eq!(query.exit_at_section(), Some(1));
     }
 }
