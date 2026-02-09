@@ -61,11 +61,13 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         } else if let Some(child) = fsm.get_position().next_child(tree) {
             fsm.set_position(child);
             fsm.set_end_false();
+            fsm.add_depth(depth);
 
-            let mut position = fsm.get_position().next_sibling(tree);
-            while let Some(sibling) = position {
-                position = sibling.next_sibling(tree);
-                list.push(ScopedFsm::new(depth, fsm.get_parent(), sibling));
+            let mut has_sibling = fsm.get_position().next_sibling(tree);
+            while let Some(sibling) = has_sibling {
+                list.push(ScopedFsm::new(depth, fsm.get_parent(), *fsm.get_position()));
+                fsm.set_position(sibling);
+                has_sibling = sibling.next_sibling(tree);
             }
         }
     }
@@ -618,7 +620,7 @@ mod tests {
                     selection: 0,
                     state: 0
                 },
-                depths: smallvec![0],
+                depths: smallvec![],
                 end: true,
             }
         );

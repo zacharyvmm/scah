@@ -97,8 +97,9 @@ impl<'query, 'html> Fsm<'query, 'html> for FsmState {
     fn step_backward(&mut self, tree: &Query<'query>) {
         // BUG: Currently this works for opening a closing element's, but if in a ALL selection
         // The FSM position and make it break
-        assert!(self.depths.len() > 0);
-        self.depths.pop();
+        if self.depths.len() > 0 {
+            self.depths.pop();
+        }
 
         self.position.back(tree);
     }

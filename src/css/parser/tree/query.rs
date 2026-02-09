@@ -14,7 +14,7 @@ pub struct Position {
 impl<'query> Position {
     pub(crate) fn next_state(&self, query: &Query<'query>) -> Option<usize> {
         debug_assert!(self.selection < query.queries.len());
-        debug_assert!(self.state < query.states[query.queries[self.selection].range.clone()].len());
+        debug_assert!(query.queries[self.selection].range.contains(&self.state));
 
         let selection_range = &query.queries[self.selection.clone()].range;
         if self.state + 1 < selection_range.end {
@@ -26,7 +26,7 @@ impl<'query> Position {
 
     pub(crate) fn next_child(&self, query: &Query<'query>) -> Option<Self> {
         debug_assert!(self.selection < query.queries.len());
-        debug_assert!(self.state < query.states[query.queries[self.selection].range.clone()].len());
+        debug_assert!(query.queries[self.selection].range.contains(&self.state));
 
         if self.selection == query.queries.len() - 1 {
             return None;
@@ -46,7 +46,7 @@ impl<'query> Position {
 
     pub(crate) fn next_sibling(&self, query: &Query<'query>) -> Option<Self> {
         debug_assert!(self.selection < query.queries.len());
-        debug_assert!(self.state < query.states[query.queries[self.selection].range.clone()].len());
+        debug_assert!(query.queries[self.selection].range.contains(&self.state));
 
         if let Some(sibling) = query.queries[self.selection].next_sibling {
             Some(Self {
@@ -183,7 +183,7 @@ impl<'query> Query<'query> {
     pub(crate) fn is_last_save_point(&self, position: &Position) -> bool {
         debug_assert!(position.selection < self.queries.len());
 
-        let is_last_query = self.queries.len() == position.selection;
+        let is_last_query = self.queries.len() - 1 == position.selection;
         let is_last_state = self.queries[position.selection].range.end - 1 == position.state;
 
         is_last_query & is_last_state
