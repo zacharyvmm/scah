@@ -1,8 +1,8 @@
-use crate::css::SelectionKind;
+use crate::css::{Selection, SelectionKind};
 use crate::xhtml::element::element::Attributes;
 
+use crate::dbg_print;
 use crate::xhtml::text_content::TextContent;
-use crate::{QuerySection, dbg_print};
 use std::ops::{Index, Range};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -171,7 +171,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
     pub fn push(
         &mut self,
-        selection: &QuerySection<'query>,
+        selection: &Selection<'query>,
         from: usize,
         element: crate::XHtmlElement<'html>,
     ) -> usize {
@@ -201,13 +201,13 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
         if key_index.is_some() {
             match selection.kind {
-                SelectionKind::First(_) => {
+                SelectionKind::First { .. } => {
                     dbg_print!("Store: {:#?}", self);
                     panic!(
                         "It is not possible to add a single item to the store when it already exists."
                     )
                 }
-                SelectionKind::All(_) => {
+                SelectionKind::All => {
                     let child_index = &mut element.children[key_index.unwrap()].index;
                     match child_index {
                         ChildIndex::One(_) => unreachable!(),
@@ -223,8 +223,8 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         element.children.push(Child {
             query: selection.source,
             index: match selection.kind {
-                SelectionKind::First(_) => ChildIndex::One(index),
-                SelectionKind::All(_) => ChildIndex::Many(vec![index]),
+                SelectionKind::First { .. } => ChildIndex::One(index),
+                SelectionKind::All => ChildIndex::Many(vec![index]),
             },
         });
 

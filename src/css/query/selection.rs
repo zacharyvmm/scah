@@ -10,7 +10,6 @@ use crate::{XHtmlElement, dbg_print};
 //use crate::store::rust::Element;
 use crate::store::{QueryError, Store};
 use crate::utils::Reader;
-use crate::xhtml::text_content::TextContent;
 
 type StartIdx = Option<usize>;
 
@@ -56,15 +55,20 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         depth: super::DepthSize,
         fsm: &mut impl Fsm<'query, 'html>,
     ) {
-        let new_branch_tasks = fsm.step_foward(tree, depth);
-        if let Some(new_branch_tasks) = new_branch_tasks {
+        if let Some(next_state) = fsm.get_position().next_state(tree) {
+            fsm.set_state(next_state);
+            fsm.add_depth(depth);
+        } else if let Some(child) = fsm.get_position().next_child(tree) {
+            fsm.set_position(child);
             fsm.set_end_false();
-            list.append(
-                &mut new_branch_tasks
-                    .into_iter()
-                    .map(|pos| ScopedFsm::new(depth, fsm.get_parent(), pos))
-                    .collect::<ScopedFsmVec>(),
-            );
+            fsm.add_depth(depth);
+
+            let mut has_sibling = fsm.get_position().next_sibling(tree);
+            while let Some(sibling) = has_sibling {
+                list.push(ScopedFsm::new(depth, fsm.get_parent(), *fsm.get_position()));
+                fsm.set_position(sibling);
+                has_sibling = sibling.next_sibling(tree);
+            }
         }
     }
 
@@ -83,17 +87,17 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         // I can't check for this anymore, since the save is not instant and the fsm position is moved afterwards
         //debug_assert!(fsm.is_save_point(tree));
 
-        let section = tree.get_section(fsm.get_section());
+        let section = tree.get_selection(fsm.get_position().selection);
 
         let element_pointer = store.push(section, fsm.get_parent(), element);
-        if !fsm.is_last_save_point(tree) {
+        if !tree.is_last_save_point(fsm.get_position()) {
             fsm.set_parent(element_pointer);
         }
 
         let Save {
             inner_html,
             text_content,
-        } = section.kind.save();
+        } = &section.save;
 
         on_close_tag_events.push(EndTagSaveContent {
             element: element_pointer,
@@ -141,7 +145,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
             // println!("Scope Match with `{:?}`", element);
 
-            if fsm.is_descendant(self.selection_tree) {
+            if self.selection_tree.is_descendant(fsm.get_position().state) {
                 // This should only be done if the task is not done (meaning it will move forward)
                 new_scoped_fsms.push(ScopedFsm::new(
                     document_position.element_depth,
@@ -152,7 +156,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
             let mut new_scoped_fsm = fsm.clone();
 
-            if new_scoped_fsm.is_save_point(self.selection_tree) {
+            if self.selection_tree.is_save_point(&new_scoped_fsm.position) {
                 Self::save_element(
                     &mut self.on_close_tag_events,
                     self.selection_tree,
@@ -190,13 +194,13 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         ) {
             dbg_print!("FSM Match with `{:?}`", element);
 
-            let is_descendant_combinator = fsm.is_descendant(self.selection_tree);
-            let last_save_point = fsm.is_last_save_point(self.selection_tree);
+            let is_descendant_combinator = self.selection_tree.is_descendant(fsm.position.state);
+            let last_save_point = self.selection_tree.is_last_save_point(&fsm.position);
             let section_kind = self
                 .selection_tree
-                .get_section_selection_kind(fsm.get_section());
-            let is_all = matches!(section_kind, crate::css::SelectionKind::All(_));
-            let is_root = fsm.position.section == 0 && fsm.position.fsm == 0;
+                .get_section_selection_kind(fsm.position.selection);
+            let is_all = matches!(section_kind, crate::css::SelectionKind::All);
+            let is_root = fsm.position.is_root();
 
             if is_descendant_combinator && !last_save_point {
                 // This should only be done if the task is not done (meaning it will move forward)
@@ -213,7 +217,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
             // let parent: *mut E = fsm.parent;
 
-            if fsm.is_save_point(self.selection_tree) {
+            if self.selection_tree.is_save_point(&fsm.position) {
                 fsm.end = true;
                 Self::save_element(
                     &mut self.on_close_tag_events,
@@ -246,7 +250,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
     pub fn early_exit(&self) -> bool {
         if let Some(early_exit_section) = self.selection_tree.exit_at_section_end {
-            return early_exit_section == self.fsm.position.section;
+            return early_exit_section == self.fsm.position.selection;
         }
 
         false
@@ -300,7 +304,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
         let mut remove_last_x_fsms = 0;
         for scoped_fsm in self.scoped_fsms.iter().rev() {
-            if scoped_fsm.scope_depth < document_position.element_depth {
+            if scoped_fsm.scope_depth <= document_position.element_depth {
                 self.fsm.parent = scoped_fsm.parent;
                 break;
             }
@@ -382,7 +386,10 @@ mod tests {
             selection.fsm,
             FsmState {
                 parent: NULL_PARENT,
-                position: Position { section: 0, fsm: 1 },
+                position: Position {
+                    selection: 0,
+                    state: 1
+                },
                 depths: smallvec![0],
                 end: false,
             }
@@ -393,7 +400,10 @@ mod tests {
             vec![ScopedFsm {
                 scope_depth: 0,
                 parent: NULL_PARENT,
-                position: Position { section: 0, fsm: 0 },
+                position: Position {
+                    selection: 0,
+                    state: 0
+                },
             }]
         );
 
@@ -433,12 +443,18 @@ mod tests {
                 ScopedFsm {
                     scope_depth: 0,
                     parent: NULL_PARENT,
-                    position: Position { section: 0, fsm: 0 },
+                    position: Position {
+                        selection: 0,
+                        state: 0
+                    },
                 },
                 ScopedFsm {
                     scope_depth: 0,
                     parent: NULL_PARENT,
-                    position: Position { section: 0, fsm: 1 },
+                    position: Position {
+                        selection: 0,
+                        state: 1
+                    },
                 }
             ]
         );
@@ -474,7 +490,10 @@ mod tests {
             selection.fsm,
             FsmState {
                 parent: NULL_PARENT,
-                position: Position { section: 0, fsm: 1 },
+                position: Position {
+                    selection: 0,
+                    state: 1
+                },
                 depths: smallvec![0],
                 end: false,
             }
@@ -486,7 +505,10 @@ mod tests {
             ScopedFsm {
                 scope_depth: 0,
                 parent: NULL_PARENT,
-                position: Position { section: 0, fsm: 0 },
+                position: Position {
+                    selection: 0,
+                    state: 0
+                },
             }
         );
 
@@ -518,7 +540,10 @@ mod tests {
             selection.fsm,
             FsmState {
                 parent: 1,
-                position: Position { section: 2, fsm: 0 },
+                position: Position {
+                    selection: 2,
+                    state: 3
+                },
                 depths: smallvec![0, 1],
                 end: false,
             }
@@ -531,19 +556,28 @@ mod tests {
                 ScopedFsm {
                     scope_depth: 0,
                     parent: NULL_PARENT,
-                    position: Position { section: 0, fsm: 0 },
+                    position: Position {
+                        selection: 0,
+                        state: 0
+                    },
                 },
                 // ` p.class`
                 ScopedFsm {
                     scope_depth: 1,
                     parent: NULL_PARENT,
-                    position: Position { section: 0, fsm: 1 },
+                    position: Position {
+                        selection: 0,
+                        state: 1
+                    },
                 },
                 // `> span`
                 ScopedFsm {
                     scope_depth: 1,
                     parent: 1,
-                    position: Position { section: 1, fsm: 0 },
+                    position: Position {
+                        selection: 1,
+                        state: 2
+                    },
                 },
             ]
         );
@@ -557,7 +591,6 @@ mod tests {
         let mut selection = SelectionRunner::new(&selection_tree);
 
         let reader = Reader::new("<div></div>");
-        let mut content = TextContent::new();
 
         let _ = selection.next(
             &XHtmlElement {
@@ -573,7 +606,7 @@ mod tests {
             },
             &mut store,
         );
-        content.set_start(4);
+        store.text_content.set_start(4);
         println!("{:?}", store);
         println!("{:?}", selection.fsm);
 
@@ -583,13 +616,16 @@ mod tests {
             selection.fsm,
             FsmState {
                 parent: NULL_PARENT,
-                position: Position { section: 0, fsm: 0 },
-                depths: smallvec![0],
+                position: Position {
+                    selection: 0,
+                    state: 0
+                },
+                depths: smallvec![],
                 end: true,
             }
         );
 
-        content.push(&reader, 4);
+        store.text_content.push(&reader, 4);
         let _ = selection.back(
             &mut store,
             "div",
@@ -607,7 +643,10 @@ mod tests {
             selection.fsm,
             FsmState {
                 parent: NULL_PARENT,
-                position: Position { section: 0, fsm: 0 },
+                position: Position {
+                    selection: 0,
+                    state: 0
+                },
                 depths: smallvec![],
                 end: true,
             }

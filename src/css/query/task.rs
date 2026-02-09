@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::XHtmlElement;
 use crate::css::parser::lexer::Combinator;
-use crate::css::parser::tree::{NextPosition, NextPositions, Position, Query};
+use crate::css::parser::tree::{Position, Query};
 use smallvec::SmallVec;
 
 #[derive(PartialEq, Debug)]
@@ -23,30 +23,28 @@ pub trait Fsm<'query, 'html> {
     fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &'html str) -> bool;
     fn try_back_parent(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str)
     -> bool;
-
-    fn step_foward(
-        &mut self,
-        tree: &Query<'query>,
-        depth: super::DepthSize,
-    ) -> Option<NextPositions>;
     fn step_backward(&mut self, tree: &Query<'query>);
 
-    fn is_descendant(&self, tree: &Query<'query>) -> bool;
-    fn is_save_point(&self, tree: &Query<'query>) -> bool;
-    fn is_last_save_point(&self, tree: &Query<'query>) -> bool;
+    fn get_position(&self) -> &Position;
+    fn set_position(&mut self, value: Position);
+    fn set_state(&mut self, value: usize);
 
     fn get_parent(&self) -> usize;
     fn set_parent(&mut self, value: usize);
 
-    fn get_section(&self) -> usize;
     fn set_end_false(&mut self);
+
+    fn add_depth(&mut self, depth: super::DepthSize);
 }
 
 impl<'query> FsmState {
     pub fn new() -> Self {
         Self {
             parent: 0,
-            position: Position { section: 0, fsm: 0 },
+            position: Position {
+                selection: 0,
+                state: 0,
+            },
             depths: SmallVec::new(),
             end: false,
         }
@@ -55,19 +53,19 @@ impl<'query> FsmState {
     pub fn move_backward_twice(&mut self, tree: &Query<'query>) {
         // Only need one pop, since the current fsm depth was not added to the list
         self.step_backward(tree);
-        self.position = tree.back(&self.position);
+        self.position.back(tree);
     }
 }
 
 impl<'query, 'html> Fsm<'query, 'html> for FsmState {
     fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
-        let fsm = tree.get(&self.position);
+        let fsm = tree.get_state(self.position.state);
         let last_depth = *self.depths.last().unwrap_or(&0);
         fsm.next(element, depth, last_depth)
     }
 
     fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
-        let fsm = tree.get(&self.position);
+        let fsm = tree.get_state(self.position.state);
         let last_depth = *self.depths.last().unwrap_or(&0);
         fsm.back(element, depth, last_depth)
     }
@@ -81,13 +79,14 @@ impl<'query, 'html> Fsm<'query, 'html> for FsmState {
     ) -> bool {
         debug_assert!(self.end);
 
-        if (self.position == Position { section: 0, fsm: 0 }) {
+        if self.position.is_root() {
             return false;
         }
 
-        let parent_position = tree.back(&self.position);
+        let mut parent_position = self.position.clone();
+        parent_position.back(tree);
         assert_ne!(self.position, parent_position);
-        let fsm = tree.get(&parent_position);
+        let fsm = tree.get_state(parent_position.state);
 
         // BUG: I'm not sure if I should take the last or the one before
         // What happens at length 0 or 1?
@@ -95,51 +94,26 @@ impl<'query, 'html> Fsm<'query, 'html> for FsmState {
         fsm.back(element, depth, last_depth)
     }
 
-    fn step_foward(
-        &mut self,
-        tree: &Query<'query>,
-        depth: super::DepthSize,
-    ) -> Option<NextPositions> {
-        let positions = tree.next(&self.position);
-        //if tree.is_last_save_point(1)
-        self.depths.push(depth);
-
-        match positions {
-            NextPosition::Link(pos) => {
-                self.position = pos;
-                None
-            }
-            NextPosition::Fork(mut pos_list) => {
-                assert_ne!(pos_list.len(), 0, "Fork with no positions");
-
-                self.position = pos_list.pop()?;
-
-                Some(pos_list)
-            }
-
-            NextPosition::EndOfBranch => None,
-        }
-    }
-
     fn step_backward(&mut self, tree: &Query<'query>) {
         // BUG: Currently this works for opening a closing element's, but if in a ALL selection
         // The FSM position and make it break
-        assert!(self.depths.len() > 0);
-        self.depths.pop();
+        if self.depths.len() > 0 {
+            self.depths.pop();
+        }
 
-        self.position = tree.back(&self.position);
+        self.position.back(tree);
     }
 
-    fn is_descendant(&self, tree: &Query<'query>) -> bool {
-        tree.get(&self.position).transition == Combinator::Descendant
+    fn get_position(&self) -> &Position {
+        &self.position
     }
 
-    fn is_save_point(&self, tree: &Query<'query>) -> bool {
-        tree.is_save_point(&self.position)
+    fn set_position(&mut self, value: Position) {
+        self.position = value;
     }
 
-    fn is_last_save_point(&self, tree: &Query<'query>) -> bool {
-        tree.is_last_save_point(&self.position)
+    fn set_state(&mut self, value: usize) {
+        self.position.state = value;
     }
 
     fn get_parent(&self) -> usize {
@@ -150,12 +124,12 @@ impl<'query, 'html> Fsm<'query, 'html> for FsmState {
         self.parent = value;
     }
 
-    fn get_section(&self) -> usize {
-        self.position.section
-    }
-
     fn set_end_false(&mut self) {
         self.end = false;
+    }
+
+    fn add_depth(&mut self, depth: super::DepthSize) {
+        self.depths.push(depth);
     }
 }
 
@@ -180,17 +154,14 @@ impl<'query> ScopedFsm {
     }
 }
 
-impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm
-where
-    usize: Copy,
-{
+impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm {
     fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
-        let fsm = tree.get(&self.position);
+        let fsm = tree.get_state(self.position.state);
         fsm.next(element, depth, self.scope_depth)
     }
 
     fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
-        let fsm = tree.get(&self.position);
+        let fsm = tree.get_state(self.position.state);
         fsm.back(element, depth, self.scope_depth)
     }
 
@@ -201,48 +172,11 @@ where
         depth: super::DepthSize,
         element: &str,
     ) -> bool {
-        let parent_position = tree.back(&self.position);
-        let fsm = tree.get(&parent_position);
+        let mut parent_position = self.position.clone();
+        parent_position.back(tree);
+        let fsm = tree.get_state(parent_position.state);
 
         fsm.back(element, depth, self.scope_depth)
-    }
-
-    fn step_foward(
-        &mut self,
-        tree: &Query<'query>,
-        depth: super::DepthSize,
-    ) -> Option<NextPositions> {
-        let positions = tree.next(&self.position);
-        //if tree.is_last_save_point(1)
-        self.scope_depth = depth;
-
-        match positions {
-            NextPosition::Link(pos) => {
-                self.position = pos;
-                None
-            }
-            NextPosition::Fork(mut pos_list) => {
-                assert_ne!(pos_list.len(), 0, "Fork with no positions");
-
-                self.position = pos_list.pop()?;
-
-                Some(pos_list)
-            }
-
-            NextPosition::EndOfBranch => None,
-        }
-    }
-
-    fn is_descendant(&self, tree: &Query<'query>) -> bool {
-        tree.get(&self.position).transition == Combinator::Descendant
-    }
-
-    fn is_save_point(&self, tree: &Query<'query>) -> bool {
-        tree.is_save_point(&self.position)
-    }
-
-    fn is_last_save_point(&self, tree: &Query<'query>) -> bool {
-        tree.is_last_save_point(&self.position)
     }
 
     fn get_parent(&self) -> usize {
@@ -253,10 +187,19 @@ where
         self.parent = value;
     }
 
-    fn get_section(&self) -> usize {
-        self.position.section
+    fn get_position(&self) -> &Position {
+        &self.position
     }
 
+    fn set_position(&mut self, value: Position) {
+        self.position = value;
+    }
+
+    fn set_state(&mut self, value: usize) {
+        self.position.state = value;
+    }
+
+    fn add_depth(&mut self, _depth: super::DepthSize) {}
     fn step_backward(&mut self, _tree: &Query<'query>) {}
     fn set_end_false(&mut self) {}
 }
@@ -289,7 +232,9 @@ mod tests {
         assert!(next);
 
         // move task
-        state.step_foward(&selection_tree, 0);
+        //state.step_foward(&selection_tree, 0);
+        let position = state.position.next_state(&selection_tree);
+        state.position.state = position.unwrap();
 
         next = state.next(
             &selection_tree,

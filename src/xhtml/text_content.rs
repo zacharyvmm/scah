@@ -33,7 +33,7 @@ impl TextContent {
     pub fn get_position(&self) -> usize {
         assert!(!self.content.is_empty());
         // BUG: the position is off by one
-        self.content.len() - 2
+        self.content.len() - 1
     }
 
     pub fn push<'html>(&mut self, reader: &Reader<'html>, end_position: usize) -> Option<usize> {
@@ -77,30 +77,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_textcontent_record_when_needed() {
+    fn test_textcontent() {
         let mut content = TextContent::new();
         let reader = Reader::new("Hello World");
         content.set_start(0);
         content.set_start(0);
         content.push(&reader, 5);
-
-        assert!(content.content.is_empty());
-        content.start_recording();
+        assert_eq!(content.content, b"Hello ");
 
         content.set_start(0);
         content.push(&reader, 5);
-        assert_eq!(content.content.trim(), "Hello".to_string());
+        assert_eq!(content.content, b"Hello Hello ");
 
-        content.stop_recording();
-
-        content.set_start(0);
-        content.push(&reader, 5);
-        assert_eq!(content.content.trim(), "Hello".to_string());
-
-        content.start_recording();
-
-        content.set_start(0);
-        content.push(&reader, 5);
-        assert_eq!(content.content.trim(), "Hello Hello".to_string());
+        content.set_start(6);
+        content.push(&reader, 11);
+        assert_eq!(content.content, b"Hello Hello World ");
     }
 }

@@ -235,38 +235,38 @@ mod tests {
 
         continue_parser = parser.next(&mut reader); // </h1>
         assert!(continue_parser);
-        assert_eq!(parser.store.text_content.content, "Hello World".to_string());
+        assert_eq!(parser.store.text_content.content, b"Hello World ");
 
         continue_parser = parser.next(&mut reader); // <p class="indent">
         assert!(continue_parser);
-        assert_eq!(parser.store.text_content.content, "Hello World".to_string());
+        assert_eq!(parser.store.text_content.content, b"Hello World ");
 
         continue_parser = parser.next(&mut reader); // <span id="name" class="bold">
         assert!(continue_parser);
         assert_eq!(
-            parser.store.text_content.content.trim(),
-            "Hello World My name is".to_string()
+            parser.store.text_content.content,
+            b"Hello World My name is "
         );
 
         continue_parser = parser.next(&mut reader); // </span>
         assert!(continue_parser);
         assert_eq!(
-            parser.store.text_content.content.trim(),
-            "Hello World My name is Zachary".to_string()
+            parser.store.text_content.content,
+            b"Hello World My name is Zachary "
         );
 
         continue_parser = parser.next(&mut reader); // </p>
         assert!(continue_parser);
         assert_eq!(
-            parser.store.text_content.content.trim(),
-            "Hello World My name is Zachary".to_string()
+            parser.store.text_content.content,
+            b"Hello World My name is Zachary "
         );
 
         continue_parser = parser.next(&mut reader); // </html>
         assert!(!continue_parser);
         assert_eq!(
-            parser.store.text_content.content.trim(),
-            "Hello World My name is Zachary".to_string()
+            parser.store.text_content.content,
+            b"Hello World My name is Zachary "
         );
     }
 
