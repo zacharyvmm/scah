@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
 
-use onego::{Query, Save, parse};
+use scah::{Query, Save, parse};
 
 #[test]
 fn test_all_anchor_tags_for_whatwg_html_spec() -> std::io::Result<()> {

@@ -182,7 +182,6 @@ impl<'query> QueryBuilder<'query> {
                 return Some(index);
             }
 
-
             let mut child = index + 1;
             if child >= list.len() {
                 return Some(index);

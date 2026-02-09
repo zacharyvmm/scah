@@ -1,5 +1,5 @@
 use crate::save::PySave;
-use ::onego::{QueryBuilder, SelectionKind, SelectionPart};
+use ::scah::{QueryBuilder, SelectionKind, SelectionPart};
 use pyo3::prelude::*;
 
 #[pyclass]

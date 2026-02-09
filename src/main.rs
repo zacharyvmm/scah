@@ -1,9 +1,9 @@
-use onego::{Query, Save, parse};
+use scah::{Query, Save, parse};
 use std::env;
 use std::fs;
 use std::time::Instant;
 
-// Just a simple program to check the performance of 1go
+// Just a simple program to check the performance of scah
 // cargo run --release -- /home/zmm/Music/html.spec.whatwg.index.html
 fn main() {
     let args: Vec<String> = env::args().collect();

@@ -1,12 +1,12 @@
 [package]
-name = "onego-python"
+name = "scah-python"
 version = "0.0.1"
 edition = "2024"
 
 [lib]
-name = "onego"
+name = "scah"
 crate-type = ["cdylib"]
 
 [dependencies]
-onego = { path = ".." }
+scah = { path = ".." }
 pyo3 = { version = "0.27.2", features = ["extension-module"] }

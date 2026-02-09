@@ -1,4 +1,4 @@
-use ::onego::{ChildIndex, FsmManager, QueryBuilder, Reader, SelectionPart, Store, XHtmlParser};
+use ::scah::{ChildIndex, FsmManager, QueryBuilder, Reader, SelectionPart, Store, XHtmlParser};
 use pyo3::buffer::PyBuffer;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyMemoryView};
@@ -164,7 +164,7 @@ fn parse<'py>(
 }
 
 #[pymodule]
-fn onego(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn scah(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parse, m)?)?;
     m.add_class::<PySave>()?;
     m.add_class::<PyQuery>()?;

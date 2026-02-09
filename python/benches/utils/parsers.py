@@ -29,9 +29,9 @@ except ImportError:
     GazpachoSoup = None
 
 try:
-    import onego
+    import scah
 except ImportError:
-    onego = None
+    scah = None
 
 def parse_bs4_htmlparser(html:str, query:str):
     assert(BeautifulSoup)
@@ -59,15 +59,15 @@ def parse_gazpacho(html:str, query:str):
     soup = GazpachoSoup(html)
     return soup.find(query, mode='all')
 
-def parse_onego(html:str, query:str):
-    assert(onego)
-    q = onego.Query.all(query, onego.Save.all()).build()
-    store = onego.parse(memoryview(bytes(html, "utf-8")), q)
+def parse_scah(html:str, query:str):
+    assert(scah)
+    q = scah.Query.all(query, scah.Save.all()).build()
+    store = scah.parse(memoryview(bytes(html, "utf-8")), q)
     return store.elements
 
 
 PARSERS = {
-    "OneGo": parse_onego,
+    "Scah": parse_scah,
     "BS4 (html.parser)": parse_bs4_htmlparser,
     "BS4 (lxml)": parse_bs4_lxml,
     "Selectolax": parse_selectolax,
@@ -84,7 +84,7 @@ def get_available_parsers():
         if "Selectolax" in name and SelectolaxParser is None: is_avail = False
         if "Parsel" in name and Selector is None: is_avail = False
         if "Gazpacho" in name and GazpachoSoup is None: is_avail = False
-        if "OneGo" in name and onego is None: is_avail = False
+        if "Scah" in name and scah is None: is_avail = False
         
         if is_avail:
             available[name] = func

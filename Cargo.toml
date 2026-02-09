@@ -1,5 +1,5 @@
 [package]
-name = "onego"
+name = "scah"
 version = "0.0.1"
 edition = "2024"
 
@@ -7,7 +7,7 @@ edition = "2024"
 members = ["python"]
 
 [lib]
-name = "onego"
+name = "scah"
 path = "src/lib.rs"
 
 [dependencies]

@@ -31,10 +31,10 @@ fn setup_html() -> String {
     html
 }
 
-use onego::{Query, Save, parse};
+use scah::{Query, Save, parse};
 #[library_benchmark]
-#[bench::onego(setup_html())]
-fn bench_onego(html: String) {
+#[bench::scah(setup_html())]
+fn bench_scah(html: String) {
     let queries = &[Query::first(QUERY, Save::all()).build()];
 
     let store = parse(&html, queries);
@@ -123,7 +123,7 @@ fn bench_lol_html(html: String) {
 
 library_benchmark_group!(
     name = comparison_group;
-    benchmarks = bench_onego, bench_tl, bench_scraper, bench_lexbor, bench_lol_html
+    benchmarks = bench_scah, bench_tl, bench_scraper, bench_lexbor, bench_lol_html
 );
 
 main!(library_benchmark_groups = comparison_group);

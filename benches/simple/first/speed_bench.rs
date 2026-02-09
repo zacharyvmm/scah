@@ -2,7 +2,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use lexbor_css::HtmlDocument;
 use lol_html::errors::RewritingError;
 use lol_html::{HtmlRewriter, Settings, element};
-use onego::{Query, Save, parse};
+use scah::{Query, Save, parse};
 use scraper::{Html, Selector};
 use std::error::Error;
 use std::fmt;
@@ -43,7 +43,7 @@ fn bench_comparison(c: &mut Criterion) {
         let content = generate_html(*size);
         group.throughput(Throughput::Bytes(content.len() as u64));
 
-        group.bench_with_input(BenchmarkId::new("onego", size), &content, |b, html| {
+        group.bench_with_input(BenchmarkId::new("scah", size), &content, |b, html| {
             b.iter(|| {
                 let queries = &[Query::first(black_box(QUERY), Save::all()).build()];
 

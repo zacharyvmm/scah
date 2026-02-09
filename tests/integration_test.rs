@@ -1,4 +1,4 @@
-use onego::{Attribute, Element, Query, QueryError, Save, parse};
+use scah::{Attribute, Element, Query, QueryError, Save, parse};
 const HTML: &str = r#"
 <!DOCTYPE html>
 <html>

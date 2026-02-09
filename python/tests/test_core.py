@@ -1,6 +1,6 @@
 import pytest
 
-from onego import Query, Save, parse
+from scah import Query, Save, parse
 HTML = """
 <span class="hello" id="world" hello="world">
     Hello <a href="https://www.example.com">World</a>

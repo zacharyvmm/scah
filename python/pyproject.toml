@@ -3,16 +3,16 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "onego"
+name = "scah"
 version = "0.0.1"
-description = "1go"
+description = "scah (scan HTML)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
 
 [project.optional-dependencies]
 bench = [
-    "onego",
+    "scah",
     "beautifulsoup4",
     "lxml",
     "selectolax",
@@ -41,4 +41,4 @@ members = [
 ]
 
 [tool.uv.sources]
-onego = { workspace = true }
+scah = { workspace = true }

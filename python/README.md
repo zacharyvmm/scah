@@ -1,4 +1,4 @@
-# Python Bindings for 1Go
+# Python Bindings for scah
 
 ## Benchmark
 Real Html BenchMark ([html.spec.whatwg.org](https://html.spec.whatwg.org/)) (select all `a` tags):

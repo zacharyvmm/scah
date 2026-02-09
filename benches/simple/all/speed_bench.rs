@@ -1,7 +1,7 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use lexbor_css::HtmlDocument;
 use lol_html::{HtmlRewriter, Settings, element};
-use onego::{Query, Save, parse};
+use scah::{Query, Save, parse};
 use scraper::{Html, Selector};
 use std::hint::black_box;
 use tl::ParserOptions;
@@ -19,7 +19,7 @@ fn generate_html(count: usize) -> String {
         ));
     }
     html.push_str("</div></body></html>");
-    html
+    return html;
 }
 
 fn bench_comparison(c: &mut Criterion) {
@@ -29,7 +29,7 @@ fn bench_comparison(c: &mut Criterion) {
         let content = generate_html(*size);
         group.throughput(Throughput::Bytes(content.len() as u64));
 
-        group.bench_with_input(BenchmarkId::new("onego", size), &content, |b, html| {
+        group.bench_with_input(BenchmarkId::new("scah", size), &content, |b, html| {
             b.iter(|| {
                 let queries = &[Query::all(QUERY, Save::all()).build()];
                 let store = parse(&html, queries);
@@ -47,7 +47,7 @@ fn bench_comparison(c: &mut Criterion) {
         });
 
         // group.bench_with_input(
-        //     BenchmarkId::new("onego_no_store", size),
+        //     BenchmarkId::new("scah_no_store", size),
         //     &content,
         //     |b, html| {
         //         b.iter(|| {

@@ -1,4 +1,4 @@
-use ::onego::Save;
+use ::scah::Save;
 use pyo3::prelude::*;
 
 #[pyclass(name = "Save")]
