@@ -1,4 +1,4 @@
-use crate::{Query, Selection, css::parser::tree::state::State};
+use crate::{Query, QueryBuilder, Selection, css::parser::tree::state::State};
 use std::pin::Pin;
 
 use super::builder::{Save, SelectionKind};
@@ -13,32 +13,38 @@ struct QueryString<S: AsRef<str>> {
     next_sibling: Option<usize>,
 }
 
-pub struct LazyQuery {} 
+pub struct LazyQuery {}
 
 impl LazyQuery {
     pub fn all<S: AsRef<str>>(query: S, save: Save) -> LazyQueryBuilder<S> {
-        LazyQueryBuilder { queries: vec![QueryString {
-            source: query,
-            save: save,
-            kind: SelectionKind::All,
+        LazyQueryBuilder {
+            queries: vec![QueryString {
+                source: query,
+                save: save,
+                kind: SelectionKind::All,
 
-            parent: None,
-            next_sibling: None,
-        }] }
+                parent: None,
+                next_sibling: None,
+            }],
+        }
     }
 
     pub fn first<S: AsRef<str>>(query: S, save: Save) -> LazyQueryBuilder<S> {
-        LazyQueryBuilder { queries: vec![QueryString {
-            source: query,
-            save: save,
-            kind: SelectionKind::First,
+        LazyQueryBuilder {
+            queries: vec![QueryString {
+                source: query,
+                save: save,
+                kind: SelectionKind::First,
 
-            parent: None,
-            next_sibling: None,
-        }] }
+                parent: None,
+                next_sibling: None,
+            }],
+        }
     }
 }
 
+// NOTE: The disadvantages of this are worst errors for invalid queries,
+//  since build is at the end, thus this probably only be used for Bindings
 // Basicly it's used for owned Strings, but I'll make it work for `&str`
 #[derive(Clone)]
 pub struct LazyQueryBuilder<S: AsRef<str>> {
@@ -48,7 +54,7 @@ pub struct LazyQueryBuilder<S: AsRef<str>> {
 impl<S: AsRef<str>> LazyQueryBuilder<S> {
     pub fn all_mut(&mut self, query: S, save: Save) {
         let parent_index = self.queries.len() - 1;
-        self.queries.push(QueryString{
+        self.queries.push(QueryString {
             source: query,
             save: save,
             kind: SelectionKind::All,
@@ -58,7 +64,7 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
     }
     pub fn first_mut(&mut self, query: S, save: Save) {
         let parent_index = self.queries.len() - 1;
-        self.queries.push(QueryString{
+        self.queries.push(QueryString {
             source: query,
             save: save,
             kind: SelectionKind::First,
@@ -76,7 +82,6 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
         self.first_mut(query, save);
         self
     }
-
 
     pub fn append(&mut self, parent: usize, mut other: Self) {
         let selection_length = self.queries.len();
@@ -119,7 +124,6 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
         self.queries.append(&mut other.queries);
     }
 
-
     pub fn then_mut<F, I>(&mut self, func: F)
     where
         F: FnOnce(LazyQueryFactory) -> I,
@@ -161,10 +165,11 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
                 string_tape.push_str(query.source.as_ref());
                 let end = string_tape.len();
 
-                unsafe{
+                unsafe {
                     let pointer = string_tape.as_ptr();
 
-                    let raw_slice: &[u8] = std::slice::from_raw_parts(pointer.add(start), end - start);
+                    let raw_slice: &[u8] =
+                        std::slice::from_raw_parts(pointer.add(start), end - start);
                     str::from_utf8_unchecked(raw_slice)
                 }
             };
@@ -178,7 +183,6 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
                 start..end
             };
 
-
             queries.push(Selection {
                 source,
                 range,
@@ -189,13 +193,17 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
                 parent: query.parent,
                 next_sibling: query.next_sibling,
             });
-
         }
-        (string_tape, Query { 
-            states: states.into_boxed_slice(),
-            queries: queries.into_boxed_slice(),
-            exit_at_section_end: None
-        })
+
+        return (
+            string_tape,
+            // Just to reuse logic
+            QueryBuilder {
+                states,
+                selection: queries,
+            }
+            .build(),
+        );
     }
 }
 
@@ -214,177 +222,236 @@ impl<'query> LazyQueryFactory {
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use super::*;
     use super::State;
-    use crate::{Query, Save, SelectionKind};
+    use super::*;
+    use crate::css::parser::element::{AttributeSelection, AttributeSelectionKind, QueryElement};
     use crate::css::parser::lexer::Combinator;
-    use crate::css::parser::element::{QueryElement, AttributeSelection, AttributeSelectionKind};
+    use crate::{Query, Save, SelectionKind};
 
     #[test]
     fn test_lazy_query_selector() {
         let q = LazyQuery::all("div", Save::all())
-        .first("a", Save::all()).all("a", Save::none());
+            .first("a", Save::all())
+            .all("a", Save::none());
 
-        assert_eq!(q.queries, vec![
-            QueryString {
-                source: "div",
-                save: Save::all(),
-                kind: SelectionKind::All,
-                parent: None,
-                next_sibling: None,
-            },
-            QueryString {
-                source: "a",
-                save: Save::all(),
-                kind: SelectionKind::First,
-                parent: Some(0),
-                next_sibling: None,
-            },
-            QueryString {
-                source: "a",
-                save: Save::none(),
-                kind: SelectionKind::All,
-                parent: Some(1),
-                next_sibling: None,
-            }
-        ]);
+        assert_eq!(
+            q.queries,
+            vec![
+                QueryString {
+                    source: "div",
+                    save: Save::all(),
+                    kind: SelectionKind::All,
+                    parent: None,
+                    next_sibling: None,
+                },
+                QueryString {
+                    source: "a",
+                    save: Save::all(),
+                    kind: SelectionKind::First,
+                    parent: Some(0),
+                    next_sibling: None,
+                },
+                QueryString {
+                    source: "a",
+                    save: Save::none(),
+                    kind: SelectionKind::All,
+                    parent: Some(1),
+                    next_sibling: None,
+                }
+            ]
+        );
     }
 
     #[test]
     fn test_lazy_query_selector_string() {
         let q = LazyQuery::all(String::from("div"), Save::all())
-        .first(String::from("a"), Save::all()).all(String::from("a"), Save::none());
+            .first(String::from("a"), Save::all())
+            .all(String::from("a"), Save::none());
 
-        assert_eq!(q.queries, vec![
-            QueryString {
-                source: String::from("div"),
-                save: Save::all(),
-                kind: SelectionKind::All,
-                parent: None,
-                next_sibling: None,
-            },
-            QueryString {
-                source: String::from("a"),
-                save: Save::all(),
-                kind: SelectionKind::First,
-                parent: Some(0),
-                next_sibling: None,
-            },
-            QueryString {
-                source: String::from("a"),
-                save: Save::none(),
-                kind: SelectionKind::All,
-                parent: Some(1),
-                next_sibling: None,
-            }
-        ]);
+        assert_eq!(
+            q.queries,
+            vec![
+                QueryString {
+                    source: String::from("div"),
+                    save: Save::all(),
+                    kind: SelectionKind::All,
+                    parent: None,
+                    next_sibling: None,
+                },
+                QueryString {
+                    source: String::from("a"),
+                    save: Save::all(),
+                    kind: SelectionKind::First,
+                    parent: Some(0),
+                    next_sibling: None,
+                },
+                QueryString {
+                    source: String::from("a"),
+                    save: Save::none(),
+                    kind: SelectionKind::All,
+                    parent: Some(1),
+                    next_sibling: None,
+                }
+            ]
+        );
     }
 
     #[test]
     fn test_lazy_query_selector_then() {
         let q = LazyQuery::all("div", Save::all())
-        .first("a", Save::all()).all("a", Save::none()).then(|a| [
-            a.all("span", Save::all()),
-            a.first("section", Save::all()).all("figure", Save::none()),
-        ]);
+            .first("a", Save::all())
+            .all("a", Save::none())
+            .then(|a| {
+                [
+                    a.all("span", Save::all()),
+                    a.first("section", Save::all()).all("figure", Save::none()),
+                ]
+            });
 
-        assert_eq!(q.queries, vec![
-            QueryString {
-                source: "div",
-                save: Save::all(),
-                kind: SelectionKind::All,
-                parent: None,
-                next_sibling: None,
-            },
-            QueryString {
-                source: "a",
-                save: Save::all(),
-                kind: SelectionKind::First,
-                parent: Some(0),
-                next_sibling: None,
-            },
-            QueryString {
-                source: "a",
-                save: Save::none(),
-                kind: SelectionKind::All,
-                parent: Some(1),
-                next_sibling: None,
-            },
-            QueryString {
-                source: "span",
-                save: Save::all(),
-                kind: SelectionKind::All,
-                parent: Some(2),
-                next_sibling: Some(4),
-            },
-            QueryString {
-                source: "section",
-                save: Save::all(),
-                kind: SelectionKind::First,
-                parent: Some(2),
-                next_sibling: None,
-            },
-            QueryString {
-                source: "figure",
-                save: Save::none(),
-                kind: SelectionKind::All,
-                parent: Some(4),
-                next_sibling: None,
-            },
-        ]);
+        assert_eq!(
+            q.queries,
+            vec![
+                QueryString {
+                    source: "div",
+                    save: Save::all(),
+                    kind: SelectionKind::All,
+                    parent: None,
+                    next_sibling: None,
+                },
+                QueryString {
+                    source: "a",
+                    save: Save::all(),
+                    kind: SelectionKind::First,
+                    parent: Some(0),
+                    next_sibling: None,
+                },
+                QueryString {
+                    source: "a",
+                    save: Save::none(),
+                    kind: SelectionKind::All,
+                    parent: Some(1),
+                    next_sibling: None,
+                },
+                QueryString {
+                    source: "span",
+                    save: Save::all(),
+                    kind: SelectionKind::All,
+                    parent: Some(2),
+                    next_sibling: Some(4),
+                },
+                QueryString {
+                    source: "section",
+                    save: Save::all(),
+                    kind: SelectionKind::First,
+                    parent: Some(2),
+                    next_sibling: None,
+                },
+                QueryString {
+                    source: "figure",
+                    save: Save::none(),
+                    kind: SelectionKind::All,
+                    parent: Some(4),
+                    next_sibling: None,
+                },
+            ]
+        );
     }
 
     #[test]
     fn test_unsafe_slicing() {
         let q = LazyQuery::all(String::from("div"), Save::all())
-        .first(String::from("a"), Save::all()).all(String::from("a"), Save::none());
+            .first(String::from("a"), Save::all())
+            .all(String::from("a"), Save::none());
 
         let (tape, query) = unsafe { q.to_query() };
 
         assert_eq!(tape, String::from("divaa"));
         //std::mem::drop(tape);
 
-        assert_eq!(query, Query {
-            states: vec![State::new(Combinator::Descendant, QueryElement {
-                name: Some("div"),
-                id: None,
-                class: None,
-                attributes: vec![]
-            }),State::new(Combinator::Descendant, QueryElement {
-                name: Some("a"),
-                id: None,
-                class: None,
-                attributes: vec![]
-            }),State::new(Combinator::Descendant, QueryElement {
-                name: Some("a"),
-                id: None,
-                class: None,
-                attributes: vec![]
-            }),].into_boxed_slice(),
-            queries: vec![
-                Selection::new(
-                    "div",
-                    Save::all(),
-                    SelectionKind::All,
-                    0..1,
-                    None,
-                ),
-                Selection::new(
-                    "a",
-                    Save::all(),
-                    SelectionKind::First,
-                    1..2,
-                    Some(0),
-                ),
-                Selection::new(
-                    "a",
-                    Save::none(),
-                    SelectionKind::All,
-                    2..3,
-                    Some(1),
-                ),
-            ].into_boxed_slice(),
-            exit_at_section_end: None,
-        });
+        assert_eq!(
+            query,
+            Query {
+                states: vec![
+                    State::new(
+                        Combinator::Descendant,
+                        QueryElement {
+                            name: Some("div"),
+                            id: None,
+                            class: None,
+                            attributes: vec![]
+                        }
+                    ),
+                    State::new(
+                        Combinator::Descendant,
+                        QueryElement {
+                            name: Some("a"),
+                            id: None,
+                            class: None,
+                            attributes: vec![]
+                        }
+                    ),
+                    State::new(
+                        Combinator::Descendant,
+                        QueryElement {
+                            name: Some("a"),
+                            id: None,
+                            class: None,
+                            attributes: vec![]
+                        }
+                    ),
+                ]
+                .into_boxed_slice(),
+                queries: vec![
+                    Selection::new("div", Save::all(), SelectionKind::All, 0..1, None,),
+                    Selection::new("a", Save::all(), SelectionKind::First, 1..2, Some(0),),
+                    Selection::new("a", Save::none(), SelectionKind::All, 2..3, Some(1),),
+                ]
+                .into_boxed_slice(),
+                exit_at_section_end: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_early_exit() {
+        let (_, query) = unsafe { LazyQuery::all("a", Save::all()).to_query() };
+        assert_eq!(query.exit_at_section_end, None);
+
+        let (_, query) = unsafe { LazyQuery::all("a", Save::none()).to_query() };
+        assert_eq!(query.exit_at_section_end, None);
+
+        let (_, query) = unsafe { LazyQuery::first("a", Save::all()).to_query() };
+        assert_eq!(query.exit_at_section_end, Some(0));
+
+        let (_, query) = unsafe { LazyQuery::first("a", Save::none()).to_query() };
+        assert_eq!(query.exit_at_section_end, Some(0));
+
+        let (_, query) = unsafe {
+            LazyQuery::all("p", Save::all())
+                .first("a", Save::all())
+                .to_query()
+        };
+        assert_eq!(query.exit_at_section_end, None);
+
+        let (_, query) = unsafe {
+            LazyQuery::first("p", Save::all())
+                .all("a", Save::all())
+                .to_query()
+        };
+        assert_eq!(query.exit_at_section_end, Some(0));
+
+        let (_, query) = unsafe {
+            LazyQuery::first("p", Save::all())
+                .first("a", Save::all())
+                .to_query()
+        };
+        assert_eq!(query.exit_at_section_end, Some(0));
+
+        let (_, query) = unsafe {
+            LazyQuery::first("p", Save::none())
+                .first("a", Save::none())
+                .to_query()
+        };
+        assert_eq!(query.exit_at_section_end, Some(1));
     }
 }
