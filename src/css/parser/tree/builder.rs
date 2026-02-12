@@ -41,9 +41,7 @@ impl Save {
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum SelectionKind {
     All,
-    // BUG:      This is shared thus would not work
-    // SOLUTION: For now the a FIRST selection as a branch of a ALL selection is illegal
-    First { locked: bool },
+    First,
 }
 
 #[derive(Debug, Clone)]
@@ -87,7 +85,7 @@ impl<'query> QueryBuilder<'query> {
         self.selection.push(Selection::new(
             query,
             save,
-            SelectionKind::First { locked: false },
+            SelectionKind::First,
             range,
             Some(parent_index),
         ));

@@ -112,7 +112,7 @@ impl<'query> Selection<'query> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Query<'query> {
     pub(crate) states: Box<[State<'query>]>,
     pub(crate) queries: Box<[Selection<'query>]>,
@@ -126,7 +126,7 @@ impl<'query> Query<'query> {
         let queries = vec![Selection::new(
             query,
             save,
-            SelectionKind::First { locked: false },
+            SelectionKind::First,
             0..states.len(),
             None,
         )];
@@ -263,7 +263,7 @@ mod tests {
                 Selection {
                     source: "span",
                     save: Save::all(),
-                    kind: SelectionKind::First { locked: false },
+                    kind: SelectionKind::First,
                     parent: None,
                     range: 0..1,
                     next_sibling: None,
@@ -334,7 +334,7 @@ mod tests {
                 Selection {
                     source: "div > span",
                     save: Save::all(),
-                    kind: SelectionKind::First { locked: false },
+                    kind: SelectionKind::First,
                     parent: None,
                     range: 0..2,
                     next_sibling: None,

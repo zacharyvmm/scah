@@ -1,32 +1,22 @@
 use crate::save::PySave;
-use ::scah::{QueryBuilder, SelectionKind, SelectionPart};
+use ::scah::lazy::{LazyQuery, LazyQueryBuilder};
+use ::scah::{QueryBuilder, Save, SelectionKind};
 use pyo3::prelude::*;
+use scah::Query;
 
 #[pyclass]
-#[derive(Clone)]
 pub struct PyQueryBuilder {
-    pub inner: QueryBuilder<'static, String>,
+    builder: LazyQueryBuilder<String>,
 }
 
 #[pymethods]
 impl PyQueryBuilder {
     fn all(mut slf: PyRefMut<'_, Self>, selector: String, save: PySave) -> PyRefMut<'_, Self> {
-        let part = SelectionPart::new(selector, SelectionKind::All(save.save));
-        let len = slf.inner.list.len();
-        let mut p = part;
-        p.parent = Some(len - 1);
-        slf.inner.list.push(p);
-
+        slf.builder.all_mut(selector, save.save);
         slf
     }
-
     fn first(mut slf: PyRefMut<'_, Self>, selector: String, save: PySave) -> PyRefMut<'_, Self> {
-        let part = SelectionPart::new(selector, SelectionKind::First(save.save));
-        let len = slf.inner.list.len();
-        let mut p = part;
-        p.parent = Some(len - 1);
-        slf.inner.list.push(p);
-
+        slf.builder.first_mut(selector, save.save);
         slf
     }
 
@@ -36,30 +26,20 @@ impl PyQueryBuilder {
     ) -> PyResult<PyRefMut<'a, Self>> {
         let factory = PyQueryFactory {};
         let result = callback.call1((factory,))?;
-        let builders: Vec<PyQueryBuilder> = result.extract()?;
+        let builders: Vec<PyRef<PyQueryBuilder>> = result.extract()?;
+        let children = builders.iter().map(|b| b.builder.clone());
 
-        let parent_index = slf.inner.list.len() - 1;
-        let mut offset = 0;
-
-        for builder in builders {
-            for (_i, mut part) in builder.inner.list.into_iter().enumerate() {
-                part.parent = match part.parent {
-                    None => {
-                        offset += 1;
-                        Some(parent_index)
-                    }
-                    Some(p) => Some(p + slf.inner.list.len() + offset),
-                };
-                slf.inner.list.push(part);
-            }
+        let current_index = slf.builder.len() - 1;
+        for child in children {
+            slf.builder.append(current_index, child);
         }
+
         Ok(slf)
     }
 
     fn build(&self) -> PyQuery {
-        PyQuery {
-            builder: self.inner.list.clone(),
-        }
+        let (tape, query) = unsafe { self.builder.clone().to_query() };
+        PyQuery { tape, query }
     }
 }
 
@@ -71,16 +51,13 @@ pub struct PyQueryFactory {}
 impl PyQueryFactory {
     fn all(&self, selector: String, save: PySave) -> PyQueryBuilder {
         PyQueryBuilder {
-            inner: QueryBuilder::new(SelectionPart::new(selector, SelectionKind::All(save.save))),
+            builder: LazyQuery::all(selector, save.save),
         }
     }
 
     fn first(&self, selector: String, save: PySave) -> PyQueryBuilder {
         PyQueryBuilder {
-            inner: QueryBuilder::new(SelectionPart::new(
-                selector,
-                SelectionKind::First(save.save),
-            )),
+            builder: LazyQuery::first(selector, save.save),
         }
     }
 }
@@ -88,7 +65,8 @@ impl PyQueryFactory {
 #[pyclass]
 #[derive(Clone)]
 pub struct PyQuery {
-    pub builder: Vec<SelectionPart<String>>,
+    tape: String,
+    pub(super) query: Query<'static>,
 }
 
 #[pyclass(name = "Query")]
@@ -99,17 +77,14 @@ impl PyQueryStatic {
     #[staticmethod]
     pub fn all(selector: String, save: PySave) -> PyQueryBuilder {
         PyQueryBuilder {
-            inner: QueryBuilder::new(SelectionPart::new(selector, SelectionKind::All(save.save))),
+            builder: LazyQuery::all(selector, save.save),
         }
     }
 
     #[staticmethod]
     pub fn first(selector: String, save: PySave) -> PyQueryBuilder {
         PyQueryBuilder {
-            inner: QueryBuilder::new(SelectionPart::new(
-                selector,
-                SelectionKind::First(save.save),
-            )),
+            builder: LazyQuery::first(selector, save.save),
         }
     }
 }

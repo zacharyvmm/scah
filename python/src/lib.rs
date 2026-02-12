@@ -1,4 +1,4 @@
-use ::scah::{ChildIndex, FsmManager, QueryBuilder, Reader, SelectionPart, Store, XHtmlParser};
+use ::scah::{ChildIndex, FsmManager, Query, QueryBuilder, Reader, Store, XHtmlParser};
 use pyo3::buffer::PyBuffer;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyMemoryView};
@@ -49,36 +49,12 @@ fn parse<'py>(
         ));
     }
 
-    let mut built_queries = Vec::with_capacity(py_queries.len());
+    let queries = py_queries
+        .iter()
+        .map(|q| q.query.clone())
+        .collect::<Box<[Query]>>();
 
-    // We need to keep the Queries alive, which means the Strings inside them must be alive.
-    // The `py_queries` vector owns the `PyQuery` objects (clones).
-
-    // We iterate through py_queries and build Rust Query objects borrowing from them.
-    for py_query in &py_queries {
-        if py_query.builder.is_empty() {
-            continue;
-        }
-
-        // Convert Vec<SelectionPart<String>> to Vec<SelectionPart<&str>>
-        let parts_ref: Vec<SelectionPart<&str>> = py_query
-            .builder
-            .iter()
-            .map(|part| SelectionPart {
-                source: part.source.as_str(),
-                kind: part.kind,
-                parent: part.parent,
-                children: part.children.clone(),
-            })
-            .collect();
-
-        // Reconstruct QueryBuilder for &str
-        let builder = QueryBuilder::from_list(parts_ref);
-
-        built_queries.push(builder.build());
-    }
-
-    let selectors = FsmManager::new(&built_queries);
+    let selectors = FsmManager::new(&queries);
     let mut parser = XHtmlParser::with_capacity(selectors, html_bytes.len());
 
     let mut reader = Reader::from_bytes(html_bytes);
