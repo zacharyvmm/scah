@@ -69,6 +69,13 @@ pub struct PyQuery {
     pub(super) query: Query<'static>,
 }
 
+#[pymethods]
+impl PyQuery {
+    fn __repr__(&self) -> String {
+        format!("PyQuery(tape={:?}, query={:?})", self.tape, self.query)
+    }
+}
+
 #[pyclass(name = "Query")]
 pub struct PyQueryStatic;
 

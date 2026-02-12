@@ -49,6 +49,16 @@ fn slice_buffer<'py>(
         .map_err(|_| PyTypeError::new_err("Result of slice was not a memoryview"))
 }
 
+fn get_string_from_buffer(
+    py: Python<'_>,
+    base: &Py<PyMemoryView>,
+    range: &Range<usize>,
+) -> PyResult<String> {
+    let mv = slice_buffer(py, base, range)?;
+    let pystr = PyString::from_encoded_object(&mv, Some(&c"utf-8"), None)?;
+    Ok(pystr.to_string_lossy().into_owned())
+}
+
 #[pymethods]
 impl PyAttribute {
     #[getter]
@@ -63,6 +73,18 @@ impl PyAttribute {
         } else {
             Err(PyTypeError::new_err("`value` does not exist"))
         }
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Python::with_gil(|py| {
+            let key = get_string_from_buffer(py, &self.base, &self.key)?;
+            let value = if let Some(range) = &self.value {
+                format!("{:?}", get_string_from_buffer(py, &self.base, range)?)
+            } else {
+                "None".to_string()
+            };
+            Ok(format!("Attribute(key={:?}, value={})", key, value))
+        })
     }
 }
 
@@ -113,6 +135,26 @@ impl PyElement {
             Err(PyTypeError::new_err("`text_content` does not exist"))
         }
     }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Python::with_gil(|py| {
+            let name = get_string_from_buffer(py, &self.base, &self.name)?;
+            let id = if let Some(range) = &self.id {
+                format!("{:?}", get_string_from_buffer(py, &self.base, range)?)
+            } else {
+                "None".to_string()
+            };
+            let class = if let Some(range) = &self.class {
+                format!("{:?}", get_string_from_buffer(py, &self.base, range)?)
+            } else {
+                "None".to_string()
+            };
+            Ok(format!(
+                "Element(name={:?}, id={}, class={})",
+                name, id, class
+            ))
+        })
+    }
 }
 
 #[pyclass(name = "Store")]
@@ -158,5 +200,16 @@ impl PyStore {
         }
 
         Ok(dict)
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Python::with_gil(|py| {
+            let elements_len = self.elements.bind(py).len();
+            let text_content_len = self.text_content.inner.len();
+            Ok(format!(
+                "Store(elements_count={}, text_content_length={})",
+                elements_len, text_content_len
+            ))
+        })
     }
 }
