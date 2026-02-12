@@ -164,8 +164,9 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Attribute;
     use crate::css::{FsmManager, Query, Save};
-    use crate::store::ChildIndex;
+    use crate::store::{Child, ChildIndex};
     use crate::store::{Element, Store};
     use crate::utils::Reader;
     use pretty_assertions::assert_eq;
@@ -587,5 +588,75 @@ mod tests {
         assert_eq!(anchor.attributes[0].value, Some("/post/0"));
         assert_eq!(anchor.inner_html, Some("<b>Post</b> &lt;0&gt;"));
         assert_eq!(store.text_content(anchor), Some("Post &lt;0&gt;"));
+    }
+
+    const PYTHON_TEST_HTML: &str = r#"
+    <span class="hello" id="world" hello="world">
+        Hello <a href="https://www.example.com">World</a>
+    </span>
+    <p class="example_class" id="example_id" hello="example">
+        My <a href="https://www.example.com">Example</a> or <a href="https://www.notexample.com">Not Example</a>
+    </p>
+    "#;
+
+    #[test]
+    fn test_python_test_html() {
+        let mut reader = Reader::new(PYTHON_TEST_HTML);
+
+        let queries = &[Query::all("#world", Save::all())
+            .all("a", Save::all())
+            .build()];
+        let manager = FsmManager::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+
+        assert_eq!(
+            store.elements,
+            vec![
+                Element {
+                    name: "root",
+                    class: None,
+                    id: None,
+                    attributes: vec![],
+                    inner_html: None,
+                    text_content: None,
+                    children: vec![Child {
+                        query: "a",
+                        index: ChildIndex::One(1)
+                    }],
+                },
+                Element {
+                    name: "span",
+                    class: Some("hello"),
+                    id: Some("world"),
+                    attributes: vec![Attribute {
+                        key: "hello",
+                        value: Some("world")
+                    }],
+                    inner_html: Some(r#"Hello <a href="https://www.example.com">World</a>"#),
+                    text_content: store.elements[1].text_content.clone(),
+                    children: vec![Child {
+                        query: "a",
+                        index: ChildIndex::One(2)
+                    }],
+                },
+                Element {
+                    name: "a",
+                    class: None,
+                    id: None,
+                    attributes: vec![Attribute {
+                        key: "href",
+                        value: Some("https://www.example.com")
+                    }],
+                    inner_html: Some("World"),
+                    text_content: store.elements[2].text_content.clone(),
+                    children: vec![],
+                },
+            ]
+        );
     }
 }
