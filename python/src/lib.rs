@@ -8,10 +8,11 @@ mod query;
 mod save;
 mod view;
 
+use crate::element::PyMemoryViewExt;
 use crate::query::{PyQuery, PyQueryBuilder, PyQueryFactory, PyQueryStatic};
 use crate::save::PySave;
 use element::{PyAttribute, PyElement, PyStore};
-use view::{SharedString, get_memoryview_from_u8};
+use view::{string_buffer_to_memory_view, get_memoryview_from_u8};
 
 use std::ops::Range;
 
@@ -63,34 +64,33 @@ fn parse<'py>(
     let store = parser.matches();
 
     #[inline]
-    fn substring_range(parent: &[u8], substring: &str) -> Range<usize> {
+    fn substring_range<'py>(
+        base: &Bound<'py, PyMemoryView>,
+        parent: &[u8],
+        substring: &str,
+    ) -> Py<PyMemoryView> {
         let parent_ptr = parent.as_ptr();
         let sub_ptr = substring.as_ptr();
 
         let start = unsafe { sub_ptr.offset_from(parent_ptr) as usize };
         let end = start + substring.len();
 
-        start..end
+        base.slice_range(start..end)
+            .expect("Their shouldn't be a conversion error")
+            .unbind()
     }
 
     #[inline]
-    fn optional_substring_range(parent: &[u8], substring: Option<&str>) -> Option<Range<usize>> {
-        if let Some(substring) = substring {
-            Some(substring_range(parent, substring))
-        } else {
-            None
-        }
+    fn optional_substring_range<'py>(
+        base: &Bound<'py, PyMemoryView>,
+        parent: &[u8],
+        substring: Option<&str>,
+    ) -> Option<Py<PyMemoryView>> {
+        substring.and_then(|substring| Some(substring_range(base, parent, substring)))
     }
 
     let data = store.text_content.data();
-    println!("TEXTCONTENT: {:#?}", str::from_utf8(&data).unwrap());
-    let text_content_rc = SharedString {
-        inner: data.into_boxed_slice(),
-    };
-    let text_content_view = text_content_rc.as_view(py)?;
-    // let data = store.text_content.data();
-    // let text_content_view = get_memoryview_from_u8(py, &data)?;
-    let text_content_view_ref = text_content_view.as_unbound();
+    let text_content_view = get_memoryview_from_u8(py, &data)?;
 
     let mut list = Vec::with_capacity(store.elements.len());
 
@@ -99,21 +99,24 @@ fn parse<'py>(
 
     for element in store.elements {
         let attributes_iterator = element.attributes.iter().map(|a| PyAttribute {
-            base: base_ref.clone_ref(py),
-            key: substring_range(html_bytes, a.key),
-            value: optional_substring_range(html_bytes, a.value),
+            key: substring_range(&base, html_bytes, a.key),
+            value: optional_substring_range(&base, html_bytes, a.value),
         });
         let attributes = PyList::new(py, attributes_iterator)?;
 
         list.push(PyElement {
-            base: base_ref.clone_ref(py),
-            text_content_tape: text_content_view_ref.clone_ref(py),
-
-            name: substring_range(html_bytes, element.name),
-            id: optional_substring_range(html_bytes, element.id),
-            class: optional_substring_range(html_bytes, element.class),
-            inner_html: optional_substring_range(html_bytes, element.inner_html),
-            text_content: element.text_content,
+            name: substring_range(&base, html_bytes, element.name),
+            id: optional_substring_range(&base, html_bytes, element.id),
+            class: optional_substring_range(&base, html_bytes, element.class),
+            inner_html: optional_substring_range(&base, html_bytes, element.inner_html),
+            text_content: element.text_content.and_then(|tc| {
+                Some(
+                text_content_view
+                        .slice_range(tc)
+                        .expect("Their shouldn't be a conversion error")
+                        .unbind(),
+                )
+            }),
 
             attributes: attributes.unbind(),
 
@@ -122,7 +125,7 @@ fn parse<'py>(
                 .into_iter()
                 .map(|c| {
                     (
-                        substring_range(html_bytes, c.query),
+                        substring_range(&base, html_bytes, c.query),
                         match c.index {
                             ChildIndex::One(index) => vec![index],
                             ChildIndex::Many(vec) => vec,
@@ -135,7 +138,7 @@ fn parse<'py>(
 
     Ok(PyStore {
         elements: PyList::new(py, list)?.unbind(),
-        text_content: text_content_rc,
+        text_content: text_content_view.unbind(),
     })
 }
 
