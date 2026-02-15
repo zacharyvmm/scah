@@ -7,7 +7,7 @@ use std::ops::{Index, Range};
 type StrRange = Range<usize>;
 type OptionalStrRange = Option<StrRange>;
 
-#[pyclass(name = "Element")]
+#[pyclass(name = "Attribute")]
 pub struct PyAttribute {
     pub(crate) base: Py<PyMemoryView>,
     pub(crate) key: StrRange,
