@@ -2,20 +2,20 @@
 [package]
 authors = ["Zachary McSween Manickchand <contact@zacharymm.com>"]
 edition = "2024"
-name = "scah-nodejs"
+name    = "scah-nodejs"
 version = "0.0.1"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-scah = { path = ".." }
-napi = "3.0.0"
+napi        = "3.0.0"
 napi-derive = "3.0.0"
+scah        = { path = ".." }
 
 [build-dependencies]
 napi-build = "2"
 
 [profile.release]
-lto = true
+lto   = true
 strip = "symbols"
