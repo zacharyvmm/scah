@@ -12,7 +12,7 @@ use crate::element::PyMemoryViewExt;
 use crate::query::{PyQuery, PyQueryBuilder, PyQueryFactory, PyQueryStatic};
 use crate::save::PySave;
 use element::{PyAttribute, PyElement, PyStore};
-use view::{string_buffer_to_memory_view, get_memoryview_from_u8};
+use view::{get_memoryview_from_u8, string_buffer_to_memory_view};
 
 use std::ops::Range;
 
@@ -111,7 +111,7 @@ fn parse<'py>(
             inner_html: optional_substring_range(&base, html_bytes, element.inner_html),
             text_content: element.text_content.and_then(|tc| {
                 Some(
-                text_content_view
+                    text_content_view
                         .slice_range(tc)
                         .expect("Their shouldn't be a conversion error")
                         .unbind(),

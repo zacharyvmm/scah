@@ -9,7 +9,9 @@ pub fn string_buffer_to_memory_view(
 ) -> PyResult<Bound<'_, PyMemoryView>> {
     let boxed_string = Box::new(input);
     let ptr = boxed_string.as_ptr() as *mut i8;
-    let len = boxed_string.len() as isize;
+
+    //let len = boxed_string.len() as isize;
+    let len = boxed_string.capacity() as isize;
 
     let name = unsafe { CStr::from_bytes_with_nul_unchecked(b"string_buffer\0") };
     let capsule = PyCapsule::new(py, boxed_string, Some(name.to_owned()))?;
@@ -17,7 +19,6 @@ pub fn string_buffer_to_memory_view(
     let res = unsafe { Bound::from_owned_ptr_or_err(py, object)?.cast_into::<PyMemoryView>() };
     res.map_err(|e| e.into())
 }
-
 
 pub fn get_memoryview_from_u8<'a>(
     py: Python<'a>,

@@ -606,6 +606,13 @@ mod tests {
         let queries = &[Query::all("#world", Save::all())
             .all("a", Save::all())
             .build()];
+
+        // assert_eq!(queries, &[Query {
+        //     queries: vec![].into_boxed_slice(),
+        //     states: vec![].into_boxed_slice(),
+        //     exit_at_section_end: None,
+        // }]);
+
         let manager = FsmManager::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
@@ -625,8 +632,8 @@ mod tests {
                     inner_html: None,
                     text_content: None,
                     children: vec![Child {
-                        query: "a",
-                        index: ChildIndex::One(1)
+                        query: "#world",
+                        index: ChildIndex::Many(vec![1])
                     }],
                 },
                 Element {
@@ -637,11 +644,15 @@ mod tests {
                         key: "hello",
                         value: Some("world")
                     }],
-                    inner_html: Some(r#"Hello <a href="https://www.example.com">World</a>"#),
+                    inner_html: Some(
+                        r#"
+        Hello <a href="https://www.example.com">World</a>
+    "#
+                    ),
                     text_content: store.elements[1].text_content.clone(),
                     children: vec![Child {
                         query: "a",
-                        index: ChildIndex::One(2)
+                        index: ChildIndex::Many(vec![2])
                     }],
                 },
                 Element {

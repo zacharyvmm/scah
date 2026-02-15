@@ -66,6 +66,8 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             let mut has_sibling = fsm.get_position().next_sibling(tree);
             while let Some(sibling) = has_sibling {
                 list.push(ScopedFsm::new(depth, fsm.get_parent(), *fsm.get_position()));
+                dbg_print!("Created Scoped FSM {:#?}", list.last().unwrap());
+
                 fsm.set_position(sibling);
                 has_sibling = sibling.next_sibling(tree);
             }
@@ -202,17 +204,19 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             let is_all = matches!(section_kind, crate::css::SelectionKind::All);
             let is_root = fsm.position.is_root();
 
-            if is_descendant_combinator && !last_save_point {
+            if is_descendant_combinator && (!last_save_point || is_all) {
                 // This should only be done if the task is not done (meaning it will move forward)
                 self.scoped_fsms.push(ScopedFsm::new(
                     document_position.element_depth,
                     fsm.parent,
                     fsm.position,
                 ));
-            } else if is_all && !is_root {
-                let scope = fsm.depths.last().copied().unwrap_or(0);
-                self.scoped_fsms
-                    .push(ScopedFsm::new(scope, fsm.parent, fsm.position));
+                dbg_print!("Created Scoped FSM {:#?}", self.scoped_fsms.last().unwrap());
+                // } else if is_all && !is_root {
+                //     let scope = fsm.depths.last().copied().unwrap_or(document_position.element_depth);
+                //     self.scoped_fsms
+                //         .push(ScopedFsm::new(scope, fsm.parent, fsm.position));
+                //     dbg_print!("Created Scoped FSM (is_all && !is_root) {:#?}", self.scoped_fsms.last().unwrap());
             }
 
             // let parent: *mut E = fsm.parent;
@@ -240,6 +244,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
                     document_position.element_depth,
                     fsm,
                 );
+                dbg_print!("New FSM {:#?}", fsm);
                 // fsm.set_parent(new_parent);
             }
             dbg_print!("Scoped FSM's: {:#?}", self.scoped_fsms)
@@ -263,6 +268,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         document_position: &DocumentPosition,
         reader: &Reader<'html>,
     ) -> bool {
+        //println!("&BACK: {:#?}", self);
         for i in (0..self.on_close_tag_events.len()).rev() {
             let content_trigger = &self.on_close_tag_events[i];
             if content_trigger.on_depth == document_position.element_depth {
@@ -304,10 +310,11 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
         let mut remove_last_x_fsms = 0;
         for scoped_fsm in self.scoped_fsms.iter().rev() {
-            if scoped_fsm.scope_depth <= document_position.element_depth {
-                self.fsm.parent = scoped_fsm.parent;
+            if scoped_fsm.scope_depth < document_position.element_depth - 1 {
                 break;
             }
+            self.fsm.parent = scoped_fsm.parent;
+            dbg_print!("Removed Scoped FSM ({:#?})", scoped_fsm);
             remove_last_x_fsms += 1;
         }
         while remove_last_x_fsms > 0 {
@@ -341,6 +348,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
                 return true;
             }
         }
+        dbg_print!("FSM After back: {:#?}", fsm);
 
         return false;
     }
@@ -449,7 +457,7 @@ mod tests {
                     },
                 },
                 ScopedFsm {
-                    scope_depth: 0,
+                    scope_depth: 1,
                     parent: NULL_PARENT,
                     position: Position {
                         selection: 0,
