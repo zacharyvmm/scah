@@ -3,21 +3,25 @@ use pyo3::types::{PyByteArray, PyBytes, PyCapsule, PyMemoryView};
 use pyo3::{CastIntoError, prelude::*};
 use std::ffi::CStr;
 
-pub fn string_buffer_to_memory_view(
-    py: Python<'_>,
-    input: Vec<u8>,
-) -> PyResult<Bound<'_, PyMemoryView>> {
-    let boxed_string = Box::new(input);
-    let ptr = boxed_string.as_ptr() as *mut i8;
+#[pyclass]
+pub(crate) struct SharedString {
+    pub(crate) inner: Box<[u8]>,
+}
 
-    //let len = boxed_string.len() as isize;
-    let len = boxed_string.capacity() as isize;
+#[pymethods]
+impl SharedString {
+    pub(crate) fn as_view<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
+        let ptr = self.inner.as_ptr() as *mut i8;
+        let len = self.inner.len() as isize;
 
-    let name = unsafe { CStr::from_bytes_with_nul_unchecked(b"string_buffer\0") };
-    let capsule = PyCapsule::new(py, boxed_string, Some(name.to_owned()))?;
-    let object = unsafe { PyMemoryView_FromMemory(ptr, len, PyBUF_READ) };
-    let res = unsafe { Bound::from_owned_ptr_or_err(py, object)?.cast_into::<PyMemoryView>() };
-    res.map_err(|e| e.into())
+        let object = unsafe { PyMemoryView_FromMemory(ptr, len, PyBUF_READ) };
+
+        let res = unsafe { Bound::from_owned_ptr_or_err(py, object)?.cast_into::<PyMemoryView>() };
+        if res.is_err() {
+            return Err(PyErr::fetch(py));
+        }
+        Ok(res.unwrap())
+    }
 }
 
 pub fn get_memoryview_from_u8<'a>(
