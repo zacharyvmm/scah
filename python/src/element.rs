@@ -1,10 +1,8 @@
+use super::SharedString;
 use pyo3::exceptions::PyTypeError;
-use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyMemoryView, PySlice, PyString};
-
-use std::ops::Range;
-
-use super::view::SharedString;
+use pyo3::{Bound, BoundObject, prelude::*};
+use std::ops::{Index, Range};
 
 type StrRange = Range<usize>;
 type OptionalStrRange = Option<StrRange>;
@@ -18,10 +16,6 @@ pub struct PyAttribute {
 
 #[pyclass(name = "Element")]
 pub struct PyElement {
-    // TODO: I might make this part of Store
-    // add generate the PyElement in a iterator
-    // Probably more memory efficient too because
-    // the gc would have to delete the unused element classes
     pub(crate) base: Py<PyMemoryView>,
     pub(crate) text_content_tape: Py<PyMemoryView>,
 
@@ -36,33 +30,54 @@ pub struct PyElement {
     pub(crate) children: Vec<(StrRange, Vec<usize>)>,
 }
 
-fn slice_buffer<'py>(
-    py: Python<'py>,
-    view: &Py<PyMemoryView>,
-    range: &Range<usize>,
-) -> PyResult<Bound<'py, PyMemoryView>> {
-    let slice = PySlice::new(py, range.start as isize, range.end as isize, 1);
+pub trait PyMemoryViewExt<'py> {
+    fn slice_range(&self, range: std::ops::Range<usize>) -> PyResult<Bound<'py, PyMemoryView>>;
+}
 
-    let sliced_view = view.bind(py).get_item(slice)?;
-    sliced_view
-        .downcast_into::<PyMemoryView>()
-        .map_err(|_| PyTypeError::new_err("Result of slice was not a memoryview"))
+impl<'py> PyMemoryViewExt<'py> for Bound<'py, PyMemoryView> {
+    fn slice_range(&self, range: std::ops::Range<usize>) -> PyResult<Bound<'py, PyMemoryView>> {
+        let slice = PySlice::new(self.py(), range.start as isize, range.end as isize, 1);
+        let sliced_view = self.get_item(slice)?;
+        sliced_view
+            .downcast_into::<PyMemoryView>()
+            .map_err(|e| e.into())
+    }
+}
+
+fn get_string_from_buffer(
+    py: Python<'_>,
+    base: &Py<PyMemoryView>,
+    range: &Range<usize>,
+) -> PyResult<String> {
+    let mv = base.bind(py).slice_range(range.clone())?;
+    let pystr = PyString::from_encoded_object(&mv, Some(&c"utf-8"), None)?;
+    Ok(pystr.to_string_lossy().into_owned())
 }
 
 #[pymethods]
 impl PyAttribute {
     #[getter]
     fn key<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
-        slice_buffer(py, &self.base, &self.key)
+        self.base.bind(py).slice_range(self.key.clone())
     }
 
     #[getter]
     fn value<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
-        if let Some(range) = &self.value {
-            slice_buffer(py, &self.base, range)
-        } else {
-            Err(PyTypeError::new_err("`value` does not exist"))
+        match &self.value {
+            Some(range) => self.base.bind(py).slice_range(range.clone()),
+            None => Err(PyTypeError::new_err("`value` does not exist")),
         }
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Python::with_gil(|py| {
+            let key = get_string_from_buffer(py, &self.base, &self.key)?;
+            let value = match &self.value {
+                Some(range) => format!("{:?}", get_string_from_buffer(py, &self.base, range)?),
+                None => "None".to_string(),
+            };
+            Ok(format!("Attribute(key={:?}, value={})", key, value))
+        })
     }
 }
 
@@ -70,24 +85,22 @@ impl PyAttribute {
 impl PyElement {
     #[getter]
     fn name<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
-        slice_buffer(py, &self.base, &self.name)
+        self.base.bind(py).slice_range(self.name.clone())
     }
 
     #[getter]
-    fn class<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
-        if let Some(range) = &self.class {
-            slice_buffer(py, &self.base, range)
-        } else {
-            Err(PyTypeError::new_err("`class` does not exist"))
+    fn className<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
+        match &self.class {
+            Some(range) => self.base.bind(py).slice_range(range.clone()),
+            None => Err(PyTypeError::new_err("`className` does not exist")),
         }
     }
 
     #[getter]
     fn id<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
-        if let Some(range) = &self.id {
-            slice_buffer(py, &self.base, range)
-        } else {
-            Err(PyTypeError::new_err("`id` does not exist"))
+        match &self.id {
+            Some(range) => self.base.bind(py).slice_range(range.clone()),
+            None => Err(PyTypeError::new_err("`id` does not exist")),
         }
     }
 
@@ -98,20 +111,36 @@ impl PyElement {
 
     #[getter]
     fn inner_html<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
-        if let Some(range) = &self.inner_html {
-            slice_buffer(py, &self.base, range)
-        } else {
-            Err(PyTypeError::new_err("`inner_html` does not exist"))
+        match &self.inner_html {
+            Some(range) => self.base.bind(py).slice_range(range.clone()),
+            None => Err(PyTypeError::new_err("`id` does not exist")),
         }
     }
 
     #[getter]
     fn text_content<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
-        if let Some(range) = &self.text_content {
-            slice_buffer(py, &self.text_content_tape, range)
-        } else {
-            Err(PyTypeError::new_err("`text_content` does not exist"))
+        match &self.text_content {
+            Some(range) => self.text_content_tape.bind(py).slice_range(range.clone()),
+            None => Err(PyTypeError::new_err("`id` does not exist")),
         }
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Python::with_gil(|py| {
+            let name = get_string_from_buffer(py, &self.base, &self.name)?;
+            let id = match &self.id {
+                Some(range) => format!("{:?}", get_string_from_buffer(py, &self.base, range)?),
+                None => "None".to_string(),
+            };
+            let class = match &self.class {
+                Some(range) => format!("{:?}", get_string_from_buffer(py, &self.base, range)?),
+                None => "None".to_string(),
+            };
+            Ok(format!(
+                "Element(name={:?}, id={}, class={})",
+                name, id, class
+            ))
+        })
     }
 }
 
@@ -124,8 +153,8 @@ pub(crate) struct PyStore {
 #[pymethods]
 impl PyStore {
     #[getter]
-    fn elements<'py>(&self, py: Python<'py>) -> PyResult<Py<PyList>> {
-        Ok(self.elements.clone_ref(py))
+    fn elements<'py>(&self, py: Python<'py>) -> Py<PyList> {
+        self.elements.clone_ref(py)
     }
 
     #[getter]
@@ -140,7 +169,7 @@ impl PyStore {
     ) -> PyResult<Bound<'py, PyDict>> {
         let mut dict = PyDict::new(py);
         for (query, children) in &element.children {
-            let mv = slice_buffer(py, &element.base, &query)?;
+            let mv = element.base.bind(py).slice_range(query.clone())?;
             let string = PyString::from_encoded_object(&mv, Some(&c"utf-8"), None)?;
             if children.len() > 1 {
                 let mut list = PyList::empty(py);
@@ -158,5 +187,16 @@ impl PyStore {
         }
 
         Ok(dict)
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Python::with_gil(|py| {
+            let elements_len = self.elements.bind(py).len();
+            let text_content_len = self.text_content.inner.as_ref().len();
+            Ok(format!(
+                "Store(elements_count={}, text_content_length={})",
+                elements_len, text_content_len
+            ))
+        })
     }
 }

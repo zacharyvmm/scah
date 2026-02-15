@@ -1,4 +1,5 @@
 mod builder;
+pub mod lazy;
 mod query;
 mod state;
 
