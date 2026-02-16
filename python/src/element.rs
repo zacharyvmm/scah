@@ -148,6 +148,7 @@ impl PyElement {
 pub(crate) struct PyStore {
     pub(crate) elements: Py<PyList>,
     pub(crate) text_content: SharedString,
+    pub(crate) query_tape: std::sync::Arc<Vec<u8>>,
 }
 
 #[pymethods]
@@ -169,8 +170,9 @@ impl PyStore {
     ) -> PyResult<Bound<'py, PyDict>> {
         let mut dict = PyDict::new(py);
         for (query, children) in &element.children {
-            let mv = element.base.bind(py).slice_range(query.clone())?;
-            let string = PyString::from_encoded_object(&mv, Some(&c"utf-8"), None)?;
+            println!("Query: {:?}", query);
+            let mv = &self.query_tape[query.clone()];
+            let string = PyString::from_bytes(py, mv)?;
             if children.len() > 1 {
                 let mut list = PyList::empty(py);
                 for i in children {

@@ -1,5 +1,4 @@
 use crate::{Query, QueryBuilder, Selection, css::parser::tree::state::State};
-use std::pin::Pin;
 
 use super::builder::{Save, SelectionKind};
 
@@ -151,10 +150,10 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
         self.queries.len()
     }
 
-    pub unsafe fn to_query<'a>(self) -> (String, Query<'a>) {
+    pub unsafe fn to_query<'a>(self) -> (std::sync::Arc<Vec<u8>>, Query<'a>) {
         // I need to do this to unsafely get a slice from the String
         let string_tape_size = self.queries.iter().map(|q| q.source.as_ref().len()).sum();
-        let mut string_tape = String::with_capacity(string_tape_size);
+        let mut string_tape = Box::new(Vec::with_capacity(string_tape_size));
 
         let mut queries = Vec::with_capacity(self.queries.len());
         let mut states = Vec::with_capacity(self.queries.len() * 2);
@@ -162,7 +161,7 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
         for query in self.queries {
             let source = {
                 let start = string_tape.len();
-                string_tape.push_str(query.source.as_ref());
+                string_tape.extend_from_slice(query.source.as_ref().as_bytes());
                 let end = string_tape.len();
 
                 unsafe {
@@ -196,8 +195,7 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
         }
 
         return (
-            string_tape,
-            // Just to reuse logic
+            unsafe { std::sync::Arc::from_raw(Box::into_raw(string_tape)) },
             QueryBuilder {
                 states,
                 selection: queries,
@@ -365,8 +363,13 @@ mod tests {
 
         let (tape, query) = unsafe { q.to_query() };
 
-        assert_eq!(tape, String::from("divaa"));
-        //std::mem::drop(tape);
+        assert_eq!(*tape, b"divaa");
+        // std::mem::drop(tape);
+
+        let range = tape.as_ptr_range();
+        assert!(range.contains(&query.queries[0].source.as_ptr()));
+        assert!(range.contains(&query.queries[1].source.as_ptr()));
+        assert!(range.contains(&query.queries[2].source.as_ptr()));
 
         assert_eq!(
             query,
