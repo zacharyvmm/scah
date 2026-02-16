@@ -576,4 +576,10 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
-module.exports.plus100 = nativeBinding.plus100
+module.exports.Element = nativeBinding.Element
+module.exports.JSElement = nativeBinding.JSElement
+module.exports.Query = nativeBinding.Query
+module.exports.JSQuery = nativeBinding.JSQuery
+module.exports.Store = nativeBinding.Store
+module.exports.JSStore = nativeBinding.JSStore
+module.exports.parse = nativeBinding.parse
