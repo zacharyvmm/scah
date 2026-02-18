@@ -117,6 +117,7 @@ pub struct Query<'query> {
     pub(crate) states: Box<[State<'query>]>,
     pub(crate) queries: Box<[Selection<'query>]>,
 
+    #[deprecated(note = "Should be `exit at state end`")]
     pub(crate) exit_at_section_end: Option<usize>,
 }
 

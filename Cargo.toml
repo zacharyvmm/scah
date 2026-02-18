@@ -22,6 +22,7 @@ criterion = { version = "0.8.1", features = ["html_reports"] }
 lexbor_css = { git = "https://github.com/zacharyvmm/lexbor-rust-css-selection.git" }
 scraper = "0.25.0"
 tl = "0.7.8"
+# tl = { version = "0.7.8", features = ["simd"] }
 lol_html = "2.7.1"
 
 pretty_assertions = "1.4.1"
