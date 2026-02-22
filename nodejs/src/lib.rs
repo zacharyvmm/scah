@@ -61,7 +61,7 @@ pub struct JSStore {
   // So the text content gets cleaned up when the store is dropped
   text_content: Buffer,
   html: Buffer,
-  query_tape: std::sync::Arc<Vec<u8>>,
+  query_tape: Buffer,
 }
 
 #[napi]
@@ -105,7 +105,18 @@ impl JSStore {
       children: e
         .children
         .iter()
-        .map(|(k, v)| (range_from_html(k.clone()), v.clone()))
+        .map(|(k, v)| {
+          (
+            {
+              let (ptr, len) = Self::get_raw_from_field(&self.query_tape, k.clone());
+              buffer_slice_from_raw(env, ptr as *mut u8, len)
+                .unwrap()
+                .into_buffer(env)
+                .unwrap()
+            },
+            v.clone(),
+          )
+        })
         .collect(),
     }
   }
@@ -139,7 +150,8 @@ pub fn is_subslice<T>(
   parent_range: &std::ops::Range<*const T>,
   subslice_range: &std::ops::Range<*const T>,
 ) -> bool {
-  parent_range.contains(&subslice_range.start) && parent_range.contains(&subslice_range.end)
+  parent_range == subslice_range
+    || (parent_range.contains(&subslice_range.start) && parent_range.contains(&subslice_range.end))
 }
 
 fn buffer_slice_from_raw<'a>(env: &Env, data_ptr: *mut u8, len: usize) -> Result<BufferSlice<'a>> {
@@ -150,7 +162,7 @@ fn buffer_slice_from_raw<'a>(env: &Env, data_ptr: *mut u8, len: usize) -> Result
   }
 }
 
-fn buffer_slice_from_str_slice<'a>(base: &'a [u8], slice: &'a str) -> Range<usize> {
+fn range_from_str_slice<'a>(base: &'a [u8], slice: &'a str) -> Range<usize> {
   if slice == "root" {
     return 0..0;
   }
@@ -208,19 +220,18 @@ fn parse<'a>(
     })
     .collect::<Vec<_>>();
 
-  let full_tape = std::sync::Arc::new(
-    queries
-      .iter()
-      .map(|q| (*q.tape).clone())
-      .collect::<Vec<_>>()
-      .concat(),
-  );
+  let full_tape = queries
+    .iter()
+    .map(|q| (*q.tape).clone())
+    .collect::<Vec<_>>()
+    .concat();
 
   let full_tape_slice = unsafe { std::slice::from_raw_parts(full_tape.as_ptr(), full_tape.len()) };
 
   let find_query = |query: &str| -> Range<usize> {
     let query_ptr = query.as_ptr();
     let query_len = query.as_bytes().len();
+    // println!("{query}, {query_ptr:?}, {query_len}");
     pointer_range
       .clone()
       .into_iter()
@@ -241,40 +252,32 @@ fn parse<'a>(
       .iter()
       .map(|a| {
         Ok((
-          buffer_slice_from_str_slice(html_bytes, a.key),
-          a.value.map(|v| buffer_slice_from_str_slice(html_bytes, v)),
+          range_from_str_slice(html_bytes, a.key),
+          a.value.map(|v| range_from_str_slice(html_bytes, v)),
         ))
       })
       .collect::<Result<Vec<(RequiredField, OptionalField)>>>()?;
 
-    // let children = element
-    //   .children
-    //   .iter()
-    //   .filter_map(|c| {
-    //     // TODO: Convert ChildIndex to Vec<usize> if needed, currently passing empty vec
-    //     if c.query.is_valid() {
-    //       return None;
-    //     }
-    //     Some((
-    //       buffer_slice_from_slice(env, full_tape_slice, find_query(c.query)).unwrap(),
-    //       vec![],
-    //     ))
-    //   })
-    //   .collect::<Vec<(BufferSlice, Vec<usize>)>>();
-    let children = vec![];
+    let children = element
+      .children
+      .iter()
+      .filter_map(|c| {
+        // TODO: Convert ChildIndex to Vec<usize> if needed, currently passing empty vec
+        Some((
+          find_query(c.query),
+          c.index.vec().into_iter().map(|i| i as i64).collect(),
+        ))
+      })
+      .collect::<Vec<(Range<usize>, Vec<i64>)>>();
 
     elements.push(TapeElement {
-      name: buffer_slice_from_str_slice(html_bytes, element.name),
-      class: element
-        .class
-        .map(|r| buffer_slice_from_str_slice(html_bytes, r)),
-      id: element
-        .id
-        .map(|r| buffer_slice_from_str_slice(html_bytes, r)),
+      name: range_from_str_slice(html_bytes, element.name),
+      class: element.class.map(|r| range_from_str_slice(html_bytes, r)),
+      id: element.id.map(|r| range_from_str_slice(html_bytes, r)),
       attributes,
       inner_html: element
         .inner_html
-        .map(|r| buffer_slice_from_str_slice(html_bytes, r)),
+        .map(|r| range_from_str_slice(html_bytes, r)),
       text_content: element.text_content,
       children,
     });
@@ -284,6 +287,6 @@ fn parse<'a>(
     elements,
     text_content: text_content.into_buffer(env).unwrap(),
     html: html.into_buffer(env).unwrap(),
-    query_tape: full_tape,
+    query_tape: full_tape.into(),
   })
 }
