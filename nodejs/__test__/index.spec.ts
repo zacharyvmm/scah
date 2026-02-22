@@ -1,8 +1,42 @@
 import { test, expect } from 'bun:test'
 
-import { plus100 } from '../index'
+import { parse, Query, Save } from '../index'
 
-test('sync function from native code', () => {
-  const fixture = 42
-  expect(plus100(fixture)).toBe(fixture + 100)
+test('Basic selection', () => {
+  const html = `
+  <div>
+    Hello World
+    <a href="https://example.com">Example Website</a>
+  </div>
+  `;
+  const query = Query.all('div', {innerHtml: true, textContent: true})
+    .all('a', {innerHtml: true, textContent: true}).build();
+  const store = parse(Buffer.from(html), [query]);
+
+  expect(store.get(0)?.children).toEqual([
+    [Buffer.from('div'), [1]],
+  ])
+
+  expect(store.get(1)).toEqual({
+    name: Buffer.from('div'),
+    class: undefined,
+    id: undefined,
+    attributes: [],
+    innerHtml: Buffer.from(`
+    Hello World
+    <a href="https://example.com">Example Website</a>
+  `),
+    textContent: Buffer.from('Hello World Example Website'),
+    children: [[Buffer.from('a'), [2]]],
+  })
+
+  expect(store.get(2)).toEqual({
+    name: Buffer.from('a'),
+    class: undefined,
+    id: undefined,
+    attributes: [[Buffer.from('href'), Buffer.from('https://example.com')]],
+    innerHtml: Buffer.from(`Example Website`),
+    textContent: Buffer.from('Example Website'),
+    children: [],
+  })
 })

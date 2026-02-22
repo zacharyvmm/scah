@@ -576,8 +576,13 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.JsQuery = nativeBinding.JsQuery
 module.exports.Query = nativeBinding.Query
-module.exports.JSQuery = nativeBinding.JSQuery
+module.exports.JsQueryStatic = nativeBinding.JsQueryStatic
+module.exports.QueryBuilder = nativeBinding.QueryBuilder
+module.exports.JsQueryBuilder = nativeBinding.JsQueryBuilder
+module.exports.QueryFactory = nativeBinding.QueryFactory
+module.exports.JsQueryFactory = nativeBinding.JsQueryFactory
 module.exports.Store = nativeBinding.Store
 module.exports.JSStore = nativeBinding.JSStore
 module.exports.parse = nativeBinding.parse

@@ -55,7 +55,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         depth: super::DepthSize,
         fsm: &mut impl Fsm<'query, 'html>,
     ) {
-        // 1) child, then 2) sibling, then 2) leaf of tree 
+        // 1) child, then 2) sibling, then 2) leaf of tree
         fsm.add_depth(depth);
         if let Some(next_state) = fsm.get_position().next_state(tree) {
             fsm.set_state(next_state);
