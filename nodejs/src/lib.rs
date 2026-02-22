@@ -6,19 +6,36 @@ use napi_derive::napi;
 
 use ::scah::lazy::{LazyQuery, LazyQueryBuilder};
 use ::scah::{FsmManager, Query, Reader, Save, XHtmlParser};
+use std::fmt::Error;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 
-#[napi(js_name = "Element")]
-pub struct JSElement<'a> {
-  name: BufferSlice<'a>,
-  class: Option<BufferSlice<'a>>,
-  id: Option<BufferSlice<'a>>,
-  attributes: Vec<(BufferSlice<'a>, Option<BufferSlice<'a>>)>,
+type RequiredField = Range<usize>;
+type OptionalField = Option<Range<usize>>;
 
-  inner_html: Option<BufferSlice<'a>>,
-  text_content: Option<BufferSlice<'a>>,
+pub struct TapeElement {
+  name: RequiredField,
+  class: OptionalField,
+  id: OptionalField,
+  attributes: Vec<(RequiredField, OptionalField)>,
 
-  children: Vec<(BufferSlice<'a>, Vec<usize>)>,
+  inner_html: OptionalField,
+  text_content: OptionalField,
+
+  children: Vec<(RequiredField, Vec<i64>)>,
+}
+
+#[napi(object, js_name = "Element")]
+pub struct JsElement {
+  pub name: Buffer,
+  pub class: Option<Buffer>,
+  pub id: Option<Buffer>,
+  pub attributes: Vec<(Buffer, Option<Buffer>)>,
+
+  pub inner_html: Option<Buffer>,
+  pub text_content: Option<Buffer>,
+
+  pub children: Vec<(Buffer, Vec<i64>)>,
 }
 
 #[napi(js_name = "Query")]
@@ -38,12 +55,68 @@ impl<'a> JSQuery {
 }
 
 #[napi(js_name = "Store")]
-pub struct JSStore<'a> {
-  elements: Vec<JSElement<'a>>,
+pub struct JSStore {
+  elements: Vec<TapeElement>,
 
   // So the text content gets cleaned up when the store is dropped
-  text_content: BufferSlice<'a>,
+  text_content: Buffer,
+  html: Buffer,
   query_tape: std::sync::Arc<Vec<u8>>,
+}
+
+#[napi]
+impl JSStore {
+  fn get_raw_from_field(source: &[u8], slice: RequiredField) -> (*const u8, usize) {
+    let ptr = source.as_ptr();
+    let start = unsafe { ptr.add(slice.start) };
+    (start, slice.end - slice.start)
+  }
+
+  fn convert_element(&self, env: &Env, e: &TapeElement) -> JsElement {
+    let range_from_html = |range| -> Buffer {
+      let (ptr, len) = Self::get_raw_from_field(&self.html, range);
+      buffer_slice_from_raw(env, ptr as *mut u8, len)
+        .unwrap()
+        .into_buffer(env)
+        .unwrap()
+    };
+    JsElement {
+      name: range_from_html(e.name.clone()),
+      id: e.id.as_ref().map(|r| range_from_html(r.clone())),
+      class: e.class.as_ref().map(|r| range_from_html(r.clone())),
+      inner_html: e.inner_html.as_ref().map(|r| range_from_html(r.clone())),
+      text_content: e.text_content.as_ref().map(|r| {
+        let (ptr, len) = Self::get_raw_from_field(&self.text_content, r.clone());
+        buffer_slice_from_raw(env, ptr as *mut u8, len)
+          .unwrap()
+          .into_buffer(env)
+          .unwrap()
+      }),
+      attributes: e
+        .attributes
+        .iter()
+        .map(|(k, v)| {
+          (
+            range_from_html(k.clone()),
+            v.as_ref().map(|r| range_from_html(r.clone())),
+          )
+        })
+        .collect(),
+      children: e
+        .children
+        .iter()
+        .map(|(k, v)| (range_from_html(k.clone()), v.clone()))
+        .collect(),
+    }
+  }
+
+  #[napi]
+  pub fn get(&self, env: &Env, index: u32) -> Option<JsElement> {
+    self
+      .elements
+      .get(index as usize)
+      .map(|e| self.convert_element(env, e))
+  }
 }
 
 // https://napi.rs/docs/concepts/typed-array.en#external-buffers
@@ -77,29 +150,17 @@ fn buffer_slice_from_raw<'a>(env: &Env, data_ptr: *mut u8, len: usize) -> Result
   }
 }
 
-fn buffer_slice_from_slice<'a>(
-  env: &Env,
-  data: &'a [u8],
-  slice: Range<usize>,
-) -> Result<BufferSlice<'a>> {
-  let sliced_data = &data[slice];
-  let data_ptr = sliced_data.as_ptr() as *mut u8;
-  let len = sliced_data.len();
-
-  buffer_slice_from_raw(env, data_ptr, len)
-}
-
-fn buffer_slice_from_str_slice<'a>(
-  env: &Env,
-  base: &'a [u8],
-  slice: &'a str,
-) -> Result<BufferSlice<'a>> {
+fn buffer_slice_from_str_slice<'a>(base: &'a [u8], slice: &'a str) -> Range<usize> {
+  if slice == "root" {
+    return 0..0;
+  }
   assert!(is_subslice(
     &base.as_ptr_range(),
     &(slice.as_ptr() as *const u8..unsafe { slice.as_ptr().add(slice.len()) })
   ));
   let start = slice.as_ptr() as usize - base.as_ptr() as usize;
-  buffer_slice_from_slice(env, base, start..start + slice.len())
+
+  start..start + slice.len()
 }
 
 #[napi]
@@ -107,7 +168,14 @@ fn parse<'a>(
   env: &'a Env,
   html: BufferSlice<'a>,
   queries: Vec<Reference<JSQuery>>,
-) -> Result<JSStore<'a>> {
+) -> Result<JSStore> {
+  if queries.is_empty() {
+    return Err(napi::Error::new(
+      napi::Status::ArrayExpected,
+      "No queries where passed".to_owned(),
+    ));
+  }
+
   let html_bytes = unsafe { std::slice::from_raw_parts(html.as_ptr() as *const u8, html.len()) };
   let queries_rs = queries
     .iter()
@@ -173,13 +241,11 @@ fn parse<'a>(
       .iter()
       .map(|a| {
         Ok((
-          buffer_slice_from_str_slice(env, html_bytes, a.key)?,
-          a.value
-            .map(|v| buffer_slice_from_str_slice(env, html_bytes, v))
-            .transpose()?,
+          buffer_slice_from_str_slice(html_bytes, a.key),
+          a.value.map(|v| buffer_slice_from_str_slice(html_bytes, v)),
         ))
       })
-      .collect::<Result<Vec<(BufferSlice, Option<BufferSlice>)>>>()?;
+      .collect::<Result<Vec<(RequiredField, OptionalField)>>>()?;
 
     // let children = element
     //   .children
@@ -197,38 +263,27 @@ fn parse<'a>(
     //   .collect::<Vec<(BufferSlice, Vec<usize>)>>();
     let children = vec![];
 
-    elements.push(JSElement {
-      name: buffer_slice_from_str_slice(env, html_bytes, element.name).unwrap(),
+    elements.push(TapeElement {
+      name: buffer_slice_from_str_slice(html_bytes, element.name),
       class: element
         .class
-        .map(|r| buffer_slice_from_str_slice(env, html_bytes, r))
-        .transpose()?,
+        .map(|r| buffer_slice_from_str_slice(html_bytes, r)),
       id: element
         .id
-        .map(|r| buffer_slice_from_str_slice(env, html_bytes, r))
-        .transpose()?,
+        .map(|r| buffer_slice_from_str_slice(html_bytes, r)),
       attributes,
       inner_html: element
         .inner_html
-        .map(|r| buffer_slice_from_str_slice(env, html_bytes, r))
-        .transpose()?,
-      text_content: element
-        .text_content
-        .map(|r| {
-          buffer_slice_from_raw(
-            env,
-            unsafe { text_content_ptr.add(r.start) } as *mut u8,
-            r.end - r.start,
-          )
-        })
-        .transpose()?,
+        .map(|r| buffer_slice_from_str_slice(html_bytes, r)),
+      text_content: element.text_content,
       children,
     });
   }
 
   Ok(JSStore {
     elements,
-    text_content,
+    text_content: text_content.into_buffer(env).unwrap(),
+    html: html.into_buffer(env).unwrap(),
     query_tape: full_tape,
   })
 }

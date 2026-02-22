@@ -576,8 +576,6 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
-module.exports.Element = nativeBinding.Element
-module.exports.JSElement = nativeBinding.JSElement
 module.exports.Query = nativeBinding.Query
 module.exports.JSQuery = nativeBinding.JSQuery
 module.exports.Store = nativeBinding.Store
