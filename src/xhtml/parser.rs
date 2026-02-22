@@ -706,10 +706,13 @@ mod tests {
         let element_index = root["a"].value().unwrap();
         let element = &store.elements[element_index];
 
-        assert_eq!(element.attributes, vec![Attribute {
-            key: "href",
-            value: Some("/post/0"),
-        }]);
+        assert_eq!(
+            element.attributes,
+            vec![Attribute {
+                key: "href",
+                value: Some("/post/0"),
+            }]
+        );
 
         assert_eq!(element.inner_html, Some("<b>Post</b> &lt;0&gt;"));
         assert_eq!(store.text_content(&element), Some("Post &lt;0&gt;"));

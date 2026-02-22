@@ -13,6 +13,8 @@ test('Basic selection', () => {
     .all('a', {innerHtml: true, textContent: true}).build();
   const store = parse(Buffer.from(html), [query]);
 
+  expect(store.length).toBe(3);
+
   expect(store.get(0)?.children).toEqual([
     [Buffer.from('div'), [1]],
   ])

@@ -26,6 +26,7 @@ export type JsQueryFactory = QueryFactory
 
 export declare class Store {
   get(index: number): Element | null
+  get length(): number
 }
 export type JSStore = Store
 

@@ -117,4 +117,9 @@ impl JSStore {
       .get(index as usize)
       .map(|e| self.convert_element(env, e))
   }
+
+  #[napi(getter)]
+  pub fn length(&self) -> i64 {
+    self.elements.len() as i64
+  }
 }
