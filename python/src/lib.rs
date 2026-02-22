@@ -12,9 +12,10 @@ use crate::element::PyMemoryViewExt;
 use crate::query::{PyQuery, PyQueryBuilder, PyQueryFactory, PyQueryStatic};
 use crate::save::PySave;
 use element::{PyAttribute, PyElement, PyStore};
-use view::{SharedString, get_memoryview_from_u8};
+use view::{SharedString, get_memoryview_from_u8, is_subslice};
 
 use std::ops::Range;
+use std::sync::Arc;
 
 #[pyfunction]
 fn parse<'py>(
@@ -95,6 +96,43 @@ fn parse<'py>(
     let base = get_memoryview_from_u8(py, html_bytes)?;
     let base_ref = base.as_unbound();
 
+    // Because I did not copy the tapes, I need to find the queries in the full tape
+
+    let mut full_tape_position = 0;
+    let pointer_range = py_queries
+        .iter()
+        .map(|q| {
+            let start = full_tape_position.clone();
+            full_tape_position += q.tape.len();
+            (start, (*q.tape).as_ptr_range())
+        })
+        .collect::<Vec<_>>();
+
+    let full_tape = Arc::new(
+        py_queries
+            .iter()
+            .map(|q| (*q.tape).clone())
+            .collect::<Vec<_>>()
+            .concat(),
+    );
+
+    let find_query = |query: &str| -> Range<usize> {
+        let query_ptr = query.as_ptr();
+        let query_len = query.as_bytes().len();
+        pointer_range
+            .clone()
+            .into_iter()
+            .find(|(_, ptr_range)| {
+                let end = unsafe { ptr_range.start.add(query_len) };
+                is_subslice(ptr_range, &(query_ptr..end))
+            })
+            .map(|(start, ptr_range)| {
+                let start = start + (unsafe { query_ptr.offset_from(ptr_range.start) }) as usize;
+                start..(start + query_len)
+            })
+            .unwrap()
+    };
+
     for element in store.elements {
         let attributes_iterator = element.attributes.iter().map(|a| PyAttribute {
             base: base_ref.clone_ref(py),
@@ -120,7 +158,9 @@ fn parse<'py>(
                 .into_iter()
                 .map(|c| {
                     (
-                        substring_range(html_bytes, c.query),
+                        // BUG: the query is not from the html, thus is not a valid range
+                        // TODO: I need to copy the query tape
+                        find_query(&c.query),
                         match c.index {
                             ChildIndex::One(index) => vec![index],
                             ChildIndex::Many(vec) => vec,
@@ -134,6 +174,7 @@ fn parse<'py>(
     Ok(PyStore {
         elements: PyList::new(py, list)?.unbind(),
         text_content: text_content_rc,
+        query_tape: full_tape,
     })
 }
 

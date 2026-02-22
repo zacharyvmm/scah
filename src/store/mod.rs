@@ -33,6 +33,13 @@ impl ChildIndex {
             ChildIndex::One(_) => Err(QueryError::NotAList),
         }
     }
+
+    pub fn vec(&self) -> Vec<usize> {
+        match self {
+            ChildIndex::Many(indices) => indices.clone(),
+            ChildIndex::One(i) => vec![*i],
+        }
+    }
 }
 
 impl Index<usize> for ChildIndex {

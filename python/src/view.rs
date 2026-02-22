@@ -38,3 +38,14 @@ pub fn get_memoryview_from_u8<'a>(
     }
     Ok(res.unwrap())
 }
+
+pub fn is_subslice<T>(
+    parent_range: &std::ops::Range<*const T>,
+    subslice_range: &std::ops::Range<*const T>,
+) -> bool {
+    // let parent_range = parent_slice.as_ptr_range();
+    // let subslice_start = subslice.as_ptr();
+    // let subslice_end = unsafe { subslice_start.add(subslice.len()) };
+
+    parent_range.contains(&subslice_range.start) && parent_range.contains(&subslice_range.end)
+}

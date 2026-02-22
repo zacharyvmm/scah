@@ -670,4 +670,51 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_first_anchor_tag_from_bench() {
+        fn generate_html(count: usize) -> String {
+            let mut html = String::with_capacity(count * 100);
+            html.push_str("<html><body><div id='content'>");
+            for i in 0..count {
+                // Added some entities (&lt;) and bold tags (<b>) to make text extraction work harder
+                html.push_str(&format!(
+                    r#"<div class="article"><a href="/post/{}"><b>Post</b> &lt;{}&gt;</a></div>"#,
+                    i, i
+                ));
+            }
+            html.push_str("</div></body></html>");
+            html
+        }
+
+        let html = generate_html(100);
+        let mut reader = Reader::from_bytes(html.as_bytes());
+
+        let query = Query::first("a", Save::all()).build();
+        assert_eq!(query.exit_at_section_end, Some(0));
+        let queries = &[query];
+
+        let manager = FsmManager::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+        let root = &store.elements[0];
+
+        let element_index = root["a"].value().unwrap();
+        let element = &store.elements[element_index];
+
+        assert_eq!(
+            element.attributes,
+            vec![Attribute {
+                key: "href",
+                value: Some("/post/0"),
+            }]
+        );
+
+        assert_eq!(element.inner_html, Some("<b>Post</b> &lt;0&gt;"));
+        assert_eq!(store.text_content(&element), Some("Post &lt;0&gt;"));
+    }
 }

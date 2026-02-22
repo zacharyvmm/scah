@@ -65,7 +65,7 @@ impl PyQueryFactory {
 #[pyclass]
 #[derive(Clone)]
 pub struct PyQuery {
-    tape: String,
+    pub(super) tape: std::sync::Arc<Vec<u8>>,
     pub(super) query: Query<'static>,
 }
 
