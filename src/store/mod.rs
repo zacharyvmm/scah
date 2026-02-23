@@ -80,7 +80,7 @@ impl<'query> Index<usize> for Child<'query> {
 type Children<'query> = Vec<Child<'query>>;
 type StrRange = Range<usize>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq)]
 pub struct Element<'html, 'query> {
     pub name: &'html str,
     pub class: Option<&'html str>,

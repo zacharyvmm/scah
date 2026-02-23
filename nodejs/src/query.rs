@@ -91,7 +91,7 @@ impl JsQueryBuilder {
     &mut self,
     callback: Function<JsQueryFactory, Vec<Reference<JsQueryBuilder>>>,
   ) -> Result<JsQueryBuilder> {
-    let factory = JsQueryFactory {data:true};
+    let factory = JsQueryFactory { data: true };
     let builders = callback.call(factory)?;
     let children = builders.iter().map(|b| b.builder.clone());
 
@@ -114,7 +114,9 @@ impl JsQueryBuilder {
 
 #[napi(js_name = "QueryFactory")]
 #[derive(Clone)]
-pub struct JsQueryFactory {data:bool}
+pub struct JsQueryFactory {
+  data: bool,
+}
 
 #[napi]
 impl JsQueryFactory {

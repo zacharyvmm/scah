@@ -385,7 +385,7 @@ mod tests {
             .unwrap()
             .map(|i| &store.elements[*i])
             .collect();
-        assert_eq!(s2_div_a.len(), 2);
+        assert_eq!(s2_div_a.len(), 2, "World3 Element duplicated");
         assert_eq!(store.text_content(s2_div_a[0]), Some("World2"));
         assert_eq!(store.text_content(s2_div_a[1]), Some("World3"));
 
@@ -626,15 +626,11 @@ mod tests {
             vec![
                 Element {
                     name: "root",
-                    class: None,
-                    id: None,
-                    attributes: vec![],
-                    inner_html: None,
-                    text_content: None,
                     children: vec![Child {
                         query: "#world",
                         index: ChildIndex::Many(vec![1])
                     }],
+                    ..Default::default()
                 },
                 Element {
                     name: "span",
@@ -716,5 +712,272 @@ mod tests {
 
         assert_eq!(element.inner_html, Some("<b>Post</b> &lt;0&gt;"));
         assert_eq!(store.text_content(&element), Some("Post &lt;0&gt;"));
+    }
+
+    const SINGLE_PRODUCT_HTML: &str = r#"
+    <section id="products">
+        <div class="product">
+            <h1>Product #1</h1>
+            <img src="https://example.com/p1.png"/>
+            <p>
+                Hello World for Product #1
+            </p>
+        </div>
+    </section>
+    "#;
+
+    const PRODUCT_HTML: &str = r#"
+    <section id="products">
+        <div class="product">
+            <h1>Product #1</h1>
+            <img src="https://example.com/p1.png"/>
+            <p>
+                Hello World for Product #1
+            </p>
+        </div>
+        
+        <div class="product">
+            <h1>Product #2</h1>
+            <img src="https://example.com/p2.png"/>
+            <p>
+                Hello World for Product #2
+            </p>
+        </div>
+    </section>
+    "#;
+
+    #[test]
+    fn test_single_product_listing_html() {
+        let mut reader = Reader::new(SINGLE_PRODUCT_HTML);
+
+        let queries = &[Query::all("#products", Save::all())
+            .all(".product", Save::all())
+            .then(|p| {
+                [
+                    p.first("h1", Save::all()),
+                    p.first("img", Save::none()),
+                    p.first("p", Save::all()),
+                ]
+            })
+            .build()];
+
+        let manager = FsmManager::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+
+        println!("Store: {:#?}", store);
+
+        assert_eq!(store.elements.len(), 6);
+
+        assert_eq!(
+            store.elements,
+            vec![
+                Element {
+                    name: "root",
+                    children: vec![Child {
+                        query: "#products",
+                        index: ChildIndex::Many(vec![1])
+                    }],
+                    ..Default::default()
+                },
+                Element {
+                    name: "section",
+                    id: Some("products"),
+                    children: vec![Child {
+                        query: ".product",
+                        index: ChildIndex::Many(vec![2])
+                    }],
+                    inner_html: store.elements[1].inner_html,
+                    text_content: store.elements[1].text_content.clone(),
+                    ..Default::default()
+                },
+                Element {
+                    name: "div",
+                    class: Some("product"),
+                    children: vec![
+                        Child {
+                            query: "h1",
+                            index: ChildIndex::One(3)
+                        },
+                        Child {
+                            query: "img",
+                            index: ChildIndex::One(4)
+                        },
+                        Child {
+                            query: "p",
+                            index: ChildIndex::One(5)
+                        },
+                    ],
+                    inner_html: store.elements[2].inner_html,
+                    text_content: store.elements[2].text_content.clone(),
+                    ..Default::default()
+                },
+                Element {
+                    name: "h1",
+                    inner_html: Some("Product #1"),
+                    text_content: store.elements[3].text_content.clone(),
+                    ..Default::default()
+                },
+                Element {
+                    name: "img",
+                    attributes: vec![
+                        Attribute {
+                            key: "src",
+                            value: Some("https://example.com/p1.png")
+                        },
+                        Attribute {
+                            key: "/",
+                            value: None
+                        }
+                    ],
+                    ..Default::default()
+                },
+                Element {
+                    name: "p",
+                    inner_html: store.elements[5].inner_html,
+                    text_content: store.elements[5].text_content.clone(),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_product_listing_html() {
+        let mut reader = Reader::new(PRODUCT_HTML);
+
+        let queries = &[Query::all("#products", Save::all())
+            .all(".product", Save::all())
+            .then(|p| {
+                [
+                    p.first("h1", Save::all()),
+                    p.first("img", Save::none()),
+                    p.first("p", Save::all()),
+                ]
+            })
+            .build()];
+
+        let manager = FsmManager::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+
+        println!("Store: {:#?}", store);
+
+        assert_eq!(store.elements.len(), 10);
+
+        assert_eq!(
+            store.elements,
+            vec![
+                Element {
+                    name: "root",
+                    children: vec![Child {
+                        query: "#products",
+                        index: ChildIndex::Many(vec![1])
+                    }],
+                    ..Default::default()
+                },
+                Element {
+                    name: "section",
+                    id: Some("products"),
+                    children: vec![Child {
+                        query: ".product",
+                        index: ChildIndex::Many(vec![2, 6])
+                    }],
+                    inner_html: store.elements[1].inner_html,
+                    text_content: store.elements[1].text_content.clone(),
+                    ..Default::default()
+                },
+                Element {
+                    name: "div",
+                    class: Some("product"),
+                    children: vec![
+                        Child {
+                            query: "h1",
+                            index: ChildIndex::One(3)
+                        },
+                        Child {
+                            query: "img",
+                            index: ChildIndex::One(4)
+                        },
+                        Child {
+                            query: "p",
+                            index: ChildIndex::One(5)
+                        },
+                    ],
+                    inner_html: store.elements[2].inner_html,
+                    text_content: store.elements[2].text_content.clone(),
+                    ..Default::default()
+                },
+                Element {
+                    name: "h1",
+                    inner_html: Some("Product #1"),
+                    text_content: store.elements[3].text_content.clone(),
+                    ..Default::default()
+                },
+                Element {
+                    name: "img",
+                    attributes: vec![Attribute {
+                        key: "src",
+                        value: Some("https://example.com/p1.png")
+                    }],
+                    ..Default::default()
+                },
+                Element {
+                    name: "p",
+                    inner_html: store.elements[5].inner_html,
+                    text_content: store.elements[5].text_content.clone(),
+                    ..Default::default()
+                },
+                Element {
+                    name: "div",
+                    class: Some("product"),
+                    children: vec![
+                        Child {
+                            query: "h1",
+                            index: ChildIndex::One(7)
+                        },
+                        Child {
+                            query: "img",
+                            index: ChildIndex::One(8)
+                        },
+                        Child {
+                            query: "p",
+                            index: ChildIndex::One(9)
+                        },
+                    ],
+                    inner_html: store.elements[6].inner_html,
+                    text_content: store.elements[6].text_content.clone(),
+                    ..Default::default()
+                },
+                Element {
+                    name: "h1",
+                    inner_html: store.elements[7].inner_html,
+                    text_content: store.elements[7].text_content.clone(),
+                    ..Default::default()
+                },
+                Element {
+                    name: "img",
+                    attributes: vec![Attribute {
+                        key: "src",
+                        value: Some("https://example.com/p2.png")
+                    }],
+                    ..Default::default()
+                },
+                Element {
+                    name: "p",
+                    inner_html: store.elements[9].inner_html,
+                    text_content: store.elements[9].text_content.clone(),
+                    ..Default::default()
+                },
+            ]
+        );
     }
 }

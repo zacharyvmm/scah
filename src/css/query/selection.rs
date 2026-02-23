@@ -310,7 +310,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
         let mut remove_last_x_fsms = 0;
         for scoped_fsm in self.scoped_fsms.iter().rev() {
-            if scoped_fsm.scope_depth < document_position.element_depth - 1 {
+            if scoped_fsm.scope_depth < document_position.element_depth {
                 break;
             }
             self.fsm.parent = scoped_fsm.parent;
