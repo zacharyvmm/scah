@@ -1,6 +1,11 @@
-import { Bench } from 'tinybench'
+import { bench, group, run } from 'mitata'
 
-import { parse, Query, Save } from '../index.js'
+import { parse, Query } from '../index.js'
+import * as cheerio from 'cheerio'
+import { parse as nhpParse } from 'node-html-parser'
+import { JSDOM } from 'jsdom'
+import { parseHTML as linkedomParse } from 'linkedom'
+import { Window as HappyWindow } from 'happy-dom'
 
 function generateHtml(count: number): string {
   let html = "<html><body><div id='content'>"
@@ -17,22 +22,68 @@ function generateHtml(count: number): string {
 const QUERY = 'a'
 const HTML = generateHtml(5_000)
 
-const b = new Bench({})
+group('parse + query', () => {
+  bench('scah', () => {
+    const query = Query.all(QUERY, { innerHtml: true, textContent: true }).build()
+    const store = parse(Buffer.from(HTML), [query])
 
-b.add('scah', () => {
-  const query = Query.all(QUERY, { innerHtml: true, textContent: true }).build()
+    for (let i = 0; i < store.length; i++) {
+      const e = store.get(i)
+      const _inner = e?.innerHtml
+      const _text = e?.textContent
+    }
+  })
 
-  const store = parse(Buffer.from(HTML), [query])
+  bench('cheerio', () => {
+    const $ = cheerio.load(HTML)
+    $(QUERY).each((_, el) => {
+      const _inner = $(el).html()
+      const _text = $(el).text()
+    })
+  })
 
-  for (let i = 0; i < store.length; i++) {
-    const _ = store.get(i)
-  }
+  bench('node-html-parser', () => {
+    const root = nhpParse(HTML)
+    const els = root.querySelectorAll(QUERY)
+
+    for (const el of els) {
+      const _inner = el.innerHTML
+      const _text = el.textContent
+    }
+  })
+
+  bench('jsdom', () => {
+    const dom = new JSDOM(HTML)
+    const els = dom.window.document.querySelectorAll(QUERY)
+
+    for (const el of els) {
+      const _inner = el.innerHTML
+      const _text = el.textContent
+    }
+  })
+
+  bench('linkedom', () => {
+    const { document } = linkedomParse(HTML)
+    const els = document.querySelectorAll(QUERY)
+
+    for (const el of els) {
+      const _inner = el.innerHTML
+      const _text = el.textContent
+    }
+  })
+
+  // happy-dom's querySelectorAll crashes under Bun, so use getElementsByTagName
+  bench('happy-dom', () => {
+    const window = new HappyWindow()
+    window.document.write(HTML)
+    const els = window.document.getElementsByTagName(QUERY)
+
+    for (const el of els) {
+      const _inner = el.innerHTML
+      const _text = el.textContent
+    }
+    window.close()
+  })
 })
 
-// b.add('JavaScript a + 100', () => {
-//   add(10)
-// })
-
-await b.run()
-
-console.table(b.table())
+await run()
