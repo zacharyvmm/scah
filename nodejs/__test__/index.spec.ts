@@ -64,16 +64,21 @@ test('Tree selection', () => {
     .build()
   const store = parse(Buffer.from(html), [query])
 
-  // for (let i = 0; i < store.length; i++) {
-  //   const element = store.get(i);
-  //   console.log(`#${i}`);
-  //   console.log("Name: ", element?.name.toString());
-  //   console.log("id: ", element?.id? element.id.toString() : undefined);
-  //   console.log("class: ", element?.class? element.class.toString() : undefined);
-  //   console.log("inner_html: ", element?.innerHtml? element.innerHtml.toString() : undefined);
-  //   console.log("text_content: ", element?.textContent? element.textContent.toString() : undefined);
-  //   console.log();
-  // }
-
   expect(store.length).toBe(6)
+
+  expect(store.get(1)?.name.toString()).toBe('section')
+  expect(store.get(1)?.id?.toString()).toBe('products')
+
+  expect(store.get(2)?.name.toString()).toBe('div')
+  expect(store.get(2)?.class?.toString()).toBe('product')
+
+  expect(store.get(3)?.name.toString()).toBe('h1')
+  expect(store.get(3)?.innerHtml?.toString()).toBe('Product #1')
+  expect(store.get(3)?.textContent?.toString()).toBe('Product #1')
+
+  expect(store.get(4)?.name.toString()).toBe('img')
+  expect(store.get(4)?.attributes[0]).toEqual([Buffer.from('src'), Buffer.from('https://example.com/p1.png')])
+
+  expect(store.get(5)?.name.toString()).toBe('p')
+  expect(store.get(5)?.textContent?.toString()).toBe('Hello World for Product #1')
 })
