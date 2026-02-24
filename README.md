@@ -4,7 +4,7 @@ World's fastest CSS Selector.
 ## Benchmark's
 
 ### Native
-![Criterion BenchMarks](./benches/images/criterion_benches.png)
+![Criterion BenchMarks](./benches/images/criterion_bench.png)
 
 ### Python Bindings for scah Benchmark's
 Real Html BenchMark ([html.spec.whatwg.org](https://html.spec.whatwg.org/)) (select all `a` tags):
