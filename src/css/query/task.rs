@@ -21,8 +21,6 @@ pub trait Fsm<'query, 'html> {
         element: &XHtmlElement<'html>,
     ) -> bool;
     fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &'html str) -> bool;
-    fn try_back_parent(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str)
-    -> bool;
     fn step_backward(&mut self, tree: &Query<'query>);
 
     fn get_position(&self) -> &Position;
@@ -32,7 +30,7 @@ pub trait Fsm<'query, 'html> {
     fn get_parent(&self) -> usize;
     fn set_parent(&mut self, value: usize);
 
-    fn set_end_false(&mut self);
+    fn set_end(&mut self, end: bool);
 
     fn add_depth(&mut self, depth: super::DepthSize);
 }
@@ -49,12 +47,6 @@ impl<'query> FsmState {
             end: false,
         }
     }
-
-    pub fn move_backward_twice(&mut self, tree: &Query<'query>) {
-        // Only need one pop, since the current fsm depth was not added to the list
-        self.step_backward(tree);
-        self.position.back(tree);
-    }
 }
 
 impl<'query, 'html> Fsm<'query, 'html> for FsmState {
@@ -66,30 +58,6 @@ impl<'query, 'html> Fsm<'query, 'html> for FsmState {
 
     fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
         let fsm = tree.get_state(self.position.state);
-        let last_depth = *self.depths.last().unwrap_or(&0);
-        fsm.back(element, depth, last_depth)
-    }
-
-    // Try going backwards from a parent of a leaf
-    fn try_back_parent(
-        &self,
-        tree: &Query<'query>,
-        depth: super::DepthSize,
-        element: &str,
-    ) -> bool {
-        debug_assert!(self.end);
-
-        if self.position.is_root() {
-            return false;
-        }
-
-        let mut parent_position = self.position.clone();
-        parent_position.back(tree);
-        assert_ne!(self.position, parent_position);
-        let fsm = tree.get_state(parent_position.state);
-
-        // BUG: I'm not sure if I should take the last or the one before
-        // What happens at length 0 or 1?
         let last_depth = *self.depths.last().unwrap_or(&0);
         fsm.back(element, depth, last_depth)
     }
@@ -122,8 +90,8 @@ impl<'query, 'html> Fsm<'query, 'html> for FsmState {
         self.parent = value;
     }
 
-    fn set_end_false(&mut self) {
-        self.end = false;
+    fn set_end(&mut self, end:bool) {
+        self.end = end;
     }
 
     fn add_depth(&mut self, depth: super::DepthSize) {
@@ -163,20 +131,6 @@ impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm {
         fsm.back(element, depth, self.scope_depth)
     }
 
-    // Try going backwards from a parent of a leaf
-    fn try_back_parent(
-        &self,
-        tree: &Query<'query>,
-        depth: super::DepthSize,
-        element: &str,
-    ) -> bool {
-        let mut parent_position = self.position.clone();
-        parent_position.back(tree);
-        let fsm = tree.get_state(parent_position.state);
-
-        fsm.back(element, depth, self.scope_depth)
-    }
-
     fn get_parent(&self) -> usize {
         self.parent
     }
@@ -199,7 +153,7 @@ impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm {
 
     fn add_depth(&mut self, _depth: super::DepthSize) {}
     fn step_backward(&mut self, _tree: &Query<'query>) {}
-    fn set_end_false(&mut self) {}
+    fn set_end(&mut self, _:bool) {}
 }
 
 #[cfg(test)]

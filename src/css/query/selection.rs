@@ -59,9 +59,10 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         fsm.add_depth(depth);
         if let Some(next_state) = fsm.get_position().next_state(tree) {
             fsm.set_state(next_state);
+            fsm.set_end(false);
         } else if let Some(child) = fsm.get_position().next_child(tree) {
             fsm.set_position(child);
-            fsm.set_end_false();
+            fsm.set_end(false);
 
             let mut has_sibling = fsm.get_position().next_sibling(tree);
             while let Some(sibling) = has_sibling {
@@ -71,6 +72,8 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
                 fsm.set_position(sibling);
                 has_sibling = sibling.next_sibling(tree);
             }
+        } else {
+            fsm.set_end(true);
         }
     }
 
@@ -129,13 +132,11 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         store: &mut Store<'html, 'query>,
     ) -> Result<(), QueryError<'_>> {
         // STEP 1: check scoped tasks
-        let mut new_scoped_fsms: ScopedFsmVec = Vec::new();
 
         for i in 0..self.scoped_fsms.len() {
             // println!("Scoped Fsm's {i}");
-            let fsm = &mut self.scoped_fsms[i];
 
-            if !fsm.next(
+            if !self.scoped_fsms[i].next(
                 self.selection_tree,
                 document_position.element_depth,
                 element,
@@ -147,16 +148,16 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
             // println!("Scope Match with `{:?}`", element);
 
-            if self.selection_tree.is_descendant(fsm.get_position().state) {
+            if self.selection_tree.is_descendant(self.scoped_fsms[i].get_position().state) {
                 // This should only be done if the task is not done (meaning it will move forward)
-                new_scoped_fsms.push(ScopedFsm::new(
+                self.scoped_fsms.push(ScopedFsm::new(
                     document_position.element_depth,
-                    fsm.parent,
-                    fsm.position,
+                    self.scoped_fsms[i].parent,
+                    self.scoped_fsms[i].position,
                 ));
             }
 
-            let mut new_scoped_fsm = fsm.clone();
+            let mut new_scoped_fsm = self.scoped_fsms[i].clone();
 
             if self.selection_tree.is_save_point(&new_scoped_fsm.position) {
                 Self::save_element(
@@ -174,17 +175,16 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             if !element.is_self_closing() {
                 Self::next_position(
                     self.selection_tree,
-                    &mut new_scoped_fsms,
+                    &mut self.scoped_fsms,
                     document_position.element_depth,
                     &mut new_scoped_fsm,
                 );
             }
 
-            new_scoped_fsms.push(new_scoped_fsm);
+            self.scoped_fsms.push(new_scoped_fsm);
 
             dbg_print!(">> Scoped FSM's: {:#?}", self.scoped_fsms)
         }
-        self.scoped_fsms.append(&mut new_scoped_fsms);
 
         // STEP 2: check tasks
         let ref mut fsm = self.fsm;
@@ -222,7 +222,6 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             // let parent: *mut E = fsm.parent;
 
             if self.selection_tree.is_save_point(&fsm.position) {
-                fsm.end = true;
                 Self::save_element(
                     &mut self.on_close_tag_events,
                     self.selection_tree,
@@ -317,38 +316,25 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             dbg_print!("Removed Scoped FSM ({:#?})", scoped_fsm);
             remove_last_x_fsms += 1;
         }
-        while remove_last_x_fsms > 0 {
-            self.scoped_fsms.pop();
-            remove_last_x_fsms -= 1;
-        }
+        self.scoped_fsms.truncate(self.scoped_fsms.len() - remove_last_x_fsms);
 
         let ref mut fsm = self.fsm;
-        dbg_print!("FSM Before back: {:#?}", fsm);
         if fsm.back(
             self.selection_tree,
             document_position.element_depth,
             element,
         ) {
-            fsm.step_backward(self.selection_tree);
-            dbg_print!("FSM out of `{}`", element);
-            dbg_print!("SHOULD INVALIDATED PARENT POINTER");
-            return true;
-        } else if fsm.end {
-            // jump backwards twice
-            if fsm.try_back_parent(
-                self.selection_tree,
-                document_position.element_depth,
-                element,
-            ) {
-                fsm.move_backward_twice(self.selection_tree);
+            if fsm.end {
                 fsm.end = false;
-
-                dbg_print!("FSM out of `{}`", element);
-                dbg_print!("SHOULD INVALIDATED PARENT POINTER");
+                fsm.depths.pop();
                 return true;
             }
+            dbg_print!("FSM Before back: {:#?}", fsm);
+            fsm.step_backward(self.selection_tree);
+            dbg_print!("FSM out of `{}`", element);
+            dbg_print!("FSM After back: {:#?}", fsm);
+            return true;
         }
-        dbg_print!("FSM After back: {:#?}", fsm);
 
         return false;
     }
@@ -656,7 +642,7 @@ mod tests {
                     state: 0
                 },
                 depths: smallvec![],
-                end: true,
+                end: false,
             }
         );
     }

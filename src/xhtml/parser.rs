@@ -726,26 +726,6 @@ mod tests {
     </section>
     "#;
 
-    const PRODUCT_HTML: &str = r#"
-    <section id="products">
-        <div class="product">
-            <h1>Product #1</h1>
-            <img src="https://example.com/p1.png"/>
-            <p>
-                Hello World for Product #1
-            </p>
-        </div>
-        
-        <div class="product">
-            <h1>Product #2</h1>
-            <img src="https://example.com/p2.png"/>
-            <p>
-                Hello World for Product #2
-            </p>
-        </div>
-    </section>
-    "#;
-
     #[test]
     fn test_single_product_listing_html() {
         let mut reader = Reader::new(SINGLE_PRODUCT_HTML);
@@ -846,6 +826,27 @@ mod tests {
         );
     }
 
+    const PRODUCT_HTML: &str = r#"
+    <section id="products">
+        <div class="product">
+            <h1>Product #1</h1>
+            <img src="https://example.com/p1.png"/>
+            <p>
+                Hello World for Product #1
+            </p>
+        </div>
+        
+        <div class="product">
+            <h1>Product #2</h1>
+            <img src="https://example.com/p2.png"/>
+            <p>
+                Hello World for Product #2
+            </p>
+        </div>
+    </section>
+    "#;
+
+
     #[test]
     fn test_product_listing_html() {
         let mut reader = Reader::new(PRODUCT_HTML);
@@ -924,10 +925,16 @@ mod tests {
                 },
                 Element {
                     name: "img",
-                    attributes: vec![Attribute {
-                        key: "src",
-                        value: Some("https://example.com/p1.png")
-                    }],
+                    attributes: vec![
+                        Attribute {
+                            key: "src",
+                            value: Some("https://example.com/p1.png")
+                        },
+                        Attribute {
+                            key: "/",
+                            value: None
+                        },
+                    ],
                     ..Default::default()
                 },
                 Element {
@@ -965,10 +972,16 @@ mod tests {
                 },
                 Element {
                     name: "img",
-                    attributes: vec![Attribute {
-                        key: "src",
-                        value: Some("https://example.com/p2.png")
-                    }],
+                    attributes: vec![
+                        Attribute {
+                            key: "src",
+                            value: Some("https://example.com/p2.png")
+                        },
+                        Attribute {
+                            key: "/",
+                            value: None
+                        },
+                    ],
                     ..Default::default()
                 },
                 Element {
