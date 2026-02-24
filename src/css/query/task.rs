@@ -90,7 +90,7 @@ impl<'query, 'html> Fsm<'query, 'html> for FsmState {
         self.parent = value;
     }
 
-    fn set_end(&mut self, end:bool) {
+    fn set_end(&mut self, end: bool) {
         self.end = end;
     }
 
@@ -153,7 +153,7 @@ impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm {
 
     fn add_depth(&mut self, _depth: super::DepthSize) {}
     fn step_backward(&mut self, _tree: &Query<'query>) {}
-    fn set_end(&mut self, _:bool) {}
+    fn set_end(&mut self, _: bool) {}
 }
 
 #[cfg(test)]

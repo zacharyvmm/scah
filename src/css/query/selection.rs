@@ -148,7 +148,10 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
             // println!("Scope Match with `{:?}`", element);
 
-            if self.selection_tree.is_descendant(self.scoped_fsms[i].get_position().state) {
+            if self
+                .selection_tree
+                .is_descendant(self.scoped_fsms[i].get_position().state)
+            {
                 // This should only be done if the task is not done (meaning it will move forward)
                 self.scoped_fsms.push(ScopedFsm::new(
                     document_position.element_depth,
@@ -316,7 +319,8 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             dbg_print!("Removed Scoped FSM ({:#?})", scoped_fsm);
             remove_last_x_fsms += 1;
         }
-        self.scoped_fsms.truncate(self.scoped_fsms.len() - remove_last_x_fsms);
+        self.scoped_fsms
+            .truncate(self.scoped_fsms.len() - remove_last_x_fsms);
 
         let ref mut fsm = self.fsm;
         if fsm.back(

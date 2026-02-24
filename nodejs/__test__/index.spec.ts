@@ -52,6 +52,13 @@ test('Tree selection', () => {
         Hello World for Product #1
       </p>
     </div>
+    <div class="product">
+      <h1>Product #2</h1>
+      <img src="https://example.com/p2.png"/>
+      <p>
+        Hello World for Product #2
+      </p>
+    </div>
   </section>
   `
   const query = Query.all('#products', { innerHtml: true, textContent: true })
@@ -64,7 +71,7 @@ test('Tree selection', () => {
     .build()
   const store = parse(html, [query])
 
-  expect(store.length).toBe(6)
+  expect(store.length).toBe(10)
 
   expect(store.get(1)?.name.toString()).toBe('section')
   expect(store.get(1)?.id?.toString()).toBe('products')
@@ -81,4 +88,17 @@ test('Tree selection', () => {
 
   expect(store.get(5)?.name.toString()).toBe('p')
   expect(store.get(5)?.textContent?.toString()).toBe('Hello World for Product #1')
+
+  expect(store.get(6)?.name.toString()).toBe('div')
+  expect(store.get(6)?.class?.toString()).toBe('product')
+
+  expect(store.get(7)?.name.toString()).toBe('h1')
+  expect(store.get(7)?.innerHtml?.toString()).toBe('Product #2')
+  expect(store.get(7)?.textContent?.toString()).toBe('Product #2')
+
+  expect(store.get(8)?.name.toString()).toBe('img')
+  expect(store.get(8)?.attributes[0]).toEqual([Buffer.from('src'), Buffer.from('https://example.com/p2.png')])
+
+  expect(store.get(9)?.name.toString()).toBe('p')
+  expect(store.get(9)?.textContent?.toString()).toBe('Hello World for Product #2')
 })

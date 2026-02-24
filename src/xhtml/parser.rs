@@ -846,7 +846,6 @@ mod tests {
     </section>
     "#;
 
-
     #[test]
     fn test_product_listing_html() {
         let mut reader = Reader::new(PRODUCT_HTML);

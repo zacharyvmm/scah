@@ -51,11 +51,7 @@ fn range_from_str_slice<'a>(base: &'a [u8], slice: &'a str) -> Range<usize> {
 }
 
 #[napi]
-fn parse<'a>(
-  env: &'a Env,
-  html: String,
-  queries: Vec<Reference<JsQuery>>,
-) -> Result<JSStore> {
+fn parse<'a>(env: &'a Env, html: String, queries: Vec<Reference<JsQuery>>) -> Result<JSStore> {
   if queries.is_empty() {
     return Err(napi::Error::new(
       napi::Status::ArrayExpected,
