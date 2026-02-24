@@ -18,7 +18,13 @@ pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
     queries: &'a [Query<'query>],
 ) -> Store<'html, 'query> {
     let selectors = FsmManager::new(queries);
-    let mut parser = XHtmlParser::with_capacity(selectors, html.len());
+
+    let no_extra_allocations = queries.iter().all(|q| q.exit_at_section_end.is_some());
+    let mut parser = if no_extra_allocations  {
+        XHtmlParser::new(selectors)
+    } else {
+        XHtmlParser::with_capacity(selectors, html.len())
+    };
 
     let mut reader = Reader::new(html);
     while parser.next(&mut reader) {}
