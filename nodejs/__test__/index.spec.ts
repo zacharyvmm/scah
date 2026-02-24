@@ -12,7 +12,7 @@ test('Basic selection', () => {
   const query = Query.all('div', { innerHtml: true, textContent: true })
     .all('a', { innerHtml: true, textContent: true })
     .build()
-  const store = parse(Buffer.from(html), [query])
+  const store = parse(html, [query])
 
   expect(store.length).toBe(3)
 
@@ -62,7 +62,7 @@ test('Tree selection', () => {
       p.all('p', { innerHtml: true, textContent: true }),
     ])
     .build()
-  const store = parse(Buffer.from(html), [query])
+  const store = parse(html, [query])
 
   expect(store.length).toBe(6)
 

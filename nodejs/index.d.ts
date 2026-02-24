@@ -40,7 +40,7 @@ export interface Element {
   children: Array<[Buffer, Array<number>]>
 }
 
-export declare function parse(html: Buffer, queries: Array<JsQuery>): Store
+export declare function parse(html: string, queries: Array<JsQuery>): Store
 
 export interface Save {
   innerHtml: boolean

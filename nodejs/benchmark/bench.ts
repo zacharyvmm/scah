@@ -25,7 +25,7 @@ const HTML = generateHtml(5_000)
 group('parse + query', () => {
   bench('scah', () => {
     const query = Query.all(QUERY, { innerHtml: true, textContent: true }).build()
-    const store = parse(Buffer.from(HTML), [query])
+    const store = parse(HTML, [query])
 
     for (let i = 0; i < store.length; i++) {
       const e = store.get(i)

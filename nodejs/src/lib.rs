@@ -53,7 +53,7 @@ fn range_from_str_slice<'a>(base: &'a [u8], slice: &'a str) -> Range<usize> {
 #[napi]
 fn parse<'a>(
   env: &'a Env,
-  html: BufferSlice<'a>,
+  html: String,
   queries: Vec<Reference<JsQuery>>,
 ) -> Result<JSStore> {
   if queries.is_empty() {
@@ -63,7 +63,7 @@ fn parse<'a>(
     ));
   }
 
-  let html_bytes = unsafe { std::slice::from_raw_parts(html.as_ptr() as *const u8, html.len()) };
+  let html_bytes = html.as_bytes();
   let queries_rs = queries
     .iter()
     .map(|q| q.query.clone())
@@ -158,7 +158,7 @@ fn parse<'a>(
   Ok(JSStore {
     elements,
     text_content: text_content.into_buffer(env).unwrap(),
-    html: html.into_buffer(env).unwrap(),
+    html: html.into_bytes().into(),
     query_tape: full_tape.into(),
   })
 }
