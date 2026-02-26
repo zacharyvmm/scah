@@ -6,11 +6,12 @@ HTML = BytesIO(b"""
 <span class="hello" id="world" hello="world">
     Hello <a href="https://www.example.com">World</a>
 </span>
-""").getbuffer()
-#HTML = memoryview(bytes(HTML, "utf-8"))
+<p class="example_class" id="example_id" hello="example">
+    My <a href="https://www.example.com">Example</a> or <a href="https://www.notexample.com">Not Example</a>
+""")
 
 q = Query.all("#world", Save.all()).all("a", Save.all()).build()
-store = parse(HTML, q)
+store = parse(HTML.getbuffer(), q)
 
 store.elements[1].name.tobytes()
 store.elements[1].text_content.tobytes()

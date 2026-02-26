@@ -28,6 +28,7 @@ bench = [
 [tool.poe.tasks]
 bench = [
 #    { cmd = "uvx maturin build --release" },
+#    { cmd = "uv pip install -e . --reinstall --no-cache"},
     { cmd = "pytest benches/test_synthetic.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic.json" },
     { cmd = "pytest benches/test_spec.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/whatwg.json" },
     { cmd = "python3 ./benches/utils/figure.py ./benches/synthetic.json -o ./benches/images/synthetic.png" },

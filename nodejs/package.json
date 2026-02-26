@@ -1,6 +1,6 @@
 {
   "name": "scah",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "scah (scan HTML) nodejs bindings",
   "main": "index.js",
   "repository": {
@@ -92,5 +92,12 @@
     "trailingComma": "all",
     "singleQuote": true,
     "arrowParens": "always"
+  },
+  "optionalDependencies": {
+    "scah-win32-x64-msvc": "0.0.1",
+    "scah-darwin-x64": "0.0.1",
+    "scah-linux-x64-gnu": "0.0.1",
+    "scah-linux-arm64-gnu": "0.0.1",
+    "scah-darwin-arm64": "0.0.1"
   }
 }

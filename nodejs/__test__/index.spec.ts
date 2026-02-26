@@ -102,3 +102,39 @@ test('Tree selection', () => {
   expect(store.get(9)?.name.toString()).toBe('p')
   expect(store.get(9)?.textContent?.toString()).toBe('Hello World for Product #2')
 })
+
+function generateHtml(count: number): string {
+  let html = "<html><body><div id='content'>"
+
+  for (let i = 0; i < count; i++) {
+    // Added some entities (&lt;) and bold tags (<b>) to make text extraction work harder
+    html += `<div class="article"><a href="/post/${i}"><b>Post</b> &lt;${i}&gt;</a></div>`
+  }
+
+  html += '</div></body></html>'
+  return html
+}
+
+test('find 5_000 anchor tags', () => {
+  const html = generateHtml(5000)
+  const query = Query.all('a', {
+    innerHtml: true,
+    textContent: true,
+  }).build()
+  const store = parse(html, [query])
+
+  const root = store.get(0)
+  expect(root?.children[0][1]).toEqual(Array.from({ length: 5000 }, (_, i) => i + 1))
+})
+
+function generateStructuredHtml(count: number): string {
+  let html = "<html><body><div id='content'>"
+
+  for (let i = 0; i < count; i++) {
+    // Added some entities (&lt;) and bold tags (<b>) to make text extraction work harder
+    html += `<div class="article"><a href="/post/${i}"><b>Post</b> &lt;${i}&gt;</a></div>`
+  }
+
+  html += '</div></body></html>'
+  return html
+}

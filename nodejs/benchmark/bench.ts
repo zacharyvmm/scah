@@ -42,9 +42,9 @@ group('parse + query', () => {
     })
   })
 
-  bench('node-html-parser', () => {
-    const root = nhpParse(HTML)
-    const els = root.querySelectorAll(QUERY)
+  bench('jsdom', () => {
+    const dom = new JSDOM(HTML)
+    const els = dom.window.document.querySelectorAll(QUERY)
 
     for (const el of els) {
       const _inner = el.innerHTML
@@ -52,9 +52,9 @@ group('parse + query', () => {
     }
   })
 
-  bench('jsdom', () => {
-    const dom = new JSDOM(HTML)
-    const els = dom.window.document.querySelectorAll(QUERY)
+  bench('node-html-parser', () => {
+    const root = nhpParse(HTML)
+    const els = root.querySelectorAll(QUERY)
 
     for (const el of els) {
       const _inner = el.innerHTML

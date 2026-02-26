@@ -1,5 +1,7 @@
 import os
 import re
+from io import BytesIO
+
 from html.parser import HTMLParser
 
 try:
@@ -59,10 +61,10 @@ def parse_gazpacho(html:str, query:str):
     soup = GazpachoSoup(html)
     return soup.find(query, mode='all')
 
-def parse_scah(html:str, query:str):
+def parse_scah(html: BytesIO, query:str):
     assert(scah)
     q = scah.Query.all(query, scah.Save.all()).build()
-    store = scah.parse(memoryview(bytes(html, "utf-8")), q)
+    store = scah.parse(html.getbuffer(), q)
     return store.elements
 
 
