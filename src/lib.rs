@@ -1,17 +1,16 @@
 mod css;
-//mod scanner;
+mod sax;
+mod selection_engine;
 mod store;
 mod utils;
-mod xhtml;
 
-use std::collections::HashMap;
-
-pub use css::lazy;
-pub use css::{FsmManager, Query, QueryBuilder, QueryFactory, Save, Selection, SelectionKind};
+pub use css::selector::lazy;
+pub use css::selector::{Query, QueryBuilder, QueryFactory, Save, Selection, SelectionKind};
+pub use sax::element::element::{Attribute, XHtmlElement};
+pub use sax::parser::XHtmlParser;
+pub use selection_engine::manager::FsmManager;
 pub use store::{ChildIndex, Element, QueryError, Store};
 pub use utils::Reader;
-pub use xhtml::element::element::{Attribute, XHtmlElement};
-pub use xhtml::parser::XHtmlParser;
 
 pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
     html: &'html str,
@@ -20,7 +19,7 @@ pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
     let selectors = FsmManager::new(queries);
 
     let no_extra_allocations = queries.iter().all(|q| q.exit_at_section_end.is_some());
-    let mut parser = if no_extra_allocations  {
+    let mut parser = if no_extra_allocations {
         XHtmlParser::new(selectors)
     } else {
         XHtmlParser::with_capacity(selectors, html.len())

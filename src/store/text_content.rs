@@ -3,8 +3,8 @@ use std::ops::Range;
 
 #[derive(Debug, PartialEq)]
 pub struct TextContent {
-    pub(super) content: Vec<u8>,
-    pub(super) text_start: Option<usize>,
+    pub(crate) content: Vec<u8>,
+    pub(crate) text_start: Option<usize>,
 }
 
 impl TextContent {

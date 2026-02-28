@@ -3,7 +3,7 @@ use std::ops::Range;
 use super::builder::{QueryBuilder, SelectionKind};
 use super::state::State;
 use crate::Save;
-use crate::css::parser::lexer::Combinator;
+use crate::css::element::Combinator;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position {
@@ -193,9 +193,9 @@ impl<'query> Query<'query> {
 
 #[cfg(test)]
 mod tests {
-    use crate::css::parser::element::{AttributeSelection, AttributeSelectionKind, QueryElement};
-    use crate::css::parser::lexer::Combinator;
-    use crate::css::parser::tree::state::State;
+    use crate::css::element::Combinator;
+    use crate::css::element::{AttributeSelection, AttributeSelectionKind, QueryElement};
+    use crate::css::selector::state::State;
     use crate::{Query, Save, Selection, SelectionKind};
 
     #[test]

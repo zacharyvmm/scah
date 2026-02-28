@@ -2,13 +2,13 @@ use std::fmt::Debug;
 
 use super::selection::SelectionRunner;
 use crate::XHtmlElement;
-use crate::css::parser::tree::Query;
+use crate::css::selector::Query;
 use crate::store::Store;
 
 pub(crate) struct DocumentPosition {
     pub reader_position: usize,
     pub text_content_position: usize,
-    pub element_depth: crate::css::query::DepthSize,
+    pub element_depth: crate::selection_engine::DepthSize,
 }
 
 //type Runner<'query, E> = SmallVec<[SelectionRunner<'query, 'query, E>; 1]>;

@@ -1,6 +1,6 @@
 use super::element::{AttributeSelection, QueryElement};
 use super::string_search::AttributeSelectionKind;
-use crate::xhtml::element::element::{Attribute, XHtmlElement};
+use crate::sax::element::element::{Attribute, XHtmlElement};
 
 impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
     fn eq(&self, other: &Attribute<'b>) -> bool {

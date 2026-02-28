@@ -1,4 +1,5 @@
-use crate::{Query, QueryBuilder, Selection, css::parser::tree::state::State};
+use super::state::State;
+use crate::{Query, QueryBuilder, Selection};
 
 use super::builder::{Save, SelectionKind};
 
@@ -222,8 +223,8 @@ mod tests {
 
     use super::State;
     use super::*;
-    use crate::css::parser::element::{AttributeSelection, AttributeSelectionKind, QueryElement};
-    use crate::css::parser::lexer::Combinator;
+    use crate::css::element::Combinator;
+    use crate::css::element::{AttributeSelection, AttributeSelectionKind, QueryElement};
     use crate::{Query, Save, SelectionKind};
 
     #[test]

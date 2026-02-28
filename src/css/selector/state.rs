@@ -1,8 +1,6 @@
-use super::super::lexer::Lexer;
-use crate::css::parser::element::QueryElement;
-use crate::css::parser::lexer::Combinator;
+use crate::XHtmlElement;
+use crate::css::element::{Combinator, Lexer, QueryElement};
 use crate::utils::Reader;
-use crate::{XHtmlElement, dbg_print};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct State<'query> {
@@ -28,8 +26,8 @@ impl<'query> State<'query> {
     pub fn next(
         &self,
         element: &XHtmlElement,
-        current_depth: crate::css::query::DepthSize,
-        last_depth: crate::css::query::DepthSize,
+        current_depth: crate::selection_engine::DepthSize,
+        last_depth: crate::selection_engine::DepthSize,
     ) -> bool {
         assert!(
             current_depth >= last_depth,
@@ -58,8 +56,8 @@ impl<'query> State<'query> {
     pub fn back<'html>(
         &self,
         element: &'html str,
-        current_depth: crate::css::query::DepthSize,
-        last_depth: crate::css::query::DepthSize,
+        current_depth: crate::selection_engine::DepthSize,
+        last_depth: crate::selection_engine::DepthSize,
     ) -> bool {
         // dbg_print!("'{last_depth}' == '{current_depth}'");
         last_depth == current_depth

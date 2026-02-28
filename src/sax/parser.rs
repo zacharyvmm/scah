@@ -1,11 +1,7 @@
-use std::fmt::Debug;
-
 use super::element::element::XHtmlTag;
-use super::text_content::TextContent;
 use crate::XHtmlElement;
-use crate::css::DocumentPosition;
-use crate::css::FsmManager;
 use crate::dbg_print;
+use crate::selection_engine::manager::{DocumentPosition, FsmManager};
 use crate::store::Store;
 use crate::utils::Reader;
 
@@ -165,7 +161,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
 mod tests {
     use super::*;
     use crate::Attribute;
-    use crate::css::{FsmManager, Query, Save};
+    use crate::css::selector::{Query, Save};
+    use crate::selection_engine::manager::FsmManager;
     use crate::store::{Child, ChildIndex};
     use crate::store::{Element, Store};
     use crate::utils::Reader;

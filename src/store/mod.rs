@@ -1,9 +1,11 @@
-use crate::css::{Selection, SelectionKind};
-use crate::xhtml::element::element::Attributes;
+use crate::css::selector::{Selection, SelectionKind};
+use crate::sax::element::element::Attributes;
 
 use crate::dbg_print;
-use crate::xhtml::text_content::TextContent;
 use std::ops::{Index, Range};
+
+mod text_content;
+pub(crate) use text_content::TextContent;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueryError<'key> {

@@ -113,7 +113,6 @@ impl JsQueryBuilder {
 }
 
 #[napi(js_name = "QueryFactory")]
-#[derive(Clone)]
 pub struct JsQueryFactory {
   data: bool,
 }

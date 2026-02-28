@@ -2,14 +2,11 @@ use std::fmt::Debug;
 
 use super::manager::DocumentPosition;
 use super::task::{FsmState, ScopedFsm};
-//use super::tree::MatchTree;
-use crate::css::Save;
-use crate::css::parser::tree::Query;
-use crate::css::query::task::Fsm;
-use crate::{XHtmlElement, dbg_print};
-//use crate::store::rust::Element;
+use crate::css::selector::{Query, Save};
+use crate::selection_engine::task::Fsm;
 use crate::store::{QueryError, Store};
 use crate::utils::Reader;
+use crate::{XHtmlElement, dbg_print};
 
 type StartIdx = Option<usize>;
 
@@ -204,7 +201,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             let section_kind = self
                 .selection_tree
                 .get_section_selection_kind(fsm.position.selection);
-            let is_all = matches!(section_kind, crate::css::SelectionKind::All);
+            let is_all = matches!(section_kind, crate::css::selector::SelectionKind::All);
             let is_root = fsm.position.is_root();
 
             if is_descendant_combinator && (!last_save_point || is_all) {
@@ -347,7 +344,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 mod tests {
     use super::*;
     use crate::XHtmlElement;
-    use crate::css::parser::tree::{Position, Query, Save};
+    use crate::css::selector::{Position, Query, Save};
     use crate::store::ChildIndex;
     use crate::store::Store;
     use crate::utils::Reader;

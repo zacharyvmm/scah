@@ -1,8 +1,7 @@
 use std::fmt::Debug;
 
 use crate::XHtmlElement;
-use crate::css::parser::lexer::Combinator;
-use crate::css::parser::tree::{Position, Query};
+use crate::css::selector::{Position, Query};
 use smallvec::SmallVec;
 
 #[derive(PartialEq, Debug)]
@@ -160,8 +159,8 @@ impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm {
 mod tests {
     use super::{Fsm, FsmState};
     use crate::Query;
-    use crate::css::parser::tree::Save;
-    use crate::xhtml::element::element::XHtmlElement;
+    use crate::css::selector::Save;
+    use crate::sax::element::element::XHtmlElement;
 
     #[test]
     fn test_fsm_next_descendant() {
