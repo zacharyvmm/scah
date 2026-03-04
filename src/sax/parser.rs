@@ -80,7 +80,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                 self.position.reader_position = reader.get_position();
                 tag = XHtmlTag::from(reader);
                 if let Some(XHtmlTag::Open) = tag {
-                    self.element.from(reader);
+                    self.element.from(reader, &mut self.store.attributes);
                 } else if tag.is_none()
                     && self.store.text_content.text_start.is_some()
                     && let Some(position) = self
@@ -349,13 +349,16 @@ mod tests {
         let s1_div_a: Vec<&Element> = s1["div a"].of(&store).collect();
         assert_eq!(s1_div_a.len(), 1);
         assert_eq!(store.text_content(s1_div_a[0]), Some("World"));
-        assert_eq!(s1_div_a[0].attributes[0].value, Some("https://world.com"));
+        assert_eq!(
+            s1_div_a[0].attributes(&store).unwrap()[0].value,
+            Some("https://world.com")
+        );
 
         let s1_direct_a: Vec<&Element> = s1["> a[href]"].of(&store).collect();
         assert_eq!(s1_direct_a.len(), 1);
         assert_eq!(store.text_content(s1_direct_a[0]), Some("Hello"));
         assert_eq!(
-            s1_direct_a[0].attributes[0].value,
+            s1_direct_a[0].attributes(&store).unwrap()[0].value,
             Some("https://hello.com")
         );
 
@@ -453,13 +456,16 @@ mod tests {
 
         assert_eq!(inputs[0].name, "input");
         assert_eq!(inputs[0].id, Some("name"));
-        assert_eq!(inputs[0].attributes[0].key, "type");
-        assert_eq!(inputs[0].attributes[0].value, Some("text"));
+        assert_eq!(inputs[0].attributes(&store).unwrap()[0].key, "type");
+        assert_eq!(inputs[0].attributes(&store).unwrap()[0].value, Some("text"));
 
         assert_eq!(inputs[1].name, "input");
         assert_eq!(inputs[1].id, Some("mail"));
-        assert_eq!(inputs[1].attributes[0].key, "type");
-        assert_eq!(inputs[1].attributes[0].value, Some("email"));
+        assert_eq!(inputs[1].attributes(&store).unwrap()[0].key, "type");
+        assert_eq!(
+            inputs[1].attributes(&store).unwrap()[0].value,
+            Some("email")
+        );
     }
 
     #[test]
@@ -547,7 +553,7 @@ mod tests {
         let anchor = root.get("div.article a").unwrap().value(&store).unwrap();
 
         assert_eq!(anchor.name, "a");
-        assert_eq!(anchor.attributes[0].value, Some("/post/0"));
+        assert_eq!(anchor.attributes(&store).unwrap()[0].value, Some("/post/0"));
         assert_eq!(anchor.inner_html, Some("<b>Post</b> &lt;0&gt;"));
         assert_eq!(store.text_content(anchor), Some("Post &lt;0&gt;"));
     }
@@ -584,6 +590,20 @@ mod tests {
         let store = parser.matches();
 
         assert_eq!(
+            store.attributes,
+            vec![
+                Attribute {
+                    key: "hello",
+                    value: Some("world")
+                },
+                Attribute {
+                    key: "href",
+                    value: Some("https://www.example.com")
+                },
+            ]
+        );
+
+        assert_eq!(
             store.elements,
             vec![
                 Element {
@@ -598,10 +618,7 @@ mod tests {
                     name: "span",
                     class: Some("hello"),
                     id: Some("world"),
-                    attributes: vec![Attribute {
-                        key: "hello",
-                        value: Some("world")
-                    }],
+                    attributes: store.elements[1].attributes.clone(),
                     inner_html: Some(
                         r#"
         Hello <a href="https://www.example.com">World</a>
@@ -617,10 +634,7 @@ mod tests {
                     name: "a",
                     class: None,
                     id: None,
-                    attributes: vec![Attribute {
-                        key: "href",
-                        value: Some("https://www.example.com")
-                    }],
+                    attributes: store.elements[2].attributes.clone(),
                     inner_html: Some("World"),
                     text_content: store.elements[2].text_content.clone(),
                     children: vec![],
@@ -664,7 +678,7 @@ mod tests {
         let element = root["a"].value(&store).unwrap();
 
         assert_eq!(
-            element.attributes,
+            store.attributes,
             vec![Attribute {
                 key: "href",
                 value: Some("/post/0"),
@@ -713,6 +727,20 @@ mod tests {
         println!("Store: {:#?}", store);
 
         assert_eq!(store.elements.len(), 6);
+
+        assert_eq!(
+            store.attributes,
+            vec![
+                Attribute {
+                    key: "src",
+                    value: Some("https://example.com/p1.png")
+                },
+                Attribute {
+                    key: "/",
+                    value: None
+                }
+            ]
+        );
 
         assert_eq!(
             store.elements,
@@ -765,16 +793,7 @@ mod tests {
                 },
                 Element {
                     name: "img",
-                    attributes: vec![
-                        Attribute {
-                            key: "src",
-                            value: Some("https://example.com/p1.png")
-                        },
-                        Attribute {
-                            key: "/",
-                            value: None
-                        }
-                    ],
+                    attributes: store.elements[4].attributes.clone(),
                     ..Default::default()
                 },
                 Element {
@@ -835,6 +854,28 @@ mod tests {
         assert_eq!(store.elements.len(), 10);
 
         assert_eq!(
+            store.attributes,
+            vec![
+                Attribute {
+                    key: "src",
+                    value: Some("https://example.com/p1.png")
+                },
+                Attribute {
+                    key: "/",
+                    value: None
+                },
+                Attribute {
+                    key: "src",
+                    value: Some("https://example.com/p2.png")
+                },
+                Attribute {
+                    key: "/",
+                    value: None
+                },
+            ]
+        );
+
+        assert_eq!(
             store.elements,
             vec![
                 Element {
@@ -885,16 +926,7 @@ mod tests {
                 },
                 Element {
                     name: "img",
-                    attributes: vec![
-                        Attribute {
-                            key: "src",
-                            value: Some("https://example.com/p1.png")
-                        },
-                        Attribute {
-                            key: "/",
-                            value: None
-                        },
-                    ],
+                    attributes: store.elements[4].attributes.clone(),
                     ..Default::default()
                 },
                 Element {
@@ -932,16 +964,7 @@ mod tests {
                 },
                 Element {
                     name: "img",
-                    attributes: vec![
-                        Attribute {
-                            key: "src",
-                            value: Some("https://example.com/p2.png")
-                        },
-                        Attribute {
-                            key: "/",
-                            value: None
-                        },
-                    ],
+                    attributes: store.elements[8].attributes.clone(),
                     ..Default::default()
                 },
                 Element {

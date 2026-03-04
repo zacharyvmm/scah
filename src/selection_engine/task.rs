@@ -176,7 +176,7 @@ mod tests {
                 name: "div",
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: &[],
             },
         );
 
@@ -194,7 +194,7 @@ mod tests {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: &[],
             },
         );
 

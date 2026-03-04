@@ -1,7 +1,6 @@
 use crate::css::selector::{Selection, SelectionKind};
-use crate::sax::element::element::Attributes;
-
-use crate::dbg_print;
+use crate::{Attribute, dbg_print};
+use std::num::NonZeroU32;
 use std::ops::{Index, Range};
 
 mod text_content;
@@ -97,7 +96,7 @@ pub struct Element<'html, 'query> {
     pub name: &'html str,
     pub class: Option<&'html str>,
     pub id: Option<&'html str>,
-    pub attributes: Attributes<'html>,
+    pub attributes: Option<Range<u32>>,
     pub inner_html: Option<&'html str>,
     pub text_content: Option<Range<usize>>,
     // Store Selection directly to enable Index trait
@@ -106,7 +105,7 @@ pub struct Element<'html, 'query> {
 
 impl<'html, 'query, 'key> Element<'html, 'query> {
     /// Safe primary access method
-    pub fn get(&'html self, key: &'key str) -> Result<&'html Child, QueryError<'key>> {
+    pub fn get(&'html self, key: &'key str) -> Result<&'html Child<'html>, QueryError<'key>> {
         if let Some(index) = self.index_of_child_with_key(key) {
             return Ok(&self.children[index]);
         }
@@ -122,6 +121,17 @@ impl<'html, 'query, 'key> Element<'html, 'query> {
             }
         }
         None
+    }
+
+    pub fn attributes(&self, context: &'html Store<'html, 'query>) -> Option<&[Attribute<'html>]> {
+        self.attributes.as_ref().map(|range| {
+            &context.attributes[{
+                let start = range.start as usize;
+                let end = range.end as usize;
+
+                start..end
+            }]
+        })
     }
 }
 
@@ -139,6 +149,7 @@ impl<'html, 'query> Index<&'query str> for Element<'html, 'query> {
 #[derive(Debug, PartialEq)]
 pub struct Store<'html, 'query> {
     pub elements: Vec<Element<'html, 'query>>,
+    pub attributes: Vec<Attribute<'html>>,
     pub text_content: TextContent,
 }
 
@@ -149,12 +160,13 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
                 name: "root",
                 class: None,
                 id: None,
-                attributes: vec![],
+                attributes: None,
                 inner_html: None,
                 text_content: None,
                 children: vec![],
             }],
             text_content: TextContent::new(),
+            attributes: Vec::new(),
         }
     }
 
@@ -164,7 +176,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             name: "root",
             class: None,
             id: None,
-            attributes: vec![],
+            attributes: None,
             inner_html: None,
             text_content: None,
             children: vec![],
@@ -172,6 +184,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         Self {
             elements: arena,
             text_content: TextContent::with_capacity(capacity / 3),
+            attributes: Vec::with_capacity(capacity / 3),
         }
     }
 
@@ -181,6 +194,31 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         } else {
             None
         }
+    }
+
+    fn attribute_slice_to_range(&self, attributes: &[Attribute<'html>]) -> Option<Range<u32>> {
+        if self.attributes.is_empty() || attributes.is_empty() {
+            return None;
+        }
+        let tape_pointer_range = self.attributes.as_ptr_range();
+        let slice_ptr = attributes.as_ptr();
+
+        // println!("Tape: {:#?}", tape_pointer_range);
+        // println!("Slice Pointer: {:#?}", slice_ptr);
+
+        assert!(
+            tape_pointer_range.start == slice_ptr || tape_pointer_range.contains(&slice_ptr),
+            "Attribute Slice is invalid"
+        );
+
+        let start = unsafe { slice_ptr.offset_from(tape_pointer_range.start) } as usize;
+        let end = start + attributes.len();
+        assert!(self.attributes.len() >= end);
+
+        Some(std::ops::Range {
+            start: start as u32,
+            end: end as u32,
+        })
     }
 
     pub fn push(
@@ -193,7 +231,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             name: element.name,
             class: element.class,
             id: element.id,
-            attributes: element.attributes,
+            attributes: self.attribute_slice_to_range(element.attributes),
             inner_html: None,
             text_content: None,
             children: Vec::new(),

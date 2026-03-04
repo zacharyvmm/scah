@@ -7,7 +7,6 @@ pub struct Attribute<'html> {
     pub value: Option<&'html str>,
 }
 
-pub type Attributes<'html> = Vec<Attribute<'html>>;
 //pub type Attributes<'html> = SmallVec<[Attribute<'html>, 3]>;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -15,17 +14,21 @@ pub struct XHtmlElement<'html> {
     pub name: &'html str,
     pub id: Option<&'html str>,
     pub class: Option<&'html str>,
-    pub attributes: Attributes<'html>,
+    pub attributes: &'html [Attribute<'html>],
 }
 
 #[derive(Debug, PartialEq)]
-pub enum XHtmlTag<'a> {
+pub enum XHtmlTag<'html> {
     Open,
-    Close(&'a str),
+    Close(&'html str),
 }
 
-impl<'a> XHtmlElement<'a> {
-    fn add_to_element(&mut self, attribute: Attribute<'a>) {
+impl<'html> XHtmlElement<'html> {
+    fn add_to_element(
+        &mut self,
+        attribute: Attribute<'html>,
+        attribute_tape: &mut Vec<Attribute<'html>>,
+    ) {
         if self.name.is_empty() && attribute.value.is_none() {
             self.name = attribute.key;
         } else if self.class.is_none() && attribute.key == "class" && attribute.value.is_some() {
@@ -33,7 +36,7 @@ impl<'a> XHtmlElement<'a> {
         } else if self.id.is_none() && attribute.key == "id" && attribute.value.is_some() {
             self.id = attribute.value;
         } else {
-            self.attributes.push(attribute);
+            attribute_tape.push(attribute);
         }
     }
 
@@ -69,7 +72,7 @@ impl<'a> XHtmlElement<'a> {
             name: "",
             id: None,
             class: None,
-            attributes: Vec::new(),
+            attributes: &[],
         }
     }
 
@@ -77,12 +80,24 @@ impl<'a> XHtmlElement<'a> {
         self.name = "";
         self.id = None;
         self.class = None;
-        self.attributes.clear();
+        self.attributes = &[];
     }
 
-    pub fn from(&mut self, reader: &mut Reader<'a>) {
+    pub fn remove_attributes(&self, attribute_tape: &mut Vec<Attribute<'html>>) {
+        if self.attributes.is_empty() {
+            return;
+        }
+        let tape_ptr = attribute_tape.as_ptr();
+        let attr_range_ptr = self.attributes.as_ptr();
+        let idx = unsafe { tape_ptr.sub(attr_range_ptr as usize) } as usize;
+
+        attribute_tape.truncate(idx);
+    }
+
+    pub fn from(&mut self, reader: &mut Reader<'html>, attribute_tape: &mut Vec<Attribute<'html>>) {
         let mut assign = false;
         let mut key = None;
+        let start_len = attribute_tape.len();
 
         while let Some(token) = ElementAttributeToken::next(reader) {
             match token {
@@ -93,16 +108,22 @@ impl<'a> XHtmlElement<'a> {
                     }
                     Some(k) => {
                         if assign {
-                            self.add_to_element(Attribute {
-                                key: k,
-                                value: Some(string_value),
-                            });
+                            self.add_to_element(
+                                Attribute {
+                                    key: k,
+                                    value: Some(string_value),
+                                },
+                                attribute_tape,
+                            );
                             key = None;
                         } else {
-                            self.add_to_element(Attribute {
-                                key: k,
-                                value: None,
-                            });
+                            self.add_to_element(
+                                Attribute {
+                                    key: k,
+                                    value: None,
+                                },
+                                attribute_tape,
+                            );
                             key = Some(string_value)
                         }
                         assign = false;
@@ -116,11 +137,22 @@ impl<'a> XHtmlElement<'a> {
         }
 
         if let Some(attribute) = key {
-            self.add_to_element(Attribute {
-                key: attribute,
-                value: None,
-            });
+            self.add_to_element(
+                Attribute {
+                    key: attribute,
+                    value: None,
+                },
+                attribute_tape,
+            );
         }
+
+        //self.attributes = &attribute_tape[start_len..attribute_tape.len()];
+        self.attributes = unsafe {
+            std::slice::from_raw_parts(
+                attribute_tape.as_ptr().add(start_len),
+                attribute_tape.len() - start_len,
+            )
+        };
     }
 }
 
@@ -160,7 +192,8 @@ mod tests {
     fn test_key_no_quote_and_value_with_quote() {
         let mut reader = Reader::new("p key=\"value\"");
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
         assert_eq!(element.name, "p");
 
         assert_eq!(
@@ -176,7 +209,8 @@ mod tests {
     fn test_key_no_quote_and_value_no_quote() {
         let mut reader = Reader::new("p key=value");
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "p");
 
@@ -195,7 +229,8 @@ mod tests {
     fn test_key_with_quote_and_value_with_quote() {
         let mut reader = Reader::new("p \"key\"=\"value\"");
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "p");
 
@@ -212,7 +247,8 @@ mod tests {
     fn test_multiple_key_value_pairs() {
         let mut reader = Reader::new("p key=\"value\" \"key1\"=value1 \"key2\"=\"value2\" keey");
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "p");
 
@@ -250,7 +286,8 @@ mod tests {
     fn test_key_with_quote_and_no_value() {
         let mut reader = Reader::new("p \"key\"");
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "p");
 
@@ -267,7 +304,8 @@ mod tests {
     fn test_key_no_quote_and_no_value() {
         let mut reader = Reader::new("p key");
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "p");
 
@@ -284,7 +322,8 @@ mod tests {
     fn test_key_no_quote_and_escaped_space_value() {
         let mut reader = Reader::new("p key = hello\\ world");
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "p");
 
@@ -301,7 +340,8 @@ mod tests {
     fn test_long_key_with_spaces() {
         let mut reader = Reader::new("p \"long key with spaces\"=\"value\"");
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "p");
 
@@ -318,7 +358,8 @@ mod tests {
     fn test_long_key_with_spaces_and_different_quote_inside() {
         let mut reader = Reader::new("p \"long key's with spaces\"=\"value\"");
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "p");
 
@@ -335,7 +376,8 @@ mod tests {
     fn test_long_key_with_spaces_and_real_same_quote_inside() {
         let mut reader = Reader::new(r#"p "long key\"s with spaces"="value""#);
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "p");
 
@@ -354,7 +396,8 @@ mod tests {
             r#"p "long key\"s with spaces"="value\"s of an other person \\\\\\ \\\\\ \ \  \"""#,
         );
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "p");
 
@@ -373,7 +416,8 @@ mod tests {
             "a target=\"_blank\" href=\"/my_cv.pdf\" class=\"px-7 py-3\" hello-world=hello-world",
         );
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "a");
 
@@ -412,7 +456,8 @@ mod tests {
 
         let tag = XHtmlTag::from(&mut reader);
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(tag, Some(XHtmlTag::Open));
 
@@ -422,7 +467,7 @@ mod tests {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: Vec::from([
+                attributes: &[
                     Attribute {
                         key: "href",
                         value: Some(
@@ -435,7 +480,7 @@ mod tests {
                             "The crossorigin attribute, valid on the <audio>, <img>, <link>, <script>, and <video> elements, provides support for CORS, defining how the element handles cross-origin requests, thereby enabling the configuration of the CORS requests for the element's fetched data. Depending on the element, the attribute can be a CORS settings attribute."
                         )
                     }
-                ]),
+                ],
             }
         );
     }
@@ -445,7 +490,8 @@ mod tests {
         let mut reader = Reader::new("p key=\"value\"");
         let tag = XHtmlTag::from(&mut reader);
         let mut element = XHtmlElement::new();
-        element.from(&mut reader);
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
 
         assert_eq!(tag, Some(XHtmlTag::Open));
 
@@ -455,10 +501,10 @@ mod tests {
                 name: "p",
                 id: None,
                 class: None,
-                attributes: Vec::from([Attribute {
+                attributes: &[Attribute {
                     key: "key",
                     value: Some("value")
-                }]),
+                }],
             }
         );
     }

@@ -82,7 +82,7 @@ mod tests {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: vec![]
+                attributes: &[]
             },
             4,
             1,
@@ -105,7 +105,7 @@ mod tests {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: vec![]
+                attributes: &[]
             },
             2,
             1,
@@ -128,7 +128,7 @@ mod tests {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: vec![]
+                attributes: &[]
             },
             4,
             1,
@@ -151,7 +151,7 @@ mod tests {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: vec![]
+                attributes: &[]
             },
             1,
             1,
@@ -173,7 +173,7 @@ mod tests {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: vec![]
+                attributes: &[]
             },
             1,
             1,

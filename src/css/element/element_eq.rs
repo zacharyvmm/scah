@@ -94,7 +94,7 @@ mod tests {
                 name: "hello",
                 id: Some("id"),
                 class: Some("hello world"),
-                attributes: Vec::from([
+                attributes: &[
                     Attribute {
                         key: "key1",
                         value: Some("value1")
@@ -107,7 +107,7 @@ mod tests {
                         key: "selected",
                         value: Some("true")
                     },
-                ])
+                ]
             }
         );
     }
@@ -129,7 +129,7 @@ mod tests {
                 name: "a",
                 id: Some("search-link"),
                 class: Some("text-white underline-green p-4"),
-                attributes: Vec::from([
+                attributes: &[
                     Attribute {
                         key: "key1",
                         value: Some("value1")
@@ -142,7 +142,7 @@ mod tests {
                         key: "selected",
                         value: Some("true")
                     },
-                ])
+                ]
             }
         );
     }

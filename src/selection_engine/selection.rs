@@ -365,7 +365,7 @@ mod tests {
                 name: "div",
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: &[],
             },
             &DocumentPosition {
                 reader_position: 0,
@@ -407,7 +407,7 @@ mod tests {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: &[],
             },
             &DocumentPosition {
                 reader_position: 0,
@@ -469,7 +469,7 @@ mod tests {
                 name: "div",
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: &[],
             },
             &DocumentPosition {
                 reader_position: 0,
@@ -512,7 +512,7 @@ mod tests {
                 name: "p",
                 id: None,
                 class: Some("class"),
-                attributes: vec![],
+                attributes: &[],
             },
             &DocumentPosition {
                 reader_position: 0,
@@ -592,7 +592,7 @@ mod tests {
                 name: "div",
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: &[],
             },
             &DocumentPosition {
                 reader_position: 0,

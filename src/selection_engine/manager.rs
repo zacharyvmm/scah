@@ -35,8 +35,14 @@ impl<'html, 'query: 'html> FsmManager<'query> {
         position: &DocumentPosition,
         store: &mut Store<'html, 'query>,
     ) {
+        let len = store.elements.len();
         for session in self.runners.iter_mut() {
             let _ = session.next(&xhtml_element, position, store);
+        }
+        if len == store.elements.len() {
+            // Element was not saved
+            // Thus delete from the tape
+            xhtml_element.remove_attributes(&mut store.attributes);
         }
     }
 

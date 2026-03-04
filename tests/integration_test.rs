@@ -113,16 +113,21 @@ fn test_html_page_first_anchor_tag_selection<'key>() -> Result<(), QueryError<'k
 
     let child = &root["a"];
 
+    let a = child.value(&store).unwrap();
     assert_eq!(
-        *child.value(&store).unwrap(),
-        Element {
+        store.attributes,
+        vec![Attribute {
+            key: "href",
+            value: Some("link1")
+        }]
+    );
+    assert_eq!(
+        a,
+        &Element {
             name: "a",
             class: None,
             id: None,
-            attributes: vec![Attribute {
-                key: "href",
-                value: Some("link1")
-            }],
+            attributes: a.attributes.clone(),
             inner_html: Some("Link 1"),
             text_content: Some(0..6),
             children: Vec::new(),
