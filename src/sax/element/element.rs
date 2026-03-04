@@ -9,7 +9,7 @@ pub struct Attribute<'html> {
 
 //pub type Attributes<'html> = SmallVec<[Attribute<'html>, 3]>;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct XHtmlElement<'html> {
     pub name: &'html str,
     pub id: Option<&'html str>,
@@ -67,15 +67,6 @@ impl<'html> XHtmlElement<'html> {
         return false;
     }
 
-    pub fn new() -> Self {
-        Self {
-            name: "",
-            id: None,
-            class: None,
-            attributes: &[],
-        }
-    }
-
     pub fn clear(&mut self) {
         self.name = "";
         self.id = None;
@@ -83,13 +74,17 @@ impl<'html> XHtmlElement<'html> {
         self.attributes = &[];
     }
 
+    /*
+     * When a Element is parsed all the Attributes are added to a Tape
+     * If the Element was not saved, then we need to delete these Attributes
+     */
     pub fn remove_attributes(&self, attribute_tape: &mut Vec<Attribute<'html>>) {
         if self.attributes.is_empty() {
             return;
         }
         let tape_ptr = attribute_tape.as_ptr();
         let attr_range_ptr = self.attributes.as_ptr();
-        let idx = unsafe { tape_ptr.sub(attr_range_ptr as usize) } as usize;
+        let idx = unsafe { attr_range_ptr.offset_from_unsigned(tape_ptr) };
 
         attribute_tape.truncate(idx);
     }
@@ -146,7 +141,10 @@ impl<'html> XHtmlElement<'html> {
             );
         }
 
-        //self.attributes = &attribute_tape[start_len..attribute_tape.len()];
+        // Since we are
+        //  1) assigning after adding the Attributes
+        //  and 2) either transforming it into a Range in Store or removing them
+        //  their is no risk when doing this unsafely
         self.attributes = unsafe {
             std::slice::from_raw_parts(
                 attribute_tape.as_ptr().add(start_len),
@@ -191,7 +189,7 @@ mod tests {
     #[test]
     fn test_key_no_quote_and_value_with_quote() {
         let mut reader = Reader::new("p key=\"value\"");
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
         assert_eq!(element.name, "p");
@@ -208,7 +206,7 @@ mod tests {
     #[test]
     fn test_key_no_quote_and_value_no_quote() {
         let mut reader = Reader::new("p key=value");
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -228,7 +226,7 @@ mod tests {
     #[test]
     fn test_key_with_quote_and_value_with_quote() {
         let mut reader = Reader::new("p \"key\"=\"value\"");
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -246,7 +244,7 @@ mod tests {
     #[test]
     fn test_multiple_key_value_pairs() {
         let mut reader = Reader::new("p key=\"value\" \"key1\"=value1 \"key2\"=\"value2\" keey");
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -285,7 +283,7 @@ mod tests {
     #[test]
     fn test_key_with_quote_and_no_value() {
         let mut reader = Reader::new("p \"key\"");
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -303,7 +301,7 @@ mod tests {
     #[test]
     fn test_key_no_quote_and_no_value() {
         let mut reader = Reader::new("p key");
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -321,7 +319,7 @@ mod tests {
     #[test]
     fn test_key_no_quote_and_escaped_space_value() {
         let mut reader = Reader::new("p key = hello\\ world");
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -339,7 +337,7 @@ mod tests {
     #[test]
     fn test_long_key_with_spaces() {
         let mut reader = Reader::new("p \"long key with spaces\"=\"value\"");
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -357,7 +355,7 @@ mod tests {
     #[test]
     fn test_long_key_with_spaces_and_different_quote_inside() {
         let mut reader = Reader::new("p \"long key's with spaces\"=\"value\"");
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -375,7 +373,7 @@ mod tests {
     #[test]
     fn test_long_key_with_spaces_and_real_same_quote_inside() {
         let mut reader = Reader::new(r#"p "long key\"s with spaces"="value""#);
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -395,7 +393,7 @@ mod tests {
         let mut reader = Reader::new(
             r#"p "long key\"s with spaces"="value\"s of an other person \\\\\\ \\\\\ \ \  \"""#,
         );
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -415,7 +413,7 @@ mod tests {
         let mut reader = Reader::new(
             "a target=\"_blank\" href=\"/my_cv.pdf\" class=\"px-7 py-3\" hello-world=hello-world",
         );
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -455,7 +453,7 @@ mod tests {
         );
 
         let tag = XHtmlTag::from(&mut reader);
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 
@@ -489,7 +487,7 @@ mod tests {
     fn test_xhtml_tag_open() {
         let mut reader = Reader::new("p key=\"value\"");
         let tag = XHtmlTag::from(&mut reader);
-        let mut element = XHtmlElement::new();
+        let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
 

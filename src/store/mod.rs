@@ -211,7 +211,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             "Attribute Slice is invalid"
         );
 
-        let start = unsafe { slice_ptr.offset_from(tape_pointer_range.start) } as usize;
+        let start = unsafe { slice_ptr.offset_from_unsigned(tape_pointer_range.start) };
         let end = start + attributes.len();
         assert!(self.attributes.len() >= end);
 

@@ -22,7 +22,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                 text_content_position: usize::MAX,
             },
             selectors,
-            element: XHtmlElement::new(),
+            element: XHtmlElement::default(),
             in_script: false,
             store: Store::new(),
         }
@@ -36,7 +36,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                 text_content_position: usize::MAX,
             },
             selectors,
-            element: XHtmlElement::new(),
+            element: XHtmlElement::default(),
             in_script: false,
             store: Store::with_capacity(capacity),
         }
