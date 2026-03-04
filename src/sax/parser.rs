@@ -339,33 +339,19 @@ mod tests {
         let store = parser.matches();
         let root = &store.elements[0];
 
-        // main > section
-        let sections_idx = &root["main > section"];
-        let sections: Vec<&Element> = sections_idx
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let sections: Vec<&Element> = root["main > section"].of(&store).collect();
         assert_eq!(sections.len(), 2);
 
         // Section 1
         let s1 = sections[0];
         assert_eq!(store.text_content(s1), Some("Hello World"));
 
-        let s1_div_a: Vec<&Element> = s1["div a"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let s1_div_a: Vec<&Element> = s1["div a"].of(&store).collect();
         assert_eq!(s1_div_a.len(), 1);
         assert_eq!(store.text_content(s1_div_a[0]), Some("World"));
         assert_eq!(s1_div_a[0].attributes[0].value, Some("https://world.com"));
 
-        let s1_direct_a: Vec<&Element> = s1["> a[href]"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let s1_direct_a: Vec<&Element> = s1["> a[href]"].of(&store).collect();
         assert_eq!(s1_direct_a.len(), 1);
         assert_eq!(store.text_content(s1_direct_a[0]), Some("Hello"));
         assert_eq!(
@@ -377,20 +363,12 @@ mod tests {
         let s2 = sections[1];
         assert_eq!(store.text_content(s2), Some("Hello2 World2 World3"));
 
-        let s2_div_a: Vec<&Element> = s2["div a"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let s2_div_a: Vec<&Element> = s2["div a"].of(&store).collect();
         assert_eq!(s2_div_a.len(), 2, "World3 Element duplicated");
         assert_eq!(store.text_content(s2_div_a[0]), Some("World2"));
         assert_eq!(store.text_content(s2_div_a[1]), Some("World3"));
 
-        let s2_direct_a: Vec<&Element> = s2["> a[href]"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let s2_direct_a: Vec<&Element> = s2["> a[href]"].of(&store).collect();
         assert_eq!(s2_direct_a.len(), 1);
         assert_eq!(store.text_content(s2_direct_a[0]), Some("Hello2"));
     }
@@ -430,7 +408,7 @@ mod tests {
 
         // It should NOT find any div
         if let Ok(div_idx) = root.get("div") {
-            assert_eq!(div_idx.iter().unwrap().count(), 0);
+            assert_eq!(div_idx.iter().count(), 0);
         }
     }
 
@@ -470,11 +448,7 @@ mod tests {
         let store = parser.matches();
         let root = &store.elements[0];
 
-        let inputs: Vec<&Element> = root["form > p > input"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let inputs: Vec<&Element> = root["form > p > input"].of(&store).collect();
         assert_eq!(inputs.len(), 2);
 
         assert_eq!(inputs[0].name, "input");
@@ -515,11 +489,7 @@ mod tests {
         let store = parser.matches();
         let root = &store.elements[0];
 
-        let inputs: Vec<&Element> = root["form > p > input"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let inputs: Vec<&Element> = root["form > p > input"].of(&store).collect();
         assert_eq!(inputs.len(), 2);
         assert_eq!(inputs[0].text_content, None);
         assert_eq!(inputs[0].inner_html, None);
@@ -549,11 +519,7 @@ mod tests {
         let store = parser.matches();
         let root = &store.elements[0];
 
-        let anchors: Vec<&Element> = root["a"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let anchors: Vec<&Element> = root["a"].of(&store).collect();
         assert_eq!(anchors.len(), 3);
 
         assert_eq!(store.text_content(anchors[0]), Some("Hello 1"));
@@ -578,8 +544,7 @@ mod tests {
         let store = parser.matches();
         let root = &store.elements[0];
 
-        let anchor_idx = root.get("div.article a").unwrap().value().unwrap();
-        let anchor = &store.elements[anchor_idx];
+        let anchor = root.get("div.article a").unwrap().value(&store).unwrap();
 
         assert_eq!(anchor.name, "a");
         assert_eq!(anchor.attributes[0].value, Some("/post/0"));
@@ -696,8 +661,7 @@ mod tests {
         let store = parser.matches();
         let root = &store.elements[0];
 
-        let element_index = root["a"].value().unwrap();
-        let element = &store.elements[element_index];
+        let element = root["a"].value(&store).unwrap();
 
         assert_eq!(
             element.attributes,

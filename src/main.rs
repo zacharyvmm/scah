@@ -27,6 +27,6 @@ fn main() {
         "Time elapsed: {:?} ({}s), Tags Found: {:#?}",
         duration,
         duration.as_secs_f64(),
-        root["a"].iter().unwrap().count()
+        root["a"].iter().count()
     );
 }

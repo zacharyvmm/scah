@@ -13,7 +13,7 @@ fn test_all_anchor_tags_for_whatwg_html_spec() -> std::io::Result<()> {
     buf_reader.read_to_string(&mut contents)?;
 
     let queries = &[Query::all("a", Save::all()).build()];
-    let map = parse(&contents, queries);
+    let store = parse(&contents, queries);
 
     //println!("{:#?}", map);
     Ok(())
@@ -30,7 +30,7 @@ fn test_all_anchor_tags_for_albert_einstein_wikipedia<'q>() -> std::io::Result<(
     let queries = &[Query::all("a", Save::all()).build()];
     let store = parse(&contents, queries);
 
-    assert_eq!(store.elements[0]["a"].iter().unwrap().count(), 3848);
+    assert_eq!(store.elements[0]["a"].iter().count(), 3848);
     //println!("{:#?}", map);
 
     Ok(())

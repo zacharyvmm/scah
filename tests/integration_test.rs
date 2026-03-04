@@ -50,12 +50,11 @@ fn test_html_page<'key>() -> Result<(), QueryError<'key>> {
     let store = parse(HTML, queries);
     let root = &store.elements[0];
 
-    let indices = root["main > section#id"].iter().unwrap();
-    let mut list = indices.map(|i| &store.elements[*i]);
+    let list = root["main > section#id"].of(&store).collect::<Vec<_>>();
 
     println!("{:#?}", list);
 
-    let last = list.clone().last().unwrap();
+    let last = list.last().unwrap();
 
     assert!(last.inner_html.is_some());
     assert_eq!(
@@ -69,7 +68,7 @@ fn test_html_page<'key>() -> Result<(), QueryError<'key>> {
         r#"Not selected (main has no red-background class)"#
     );
 
-    let first = list.next().unwrap();
+    let first = list.iter().next().unwrap();
     assert_eq!(
         first.inner_html.unwrap().trim(),
         r#"<!-- These 3 links will be selected by the selector -->
@@ -97,12 +96,12 @@ fn test_html_page_all_anchor_tag_selection<'key>() -> Result<(), QueryError<'key
     let queries = &[Query::all("a", Save::all()).build()];
     let store = parse(HTML, queries);
     let root = &store.elements[0];
+    println!("Strore: {:#?}", store);
 
-    let indices = root["a"].iter().unwrap();
-    let list = indices.map(|i| &store.elements[*i]);
+    let list = root["a"].of(&store).collect::<Vec<_>>();
 
-    assert_eq!(list.clone().count(), 7);
-    println!("List: {:#?}", list.collect::<Vec<_>>());
+    assert_eq!(list.iter().count(), 7);
+    println!("List: {:#?}", list);
     Ok(())
 }
 
@@ -115,7 +114,7 @@ fn test_html_page_first_anchor_tag_selection<'key>() -> Result<(), QueryError<'k
     let child = &root["a"];
 
     assert_eq!(
-        store.elements[child.value()?],
+        *child.value(&store).unwrap(),
         Element {
             name: "a",
             class: None,
@@ -139,8 +138,7 @@ fn test_html_page_all_anchor_tag_starting_with_link_selection<'key>() -> Result<
     let store = parse(HTML, queries);
     let root = &store.elements[0];
 
-    let indices = root["a[href^=link]"].iter().unwrap();
-    let list = indices.map(|i| &store.elements[*i]);
+    let list = root["a[href^=link]"].of(&store);
 
     assert_eq!(list.count(), 3);
     Ok(())
@@ -153,24 +151,21 @@ fn test_html_page_children_valid_anchor_tags_in_main<'key>() -> Result<(), Query
     let store = parse(HTML, queries);
     let root = &store.elements[0];
 
-    let indices = root["main > section > a[href]"].iter().unwrap();
-    let list = indices.map(|i| &store.elements[*i]);
+    let list = root["main > section > a[href]"].of(&store);
 
     assert_eq!(list.count(), 5);
     Ok(())
 }
 
 #[test]
-fn test_html_page_single_main<'key>() -> Result<(), QueryError<'key>> {
+fn test_html_page_single_main<'key>() {
     let queries = &[Query::all("main.red-background > section#id", Save::all()).build()];
     let store = parse(HTML, queries);
     let root = &store.elements[0];
 
-    let indices = root["main.red-background > section#id"].iter().unwrap();
-    let list = indices.map(|i| &store.elements[*i]);
+    let list = root["main.red-background > section#id"].of(&store);
 
     assert_eq!(list.count(), 1);
-    Ok(())
 }
 
 #[test]
@@ -192,8 +187,7 @@ fn test_html_multi_selection<'key>() -> Result<(), QueryError<'key>> {
     let store = parse(HTML, q);
     let root = &store.elements[0];
 
-    let indices = root["main > section"].iter().unwrap();
-    let list = indices.map(|i| &store.elements[*i]);
+    let list = root["main > section"].of(&store);
 
     println!("List: {:#?}", list.collect::<Vec<_>>());
     Ok(())

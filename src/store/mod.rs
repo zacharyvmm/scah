@@ -29,10 +29,10 @@ impl ChildIndex {
         }
     }
 
-    pub fn iter(&self) -> Result<std::slice::Iter<'_, usize>, QueryError<'static>> {
+    pub fn iter(&self) -> std::slice::Iter<'_, usize> {
         match self {
-            ChildIndex::Many(indices) => Ok(indices.iter()),
-            ChildIndex::One(_) => Err(QueryError::NotAList),
+            ChildIndex::Many(indices) => indices.iter(),
+            ChildIndex::One(i) => std::slice::from_ref(i).iter(),
         }
     }
 
@@ -62,12 +62,22 @@ pub struct Child<'query> {
 }
 
 impl<'query> Child<'query> {
-    pub fn value(&self) -> Result<usize, QueryError<'static>> {
-        self.index.value()
+    pub fn value(
+        &self,
+        store: &'query Store,
+    ) -> Result<&'query Element<'query, 'query>, QueryError<'static>> {
+        self.index.value().map(|v| &store.elements[v])
     }
 
-    pub fn iter(&self) -> Result<std::slice::Iter<'_, usize>, QueryError<'static>> {
+    pub fn iter(&self) -> std::slice::Iter<'_, usize> {
         self.index.iter()
+    }
+
+    pub fn of(
+        &self,
+        store: &'query Store,
+    ) -> impl Iterator<Item = &'query Element<'query, 'query>> {
+        self.iter().map(move |i| &store.elements[*i])
     }
 }
 
@@ -96,17 +106,12 @@ pub struct Element<'html, 'query> {
 
 impl<'html, 'query, 'key> Element<'html, 'query> {
     /// Safe primary access method
-    pub fn get(&'html self, key: &'key str) -> Result<&'html ChildIndex, QueryError<'key>> {
+    pub fn get(&'html self, key: &'key str) -> Result<&'html Child, QueryError<'key>> {
         if let Some(index) = self.index_of_child_with_key(key) {
-            return Ok(&self.children[index].index);
+            return Ok(&self.children[index]);
         }
 
         Err(QueryError::KeyNotFound(key))
-    }
-
-    /// Panicking accessor for known keys
-    pub fn select(&'html self, key: &'key str) -> &'html ChildIndex {
-        self.get(key).unwrap()
     }
 
     /// Check existence without error

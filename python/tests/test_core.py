@@ -20,7 +20,6 @@ def test_nested_selection():
     q = Query.all("#world", Save.all()).all("a", Save.all()).build()
     store = parse(HTML, q)
     print(store)
-    
     assert "#world" in store
     worlds = store["#world"]
     assert len(worlds) == 1

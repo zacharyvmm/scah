@@ -50,8 +50,7 @@ fn bench_comparison(c: &mut Criterion) {
                 let store = parse(&html, queries);
                 let root = &store.elements[0];
 
-                let element_index = root[QUERY].value().unwrap();
-                let element = &store.elements[element_index];
+                let element = root[QUERY].value(&store).unwrap();
 
                 black_box(&element.attributes);
                 black_box(&element.inner_html);
