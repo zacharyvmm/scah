@@ -22,7 +22,7 @@ pub struct TapeElement {
   pub(crate) name: RequiredField,
   pub(crate) class: OptionalField,
   pub(crate) id: OptionalField,
-  pub(crate) attributes: Vec<(RequiredField, OptionalField)>,
+  pub(crate) attributes: Option<Range<u32>>,
 
   pub(crate) inner_html: OptionalField,
   pub(crate) text_content: OptionalField,
@@ -51,6 +51,7 @@ pub struct JSStore {
   pub(crate) text_content: Buffer,
   pub(crate) html: Buffer,
   pub(crate) query_tape: Buffer,
+  pub(crate) attribute_tape: Vec<(RequiredField, OptionalField)>,
 }
 
 #[napi]
@@ -81,16 +82,22 @@ impl JSStore {
           .into_buffer(env)
           .unwrap()
       }),
-      attributes: e
-        .attributes
-        .iter()
-        .map(|(k, v)| {
-          (
-            range_from_html(k.clone()),
-            v.as_ref().map(|r| range_from_html(r.clone())),
-          )
-        })
-        .collect(),
+      attributes: {
+        if let Some(range) = &e.attributes {
+          let range = (range.start as usize)..(range.end as usize);
+          let slice = &self.attribute_tape[range];
+          slice
+            .iter()
+            .map(|(k, v)| {
+              let key = range_from_html(k.clone());
+              let value = v.as_ref().map(|range| range_from_html(range.clone()));
+              (key, value)
+            })
+            .collect::<Vec<(Buffer, Option<Buffer>)>>()
+        } else {
+          vec![]
+        }
+      },
       children: e
         .children
         .iter()

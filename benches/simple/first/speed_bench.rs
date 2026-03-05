@@ -52,7 +52,7 @@ fn bench_comparison(c: &mut Criterion) {
 
                 let element = root[QUERY].value(&store).unwrap();
 
-                black_box(&element.attributes);
+                black_box(&element.attributes(&store));
                 black_box(&element.inner_html);
                 black_box(store.text_content(&element));
             })

@@ -89,7 +89,6 @@ impl<'query> Index<usize> for Child<'query> {
 }
 
 type Children<'query> = Vec<Child<'query>>;
-type StrRange = Range<usize>;
 
 #[derive(Default, Debug, PartialEq)]
 pub struct Element<'html, 'query> {
@@ -253,7 +252,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
         if key_index.is_some() {
             match selection.kind {
-                SelectionKind::First { .. } => {
+                SelectionKind::First => {
                     dbg_print!("Store: {:#?}", self);
                     panic!(
                         "It is not possible to add a single item to the store when it already exists."
@@ -275,7 +274,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         element.children.push(Child {
             query: selection.source,
             index: match selection.kind {
-                SelectionKind::First { .. } => ChildIndex::One(index),
+                SelectionKind::First => ChildIndex::One(index),
                 SelectionKind::All => ChildIndex::Many(vec![index]),
             },
         });

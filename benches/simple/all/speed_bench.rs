@@ -36,7 +36,7 @@ fn bench_comparison(c: &mut Criterion) {
                 let root = &store.elements[0];
 
                 for element in root[QUERY].of(&store) {
-                    black_box(&element.attributes);
+                    black_box(&element.attributes(&store));
                     black_box(&element.inner_html);
                     black_box(store.text_content(&element));
                 }

@@ -114,18 +114,18 @@ fn parse<'a>(env: &'a Env, html: String, queries: Vec<Reference<JsQuery>>) -> Re
       .unwrap()
   };
 
-  for element in store.elements.into_iter() {
-    let attributes = element
-      .attributes
-      .iter()
-      .map(|a| {
-        Ok((
-          range_from_str_slice(html_bytes, a.key),
-          a.value.map(|v| range_from_str_slice(html_bytes, v)),
-        ))
-      })
-      .collect::<Result<Vec<(RequiredField, OptionalField)>>>()?;
+  let attribute_tape = store
+    .attributes
+    .iter()
+    .map(|a| {
+      (
+        range_from_str_slice(html_bytes, a.key),
+        a.value.map(|v| range_from_str_slice(html_bytes, v)),
+      )
+    })
+    .collect();
 
+  for element in store.elements.into_iter() {
     let children = element
       .children
       .iter()
@@ -142,7 +142,7 @@ fn parse<'a>(env: &'a Env, html: String, queries: Vec<Reference<JsQuery>>) -> Re
       name: range_from_str_slice(html_bytes, element.name),
       class: element.class.map(|r| range_from_str_slice(html_bytes, r)),
       id: element.id.map(|r| range_from_str_slice(html_bytes, r)),
-      attributes,
+      attributes: element.attributes,
       inner_html: element
         .inner_html
         .map(|r| range_from_str_slice(html_bytes, r)),
@@ -156,5 +156,6 @@ fn parse<'a>(env: &'a Env, html: String, queries: Vec<Reference<JsQuery>>) -> Re
     text_content: text_content.into_buffer(env).unwrap(),
     html: html.into_bytes().into(),
     query_tape: full_tape.into(),
+    attribute_tape,
   })
 }
