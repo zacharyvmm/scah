@@ -38,13 +38,12 @@ fn bench_scah(html: String) {
     let queries = &[Query::first(QUERY, Save::all()).build()];
 
     let store = parse(&html, queries);
-    let root = &store.elements[0];
 
-    let element = root[QUERY].value(&store).unwrap();
+    let element = store.get(QUERY).unwrap().next().unwrap();
 
     black_box(&element.attributes(&store));
     black_box(&element.inner_html);
-    black_box(store.text_content(&element));
+    black_box(&element.text_content(&store));
 }
 
 use scraper::{Html, Selector};

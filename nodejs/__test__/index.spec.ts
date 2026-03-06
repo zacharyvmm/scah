@@ -126,15 +126,3 @@ test('find 5_000 anchor tags', () => {
   const root = store.get(0)
   expect(root?.children[0][1]).toEqual(Array.from({ length: 5000 }, (_, i) => i + 1))
 })
-
-function generateStructuredHtml(count: number): string {
-  let html = "<html><body><div id='content'>"
-
-  for (let i = 0; i < count; i++) {
-    // Added some entities (&lt;) and bold tags (<b>) to make text extraction work harder
-    html += `<div class="article"><a href="/post/${i}"><b>Post</b> &lt;${i}&gt;</a></div>`
-  }
-
-  html += '</div></body></html>'
-  return html
-}

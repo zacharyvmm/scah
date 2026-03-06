@@ -33,12 +33,11 @@ fn bench_comparison(c: &mut Criterion) {
             b.iter(|| {
                 let queries = &[Query::all(QUERY, Save::all()).build()];
                 let store = parse(&html, queries);
-                let root = &store.elements[0];
 
-                for element in root[QUERY].of(&store) {
+                for element in store.get(QUERY).unwrap() {
                     black_box(&element.attributes(&store));
                     black_box(&element.inner_html);
-                    black_box(store.text_content(&element));
+                    black_box(&element.text_content(&store));
                 }
             })
         });

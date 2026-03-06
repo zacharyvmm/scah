@@ -7,13 +7,15 @@ use scah::{Query, Save, parse};
 #[test]
 fn test_all_anchor_tags_for_whatwg_html_spec() -> std::io::Result<()> {
     // 26th of december 2025 16:50
-    let file = File::open("/home/zmm/Music/html.spec.whatwg.index.html")?;
+    let file = File::open("/home/zmm/Downloads/html.spec.whatwg.index.html")?;
     let mut buf_reader = BufReader::new(file);
     let mut contents = String::new();
     buf_reader.read_to_string(&mut contents)?;
 
     let queries = &[Query::all("a", Save::all()).build()];
     let store = parse(&contents, queries);
+
+    assert_eq!(store.get("a").unwrap().count(), 64580);
 
     //println!("{:#?}", map);
     Ok(())
@@ -22,7 +24,7 @@ fn test_all_anchor_tags_for_whatwg_html_spec() -> std::io::Result<()> {
 #[test]
 fn test_all_anchor_tags_for_albert_einstein_wikipedia<'q>() -> std::io::Result<()> {
     // 26th of december 2025 16:50
-    let file = File::open("/home/zmm/Music/Albert_Einstein.html")?;
+    let file = File::open("/home/zmm/Downloads/Albert_Einstein.html")?;
     let mut buf_reader = BufReader::new(file);
     let mut contents = String::new();
     buf_reader.read_to_string(&mut contents)?;
@@ -30,7 +32,7 @@ fn test_all_anchor_tags_for_albert_einstein_wikipedia<'q>() -> std::io::Result<(
     let queries = &[Query::all("a", Save::all()).build()];
     let store = parse(&contents, queries);
 
-    assert_eq!(store.elements[0]["a"].iter().count(), 3848);
+    assert_eq!(store.get("a").unwrap().count(), 3848);
     //println!("{:#?}", map);
 
     Ok(())
