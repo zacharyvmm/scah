@@ -117,7 +117,6 @@ pub struct Query<'query> {
     pub(crate) states: Box<[State<'query>]>,
     pub(crate) queries: Box<[Selection<'query>]>,
 
-    #[deprecated(note = "Should be `exit at state end`")]
     pub(crate) exit_at_section_end: Option<usize>,
 }
 
@@ -188,6 +187,15 @@ impl<'query> Query<'query> {
         let is_last_state = self.queries[position.selection].range.end - 1 == position.state;
 
         is_last_query & is_last_state
+    }
+
+    pub(crate) fn can_move_foward(&self, position: &Position) -> bool {
+        debug_assert!(position.selection < self.queries.len());
+
+        let is_last_query = self.queries.len() - 1 == position.selection;
+        let is_last_state = self.queries[position.selection].range.end - 1 == position.state;
+
+        !is_last_query & is_last_state
     }
 }
 

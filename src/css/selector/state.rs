@@ -34,21 +34,7 @@ impl<'query> State<'query> {
             "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
         );
 
-        return match self.transition {
-            Combinator::Child => last_depth + 1 == current_depth,
-            Combinator::Descendant => last_depth == 0 || current_depth != last_depth,
-
-            // BUG: I need to know if it's the element right after
-            // TODO: After first Fail it goes back
-            Combinator::NextSibling => last_depth == current_depth,
-
-            // BUG: I need to know if it's found a match before, so I know if it's ON/OFF
-            Combinator::SubsequentSibling => true,
-
-            Combinator::Namespace => panic!("Why are you using Namespace Selector ???"),
-        } && &self.state == element;
-
-        return false;
+        self.transition.compare(last_depth, current_depth) && &self.state == element
     }
 
     pub fn back<'html>(

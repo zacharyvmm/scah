@@ -395,8 +395,14 @@ mod tests {
             &mut store,
         );
 
-        assert_eq!(store.elements[0].get(&store, "div a").unwrap().count(), 1);
-        let children = store.elements[0].get(&store, "div a").unwrap();
+        assert_eq!(
+            store.elements[ElementId(0)]
+                .get(&store, "div a")
+                .unwrap()
+                .count(),
+            1
+        );
+        let children = store.elements[ElementId(0)].get(&store, "div a").unwrap();
 
         let children: Vec<&Element> = children.collect();
         assert_eq!(children.len(), 1);
@@ -450,7 +456,7 @@ mod tests {
         );
 
         assert_eq!(
-            store.elements[0]
+            store.elements[ElementId(0)]
                 .get(&store, "div p.class")
                 .unwrap()
                 .count(),
@@ -499,13 +505,15 @@ mod tests {
         );
 
         assert_eq!(
-            store.elements[0]
+            store.elements[ElementId(0)]
                 .get(&store, "div p.class")
                 .unwrap()
                 .count(),
             1
         );
-        let children = store.elements[0].get(&store, "div p.class").unwrap();
+        let children = store.elements[ElementId(0)]
+            .get(&store, "div p.class")
+            .unwrap();
         let children: Vec<&Element> = children.collect();
         assert_eq!(children.len(), 1);
         assert_eq!(children[0].name, "p");

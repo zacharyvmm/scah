@@ -91,8 +91,7 @@ fn test_html_page() {
 fn test_html_page_all_anchor_tag_selection() {
     let queries = &[Query::all("a", Save::all()).build()];
     let store = parse(HTML, queries);
-    let root = &store.elements[0];
-    println!("Strore: {:#?}", store);
+    println!("Store: {:#?}", store);
 
     let list = store.get("a").unwrap().collect::<Vec<_>>();
 
@@ -122,10 +121,7 @@ fn test_html_page_first_anchor_tag_selection() {
             value: Some("link1")
         }]
     );
-    assert_eq!(
-        a.attribute(&store, "href"),
-        Some("link1")
-    );
+    assert_eq!(a.attribute(&store, "href"), Some("link1"));
     assert_eq!(a.text_content(&store).unwrap(), "Link 1");
 }
 

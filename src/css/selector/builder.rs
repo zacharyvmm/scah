@@ -213,8 +213,6 @@ impl<'query> QueryBuilder<'query> {
             Some(index)
         }
 
-        // BUG: I'm intentially adding this bug, because to actually solve this
-        //  I would need to be able to check if all descandants in my fsm tree was saved to early exit
         search_for_single_exit_section(0, &self.selection)
     }
 }

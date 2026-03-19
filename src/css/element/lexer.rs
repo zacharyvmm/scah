@@ -49,6 +49,26 @@ impl<'a> Combinator {
 
         return combinator;
     }
+
+    pub(crate) fn is_descendant(&self) -> bool {
+        *self == Self::Descendant
+    }
+
+    pub(crate) fn compare(&self, last_depth: u16, current_depth: u16) -> bool {
+        match self {
+            Combinator::Child => last_depth + 1 == current_depth,
+            Combinator::Descendant => last_depth == 0 || current_depth != last_depth,
+
+            // BUG: I need to know if it's the element right after
+            // TODO: After first Fail it goes back
+            Combinator::NextSibling => last_depth == current_depth,
+
+            // BUG: I need to know if it's found a match before, so I know if it's ON/OFF
+            Combinator::SubsequentSibling => true,
+
+            Combinator::Namespace => panic!("Why are you using Namespace Selector ???"),
+        }
+    }
 }
 
 pub struct Lexer {}

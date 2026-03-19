@@ -197,6 +197,8 @@ mod tests {
 
         let store = parser.matches();
 
+        println!("{:?}", store);
+
         assert_eq!(store.get("p.indent > .bold").unwrap().count(), 1);
         let children = store.get("p.indent > .bold").unwrap();
 
