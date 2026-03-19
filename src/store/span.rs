@@ -39,7 +39,3 @@ impl<T> RangeBounds<T> for Span<T> {
         Bound::Excluded(&self.end)
     }
 }
-
-pub type ElementSpan = Span<ElementId>;
-type QuerySpan = Span<QueryId>;
-type TextContentSpan = Span<usize>;

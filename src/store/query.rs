@@ -1,8 +1,8 @@
-use std::ops::{Index, IndexMut, Range};
+use std::ops::{Index, IndexMut};
 
 use super::element::ElementId;
 use super::iterator::QueryIterator;
-use super::span::ElementSpan;
+use super::span::Span;
 
 const NULL: usize = usize::MAX;
 
@@ -24,7 +24,7 @@ impl Default for QueryId {
 pub struct QueryNode<'query> {
     pub query: &'query str,
     pub next_sibling: Option<QueryId>,
-    pub elements: ElementSpan,
+    pub elements: Span<ElementId>,
 }
 
 impl<'query> QueryNode<'query> {
