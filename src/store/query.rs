@@ -1,6 +1,8 @@
+use std::ops::{Index, IndexMut, Range};
+
 use super::element::ElementId;
 use super::iterator::QueryIterator;
-use std::ops::{Index, IndexMut, Range};
+use super::span::ElementSpan;
 
 const NULL: usize = usize::MAX;
 
@@ -22,14 +24,7 @@ impl Default for QueryId {
 pub struct QueryNode<'query> {
     pub query: &'query str,
     pub next_sibling: Option<QueryId>,
-
-    // If the QueryNode exist then the ElementId's also exist
-    pub first_element: ElementId,
-
-    // If you have 50k elements under this (select all links for example)
-    // having this extra field avoids traversing throught all of the siblings
-    // just to append another Element
-    pub last_element: ElementId,
+    pub elements: ElementSpan,
 }
 
 impl<'query> QueryNode<'query> {
@@ -72,6 +67,10 @@ impl<'query> QueryArena<'query> {
     // This is a function with the goal of find the correct query to add children to or append a query at the end
     pub(super) fn find_query_sibling(&self, id: QueryId, query: &'query str) -> Option<QueryId> {
         let mut id = id;
+
+        if self[id].query == query {
+            return Some(id);
+        }
 
         while let Some(sibling) = self[id].next_sibling {
             id = sibling;

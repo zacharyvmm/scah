@@ -5,7 +5,7 @@ use super::{Attribute, Store};
 
 use super::iterator::ElementIterator;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub struct ElementId(pub(crate) usize);
 
 const NULL: usize = usize::MAX;
@@ -50,7 +50,7 @@ impl<'html> Element<'html> {
         let first_query_id = self.first_child_query;
         first_query_id
             .and_then(|id| dom.queries.find_query_sibling(id, key))
-            .map(|id| dom.queries[id].first_element)
+            .map(|id| dom.queries[id].elements.start())
             .map(|element_id| dom.elements[element_id].iter(&dom.elements))
     }
 

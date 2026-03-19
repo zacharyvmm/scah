@@ -11,6 +11,7 @@ mod span;
 
 pub use element::{Element, ElementArena, ElementId};
 pub use query::{QueryArena, QueryId, QueryNode};
+use span::Span;
 
 #[derive(Debug, PartialEq)]
 pub struct Store<'html, 'query> {
@@ -46,7 +47,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
         self.queries
             .find_query_sibling(QueryId(0), query)
-            .map(|id| self.queries[id].first_element)
+            .map(|id| self.queries[id].elements.start())
             .and_then(|element_id| self.elements.inner.get(element_id.0))
             .map(|element| element.iter(&self.elements))
     }
@@ -78,8 +79,12 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
     fn link_query_to_element(&mut self, query: QueryId, element: ElementId) {
         let id = self.elements[element].first_child_query;
+
         match id {
             Some(mut id) => loop {
+                if id == query {
+                    return;
+                }
                 let query_node = &self.queries[id];
                 match query_node.next_sibling {
                     Some(sibling) => id = sibling,
@@ -96,11 +101,15 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     }
 
     fn link_element_to_query(&mut self, query: QueryId, element: ElementId) {
-        let id = self.queries[query].last_element;
+        let id = self.queries[query].elements.end();
+
+        if id == element {
+            return;
+        }
 
         assert!(self.elements[id].next_sibling.is_none());
         self.elements[id].next_sibling = Some(element);
-        self.queries[query].last_element = element;
+        self.queries[query].elements.set_end(element);
     }
 
     pub fn push(
@@ -140,8 +149,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             None => {
                 self.queries.push(QueryNode {
                     query: selection.source,
-                    first_element: index,
-                    last_element: index,
+                    elements: Span::new(index),
                     next_sibling: None,
                 });
                 let new_id = QueryId(self.queries.len() - 1);
@@ -154,8 +162,10 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         assert!(query_id.0 < self.queries.len());
 
         if !from.is_null() {
-            self.link_element_to_query(query_id, from);
+            self.link_query_to_element(query_id, from);
         }
+
+        self.link_element_to_query(query_id, index);
 
         //let query = &mut self.queries[query_id.0];
 
@@ -296,8 +306,7 @@ mod tests {
             vec![QueryNode {
                 query: "1",
                 next_sibling: None,
-                first_element: ElementId(0),
-                last_element: ElementId(0),
+                elements: Span::new(ElementId(0))
             }]
         );
 
@@ -316,14 +325,12 @@ mod tests {
                 QueryNode {
                     query: "1",
                     next_sibling: None,
-                    first_element: ElementId(0),
-                    last_element: ElementId(0),
+                    elements: Span::new(ElementId(0))
                 },
                 QueryNode {
                     query: "2",
                     next_sibling: None,
-                    first_element: ElementId(1),
-                    last_element: ElementId(1),
+                    elements: Span::new(ElementId(1))
                 }
             ]
         );
@@ -354,20 +361,17 @@ mod tests {
                 QueryNode {
                     query: "1",
                     next_sibling: None,
-                    first_element: ElementId(0),
-                    last_element: ElementId(0),
+                    elements: Span::new(ElementId(0))
                 },
                 QueryNode {
                     query: "2",
                     next_sibling: Some(QueryId(2)),
-                    first_element: ElementId(1),
-                    last_element: ElementId(1),
+                    elements: Span::new(ElementId(1))
                 },
                 QueryNode {
                     query: "3",
                     next_sibling: None,
-                    first_element: ElementId(2),
-                    last_element: ElementId(2),
+                    elements: Span::new(ElementId(2))
                 }
             ]
         );
@@ -446,8 +450,7 @@ mod tests {
             vec![QueryNode {
                 query: "main > section",
                 next_sibling: None,
-                first_element: ElementId(0),
-                last_element: ElementId(1),
+                elements: Span::from(ElementId(0), ElementId(1))
             },]
         );
 
@@ -466,14 +469,12 @@ mod tests {
                 QueryNode {
                     query: "main > section",
                     next_sibling: None,
-                    first_element: ElementId(0),
-                    last_element: ElementId(1),
+                    elements: Span::from(ElementId(0), ElementId(1))
                 },
                 QueryNode {
                     query: "> a[href]",
                     next_sibling: None,
-                    first_element: ElementId(2),
-                    last_element: ElementId(2),
+                    elements: Span::new(ElementId(2))
                 }
             ]
         );

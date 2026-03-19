@@ -395,14 +395,8 @@ mod tests {
             &mut store,
         );
 
-        assert_eq!(
-            store.elements[ElementId(0)]
-                .get(&store, "div a")
-                .unwrap()
-                .count(),
-            1
-        );
-        let children = store.elements[ElementId(0)].get(&store, "div a").unwrap();
+        assert_eq!(store.get("div a").unwrap().count(), 1);
+        let children = store.get("div a").unwrap();
 
         let children: Vec<&Element> = children.collect();
         assert_eq!(children.len(), 1);
@@ -455,13 +449,7 @@ mod tests {
             &mut store,
         );
 
-        assert_eq!(
-            store.elements[ElementId(0)]
-                .get(&store, "div p.class")
-                .unwrap()
-                .count(),
-            0
-        );
+        assert!(store.get("div p.class").is_none());
 
         assert_eq!(
             selection.fsm,
@@ -504,16 +492,8 @@ mod tests {
             &mut store,
         );
 
-        assert_eq!(
-            store.elements[ElementId(0)]
-                .get(&store, "div p.class")
-                .unwrap()
-                .count(),
-            1
-        );
-        let children = store.elements[ElementId(0)]
-            .get(&store, "div p.class")
-            .unwrap();
+        assert_eq!(store.get("div p.class").unwrap().count(), 1);
+        let children = store.get("div p.class").unwrap();
         let children: Vec<&Element> = children.collect();
         assert_eq!(children.len(), 1);
         assert_eq!(children[0].name, "p");
@@ -522,7 +502,7 @@ mod tests {
         assert_eq!(
             selection.fsm,
             FsmState {
-                parent: ElementId(1),
+                parent: ElementId(0),
                 position: Position {
                     selection: 2,
                     state: 3
@@ -556,7 +536,7 @@ mod tests {
                 // `> span`
                 ScopedFsm {
                     scope_depth: 1,
-                    parent: ElementId(1),
+                    parent: ElementId(0),
                     position: Position {
                         selection: 1,
                         state: 2
