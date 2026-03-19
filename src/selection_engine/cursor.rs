@@ -7,14 +7,14 @@ use smallvec::SmallVec;
 use crate::store::ElementId;
 
 #[derive(PartialEq, Debug)]
-pub struct FsmState {
+pub struct Cursor {
     pub(super) parent: ElementId,
     pub(super) position: Position,
-    pub(super) depths: SmallVec<[super::DepthSize; 10]>,
+    pub(super) match_stack: SmallVec<[super::DepthSize; 10]>,
     pub(super) end: bool, // This is a flag to say is a save point and this might be the end
 }
 
-pub trait Fsm<'query, 'html> {
+pub trait CursorOps<'query, 'html> {
     fn next(
         &self,
         tree: &Query<'query>,
@@ -36,7 +36,7 @@ pub trait Fsm<'query, 'html> {
     fn add_depth(&mut self, depth: super::DepthSize);
 }
 
-impl<'query> FsmState {
+impl<'query> Cursor {
     pub fn new() -> Self {
         Self {
             parent: ElementId::default(),
@@ -44,27 +44,27 @@ impl<'query> FsmState {
                 selection: 0,
                 state: 0,
             },
-            depths: SmallVec::new(),
+            match_stack: SmallVec::new(),
             end: false,
         }
     }
 }
 
-impl<'query, 'html> Fsm<'query, 'html> for FsmState {
+impl<'query, 'html> CursorOps<'query, 'html> for Cursor {
     fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
-        let fsm = tree.get_state(self.position.state);
-        let last_depth = *self.depths.last().unwrap_or(&0);
+        let fsm = tree.get_transition(self.position.state);
+        let last_depth = *self.match_stack.last().unwrap_or(&0);
         fsm.next(element, depth, last_depth)
     }
 
     fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
-        let fsm = tree.get_state(self.position.state);
-        let last_depth = *self.depths.last().unwrap_or(&0);
+        let fsm = tree.get_transition(self.position.state);
+        let last_depth = *self.match_stack.last().unwrap_or(&0);
         fsm.back(element, depth, last_depth)
     }
 
     fn step_backward(&mut self, tree: &Query<'query>) {
-        self.depths.pop();
+        self.match_stack.pop();
 
         self.position.back(tree);
     }
@@ -94,18 +94,18 @@ impl<'query, 'html> Fsm<'query, 'html> for FsmState {
     }
 
     fn add_depth(&mut self, depth: super::DepthSize) {
-        self.depths.push(depth);
+        self.match_stack.push(depth);
     }
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub struct ScopedFsm {
+pub struct ScopedCursor {
     pub scope_depth: super::DepthSize,
     pub parent: ElementId,
     pub position: Position,
 }
 
-impl<'query> ScopedFsm {
+impl<'query> ScopedCursor {
     pub fn new(scope_depth: super::DepthSize, parent: ElementId, position: Position) -> Self {
         Self {
             scope_depth,
@@ -119,14 +119,14 @@ impl<'query> ScopedFsm {
     }
 }
 
-impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm {
+impl<'query, 'html> CursorOps<'query, 'html> for ScopedCursor {
     fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
-        let fsm = tree.get_state(self.position.state);
+        let fsm = tree.get_transition(self.position.state);
         fsm.next(element, depth, self.scope_depth)
     }
 
     fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
-        let fsm = tree.get_state(self.position.state);
+        let fsm = tree.get_transition(self.position.state);
         fsm.back(element, depth, self.scope_depth)
     }
 
@@ -157,20 +157,20 @@ impl<'query, 'html> Fsm<'query, 'html> for ScopedFsm {
 
 #[cfg(test)]
 mod tests {
-    use super::{Fsm, FsmState};
+    use super::{Cursor, CursorOps};
     use crate::Query;
     use crate::css::selector::Save;
     use crate::sax::element::element::XHtmlElement;
 
     #[test]
     fn test_fsm_next_descendant() {
-        let selection_tree = Query::all("div a", Save::none()).build();
+        let query = Query::all("div a", Save::none()).build();
 
-        let mut state = FsmState::new();
+        let mut state = Cursor::new();
         let mut next: bool = false;
 
         next = state.next(
-            &selection_tree,
+            &query,
             0,
             &XHtmlElement {
                 name: "div",
@@ -183,12 +183,12 @@ mod tests {
         assert!(next);
 
         // move task
-        //state.step_foward(&selection_tree, 0);
-        let position = state.position.next_state(&selection_tree);
+        //state.step_foward(&query, 0);
+        let position = state.position.next_transition(&query);
         state.position.state = position.unwrap();
 
         next = state.next(
-            &selection_tree,
+            &query,
             1,
             &XHtmlElement {
                 name: "a",

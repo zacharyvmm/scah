@@ -5,10 +5,10 @@ mod store;
 mod utils;
 
 pub use css::selector::lazy;
-pub use css::selector::{Query, QueryBuilder, QueryFactory, Save, Selection, SelectionKind};
+pub use css::selector::{Query, QueryBuilder, QueryFactory, QuerySection, Save, SelectionKind};
 pub use sax::element::element::{Attribute, XHtmlElement};
 pub use sax::parser::XHtmlParser;
-pub use selection_engine::manager::FsmManager;
+pub use selection_engine::multiplexer::QueryMultiplexer;
 pub use store::{Element, Store};
 pub use utils::Reader;
 
@@ -16,7 +16,7 @@ pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
     html: &'html str,
     queries: &'a [Query<'query>],
 ) -> Store<'html, 'query> {
-    let selectors = FsmManager::new(queries);
+    let selectors = QueryMultiplexer::new(queries);
 
     let no_extra_allocations = queries.iter().all(|q| q.exit_at_section_end.is_some());
     let mut parser = if no_extra_allocations {

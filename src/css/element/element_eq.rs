@@ -1,4 +1,4 @@
-use super::element::{AttributeSelection, QueryElement};
+use super::element::{AttributeSelection, ElementPredicate};
 use super::string_search::AttributeSelectionKind;
 use crate::sax::element::element::{Attribute, XHtmlElement};
 
@@ -20,7 +20,7 @@ impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
     }
 }
 
-impl<'a, 'b> PartialEq<XHtmlElement<'b>> for QueryElement<'a> {
+impl<'a, 'b> PartialEq<XHtmlElement<'b>> for ElementPredicate<'a> {
     fn eq(&self, other: &XHtmlElement<'b>) -> bool {
         if let Some(name) = self.name
             && name != other.name
@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn test_element_selection_comparison() {
         assert_eq!(
-            QueryElement {
+            ElementPredicate {
                 name: Some("hello"),
                 id: Some("id"),
                 class: Some("world"),
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn test_realistic_search() {
         assert_eq!(
-            QueryElement {
+            ElementPredicate {
                 name: Some("a"),
                 id: None,
                 class: Some("underline-green"),

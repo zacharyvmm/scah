@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use super::builder::{QueryBuilder, SelectionKind};
-use super::state::State;
+use super::transition::Transition;
 use crate::Save;
 use crate::css::element::Combinator;
 
@@ -12,7 +12,7 @@ pub struct Position {
 }
 
 impl<'query> Position {
-    pub(crate) fn next_state(&self, query: &Query<'query>) -> Option<usize> {
+    pub(crate) fn next_transition(&self, query: &Query<'query>) -> Option<usize> {
         debug_assert!(self.selection < query.queries.len());
         debug_assert!(query.queries[self.selection].range.contains(&self.state));
 
@@ -80,7 +80,7 @@ impl<'query> Position {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Selection<'query> {
+pub struct QuerySection<'query> {
     pub(crate) source: &'query str,
 
     pub(super) range: std::ops::Range<usize>,
@@ -92,7 +92,7 @@ pub struct Selection<'query> {
     pub(crate) kind: SelectionKind,
 }
 
-impl<'query> Selection<'query> {
+impl<'query> QuerySection<'query> {
     pub(super) fn new(
         source: &'query str,
         save: Save,
@@ -114,16 +114,16 @@ impl<'query> Selection<'query> {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Query<'query> {
-    pub(crate) states: Box<[State<'query>]>,
-    pub(crate) queries: Box<[Selection<'query>]>,
+    pub(crate) states: Box<[Transition<'query>]>,
+    pub(crate) queries: Box<[QuerySection<'query>]>,
 
     pub(crate) exit_at_section_end: Option<usize>,
 }
 
 impl<'query> Query<'query> {
     pub fn first(query: &'query str, save: Save) -> QueryBuilder<'query> {
-        let states = State::generate_states_from_string(query);
-        let queries = vec![Selection::new(
+        let states = Transition::generate_transitions_from_string(query);
+        let queries = vec![QuerySection::new(
             query,
             save,
             SelectionKind::First,
@@ -138,8 +138,8 @@ impl<'query> Query<'query> {
     }
 
     pub fn all(query: &'query str, save: Save) -> QueryBuilder<'query> {
-        let states = State::generate_states_from_string(query);
-        let queries = vec![Selection::new(
+        let states = Transition::generate_transitions_from_string(query);
+        let queries = vec![QuerySection::new(
             query,
             save,
             SelectionKind::All,
@@ -153,7 +153,7 @@ impl<'query> Query<'query> {
         }
     }
 
-    pub(crate) fn get_state(&self, state: usize) -> &State<'query> {
+    pub(crate) fn get_transition(&self, state: usize) -> &Transition<'query> {
         &self.states[state]
     }
 
@@ -161,12 +161,12 @@ impl<'query> Query<'query> {
         &self.queries[section_index].kind
     }
 
-    pub(crate) fn get_selection(&self, section_index: usize) -> &Selection<'query> {
+    pub(crate) fn get_selection(&self, section_index: usize) -> &QuerySection<'query> {
         &self.queries[section_index]
     }
 
     pub(crate) fn is_descendant(&self, state: usize) -> bool {
-        self.get_state(state).transition == Combinator::Descendant
+        self.get_transition(state).guard == Combinator::Descendant
     }
 
     pub(crate) fn is_save_point(&self, position: &Position) -> bool {
@@ -202,9 +202,9 @@ impl<'query> Query<'query> {
 #[cfg(test)]
 mod tests {
     use crate::css::element::Combinator;
-    use crate::css::element::{AttributeSelection, AttributeSelectionKind, QueryElement};
-    use crate::css::selector::state::State;
-    use crate::{Query, Save, Selection, SelectionKind};
+    use crate::css::element::{AttributeSelection, AttributeSelectionKind, ElementPredicate};
+    use crate::css::selector::transition::Transition;
+    use crate::{Query, QuerySection, Save, SelectionKind};
 
     #[test]
     fn test_query_builder_one_selection() {
@@ -212,20 +212,20 @@ mod tests {
 
         assert_eq!(
             query.states.iter().as_slice(),
-            [State {
-                state: QueryElement {
+            [Transition {
+                predicate: ElementPredicate {
                     name: Some("a"),
                     id: None,
                     class: None,
                     attributes: vec![]
                 },
-                transition: Combinator::Descendant,
+                guard: Combinator::Descendant,
             }]
         );
 
         assert_eq!(
             query.queries.iter().as_slice(),
-            [Selection {
+            [QuerySection {
                 source: "a",
                 save: Save::all(),
                 kind: SelectionKind::All,
@@ -245,23 +245,23 @@ mod tests {
         assert_eq!(
             query.states.iter().as_slice(),
             [
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("span"),
                         id: None,
                         class: None,
                         attributes: vec![]
                     },
-                    transition: Combinator::Descendant,
+                    guard: Combinator::Descendant,
                 },
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("a"),
                         id: None,
                         class: None,
                         attributes: vec![]
                     },
-                    transition: Combinator::Descendant,
+                    guard: Combinator::Descendant,
                 }
             ]
         );
@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(
             query.queries.iter().as_slice(),
             [
-                Selection {
+                QuerySection {
                     source: "span",
                     save: Save::all(),
                     kind: SelectionKind::First,
@@ -277,7 +277,7 @@ mod tests {
                     range: 0..1,
                     next_sibling: None,
                 },
-                Selection {
+                QuerySection {
                     source: "a",
                     save: Save::all(),
                     kind: SelectionKind::All,
@@ -298,41 +298,41 @@ mod tests {
         assert_eq!(
             query.states.iter().as_slice(),
             [
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("div"),
                         id: None,
                         class: None,
                         attributes: vec![]
                     },
-                    transition: Combinator::Descendant,
+                    guard: Combinator::Descendant,
                 },
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("span"),
                         id: None,
                         class: None,
                         attributes: vec![]
                     },
-                    transition: Combinator::Child,
+                    guard: Combinator::Child,
                 },
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("p"),
                         id: None,
                         class: None,
                         attributes: vec![]
                     },
-                    transition: Combinator::Descendant,
+                    guard: Combinator::Descendant,
                 },
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("a"),
                         id: None,
                         class: None,
                         attributes: vec![]
                     },
-                    transition: Combinator::Child,
+                    guard: Combinator::Child,
                 },
             ]
         );
@@ -340,7 +340,7 @@ mod tests {
         assert_eq!(
             query.queries.iter().as_slice(),
             [
-                Selection {
+                QuerySection {
                     source: "div > span",
                     save: Save::all(),
                     kind: SelectionKind::First,
@@ -348,7 +348,7 @@ mod tests {
                     range: 0..2,
                     next_sibling: None,
                 },
-                Selection {
+                QuerySection {
                     source: "p > a",
                     save: Save::all(),
                     kind: SelectionKind::All,
@@ -374,26 +374,26 @@ mod tests {
         assert_eq!(
             query.states.iter().as_slice(),
             [
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("main"),
                         id: None,
                         class: None,
                         attributes: vec![]
                     },
-                    transition: Combinator::Descendant,
+                    guard: Combinator::Descendant,
                 },
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("section"),
                         id: None,
                         class: None,
                         attributes: vec![]
                     },
-                    transition: Combinator::Child,
+                    guard: Combinator::Child,
                 },
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("a"),
                         id: None,
                         class: None,
@@ -403,25 +403,25 @@ mod tests {
                             kind: AttributeSelectionKind::Presence
                         }]
                     },
-                    transition: Combinator::Child,
+                    guard: Combinator::Child,
                 },
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("div"),
                         id: None,
                         class: None,
                         attributes: vec![]
                     },
-                    transition: Combinator::Descendant,
+                    guard: Combinator::Descendant,
                 },
-                State {
-                    state: QueryElement {
+                Transition {
+                    predicate: ElementPredicate {
                         name: Some("a"),
                         id: None,
                         class: None,
                         attributes: vec![]
                     },
-                    transition: Combinator::Descendant,
+                    guard: Combinator::Descendant,
                 },
             ]
         );
@@ -429,7 +429,7 @@ mod tests {
         assert_eq!(
             query.queries.iter().as_slice(),
             [
-                Selection {
+                QuerySection {
                     source: "main > section",
                     save: Save::all(),
                     kind: SelectionKind::All,
@@ -437,7 +437,7 @@ mod tests {
                     range: 0..2,
                     next_sibling: None,
                 },
-                Selection {
+                QuerySection {
                     source: "> a[href]",
                     save: Save::all(),
                     kind: SelectionKind::All,
@@ -445,7 +445,7 @@ mod tests {
                     range: 2..3,
                     next_sibling: Some(2),
                 },
-                Selection {
+                QuerySection {
                     source: "div a",
                     save: Save::all(),
                     kind: SelectionKind::All,

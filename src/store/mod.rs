@@ -1,4 +1,4 @@
-use crate::css::selector::Selection;
+use crate::css::selector::QuerySection;
 use crate::{Attribute, dbg_print, mut_prt_unchecked};
 use std::ops::Range;
 
@@ -115,7 +115,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     pub fn push(
         &mut self,
         from: ElementId,
-        selection: &Selection<'query>,
+        selection: &QuerySection<'query>,
         element: crate::XHtmlElement<'html>,
     ) -> ElementId {
         let new_element = Element {

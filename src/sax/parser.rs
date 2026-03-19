@@ -1,20 +1,20 @@
 use super::element::element::XHtmlTag;
 use crate::XHtmlElement;
 use crate::dbg_print;
-use crate::selection_engine::manager::{DocumentPosition, FsmManager};
+use crate::selection_engine::multiplexer::{DocumentPosition, QueryMultiplexer};
 use crate::store::Store;
 use crate::utils::Reader;
 
 pub struct XHtmlParser<'html, 'query> {
     position: DocumentPosition,
-    pub selectors: FsmManager<'query>,
+    pub selectors: QueryMultiplexer<'query>,
     store: Store<'html, 'query>,
     element: crate::XHtmlElement<'html>,
     in_script: bool,
 }
 
 impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
-    pub fn new(selectors: FsmManager<'query>) -> Self {
+    pub fn new(selectors: QueryMultiplexer<'query>) -> Self {
         Self {
             position: DocumentPosition {
                 element_depth: 0,
@@ -28,7 +28,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         }
     }
 
-    pub fn with_capacity(selectors: FsmManager<'query>, capacity: usize) -> Self {
+    pub fn with_capacity(selectors: QueryMultiplexer<'query>, capacity: usize) -> Self {
         Self {
             position: DocumentPosition {
                 element_depth: 0,
@@ -162,7 +162,7 @@ mod tests {
     use super::*;
     use crate::Attribute;
     use crate::css::selector::{Query, Save};
-    use crate::selection_engine::manager::FsmManager;
+    use crate::selection_engine::multiplexer::QueryMultiplexer;
     use crate::store::Element;
     use crate::utils::Reader;
     use pretty_assertions::assert_eq;
@@ -182,7 +182,7 @@ mod tests {
 
         let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -214,7 +214,7 @@ mod tests {
         let mut reader = Reader::new(BASIC_HTML);
 
         let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -270,7 +270,7 @@ mod tests {
             Query::all("h1 + .indent #name", Save::none()).build(),
         ];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -320,7 +320,7 @@ mod tests {
             ]
         });
         let queries = &[queries.build()];
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -388,7 +388,7 @@ mod tests {
 
         let queries = &[Query::all("div", Save::none()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -434,7 +434,7 @@ mod tests {
         let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
         let queries = &[Query::all("form > p > input", Save::none()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -472,7 +472,7 @@ mod tests {
 
         let queries = &[Query::all("form > p > input", Save::all()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -508,7 +508,7 @@ mod tests {
 
         let queries = &[Query::all("a", Save::all()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -532,7 +532,7 @@ mod tests {
 
         let queries = &[Query::first("div.article a", Save::all()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -571,7 +571,7 @@ mod tests {
         //     exit_at_section_end: None,
         // }]);
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -658,7 +658,7 @@ mod tests {
         assert_eq!(query.exit_at_section_end, Some(0));
         let queries = &[query];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -707,7 +707,7 @@ mod tests {
             })
             .build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -801,7 +801,7 @@ mod tests {
             })
             .build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 

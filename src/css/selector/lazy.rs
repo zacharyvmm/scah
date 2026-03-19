@@ -1,5 +1,5 @@
-use super::state::State;
-use crate::{Query, QueryBuilder, Selection};
+use super::transition::Transition;
+use crate::{Query, QueryBuilder, QuerySection};
 
 use super::builder::{Save, SelectionKind};
 
@@ -174,7 +174,7 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
                 }
             };
 
-            let mut string_states = State::generate_states_from_string(source);
+            let mut string_states = Transition::generate_transitions_from_string(source);
             let range = {
                 let start = states.len();
                 states.append(&mut string_states);
@@ -183,7 +183,7 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
                 start..end
             };
 
-            queries.push(Selection {
+            queries.push(QuerySection {
                 source,
                 range,
 
@@ -221,10 +221,10 @@ impl<'query> LazyQueryFactory {
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use super::State;
+    use super::Transition;
     use super::*;
     use crate::css::element::Combinator;
-    use crate::css::element::{AttributeSelection, AttributeSelectionKind, QueryElement};
+    use crate::css::element::{AttributeSelection, AttributeSelectionKind, ElementPredicate};
     use crate::{Query, Save, SelectionKind};
 
     #[test]
@@ -376,27 +376,27 @@ mod tests {
             query,
             Query {
                 states: vec![
-                    State::new(
+                    Transition::new(
                         Combinator::Descendant,
-                        QueryElement {
+                        ElementPredicate {
                             name: Some("div"),
                             id: None,
                             class: None,
                             attributes: vec![]
                         }
                     ),
-                    State::new(
+                    Transition::new(
                         Combinator::Descendant,
-                        QueryElement {
+                        ElementPredicate {
                             name: Some("a"),
                             id: None,
                             class: None,
                             attributes: vec![]
                         }
                     ),
-                    State::new(
+                    Transition::new(
                         Combinator::Descendant,
-                        QueryElement {
+                        ElementPredicate {
                             name: Some("a"),
                             id: None,
                             class: None,
@@ -406,9 +406,9 @@ mod tests {
                 ]
                 .into_boxed_slice(),
                 queries: vec![
-                    Selection::new("div", Save::all(), SelectionKind::All, 0..1, None,),
-                    Selection::new("a", Save::all(), SelectionKind::First, 1..2, Some(0),),
-                    Selection::new("a", Save::none(), SelectionKind::All, 2..3, Some(1),),
+                    QuerySection::new("div", Save::all(), SelectionKind::All, 0..1, None,),
+                    QuerySection::new("a", Save::all(), SelectionKind::First, 1..2, Some(0),),
+                    QuerySection::new("a", Save::none(), SelectionKind::All, 2..3, Some(1),),
                 ]
                 .into_boxed_slice(),
                 exit_at_section_end: None,

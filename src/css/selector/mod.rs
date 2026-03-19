@@ -1,7 +1,7 @@
 mod builder;
 pub mod lazy;
 mod query;
-mod state;
+mod transition;
 
 pub use builder::{QueryBuilder, QueryFactory, Save, SelectionKind};
-pub use query::{Position, Query, Selection};
+pub use query::{Position, Query, QuerySection};

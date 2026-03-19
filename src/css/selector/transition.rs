@@ -1,19 +1,19 @@
 use crate::XHtmlElement;
-use crate::css::element::{Combinator, Lexer, QueryElement};
+use crate::css::element::{Combinator, ElementPredicate, Lexer};
 use crate::utils::Reader;
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct State<'query> {
-    pub transition: Combinator, // from transition
-    pub state: QueryElement<'query>,
+pub struct Transition<'query> {
+    pub guard: Combinator, // from transition
+    pub predicate: ElementPredicate<'query>,
 }
 
-impl<'query> State<'query> {
-    pub fn new(transition: Combinator, state: QueryElement<'query>) -> Self {
-        Self { transition, state }
+impl<'query> Transition<'query> {
+    pub fn new(guard: Combinator, predicate: ElementPredicate<'query>) -> Self {
+        Self { guard, predicate }
     }
 
-    pub(super) fn generate_states_from_string(query: &'query str) -> Vec<Self> {
+    pub(super) fn generate_transitions_from_string(query: &'query str) -> Vec<Self> {
         let reader = &mut Reader::new(query);
         let mut states = Vec::new();
         while let Some((combinator, element)) = Lexer::next(reader) {
@@ -34,7 +34,7 @@ impl<'query> State<'query> {
             "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
         );
 
-        self.transition.compare(last_depth, current_depth) && &self.state == element
+        self.guard.evaluate(last_depth, current_depth) && &self.predicate == element
     }
 
     pub fn back<'html>(
@@ -54,9 +54,9 @@ mod tests {
 
     #[test]
     fn test_fsm_next_descendant() {
-        let state = State::new(
+        let state = Transition::new(
             Combinator::Descendant,
-            QueryElement {
+            ElementPredicate {
                 name: Some("a"),
                 id: None,
                 class: None,
@@ -77,9 +77,9 @@ mod tests {
 
     #[test]
     fn test_fsm_next_child() {
-        let state = State::new(
+        let state = Transition::new(
             Combinator::Child,
-            QueryElement {
+            ElementPredicate {
                 name: Some("a"),
                 id: None,
                 class: None,
@@ -100,9 +100,9 @@ mod tests {
 
     #[test]
     fn test_fsm_next_child_failed() {
-        let state = State::new(
+        let state = Transition::new(
             Combinator::Child,
-            QueryElement {
+            ElementPredicate {
                 name: Some("a"),
                 id: None,
                 class: None,
@@ -123,9 +123,9 @@ mod tests {
 
     #[test]
     fn test_fsm_next_nextsibling() {
-        let state = State::new(
+        let state = Transition::new(
             Combinator::NextSibling,
-            QueryElement {
+            ElementPredicate {
                 name: Some("a"),
                 id: None,
                 class: None,
@@ -145,9 +145,9 @@ mod tests {
     }
     #[test]
     fn test_fsm_next_subsequentsiblings() {
-        let state = State::new(
+        let state = Transition::new(
             Combinator::SubsequentSibling,
-            QueryElement {
+            ElementPredicate {
                 name: Some("a"),
                 id: None,
                 class: None,
