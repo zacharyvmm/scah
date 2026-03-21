@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use scah::{Attribute, Element, Query, Save, parse};
 const HTML: &str = r#"
 <!DOCTYPE html>
@@ -107,7 +109,7 @@ fn test_html_page_first_anchor_tag_selection() {
 
     let a = children.next().unwrap();
     assert_eq!(
-        store.attributes,
+        store.attributes.deref().clone(),
         vec![Attribute {
             key: "href",
             value: Some("link1")

@@ -1,6 +1,6 @@
 use super::arena::Arena;
+use super::arena::span::Span;
 use super::arena::{Node, id};
-use super::span::Span;
 
 #[derive(Debug, PartialEq, Default)]
 pub struct QueryNode<'query> {

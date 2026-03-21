@@ -159,6 +159,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
 }
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
+
     use super::*;
     use crate::Attribute;
     use crate::css::selector::{Query, Save};
@@ -580,7 +582,7 @@ mod tests {
         let store = parser.matches();
 
         assert_eq!(
-            store.attributes,
+            store.attributes.deref().clone(),
             vec![
                 Attribute {
                     key: "hello",
@@ -669,7 +671,7 @@ mod tests {
         let element = store.get("a").unwrap().next().unwrap();
 
         assert_eq!(
-            store.attributes,
+            store.attributes.deref().clone(),
             vec![Attribute {
                 key: "href",
                 value: Some("/post/0"),
@@ -720,7 +722,7 @@ mod tests {
         assert_eq!(store.elements.len(), 5);
 
         assert_eq!(
-            store.attributes,
+            store.attributes.deref().clone(),
             vec![
                 Attribute {
                     key: "src",
@@ -814,7 +816,7 @@ mod tests {
         assert_eq!(store.elements.len(), 9);
 
         assert_eq!(
-            store.attributes,
+            store.attributes.deref().clone(),
             vec![
                 Attribute {
                     key: "src",

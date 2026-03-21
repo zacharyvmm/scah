@@ -8,21 +8,21 @@ mod arena;
 mod attributes;
 mod element;
 mod query;
-mod span;
 
 pub(crate) use arena::id::Nullable;
+use arena::span::Span;
 pub use arena::{
     Arena,
-    id::{ElementId, QueryId},
+    id::{AttributeId, ElementId, QueryId},
 };
+
 pub use element::Element;
 pub use query::QueryNode;
-use span::Span;
 
 #[derive(Debug, PartialEq)]
 pub struct Store<'html, 'query> {
     pub elements: Arena<Element<'html>, ElementId>,
-    pub attributes: Vec<Attribute<'html>>,
+    pub attributes: Arena<Attribute<'html>, AttributeId>,
     pub queries: Arena<QueryNode<'query>, QueryId>,
     pub text_content: TextContent,
 }
@@ -33,7 +33,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             elements: Arena::new(),
             queries: Arena::new(),
             text_content: TextContent::new(),
-            attributes: Vec::new(),
+            attributes: Arena::new(),
         }
     }
 
@@ -42,7 +42,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             elements: Arena::with_capacity(capacity / 3),
             queries: Arena::new(),
             text_content: TextContent::with_capacity(capacity / 3),
-            attributes: Vec::with_capacity(capacity / 3),
+            attributes: Arena::with_capacity(capacity / 3),
         }
     }
 
@@ -56,31 +56,6 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             .find(|q| q.query == query)
             .map(|query_node| query_node.elements.start())
             .map(|element_id| self.elements.iter_from(element_id))
-    }
-
-    fn attribute_slice_to_range(&self, attributes: &[Attribute<'html>]) -> Option<Range<u32>> {
-        if self.attributes.is_empty() || attributes.is_empty() {
-            return None;
-        }
-        let tape_pointer_range = self.attributes.as_ptr_range();
-        let slice_ptr = attributes.as_ptr();
-
-        // println!("Tape: {:#?}", tape_pointer_range);
-        // println!("Slice Pointer: {:#?}", slice_ptr);
-
-        assert!(
-            tape_pointer_range.start == slice_ptr || tape_pointer_range.contains(&slice_ptr),
-            "Attribute Slice is invalid"
-        );
-
-        let start = unsafe { slice_ptr.offset_from_unsigned(tape_pointer_range.start) };
-        let end = start + attributes.len();
-        assert!(self.attributes.len() >= end);
-
-        Some(std::ops::Range {
-            start: start as u32,
-            end: end as u32,
-        })
     }
 
     fn link_query_to_element(&mut self, query: QueryId, element: ElementId) {
@@ -128,7 +103,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             name: element.name,
             class: element.class,
             id: element.id,
-            attributes: self.attribute_slice_to_range(element.attributes),
+            attributes: self.attributes.attribute_slice_to_range(element.attributes),
             ..Default::default()
         };
 

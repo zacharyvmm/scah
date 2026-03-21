@@ -1,5 +1,4 @@
-use super::{ElementId, QueryId};
-use std::ops::{Bound, RangeBounds};
+use std::ops::Range;
 
 #[derive(PartialEq, Debug, Default)]
 pub struct Span<Idx> {
@@ -7,12 +6,12 @@ pub struct Span<Idx> {
     end: Idx,
 }
 
-impl<T: Copy + PartialOrd> Span<T> {
+impl<T: Copy + PartialOrd + Into<usize>> Span<T> {
     pub fn new(start: T) -> Self {
         Self { start, end: start }
     }
 
-    pub(super) fn from(start: T, end: T) -> Self {
+    pub(crate) fn from(start: T, end: T) -> Self {
         Self { start, end }
     }
 
@@ -30,12 +29,11 @@ impl<T: Copy + PartialOrd> Span<T> {
     }
 }
 
-impl<T> RangeBounds<T> for Span<T> {
-    fn start_bound(&self) -> Bound<&T> {
-        Bound::Included(&self.start)
-    }
-
-    fn end_bound(&self) -> Bound<&T> {
-        Bound::Excluded(&self.end)
+impl From<Span<u32>> for Range<usize> {
+    fn from(value: Span<u32>) -> Self {
+        Self {
+            start: value.start as usize,
+            end: value.end as usize,
+        }
     }
 }

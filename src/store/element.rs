@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Deref, Range};
 
 use super::arena::{Arena, Node, id};
 use super::{Attribute, Store};
@@ -46,11 +46,11 @@ impl<'html> Element<'html> {
     pub fn attributes(&self, dom: &'html Store) -> Option<&'html [Attribute<'html>]> {
         self.attributes
             .as_ref()
-            .map(|range| &dom.attributes[(range.start as usize)..(range.end as usize)])
+            .map(|range| &dom.attributes.deref()[(range.start as usize)..(range.end as usize)])
     }
     pub fn attribute(&self, dom: &'html Store, key: &str) -> Option<&'html str> {
         self.attributes.as_ref().and_then(|range| {
-            dom.attributes[(range.start as usize)..(range.end as usize)]
+            dom.attributes.deref()[(range.start as usize)..(range.end as usize)]
                 .iter()
                 .find(|attr| attr.key == key)
                 .and_then(|kv| kv.value)
