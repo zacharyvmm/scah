@@ -1,25 +1,7 @@
-use std::ops::{Index, IndexMut, Range};
+use std::ops::Range;
 
-use super::query::QueryId;
+use super::arena::{Arena, Node, id};
 use super::{Attribute, Store};
-
-use super::iterator::ElementIterator;
-
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
-pub struct ElementId(pub(crate) usize);
-
-const NULL: usize = usize::MAX;
-
-impl ElementId {
-    pub fn is_null(&self) -> bool {
-        self.0 == NULL
-    }
-}
-impl Default for ElementId {
-    fn default() -> Self {
-        Self(NULL)
-    }
-}
 
 #[derive(Default, Debug, PartialEq)]
 pub struct Element<'html> {
@@ -30,16 +12,23 @@ pub struct Element<'html> {
     pub(super) text_content: Option<Range<usize>>,
     pub(super) attributes: Option<Range<u32>>,
 
-    pub first_child_query: Option<QueryId>,
-    pub next_sibling: Option<ElementId>,
+    pub first_child_query: Option<id::QueryId>,
+    pub next_sibling: Option<id::ElementId>,
+}
+
+impl<'html> Node<id::ElementId> for Element<'html> {
+    fn next_sibling(&self) -> Option<id::ElementId> {
+        self.next_sibling
+    }
 }
 
 impl<'html> Element<'html> {
     pub fn iter(
         &self,
-        arena: &'html ElementArena<'html>,
+        arena: &'html Arena<Element<'html>, id::ElementId>,
     ) -> impl Iterator<Item = &'html Element<'html>> {
-        ElementIterator::new(self, arena)
+        let index = unsafe { arena.index_of(self) };
+        arena.iter_from(index)
     }
 
     pub fn get(
@@ -49,9 +38,9 @@ impl<'html> Element<'html> {
     ) -> Option<impl Iterator<Item = &'html Element<'html>>> {
         let first_query_id = self.first_child_query;
         first_query_id
-            .and_then(|id| dom.queries.find_query_sibling(id, key))
-            .map(|id| dom.queries[id].elements.start())
-            .map(|element_id| dom.elements[element_id].iter(&dom.elements))
+            .and_then(|id| dom.queries.iter_from(id).find(|q| q.query == key))
+            .map(|query_node| query_node.elements.start())
+            .map(|element_id| dom.elements.iter_from(element_id))
     }
 
     pub fn attributes(&self, dom: &'html Store) -> Option<&'html [Attribute<'html>]> {
@@ -71,47 +60,5 @@ impl<'html> Element<'html> {
         self.text_content
             .as_ref()
             .map(|range| dom.text_content.slice(range.clone()))
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct ElementArena<'html> {
-    pub(super) inner: Vec<Element<'html>>,
-}
-
-impl<'html> ElementArena<'html> {
-    pub fn new() -> Self {
-        Self { inner: Vec::new() }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            inner: Vec::with_capacity(capacity),
-        }
-    }
-
-    pub fn push(&mut self, element: Element<'html>) {
-        self.inner.push(element)
-    }
-
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-}
-
-impl<'html> Index<ElementId> for ElementArena<'html> {
-    type Output = Element<'html>;
-    fn index(&self, index: ElementId) -> &Self::Output {
-        &self.inner[index.0]
-    }
-}
-
-impl<'html> IndexMut<ElementId> for ElementArena<'html> {
-    fn index_mut(&mut self, index: ElementId) -> &mut Self::Output {
-        &mut self.inner[index.0]
     }
 }

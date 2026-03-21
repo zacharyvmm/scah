@@ -4,28 +4,34 @@ use std::ops::Range;
 
 mod text_content;
 pub(crate) use text_content::TextContent;
+mod arena;
+mod attributes;
 mod element;
-mod iterator;
 mod query;
 mod span;
 
-pub use element::{Element, ElementArena, ElementId};
-pub use query::{QueryArena, QueryId, QueryNode};
+pub(crate) use arena::id::Nullable;
+pub use arena::{
+    Arena,
+    id::{ElementId, QueryId},
+};
+pub use element::Element;
+pub use query::QueryNode;
 use span::Span;
 
 #[derive(Debug, PartialEq)]
 pub struct Store<'html, 'query> {
-    pub elements: ElementArena<'html>,
+    pub elements: Arena<Element<'html>, ElementId>,
     pub attributes: Vec<Attribute<'html>>,
-    pub queries: QueryArena<'query>,
+    pub queries: Arena<QueryNode<'query>, QueryId>,
     pub text_content: TextContent,
 }
 
 impl<'html, 'query: 'html> Store<'html, 'query> {
     pub fn new() -> Self {
         Self {
-            elements: ElementArena::new(),
-            queries: QueryArena::new(),
+            elements: Arena::new(),
+            queries: Arena::new(),
             text_content: TextContent::new(),
             attributes: Vec::new(),
         }
@@ -33,8 +39,8 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            elements: ElementArena::with_capacity(capacity / 3),
-            queries: QueryArena::new(),
+            elements: Arena::with_capacity(capacity / 3),
+            queries: Arena::new(),
             text_content: TextContent::with_capacity(capacity / 3),
             attributes: Vec::with_capacity(capacity / 3),
         }
@@ -46,10 +52,10 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         }
 
         self.queries
-            .find_query_sibling(QueryId(0), query)
-            .map(|id| self.queries[id].elements.start())
-            .and_then(|element_id| self.elements.inner.get(element_id.0))
-            .map(|element| element.iter(&self.elements))
+            .iter_from(QueryId(0))
+            .find(|q| q.query == query)
+            .map(|query_node| query_node.elements.start())
+            .map(|element_id| self.elements.iter_from(element_id))
     }
 
     fn attribute_slice_to_range(&self, attributes: &[Attribute<'html>]) -> Option<Range<u32>> {
@@ -130,12 +136,17 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
         let existing_id = {
             if !from.is_null() {
-                self.elements[from]
-                    .first_child_query
-                    .and_then(|query| self.queries.find_query_sibling(query, selection.source))
+                self.elements[from].first_child_query.and_then(|query| {
+                    self.queries
+                        .iter_from(query)
+                        .find(|q| q.query == selection.source)
+                        .map(|q| unsafe { self.queries.index_of(q) })
+                })
             } else if !self.queries.is_empty() {
                 self.queries
-                    .find_query_sibling(QueryId(0), selection.source)
+                    .iter_from(QueryId(0))
+                    .find(|q| q.query == selection.source)
+                    .map(|q| unsafe { self.queries.index_of(q) })
             } else {
                 None
             }
@@ -225,19 +236,35 @@ mod tests {
         ];
 
         assert_eq!(
-            store.queries.find_query_sibling(QueryId(0), "1"),
+            store
+                .queries
+                .iter_from(QueryId(0))
+                .find(|q| q.query == "1")
+                .map(|q| unsafe { store.queries.index_of(q) }),
             Some(QueryId(0))
         );
         assert_eq!(
-            store.queries.find_query_sibling(QueryId(0), "2"),
+            store
+                .queries
+                .iter_from(QueryId(0))
+                .find(|q| q.query == "2")
+                .map(|q| unsafe { store.queries.index_of(q) }),
             Some(QueryId(1))
         );
         assert_eq!(
-            store.queries.find_query_sibling(QueryId(0), "3"),
+            store
+                .queries
+                .iter_from(QueryId(0))
+                .find(|q| q.query == "3")
+                .map(|q| unsafe { store.queries.index_of(q) }),
             Some(QueryId(2))
         );
         assert_eq!(
-            store.queries.find_query_sibling(QueryId(0), "no in list"),
+            store
+                .queries
+                .iter_from(QueryId(0))
+                .find(|q| q.query == "not in list")
+                .map(|q| unsafe { store.queries.index_of(q) }),
             None
         );
     }
@@ -417,7 +444,9 @@ mod tests {
         assert_eq!(
             store
                 .queries
-                .find_query_sibling(QueryId(0), query.queries[0].source),
+                .iter_from(QueryId(0))
+                .find(|q| q.query == query.queries[0].source)
+                .map(|q| unsafe { store.queries.index_of(q) }),
             Some(QueryId(0))
         );
 
