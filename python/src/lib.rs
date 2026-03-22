@@ -1,4 +1,4 @@
-use ::scah::{ChildIndex, FsmManager, Query, QueryBuilder, Reader, Store, XHtmlParser};
+use ::scah::{Query, QueryBuilder, QueryMultiplexer, Reader, Store, XHtmlParser};
 use pyo3::buffer::PyBuffer;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyMemoryView};
@@ -56,7 +56,7 @@ fn parse<'py>(
         .map(|q| q.query.clone())
         .collect::<Box<[Query]>>();
 
-    let selectors = FsmManager::new(&queries);
+    let selectors = QueryMultiplexer::new(&queries);
     let mut parser = XHtmlParser::with_capacity(selectors, html_bytes.len());
 
     let mut reader = Reader::from_bytes(html_bytes);
@@ -133,7 +133,7 @@ fn parse<'py>(
             .unwrap()
     };
 
-    for element in store.elements {
+    for element in store.elements.iter() {
         let attributes_iterator = element.attributes.iter().map(|a| PyAttribute {
             base: base_ref.clone_ref(py),
             key: substring_range(html_bytes, a.key),

@@ -14,31 +14,32 @@ test('Basic selection', () => {
     .build()
   const store = parse(html, [query])
 
-  expect(store.length).toBe(3)
+  expect(store.length).toBe(2)
 
-  expect(store.get(0)?.children).toEqual([[Buffer.from('div'), [1]]])
+  expect(store.get('div')?.length).toBe(1)
 
-  expect(store.get(1)).toEqual({
-    name: Buffer.from('div'),
+  let div = store.get('div')?.at(0)
+  expect(div?.toJson()).toEqual({
+    name: 'div',
     class: undefined,
     id: undefined,
-    attributes: [],
-    innerHtml: Buffer.from(`
+    attributes: {},
+    innerHtml: `
     Hello World
     <a href="https://example.com">Example Website</a>
-  `),
-    textContent: Buffer.from('Hello World Example Website'),
-    children: [[Buffer.from('a'), [2]]],
+  `,
+    textContent: 'Hello World Example Website',
   })
 
-  expect(store.get(2)).toEqual({
-    name: Buffer.from('a'),
+  let a = div?.children('a').at(0)
+
+  expect(a?.toJson()).toEqual({
+    name: 'a',
     class: undefined,
     id: undefined,
-    attributes: [[Buffer.from('href'), Buffer.from('https://example.com')]],
-    innerHtml: Buffer.from(`Example Website`),
-    textContent: Buffer.from('Example Website'),
-    children: [],
+    attributes: { href: 'https://example.com' },
+    innerHtml: `Example Website`,
+    textContent: 'Example Website',
   })
 })
 
@@ -71,36 +72,52 @@ test('Tree selection', () => {
     .build()
   const store = parse(html, [query])
 
-  expect(store.length).toBe(10)
+  expect(store.length).toBe(9)
 
-  expect(store.get(1)?.name.toString()).toBe('section')
-  expect(store.get(1)?.id?.toString()).toBe('products')
+  const products_section = store.get('#products')
+  expect(products_section?.length).toBe(1)
 
-  expect(store.get(2)?.name.toString()).toBe('div')
-  expect(store.get(2)?.class?.toString()).toBe('product')
+  expect(products_section![0]?.name).toBe('section')
+  expect(products_section![0]?.id).toBe('products')
 
-  expect(store.get(3)?.name.toString()).toBe('h1')
-  expect(store.get(3)?.innerHtml?.toString()).toBe('Product #1')
-  expect(store.get(3)?.textContent?.toString()).toBe('Product #1')
+  const products = products_section![0].children('.product')!
 
-  expect(store.get(4)?.name.toString()).toBe('img')
-  expect(store.get(4)?.attributes[0]).toEqual([Buffer.from('src'), Buffer.from('https://example.com/p1.png')])
+  expect(products[0].name).toBe('div')
+  expect(products[0].className).toBe('product')
 
-  expect(store.get(5)?.name.toString()).toBe('p')
-  expect(store.get(5)?.textContent?.toString()).toBe('Hello World for Product #1')
+  const product1 = {
+    h1: products[0].children('h1')[0],
+    img: products[0].children('img')[0],
+    p: products[0].children('p')[0],
+  }
+  expect(product1.h1.name).toBe('h1')
+  expect(product1.h1.innerHtml).toBe('Product #1')
+  expect(product1.h1.textContent).toBe('Product #1')
 
-  expect(store.get(6)?.name.toString()).toBe('div')
-  expect(store.get(6)?.class?.toString()).toBe('product')
+  expect(product1.img.name).toBe('img')
+  expect(product1.img.attributes).toEqual({ src: 'https://example.com/p1.png', '/': null })
 
-  expect(store.get(7)?.name.toString()).toBe('h1')
-  expect(store.get(7)?.innerHtml?.toString()).toBe('Product #2')
-  expect(store.get(7)?.textContent?.toString()).toBe('Product #2')
+  expect(product1.p.name).toBe('p')
+  expect(product1.p.textContent).toBe('Hello World for Product #1')
 
-  expect(store.get(8)?.name.toString()).toBe('img')
-  expect(store.get(8)?.attributes[0]).toEqual([Buffer.from('src'), Buffer.from('https://example.com/p2.png')])
+  expect(products[1].name).toBe('div')
+  expect(products[1].className).toBe('product')
 
-  expect(store.get(9)?.name.toString()).toBe('p')
-  expect(store.get(9)?.textContent?.toString()).toBe('Hello World for Product #2')
+  const product2 = {
+    h1: products[1].children('h1')[0],
+    img: products[1].children('img')[0],
+    p: products[1].children('p')[0],
+  }
+
+  expect(product2.h1.name).toBe('h1')
+  expect(product2.h1.innerHtml).toBe('Product #2')
+  expect(product2.h1.textContent).toBe('Product #2')
+
+  expect(product2.img.name).toBe('img')
+  expect(product2.img.attributes).toEqual({ src: 'https://example.com/p2.png', '/': null })
+
+  expect(product2.p.name).toBe('p')
+  expect(product2.p.textContent).toBe('Hello World for Product #2')
 })
 
 function generateHtml(count: number): string {
@@ -114,7 +131,6 @@ function generateHtml(count: number): string {
   html += '</div></body></html>'
   return html
 }
-
 test('find 5_000 anchor tags', () => {
   const html = generateHtml(5000)
   const query = Query.all('a', {
@@ -123,6 +139,16 @@ test('find 5_000 anchor tags', () => {
   }).build()
   const store = parse(html, [query])
 
-  const root = store.get(0)
-  expect(root?.children[0][1]).toEqual(Array.from({ length: 5000 }, (_, i) => i + 1))
+  const links = store.get('a')?.map((e) => e.toJson())
+
+  const generated_links = Array.from({ length: 5000 }, (_, i) => ({
+    name: 'a',
+    id: undefined,
+    class: undefined,
+    attributes: { href: `/post/${i}` },
+    innerHtml: `<b>Post</b> &lt;${i}&gt;`,
+    textContent: `Post &lt;${i}&gt;`,
+  }))
+
+  expect(links).toEqual(generated_links)
 })

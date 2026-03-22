@@ -9,8 +9,8 @@ pub struct Element<'html> {
     pub class: Option<&'html str>,
     pub id: Option<&'html str>,
     pub inner_html: Option<&'html str>,
-    pub(super) text_content: Option<Range<usize>>,
-    pub(super) attributes: Option<Range<u32>>,
+    pub text_content: Option<Range<usize>>,
+    pub attributes: Option<Range<u32>>,
 
     pub first_child_query: Option<id::QueryId>,
     pub next_sibling: Option<id::ElementId>,

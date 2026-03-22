@@ -9,7 +9,7 @@ pub use css::selector::{Query, QueryBuilder, QueryFactory, QuerySection, Save, S
 pub use sax::element::element::{Attribute, XHtmlElement};
 pub use sax::parser::XHtmlParser;
 pub use selection_engine::multiplexer::QueryMultiplexer;
-pub use store::{Element, Store};
+pub use store::{Element, ElementId, Store};
 pub use utils::Reader;
 
 pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
