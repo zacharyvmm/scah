@@ -4,7 +4,7 @@ mod lexer;
 mod string_search;
 
 pub(super) use element::AttributeSelection;
-pub(crate) use element::QueryElement;
+pub(crate) use element::ElementPredicate;
 pub(super) use string_search::AttributeSelectionKind;
 
 pub(crate) use lexer::Combinator;

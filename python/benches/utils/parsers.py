@@ -61,20 +61,20 @@ def parse_gazpacho(html:str, query:str):
     soup = GazpachoSoup(html)
     return soup.find(query, mode='all')
 
-def parse_scah(html: BytesIO, query:str):
+def parse_scah(html: str, query:str):
     assert(scah)
     q = scah.Query.all(query, scah.Save.all()).build()
-    store = scah.parse(html.getbuffer(), q)
-    return store.elements
+    store = scah.parse(html, [q])
+    return store.get(query)
 
 
 PARSERS = {
     "Scah": parse_scah,
     # "BS4 (html.parser)": parse_bs4_htmlparser,
-    # "BS4 (lxml)": parse_bs4_lxml,
-    # "Selectolax": parse_selectolax,
-    # "Parsel": parse_parsel,
-    # "Gazpacho": parse_gazpacho,
+    "BS4 (lxml)": parse_bs4_lxml,
+    "Selectolax": parse_selectolax,
+    "Parsel": parse_parsel,
+    "Gazpacho": parse_gazpacho,
 }
 
 def get_available_parsers():

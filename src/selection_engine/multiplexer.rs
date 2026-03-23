@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use super::selection::SelectionRunner;
+use super::selection::QueryExecutor;
 use crate::XHtmlElement;
 use crate::css::selector::Query;
 use crate::store::Store;
@@ -11,20 +11,20 @@ pub(crate) struct DocumentPosition {
     pub element_depth: crate::selection_engine::DepthSize,
 }
 
-//type Runner<'query, E> = SmallVec<[SelectionRunner<'query, 'query, E>; 1]>;
-type Runner<'query> = Vec<SelectionRunner<'query, 'query>>;
+//type Runner<'query, E> = SmallVec<[QueryExecutor<'query, 'query, E>; 1]>;
+type Runner<'query> = Vec<QueryExecutor<'query, 'query>>;
 
 #[derive(Debug)]
-pub struct FsmManager<'query> {
+pub struct QueryMultiplexer<'query> {
     runners: Runner<'query>,
 }
 
-impl<'html, 'query: 'html> FsmManager<'query> {
+impl<'html, 'query: 'html> QueryMultiplexer<'query> {
     pub fn new(queries: &'query [Query<'query>]) -> Self {
         Self {
             runners: queries
                 .iter()
-                .map(|query| SelectionRunner::new(query))
+                .map(|query| QueryExecutor::new(query))
                 .collect::<Runner<'query>>(),
         }
     }
@@ -35,8 +35,14 @@ impl<'html, 'query: 'html> FsmManager<'query> {
         position: &DocumentPosition,
         store: &mut Store<'html, 'query>,
     ) {
+        let len = store.elements.len();
         for session in self.runners.iter_mut() {
             let _ = session.next(&xhtml_element, position, store);
+        }
+        if len == store.elements.len() {
+            // Element was not saved
+            // Thus delete from the tape
+            xhtml_element.remove_attributes(&mut store.attributes);
         }
     }
 
@@ -66,20 +72,20 @@ impl<'html, 'query: 'html> FsmManager<'query> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{FsmManager, Query, Save, Store};
+    use crate::{Query, QueryMultiplexer, Save, Store};
 
-    use super::super::selection::SelectionRunner;
+    use super::super::selection::QueryExecutor;
     use smallvec::SmallVec;
 
     #[test]
     fn runner_size() {
         println!(
             "Vec size: {}",
-            std::mem::size_of::<Vec<SelectionRunner<'static, 'static>>>()
+            std::mem::size_of::<Vec<QueryExecutor<'static, 'static>>>()
         );
         println!(
             "Inline size: {}",
-            std::mem::size_of::<SmallVec<[SelectionRunner<'static, 'static>; 1]>>()
+            std::mem::size_of::<SmallVec<[QueryExecutor<'static, 'static>; 1]>>()
         );
     }
 
@@ -87,6 +93,6 @@ mod tests {
     fn test_single_element_query() {
         let query = Query::first("a", Save::all()).build();
         let q = &[query];
-        let manager = FsmManager::new(q);
+        let manager = QueryMultiplexer::new(q);
     }
 }

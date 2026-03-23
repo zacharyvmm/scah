@@ -1,4 +1,4 @@
-use super::element::QueryElement;
+use super::element::ElementPredicate;
 use crate::utils::Reader;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -49,11 +49,33 @@ impl<'a> Combinator {
 
         return combinator;
     }
+
+    pub(crate) fn is_descendant(&self) -> bool {
+        *self == Self::Descendant
+    }
+
+    pub(crate) fn evaluate(&self, last_depth: u16, current_depth: u16) -> bool {
+        match self {
+            Combinator::Child => last_depth + 1 == current_depth,
+            Combinator::Descendant => last_depth == 0 || current_depth != last_depth,
+
+            // BUG: I need to know if it's the element right after
+            // TODO: After first Fail it goes back
+            Combinator::NextSibling => last_depth == current_depth,
+
+            // BUG: I need to know if it's found a match before, so I know if it's ON/OFF
+            Combinator::SubsequentSibling => true,
+
+            Combinator::Namespace => panic!("Why are you using Namespace Selector ???"),
+        }
+    }
 }
 
 pub struct Lexer {}
 impl Lexer {
-    pub fn next<'query>(reader: &mut Reader<'query>) -> Option<(Combinator, QueryElement<'query>)> {
+    pub fn next<'query>(
+        reader: &mut Reader<'query>,
+    ) -> Option<(Combinator, ElementPredicate<'query>)> {
         if reader.eof() {
             return None;
         }
@@ -64,7 +86,7 @@ impl Lexer {
 
         let combinator = Combinator::try_from(reader).unwrap_or(Combinator::Descendant);
 
-        let element = QueryElement::from(reader);
+        let element = ElementPredicate::from(reader);
 
         return Some((combinator, element));
     }
@@ -84,14 +106,14 @@ mod tests {
 
         assert_eq!(
             first_element,
-            QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
+            ElementPredicate::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
         );
 
         assert_eq!(second_combinator, Combinator::Child);
 
         assert_eq!(
             second_element,
-            QueryElement::new(
+            ElementPredicate::new(
                 Some("other"),
                 Some("other_id"),
                 Some("other_class"),
@@ -110,14 +132,14 @@ mod tests {
 
         assert_eq!(
             first_element,
-            QueryElement::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
+            ElementPredicate::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
         );
 
         assert_eq!(second_combinator, Combinator::Child);
 
         assert_eq!(
             second_element,
-            QueryElement::new(
+            ElementPredicate::new(
                 Some("other"),
                 Some("other_id"),
                 Some("other_class"),

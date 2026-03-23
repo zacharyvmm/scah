@@ -1,20 +1,20 @@
 use super::element::element::XHtmlTag;
 use crate::XHtmlElement;
 use crate::dbg_print;
-use crate::selection_engine::manager::{DocumentPosition, FsmManager};
+use crate::selection_engine::multiplexer::{DocumentPosition, QueryMultiplexer};
 use crate::store::Store;
 use crate::utils::Reader;
 
 pub struct XHtmlParser<'html, 'query> {
     position: DocumentPosition,
-    pub selectors: FsmManager<'query>,
+    pub selectors: QueryMultiplexer<'query>,
     store: Store<'html, 'query>,
     element: crate::XHtmlElement<'html>,
     in_script: bool,
 }
 
 impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
-    pub fn new(selectors: FsmManager<'query>) -> Self {
+    pub fn new(selectors: QueryMultiplexer<'query>) -> Self {
         Self {
             position: DocumentPosition {
                 element_depth: 0,
@@ -22,13 +22,13 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                 text_content_position: usize::MAX,
             },
             selectors,
-            element: XHtmlElement::new(),
+            element: XHtmlElement::default(),
             in_script: false,
             store: Store::new(),
         }
     }
 
-    pub fn with_capacity(selectors: FsmManager<'query>, capacity: usize) -> Self {
+    pub fn with_capacity(selectors: QueryMultiplexer<'query>, capacity: usize) -> Self {
         Self {
             position: DocumentPosition {
                 element_depth: 0,
@@ -36,7 +36,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                 text_content_position: usize::MAX,
             },
             selectors,
-            element: XHtmlElement::new(),
+            element: XHtmlElement::default(),
             in_script: false,
             store: Store::with_capacity(capacity),
         }
@@ -80,7 +80,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                 self.position.reader_position = reader.get_position();
                 tag = XHtmlTag::from(reader);
                 if let Some(XHtmlTag::Open) = tag {
-                    self.element.from(reader);
+                    self.element.from(reader, &mut self.store.attributes);
                 } else if tag.is_none()
                     && self.store.text_content.text_start.is_some()
                     && let Some(position) = self
@@ -159,12 +159,13 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
 }
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
+
     use super::*;
     use crate::Attribute;
     use crate::css::selector::{Query, Save};
-    use crate::selection_engine::manager::FsmManager;
-    use crate::store::{Child, ChildIndex};
-    use crate::store::{Element, Store};
+    use crate::selection_engine::multiplexer::QueryMultiplexer;
+    use crate::store::Element;
     use crate::utils::Reader;
     use pretty_assertions::assert_eq;
 
@@ -183,7 +184,7 @@ mod tests {
 
         let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -197,23 +198,17 @@ mod tests {
         }
 
         let store = parser.matches();
-        let root = &store.elements[0];
 
-        assert_eq!(root.name, "root");
-        assert_eq!(root.children.len(), 1);
-        let child_node = &root.children[0];
-        assert_eq!(child_node.query, "p.indent > .bold");
+        println!("{:?}", store);
 
-        let indices = match &child_node.index {
-            ChildIndex::Many(indices) => indices,
-            _ => panic!("Expected list"),
-        };
-        assert_eq!(indices.len(), 1);
-        let span = &store.elements[indices[0]];
+        assert_eq!(store.get("p.indent > .bold").unwrap().count(), 1);
+        let children = store.get("p.indent > .bold").unwrap();
 
-        assert_eq!(span.name, "span");
-        assert_eq!(span.id, Some("name"));
-        assert_eq!(span.class, Some("bold"));
+        let children: Vec<&Element> = children.collect();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].name, "span");
+        assert_eq!(children[0].id, Some("name"));
+        assert_eq!(children[0].class, Some("bold"));
     }
 
     #[test]
@@ -221,7 +216,7 @@ mod tests {
         let mut reader = Reader::new(BASIC_HTML);
 
         let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -277,7 +272,7 @@ mod tests {
             Query::all("h1 + .indent #name", Save::none()).build(),
         ];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -327,7 +322,7 @@ mod tests {
             ]
         });
         let queries = &[queries.build()];
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -337,62 +332,45 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let root = &store.elements[0];
+        println!("{:#?}", store);
 
-        // main > section
-        let sections_idx = &root["main > section"];
-        let sections: Vec<&Element> = sections_idx
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let sections: Vec<&Element> = store.get("main > section").unwrap().collect();
         assert_eq!(sections.len(), 2);
 
         // Section 1
         let s1 = sections[0];
-        assert_eq!(store.text_content(s1), Some("Hello World"));
+        assert_eq!(s1.text_content(&store), Some("Hello World"));
 
-        let s1_div_a: Vec<&Element> = s1["div a"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let s1_div_a: Vec<&Element> = s1.get(&store, "div a").unwrap().collect();
         assert_eq!(s1_div_a.len(), 1);
-        assert_eq!(store.text_content(s1_div_a[0]), Some("World"));
-        assert_eq!(s1_div_a[0].attributes[0].value, Some("https://world.com"));
-
-        let s1_direct_a: Vec<&Element> = s1["> a[href]"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
-        assert_eq!(s1_direct_a.len(), 1);
-        assert_eq!(store.text_content(s1_direct_a[0]), Some("Hello"));
+        assert_eq!(s1_div_a[0].text_content(&store), Some("World"));
         assert_eq!(
-            s1_direct_a[0].attributes[0].value,
+            s1_div_a[0].attributes(&store).unwrap()[0].value,
+            Some("https://world.com")
+        );
+
+        println!("{:#?}", s1);
+
+        let s1_direct_a: Vec<&Element> = s1.get(&store, "> a[href]").unwrap().collect();
+        assert_eq!(s1_direct_a.len(), 1);
+        assert_eq!(s1_direct_a[0].text_content(&store), Some("Hello"));
+        assert_eq!(
+            s1_direct_a[0].attributes(&store).unwrap()[0].value,
             Some("https://hello.com")
         );
 
         // Section 2
         let s2 = sections[1];
-        assert_eq!(store.text_content(s2), Some("Hello2 World2 World3"));
+        assert_eq!(s2.text_content(&store), Some("Hello2 World2 World3"));
 
-        let s2_div_a: Vec<&Element> = s2["div a"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let s2_div_a: Vec<&Element> = s2.get(&store, "div a").unwrap().collect();
         assert_eq!(s2_div_a.len(), 2, "World3 Element duplicated");
-        assert_eq!(store.text_content(s2_div_a[0]), Some("World2"));
-        assert_eq!(store.text_content(s2_div_a[1]), Some("World3"));
+        assert_eq!(s2_div_a[0].text_content(&store), Some("World2"));
+        assert_eq!(s2_div_a[1].text_content(&store), Some("World3"));
 
-        let s2_direct_a: Vec<&Element> = s2["> a[href]"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let s2_direct_a: Vec<&Element> = s2.get(&store, "> a[href]").unwrap().collect();
         assert_eq!(s2_direct_a.len(), 1);
-        assert_eq!(store.text_content(s2_direct_a[0]), Some("Hello2"));
+        assert_eq!(s2_direct_a[0].text_content(&store), Some("Hello2"));
     }
 
     const BASIC_HTML_WITH_SCRIPT: &str = r#"
@@ -412,7 +390,7 @@ mod tests {
 
         let queries = &[Query::all("div", Save::none()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -426,11 +404,10 @@ mod tests {
         }
 
         let store = parser.matches();
-        let root = &store.elements[0];
 
         // It should NOT find any div
-        if let Ok(div_idx) = root.get("div") {
-            assert_eq!(div_idx.iter().unwrap().count(), 0);
+        if let Some(div_idx) = store.get("div") {
+            assert_eq!(div_idx.count(), 0);
         }
     }
 
@@ -459,7 +436,7 @@ mod tests {
         let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
         let queries = &[Query::all("form > p > input", Save::none()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -468,24 +445,22 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let root = &store.elements[0];
 
-        let inputs: Vec<&Element> = root["form > p > input"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let inputs: Vec<&Element> = store.get("form > p > input").unwrap().collect();
         assert_eq!(inputs.len(), 2);
 
         assert_eq!(inputs[0].name, "input");
         assert_eq!(inputs[0].id, Some("name"));
-        assert_eq!(inputs[0].attributes[0].key, "type");
-        assert_eq!(inputs[0].attributes[0].value, Some("text"));
+        assert_eq!(inputs[0].attributes(&store).unwrap()[0].key, "type");
+        assert_eq!(inputs[0].attributes(&store).unwrap()[0].value, Some("text"));
 
         assert_eq!(inputs[1].name, "input");
         assert_eq!(inputs[1].id, Some("mail"));
-        assert_eq!(inputs[1].attributes[0].key, "type");
-        assert_eq!(inputs[1].attributes[0].value, Some("email"));
+        assert_eq!(inputs[1].attributes(&store).unwrap()[0].key, "type");
+        assert_eq!(
+            inputs[1].attributes(&store).unwrap()[0].value,
+            Some("email")
+        );
     }
 
     #[test]
@@ -499,7 +474,7 @@ mod tests {
 
         let queries = &[Query::all("form > p > input", Save::all()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -513,18 +488,13 @@ mod tests {
         }
 
         let store = parser.matches();
-        let root = &store.elements[0];
 
-        let inputs: Vec<&Element> = root["form > p > input"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let inputs: Vec<&Element> = store.get("form > p > input").unwrap().collect();
         assert_eq!(inputs.len(), 2);
-        assert_eq!(inputs[0].text_content, None);
+        assert_eq!(inputs[0].text_content(&store), None);
         assert_eq!(inputs[0].inner_html, None);
 
-        assert_eq!(inputs[1].text_content, None);
+        assert_eq!(inputs[1].text_content(&store), None);
         assert_eq!(inputs[1].inner_html, None);
     }
 
@@ -540,25 +510,20 @@ mod tests {
 
         let queries = &[Query::all("a", Save::all()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let root = &store.elements[0];
 
-        let anchors: Vec<&Element> = root["a"]
-            .iter()
-            .unwrap()
-            .map(|i| &store.elements[*i])
-            .collect();
+        let anchors: Vec<&Element> = store.get("a").unwrap().collect();
         assert_eq!(anchors.len(), 3);
 
-        assert_eq!(store.text_content(anchors[0]), Some("Hello 1"));
-        assert_eq!(store.text_content(anchors[1]), Some("Hello 2"));
-        assert_eq!(store.text_content(anchors[2]), Some("Hello 3"));
+        assert_eq!(anchors[0].text_content(&store), Some("Hello 1"));
+        assert_eq!(anchors[1].text_content(&store), Some("Hello 2"));
+        assert_eq!(anchors[2].text_content(&store), Some("Hello 3"));
     }
 
     const POSTS: &str = r#"<div class="article"><a href="/post/0"><b>Post</b> &lt;0&gt;</a></div><div class="article"><a href="/post/1"><b>Post</b> &lt;1&gt;</a></div>"#;
@@ -569,22 +534,20 @@ mod tests {
 
         let queries = &[Query::first("div.article a", Save::all()).build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let root = &store.elements[0];
 
-        let anchor_idx = root.get("div.article a").unwrap().value().unwrap();
-        let anchor = &store.elements[anchor_idx];
+        let anchor = store.get("div.article a").unwrap().next().unwrap();
 
         assert_eq!(anchor.name, "a");
-        assert_eq!(anchor.attributes[0].value, Some("/post/0"));
+        assert_eq!(anchor.attributes(&store).unwrap()[0].value, Some("/post/0"));
         assert_eq!(anchor.inner_html, Some("<b>Post</b> &lt;0&gt;"));
-        assert_eq!(store.text_content(anchor), Some("Post &lt;0&gt;"));
+        assert_eq!(anchor.text_content(&store), Some("Post &lt;0&gt;"));
     }
 
     const PYTHON_TEST_HTML: &str = r#"
@@ -610,7 +573,7 @@ mod tests {
         //     exit_at_section_end: None,
         // }]);
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -619,49 +582,59 @@ mod tests {
         let store = parser.matches();
 
         assert_eq!(
-            store.elements,
+            store.attributes.deref().clone(),
             vec![
-                Element {
-                    name: "root",
-                    children: vec![Child {
-                        query: "#world",
-                        index: ChildIndex::Many(vec![1])
-                    }],
-                    ..Default::default()
+                Attribute {
+                    key: "hello",
+                    value: Some("world")
                 },
-                Element {
-                    name: "span",
-                    class: Some("hello"),
-                    id: Some("world"),
-                    attributes: vec![Attribute {
-                        key: "hello",
-                        value: Some("world")
-                    }],
-                    inner_html: Some(
-                        r#"
-        Hello <a href="https://www.example.com">World</a>
-    "#
-                    ),
-                    text_content: store.elements[1].text_content.clone(),
-                    children: vec![Child {
-                        query: "a",
-                        index: ChildIndex::Many(vec![2])
-                    }],
-                },
-                Element {
-                    name: "a",
-                    class: None,
-                    id: None,
-                    attributes: vec![Attribute {
-                        key: "href",
-                        value: Some("https://www.example.com")
-                    }],
-                    inner_html: Some("World"),
-                    text_content: store.elements[2].text_content.clone(),
-                    children: vec![],
+                Attribute {
+                    key: "href",
+                    value: Some("https://www.example.com")
                 },
             ]
         );
+
+        let worlds: Vec<&Element> = store.get("#world").unwrap().collect();
+        assert_eq!(worlds.len(), 1);
+
+        let span = worlds[0];
+        assert_eq!(span.name, "span");
+        assert_eq!(span.class, Some("hello"));
+        assert_eq!(span.id, Some("world"));
+        assert_eq!(
+            span.attributes(&store).unwrap(),
+            &[Attribute {
+                key: "hello",
+                value: Some("world")
+            },]
+        );
+        assert_eq!(
+            span.inner_html,
+            Some(
+                r#"
+        Hello <a href="https://www.example.com">World</a>
+    "#
+            )
+        );
+        assert!(span.text_content(&store).is_some());
+
+        let anchors: Vec<&Element> = span.get(&store, "a").unwrap().collect();
+        assert_eq!(anchors.len(), 1);
+
+        let a = anchors[0];
+        assert_eq!(a.name, "a");
+        assert_eq!(a.class, None);
+        assert_eq!(a.id, None);
+        assert_eq!(
+            a.attributes(&store).unwrap(),
+            &[Attribute {
+                key: "href",
+                value: Some("https://www.example.com")
+            },]
+        );
+        assert_eq!(a.inner_html, Some("World"));
+        assert!(a.text_content(&store).is_some());
     }
 
     #[test]
@@ -687,20 +660,18 @@ mod tests {
         assert_eq!(query.exit_at_section_end, Some(0));
         let queries = &[query];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let root = &store.elements[0];
 
-        let element_index = root["a"].value().unwrap();
-        let element = &store.elements[element_index];
+        let element = store.get("a").unwrap().next().unwrap();
 
         assert_eq!(
-            element.attributes,
+            store.attributes.deref().clone(),
             vec![Attribute {
                 key: "href",
                 value: Some("/post/0"),
@@ -708,7 +679,7 @@ mod tests {
         );
 
         assert_eq!(element.inner_html, Some("<b>Post</b> &lt;0&gt;"));
-        assert_eq!(store.text_content(&element), Some("Post &lt;0&gt;"));
+        assert_eq!(element.text_content(&store), Some("Post &lt;0&gt;"));
     }
 
     const SINGLE_PRODUCT_HTML: &str = r#"
@@ -738,7 +709,7 @@ mod tests {
             })
             .build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -748,79 +719,53 @@ mod tests {
 
         println!("Store: {:#?}", store);
 
-        assert_eq!(store.elements.len(), 6);
+        assert_eq!(store.elements.len(), 5);
 
         assert_eq!(
-            store.elements,
+            store.attributes.deref().clone(),
             vec![
-                Element {
-                    name: "root",
-                    children: vec![Child {
-                        query: "#products",
-                        index: ChildIndex::Many(vec![1])
-                    }],
-                    ..Default::default()
+                Attribute {
+                    key: "src",
+                    value: Some("https://example.com/p1.png")
                 },
-                Element {
-                    name: "section",
-                    id: Some("products"),
-                    children: vec![Child {
-                        query: ".product",
-                        index: ChildIndex::Many(vec![2])
-                    }],
-                    inner_html: store.elements[1].inner_html,
-                    text_content: store.elements[1].text_content.clone(),
-                    ..Default::default()
-                },
-                Element {
-                    name: "div",
-                    class: Some("product"),
-                    children: vec![
-                        Child {
-                            query: "h1",
-                            index: ChildIndex::One(3)
-                        },
-                        Child {
-                            query: "img",
-                            index: ChildIndex::One(4)
-                        },
-                        Child {
-                            query: "p",
-                            index: ChildIndex::One(5)
-                        },
-                    ],
-                    inner_html: store.elements[2].inner_html,
-                    text_content: store.elements[2].text_content.clone(),
-                    ..Default::default()
-                },
-                Element {
-                    name: "h1",
-                    inner_html: Some("Product #1"),
-                    text_content: store.elements[3].text_content.clone(),
-                    ..Default::default()
-                },
-                Element {
-                    name: "img",
-                    attributes: vec![
-                        Attribute {
-                            key: "src",
-                            value: Some("https://example.com/p1.png")
-                        },
-                        Attribute {
-                            key: "/",
-                            value: None
-                        }
-                    ],
-                    ..Default::default()
-                },
-                Element {
-                    name: "p",
-                    inner_html: store.elements[5].inner_html,
-                    text_content: store.elements[5].text_content.clone(),
-                    ..Default::default()
-                },
+                Attribute {
+                    key: "/",
+                    value: None
+                }
             ]
         );
+
+        let products_sections: Vec<&Element> = store.get("#products").unwrap().collect();
+        assert_eq!(products_sections.len(), 1);
+
+        let section = products_sections[0];
+        assert_eq!(section.name, "section");
+        assert_eq!(section.id, Some("products"));
+        assert!(section.inner_html.is_some());
+        assert!(section.text_content(&store).is_some());
+
+        let products: Vec<&Element> = section.get(&store, ".product").unwrap().collect();
+        assert_eq!(products.len(), 1);
+
+        let product = products[0];
+        assert_eq!(product.name, "div");
+        assert_eq!(product.class, Some("product"));
+        assert!(product.inner_html.is_some());
+        assert!(product.text_content(&store).is_some());
+
+        let h1 = product.get(&store, "h1").unwrap().next().unwrap();
+        assert_eq!(h1.name, "h1");
+        assert_eq!(h1.inner_html, Some("Product #1"));
+        assert!(h1.text_content(&store).is_some());
+
+        let img = product.get(&store, "img").unwrap().next().unwrap();
+        assert_eq!(img.name, "img");
+        assert!(img.attributes(&store).is_some());
+
+        let p = product.get(&store, "p").unwrap().next().unwrap();
+        assert_eq!(p.name, "p");
+        assert!(p.inner_html.is_some());
+        assert!(p.text_content(&store).is_some());
     }
 
     const PRODUCT_HTML: &str = r#"
@@ -858,7 +803,7 @@ mod tests {
             })
             .build()];
 
-        let manager = FsmManager::new(queries);
+        let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
 
@@ -868,125 +813,82 @@ mod tests {
 
         println!("Store: {:#?}", store);
 
-        assert_eq!(store.elements.len(), 10);
+        assert_eq!(store.elements.len(), 9);
 
         assert_eq!(
-            store.elements,
+            store.attributes.deref().clone(),
             vec![
-                Element {
-                    name: "root",
-                    children: vec![Child {
-                        query: "#products",
-                        index: ChildIndex::Many(vec![1])
-                    }],
-                    ..Default::default()
+                Attribute {
+                    key: "src",
+                    value: Some("https://example.com/p1.png")
                 },
-                Element {
-                    name: "section",
-                    id: Some("products"),
-                    children: vec![Child {
-                        query: ".product",
-                        index: ChildIndex::Many(vec![2, 6])
-                    }],
-                    inner_html: store.elements[1].inner_html,
-                    text_content: store.elements[1].text_content.clone(),
-                    ..Default::default()
+                Attribute {
+                    key: "/",
+                    value: None
                 },
-                Element {
-                    name: "div",
-                    class: Some("product"),
-                    children: vec![
-                        Child {
-                            query: "h1",
-                            index: ChildIndex::One(3)
-                        },
-                        Child {
-                            query: "img",
-                            index: ChildIndex::One(4)
-                        },
-                        Child {
-                            query: "p",
-                            index: ChildIndex::One(5)
-                        },
-                    ],
-                    inner_html: store.elements[2].inner_html,
-                    text_content: store.elements[2].text_content.clone(),
-                    ..Default::default()
+                Attribute {
+                    key: "src",
+                    value: Some("https://example.com/p2.png")
                 },
-                Element {
-                    name: "h1",
-                    inner_html: Some("Product #1"),
-                    text_content: store.elements[3].text_content.clone(),
-                    ..Default::default()
-                },
-                Element {
-                    name: "img",
-                    attributes: vec![
-                        Attribute {
-                            key: "src",
-                            value: Some("https://example.com/p1.png")
-                        },
-                        Attribute {
-                            key: "/",
-                            value: None
-                        },
-                    ],
-                    ..Default::default()
-                },
-                Element {
-                    name: "p",
-                    inner_html: store.elements[5].inner_html,
-                    text_content: store.elements[5].text_content.clone(),
-                    ..Default::default()
-                },
-                Element {
-                    name: "div",
-                    class: Some("product"),
-                    children: vec![
-                        Child {
-                            query: "h1",
-                            index: ChildIndex::One(7)
-                        },
-                        Child {
-                            query: "img",
-                            index: ChildIndex::One(8)
-                        },
-                        Child {
-                            query: "p",
-                            index: ChildIndex::One(9)
-                        },
-                    ],
-                    inner_html: store.elements[6].inner_html,
-                    text_content: store.elements[6].text_content.clone(),
-                    ..Default::default()
-                },
-                Element {
-                    name: "h1",
-                    inner_html: store.elements[7].inner_html,
-                    text_content: store.elements[7].text_content.clone(),
-                    ..Default::default()
-                },
-                Element {
-                    name: "img",
-                    attributes: vec![
-                        Attribute {
-                            key: "src",
-                            value: Some("https://example.com/p2.png")
-                        },
-                        Attribute {
-                            key: "/",
-                            value: None
-                        },
-                    ],
-                    ..Default::default()
-                },
-                Element {
-                    name: "p",
-                    inner_html: store.elements[9].inner_html,
-                    text_content: store.elements[9].text_content.clone(),
-                    ..Default::default()
+                Attribute {
+                    key: "/",
+                    value: None
                 },
             ]
         );
+
+        let products_sections: Vec<&Element> = store.get("#products").unwrap().collect();
+        assert_eq!(products_sections.len(), 1);
+
+        let section = products_sections[0];
+        assert_eq!(section.name, "section");
+        assert_eq!(section.id, Some("products"));
+        assert!(section.inner_html.is_some());
+        assert!(section.text_content(&store).is_some());
+
+        let products: Vec<&Element> = section.get(&store, ".product").unwrap().collect();
+        assert_eq!(products.len(), 2);
+
+        // Product 1
+        let p1 = products[0];
+        assert_eq!(p1.name, "div");
+        assert_eq!(p1.class, Some("product"));
+        assert!(p1.inner_html.is_some());
+        assert!(p1.text_content(&store).is_some());
+
+        let p1_h1 = p1.get(&store, "h1").unwrap().next().unwrap();
+        assert_eq!(p1_h1.name, "h1");
+        assert_eq!(p1_h1.inner_html, Some("Product #1"));
+        assert!(p1_h1.text_content(&store).is_some());
+
+        let p1_img = p1.get(&store, "img").unwrap().next().unwrap();
+        assert_eq!(p1_img.name, "img");
+        assert!(p1_img.attributes(&store).is_some());
+
+        let p1_p = p1.get(&store, "p").unwrap().next().unwrap();
+        assert_eq!(p1_p.name, "p");
+        assert!(p1_p.inner_html.is_some());
+        assert!(p1_p.text_content(&store).is_some());
+
+        // Product 2
+        let p2 = products[1];
+        assert_eq!(p2.name, "div");
+        assert_eq!(p2.class, Some("product"));
+        assert!(p2.inner_html.is_some());
+        assert!(p2.text_content(&store).is_some());
+
+        let p2_h1 = p2.get(&store, "h1").unwrap().next().unwrap();
+        assert_eq!(p2_h1.name, "h1");
+        assert!(p2_h1.inner_html.is_some());
+        assert!(p2_h1.text_content(&store).is_some());
+
+        let p2_img = p2.get(&store, "img").unwrap().next().unwrap();
+        assert_eq!(p2_img.name, "img");
+        assert!(p2_img.attributes(&store).is_some());
+
+        let p2_p = p2.get(&store, "p").unwrap().next().unwrap();
+        assert_eq!(p2_p.name, "p");
+        assert!(p2_p.inner_html.is_some());
+        assert!(p2_p.text_content(&store).is_some());
     }
 }

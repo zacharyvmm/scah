@@ -1,5 +1,5 @@
-use super::query::{Query, Selection};
-use super::state::State;
+use super::query::{Query, QuerySection};
+use super::transition::Transition;
 
 #[derive(PartialEq, Debug, Default, Clone, Copy)]
 pub struct Save {
@@ -46,8 +46,8 @@ pub enum SelectionKind {
 
 #[derive(Debug, Clone)]
 pub struct QueryBuilder<'query> {
-    pub states: Vec<State<'query>>,
-    pub selection: Vec<Selection<'query>>,
+    pub states: Vec<Transition<'query>>,
+    pub selection: Vec<QuerySection<'query>>,
 }
 
 impl<'query> QueryBuilder<'query> {
@@ -56,11 +56,11 @@ impl<'query> QueryBuilder<'query> {
         assert!(!self.selection.is_empty());
 
         let current_state_len = self.states.len();
-        let states = &mut State::generate_states_from_string(query);
+        let states = &mut Transition::generate_transitions_from_string(query);
 
         let parent_index = self.selection.len() - 1;
         let range = (current_state_len)..(current_state_len + states.len());
-        self.selection.push(Selection::new(
+        self.selection.push(QuerySection::new(
             query,
             save,
             SelectionKind::All,
@@ -78,11 +78,11 @@ impl<'query> QueryBuilder<'query> {
         assert!(!self.selection.is_empty());
 
         let current_state_len = self.states.len();
-        let states = &mut State::generate_states_from_string(query);
+        let states = &mut Transition::generate_transitions_from_string(query);
 
         let parent_index = self.selection.len() - 1;
         let range = (current_state_len)..(current_state_len + states.len());
-        self.selection.push(Selection::new(
+        self.selection.push(QuerySection::new(
             query,
             save,
             SelectionKind::First,
@@ -162,7 +162,7 @@ impl<'query> QueryBuilder<'query> {
         //  -> If you come back to the section without saving the required section,
         //      then you delete the saved data and you start over.
 
-        fn search_for_single_exit_section(index: usize, list: &Vec<Selection>) -> Option<usize> {
+        fn search_for_single_exit_section(index: usize, list: &Vec<QuerySection>) -> Option<usize> {
             // If you have a section with MULTIPLE children that can early exit,
             //   then this parent node will become the exit section
             if index >= list.len() {
@@ -213,8 +213,6 @@ impl<'query> QueryBuilder<'query> {
             Some(index)
         }
 
-        // BUG: I'm intentially adding this bug, because to actually solve this
-        //  I would need to be able to check if all descandants in my fsm tree was saved to early exit
         search_for_single_exit_section(0, &self.selection)
     }
 }

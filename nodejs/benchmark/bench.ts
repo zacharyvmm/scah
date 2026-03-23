@@ -27,10 +27,9 @@ group('parse + query', () => {
     const query = Query.all(QUERY, { innerHtml: true, textContent: true }).build()
     const store = parse(HTML, [query])
 
-    for (let i = 0; i < store.length; i++) {
-      const e = store.get(i)
-      const _inner = e?.innerHtml
-      const _text = e?.textContent
+    for (const element of store.get(QUERY)!) {
+      const _inner = element?.innerHtml
+      const _text = element?.textContent
     }
   })
 

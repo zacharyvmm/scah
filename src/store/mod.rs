@@ -1,586 +1,506 @@
-use crate::css::selector::{Selection, SelectionKind};
-use crate::sax::element::element::Attributes;
-
-use crate::dbg_print;
-use std::ops::{Index, Range};
+use crate::css::selector::QuerySection;
+use crate::{Attribute, dbg_print, mut_prt_unchecked};
+use std::ops::Range;
 
 mod text_content;
 pub(crate) use text_content::TextContent;
+mod arena;
+mod attributes;
+mod element;
+mod query;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum QueryError<'key> {
-    KeyNotFound(&'key str),
-    NotASingleElement,
-    NotAList,
-    IndexOutOfBounds { index: usize, len: usize },
-}
+pub(crate) use arena::id::Nullable;
+use arena::span::Span;
+pub use arena::{
+    Arena,
+    id::{AttributeId, ElementId, QueryId},
+};
 
-#[derive(Debug, PartialEq)]
-pub enum ChildIndex {
-    One(usize),
-    Many(Vec<usize>),
-}
-
-impl ChildIndex {
-    pub fn value(&self) -> Result<usize, QueryError<'static>> {
-        match self {
-            ChildIndex::One(index) => Ok(*index),
-            ChildIndex::Many(_) => Err(QueryError::NotASingleElement),
-        }
-    }
-
-    pub fn iter(&self) -> Result<std::slice::Iter<'_, usize>, QueryError<'static>> {
-        match self {
-            ChildIndex::Many(indices) => Ok(indices.iter()),
-            ChildIndex::One(_) => Err(QueryError::NotAList),
-        }
-    }
-
-    pub fn vec(&self) -> Vec<usize> {
-        match self {
-            ChildIndex::Many(indices) => indices.clone(),
-            ChildIndex::One(i) => vec![*i],
-        }
-    }
-}
-
-impl Index<usize> for ChildIndex {
-    type Output = usize;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        match self {
-            ChildIndex::Many(list) => &list[index],
-            ChildIndex::One(_) => panic!("Cannot use usize index on single element"),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Child<'query> {
-    pub query: &'query str,
-    pub index: ChildIndex,
-}
-
-impl<'query> Child<'query> {
-    pub fn value(&self) -> Result<usize, QueryError<'static>> {
-        self.index.value()
-    }
-
-    pub fn iter(&self) -> Result<std::slice::Iter<'_, usize>, QueryError<'static>> {
-        self.index.iter()
-    }
-}
-
-impl<'query> Index<usize> for Child<'query> {
-    type Output = usize;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.index[index]
-    }
-}
-
-type Children<'query> = Vec<Child<'query>>;
-type StrRange = Range<usize>;
-
-#[derive(Default, Debug, PartialEq)]
-pub struct Element<'html, 'query> {
-    pub name: &'html str,
-    pub class: Option<&'html str>,
-    pub id: Option<&'html str>,
-    pub attributes: Attributes<'html>,
-    pub inner_html: Option<&'html str>,
-    pub text_content: Option<Range<usize>>,
-    // Store Selection directly to enable Index trait
-    pub children: Children<'query>,
-}
-
-impl<'html, 'query, 'key> Element<'html, 'query> {
-    /// Safe primary access method
-    pub fn get(&'html self, key: &'key str) -> Result<&'html ChildIndex, QueryError<'key>> {
-        if let Some(index) = self.index_of_child_with_key(key) {
-            return Ok(&self.children[index].index);
-        }
-
-        Err(QueryError::KeyNotFound(key))
-    }
-
-    /// Panicking accessor for known keys
-    pub fn select(&'html self, key: &'key str) -> &'html ChildIndex {
-        self.get(key).unwrap()
-    }
-
-    /// Check existence without error
-    pub fn index_of_child_with_key(&self, key: &'key str) -> Option<usize> {
-        for (index, child) in self.children.iter().enumerate() {
-            if child.query == key {
-                return Some(index);
-            }
-        }
-        None
-    }
-}
-
-impl<'html, 'query> Index<&'query str> for Element<'html, 'query> {
-    type Output = Child<'query>;
-
-    fn index(&self, key: &'query str) -> &Self::Output {
-        let index = self
-            .index_of_child_with_key(key)
-            .expect("no entry found for key");
-        &self.children[index]
-    }
-}
+pub use element::Element;
+pub use query::QueryNode;
 
 #[derive(Debug, PartialEq)]
 pub struct Store<'html, 'query> {
-    pub elements: Vec<Element<'html, 'query>>,
+    pub elements: Arena<Element<'html>, ElementId>,
+    pub attributes: Arena<Attribute<'html>, AttributeId>,
+    pub queries: Arena<QueryNode<'query>, QueryId>,
     pub text_content: TextContent,
 }
 
 impl<'html, 'query: 'html> Store<'html, 'query> {
     pub fn new() -> Self {
         Self {
-            elements: vec![Element {
-                name: "root",
-                class: None,
-                id: None,
-                attributes: vec![],
-                inner_html: None,
-                text_content: None,
-                children: vec![],
-            }],
+            elements: Arena::new(),
+            queries: Arena::new(),
             text_content: TextContent::new(),
+            attributes: Arena::new(),
         }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
-        let mut arena = Vec::with_capacity(capacity / 3);
-        arena.push(Element {
-            name: "root",
-            class: None,
-            id: None,
-            attributes: vec![],
-            inner_html: None,
-            text_content: None,
-            children: vec![],
-        });
         Self {
-            elements: arena,
+            elements: Arena::with_capacity(capacity / 3),
+            queries: Arena::new(),
             text_content: TextContent::with_capacity(capacity / 3),
+            attributes: Arena::with_capacity(capacity / 3),
         }
     }
 
-    pub fn text_content(&self, element: &Element<'html, 'query>) -> Option<&str> {
-        if let Some(content) = &element.text_content {
-            Some(&self.text_content.slice(content.start..content.end))
-        } else {
-            None
+    pub fn get(&'html self, query: &str) -> Option<impl Iterator<Item = &'html Element<'html>>> {
+        if self.queries.is_empty() {
+            return None;
         }
+
+        self.queries
+            .iter_from(QueryId(0))
+            .find(|q| q.query == query)
+            .map(|query_node| query_node.elements.start())
+            .map(|element_id| self.elements.iter_from(element_id))
+    }
+
+    fn link_query_to_element(&mut self, query: QueryId, element: ElementId) {
+        let id = self.elements[element].first_child_query;
+
+        match id {
+            Some(mut id) => loop {
+                if id == query {
+                    return;
+                }
+                let query_node = &self.queries[id];
+                match query_node.next_sibling {
+                    Some(sibling) => id = sibling,
+                    None => {
+                        self.queries[id].next_sibling = Some(query);
+                        break;
+                    }
+                }
+            },
+            None => {
+                self.elements[element].first_child_query = Some(query);
+            }
+        }
+    }
+
+    fn link_element_to_query(&mut self, query: QueryId, element: ElementId) {
+        let id = self.queries[query].elements.end();
+
+        if id == element {
+            return;
+        }
+
+        assert!(self.elements[id].next_sibling.is_none());
+        self.elements[id].next_sibling = Some(element);
+        self.queries[query].elements.set_end(element);
     }
 
     pub fn push(
         &mut self,
-        selection: &Selection<'query>,
-        from: usize,
+        from: ElementId,
+        selection: &QuerySection<'query>,
         element: crate::XHtmlElement<'html>,
-    ) -> usize {
-        let new_element: Element<'html, 'query> = Element {
+    ) -> ElementId {
+        let new_element = Element {
             name: element.name,
             class: element.class,
             id: element.id,
-            attributes: element.attributes,
-            inner_html: None,
-            text_content: None,
-            children: Vec::new(),
+            attributes: self.attributes.attribute_slice_to_range(element.attributes),
+            ..Default::default()
         };
 
-        // attache new element to from element
-        // from.children.insert(k, v)
-        //println!("Element: {from_element:?}");
+        assert!(from.is_null() || from.0 < self.elements.len());
 
-        assert!(!self.elements.is_empty());
-        assert!(from < self.elements.len());
+        let existing_id = {
+            if !from.is_null() {
+                self.elements[from].first_child_query.and_then(|query| {
+                    self.queries
+                        .iter_from(query)
+                        .find(|q| q.query == selection.source)
+                        .map(|q| unsafe { self.queries.index_of(q) })
+                })
+            } else if !self.queries.is_empty() {
+                self.queries
+                    .iter_from(QueryId(0))
+                    .find(|q| q.query == selection.source)
+                    .map(|q| unsafe { self.queries.index_of(q) })
+            } else {
+                None
+            }
+        };
 
-        let index = self.elements.len();
+        let index = ElementId(self.elements.len());
         self.elements.push(new_element);
 
-        let element = &mut self.elements[from];
+        let query_id = match existing_id {
+            Some(id) => id,
+            None => {
+                self.queries.push(QueryNode {
+                    query: selection.source,
+                    elements: Span::new(index),
+                    next_sibling: None,
+                });
+                let new_id = QueryId(self.queries.len() - 1);
 
-        let key_index = element.index_of_child_with_key(selection.source);
-
-        if key_index.is_some() {
-            match selection.kind {
-                SelectionKind::First { .. } => {
-                    dbg_print!("Store: {:#?}", self);
-                    panic!(
-                        "It is not possible to add a single item to the store when it already exists."
-                    )
-                }
-                SelectionKind::All => {
-                    let child_index = &mut element.children[key_index.unwrap()].index;
-                    match child_index {
-                        ChildIndex::One(_) => unreachable!(),
-                        ChildIndex::Many(list) => {
-                            list.push(index);
-                        }
-                    }
-                    return index;
-                }
+                new_id
             }
+        };
+
+        assert!(!self.queries.is_empty());
+        assert!(query_id.0 < self.queries.len());
+
+        if !from.is_null() {
+            self.link_query_to_element(query_id, from);
         }
 
-        element.children.push(Child {
-            query: selection.source,
-            index: match selection.kind {
-                SelectionKind::First { .. } => ChildIndex::One(index),
-                SelectionKind::All => ChildIndex::Many(vec![index]),
-            },
-        });
+        self.link_element_to_query(query_id, index);
+
+        //let query = &mut self.queries[query_id.0];
+
+        // let element = &mut self.elements[query.last_element.0];
+        // element.next_sibling = Some(index);
+        // children.last_element = index;
 
         index
     }
 
     pub fn set_content<'key>(
         &mut self,
-        element: usize,
+        element_id: ElementId,
         inner_html: Option<&'html str>,
         text_content: Option<Range<usize>>,
     ) {
         assert!(!self.elements.is_empty());
-        assert!(element < self.elements.len());
+        assert!(element_id.0 < self.elements.len());
 
-        let ele = &mut self.elements[element];
-        ele.inner_html = inner_html;
-        ele.text_content = text_content;
+        let element = &mut self.elements[element_id];
+        element.inner_html = inner_html;
+        element.text_content = text_content;
     }
 }
-/*
 
 #[cfg(test)]
 mod tests {
-
-    use crate::{XHtmlElement, css::Save, css::SelectionPart, utils::Reader};
+    use crate::{Query, Save};
 
     use super::*;
 
-    const ROOT: usize = 0;
-
     #[test]
-    fn test_element_access() -> Result<(), QueryError<'static>> {
-        // Build a tree
+    fn test_find_next_query() {
         let mut store = Store::new();
-
-        let mut title_elem = XHtmlElement::new();
-        title_elem.from(&mut Reader::new("h1"));
-
-        let sel_title = SelectionPart::new(
-            "title",
-            SelectionKind::First(Save {
-                inner_html: false,
-                text_content: true,
-            }),
-        )
-        .build();
-        let title_idx = store.push(&sel_title, ROOT, title_elem);
-        store.set_content(title_idx, None, Some("Hello".to_string()));
-
-        let sel_items = SelectionPart::new(
-            "items",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: true,
-            }),
-        )
-        .build();
-
-        let mut li1_elem = XHtmlElement::new();
-        li1_elem.from(&mut Reader::new("li"));
-        let li1_idx = store.push(&sel_items, ROOT, li1_elem);
-        store.set_content(li1_idx, None, Some("First".to_string()));
-
-        let mut li2_elem = XHtmlElement::new();
-        li2_elem.from(&mut Reader::new("li"));
-        let li2_idx = store.push(&sel_items, ROOT, li2_elem);
-        store.set_content(li2_idx, None, Some("Second".to_string()));
-
-        let doc = &store.arena[0];
-
-        // Different ways of acessing fields
-        assert_eq!(store.arena[doc.get("title")?.value()?].name, "h1");
-        assert_eq!(store.arena[doc["title"].value()?].name, "h1");
-
-        assert_eq!(doc.get("items")?.iter()?.count(), 2);
-        assert_eq!(doc["items"].iter()?.count(), 2);
-
-        // doc.get("items")?.get(0) equivalent
-        let first_idx = doc.get("items")?.iter()?.next().unwrap();
-        assert_eq!(
-            store.arena[*first_idx].text_content,
-            Some("First".to_string())
-        );
-        assert_eq!(
-            store.arena[doc["items"][0]].text_content,
-            Some("First".to_string())
-        );
-
-        // Iterators for All Selections
-        let items_iter1 = doc.get("items")?.iter()?;
-        let collected1: Vec<&Element> = items_iter1.map(|&i| &store.arena[i]).collect();
-        assert_eq!(collected1.len(), 2);
-        assert_eq!(collected1[0].text_content, Some("First".to_string()));
-        assert_eq!(collected1[1].text_content, Some("Second".to_string()));
-
-        let items_iter2 = doc["items"].iter()?;
-        let collected2: Vec<&Element> = items_iter2.map(|&i| &store.arena[i]).collect();
-        assert_eq!(collected2.len(), 2);
-        assert_eq!(collected2[0].text_content, Some("First".to_string()));
-        assert_eq!(collected2[1].text_content, Some("Second".to_string()));
-
-        assert!(doc.index_of_child_with_key("optional").is_none());
+        store.queries.inner = vec![
+            QueryNode {
+                query: "1",
+                next_sibling: Some(QueryId(1)),
+                ..Default::default()
+            },
+            QueryNode {
+                query: "2",
+                next_sibling: Some(QueryId(2)),
+                ..Default::default()
+            },
+            QueryNode {
+                query: "3",
+                next_sibling: Some(QueryId(3)),
+                ..Default::default()
+            },
+            QueryNode {
+                // Shouldn't be possible, but still a giid test
+                query: "3",
+                next_sibling: None,
+                ..Default::default()
+            },
+        ];
 
         assert_eq!(
-            doc.get("optional"),
-            Err(QueryError::KeyNotFound("optional"))
+            store
+                .queries
+                .iter_from(QueryId(0))
+                .find(|q| q.query == "1")
+                .map(|q| unsafe { store.queries.index_of(q) }),
+            Some(QueryId(0))
         );
-
-        Ok(())
+        assert_eq!(
+            store
+                .queries
+                .iter_from(QueryId(0))
+                .find(|q| q.query == "2")
+                .map(|q| unsafe { store.queries.index_of(q) }),
+            Some(QueryId(1))
+        );
+        assert_eq!(
+            store
+                .queries
+                .iter_from(QueryId(0))
+                .find(|q| q.query == "3")
+                .map(|q| unsafe { store.queries.index_of(q) }),
+            Some(QueryId(2))
+        );
+        assert_eq!(
+            store
+                .queries
+                .iter_from(QueryId(0))
+                .find(|q| q.query == "not in list")
+                .map(|q| unsafe { store.queries.index_of(q) }),
+            None
+        );
     }
 
     #[test]
-    #[should_panic(expected = "no entry found for key")]
-    fn test_non_existing_key_element_access() {
-        let mut store = Store::new();
-        let mut title_elem = XHtmlElement::new();
-        title_elem.from(&mut Reader::new("h1"));
-        let sel_title = SelectionPart::new(
-            "title",
-            SelectionKind::First(Save {
-                inner_html: false,
-                text_content: true,
-            }),
-        )
-        .build();
-        let _ = store.push(&sel_title, ROOT, title_elem);
-
-        let doc = &store.arena[0];
-
-        assert!(doc.index_of_child_with_key("non-existing").is_none());
-        assert_eq!(
-            doc.get("non-existing"),
-            Err(QueryError::KeyNotFound("non-existing"))
-        );
-
-        let _ = &doc["non-existing"];
-    }
-
-    #[test]
-    #[should_panic(expected = "Cannot use usize index on single element")]
-    fn test_index_on_single_element_access() {
-        let mut store = Store::new();
-        let mut title_elem = XHtmlElement::new();
-        title_elem.from(&mut Reader::new("h1"));
-        let sel_title = SelectionPart::new(
-            "title",
-            SelectionKind::First(Save {
-                inner_html: false,
-                text_content: true,
-            }),
-        )
-        .build();
-        let _ = store.push(&sel_title, ROOT, title_elem);
-
-        let doc = &store.arena[0];
-
-        assert!(doc.get("title").unwrap().iter().is_err());
-
-        let _ = doc["title"][0];
-    }
-
-    #[test]
-    fn test_build_tree() {
-        /*
-         * root -> a.class --> span#id --> p
-         *      |          \-> p
-         *      \-> div
-         */
+    fn test_link_query_to_element() {
         let mut store = Store::new();
 
-        // SETUP Elements
-        let mut first = XHtmlElement::new();
-        first.from(&mut Reader::new("a class=\"class\""));
-
-        let mut second = XHtmlElement::new();
-        second.from(&mut Reader::new("span id=\"id\""));
-
-        let mut second_extended = XHtmlElement::new();
-        second_extended.from(&mut Reader::new("p"));
-
-        let mut second_alternate = XHtmlElement::new();
-        second_alternate.from(&mut Reader::new("p"));
-
-        let mut first_alternate = XHtmlElement::new();
-        first_alternate.from(&mut Reader::new("div"));
-
-        let selection_first = SelectionPart::new(
-            "a",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        )
-        .build();
-
-        let selection_first_alternate = SelectionPart::new(
-            "div",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        )
-        .build();
-
-        let selection_second_alternate = SelectionPart::new(
-            "p",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        )
-        .build();
-
-        let selection_second = SelectionPart::new(
-            "span",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        )
-        .build();
-
-        let selection_second_extended = SelectionPart::new(
-            "p",
-            SelectionKind::All(Save {
-                inner_html: false,
-                text_content: false,
-            }),
-        )
-        .build();
-
-        println!("Store: {:#?}", store);
-
-        let mut last_element = store.push(&selection_first, ROOT, first);
-        let _ = store.push(
-            &selection_first_alternate,
-            ROOT,
-            first_alternate,
-        );
-        let _ = store.push(&selection_second_alternate, last_element, second_alternate);
-        last_element = store.push(&selection_second, last_element, second);
-        let _ = store.push(&selection_second_extended, last_element, second_extended);
-
-        /*
-         * root -> a.class --> span#id --> p
-         *      |          \-> p
-         *      \-> div
-         */
-        assert_eq!(
-            store.arena[0],
+        store.elements.inner = vec![
             Element {
-                name: "root",
-                id: None,
-                class: None,
-                attributes: vec![],
-                inner_html: None,
-                text_content: None,
-                children: vec![
-                    Child {
-                        query: "a",
-                        index: ChildIndex::Many(vec![1])
-                    },
-                    Child {
-                        query: "div",
-                        index: ChildIndex::Many(vec![2])
-                    },
+                first_child_query: Some(QueryId(0)),
+                ..Default::default()
+            },
+            Element {
+                first_child_query: None,
+                ..Default::default()
+            },
+        ];
+
+        store.queries.inner = vec![
+            QueryNode {
+                next_sibling: Some(QueryId(1)),
+                ..Default::default()
+            },
+            QueryNode {
+                next_sibling: None,
+                ..Default::default()
+            },
+        ];
+
+        store.link_query_to_element(QueryId(0), ElementId(1));
+
+        assert_eq!(
+            store.queries.inner,
+            vec![
+                QueryNode {
+                    next_sibling: Some(QueryId(1)),
+                    ..Default::default()
+                },
+                QueryNode {
+                    next_sibling: None,
+                    // first_element: ElementId(1),
+                    // last_element: ElementId(1),
+                    ..Default::default()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_branching_next_query() {
+        let mut store = Store::new();
+
+        let q = Query::all("1", Save::all())
+            .then(|ctx| [ctx.all("2", Save::all()), ctx.all("3", Save::all())]);
+
+        // `1` MATCH
+        store.push(
+            ElementId::default(),
+            &q.selection[0],
+            crate::XHtmlElement::default(),
+        );
+
+        assert_eq!(
+            store.queries.inner,
+            vec![QueryNode {
+                query: "1",
+                next_sibling: None,
+                elements: Span::new(ElementId(0))
+            }]
+        );
+
+        assert_eq!(store.elements.inner, vec![Element::default(),]);
+
+        // `2` MATCH
+        store.push(
+            ElementId(0),
+            &q.selection[1],
+            crate::XHtmlElement::default(),
+        );
+
+        assert_eq!(
+            store.queries.inner,
+            vec![
+                QueryNode {
+                    query: "1",
+                    next_sibling: None,
+                    elements: Span::new(ElementId(0))
+                },
+                QueryNode {
+                    query: "2",
+                    next_sibling: None,
+                    elements: Span::new(ElementId(1))
+                }
+            ]
+        );
+
+        assert_eq!(
+            store.elements.inner,
+            vec![
+                Element {
+                    first_child_query: Some(QueryId(1)),
+                    ..Default::default()
+                },
+                Element {
+                    ..Default::default()
+                },
+            ]
+        );
+
+        // `3` MATCH
+        store.push(
+            ElementId(0),
+            &q.selection[2],
+            crate::XHtmlElement::default(),
+        );
+
+        assert_eq!(
+            store.queries.inner,
+            vec![
+                QueryNode {
+                    query: "1",
+                    next_sibling: None,
+                    elements: Span::new(ElementId(0))
+                },
+                QueryNode {
+                    query: "2",
+                    next_sibling: Some(QueryId(2)),
+                    elements: Span::new(ElementId(1))
+                },
+                QueryNode {
+                    query: "3",
+                    next_sibling: None,
+                    elements: Span::new(ElementId(2))
+                }
+            ]
+        );
+
+        assert_eq!(
+            store.elements.inner,
+            vec![
+                Element {
+                    first_child_query: Some(QueryId(1)),
+                    ..Default::default()
+                },
+                Element {
+                    ..Default::default()
+                },
+                Element {
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+    #[test]
+    fn test_push_multi_section() {
+        let query = Query::all("main > section", Save::all())
+            .then(|section| {
+                [
+                    section.all("> a[href]", Save::all()),
+                    section.all("div a", Save::all()),
                 ]
-            }
+            })
+            .build();
+
+        let mut store = Store::new();
+
+        store.push(
+            ElementId::default(),
+            &query.queries[0],
+            crate::XHtmlElement {
+                name: "section",
+                ..Default::default()
+            },
         );
 
         assert_eq!(
-            store.arena[1],
-            Element {
+            store
+                .queries
+                .iter_from(QueryId(0))
+                .find(|q| q.query == query.queries[0].source)
+                .map(|q| unsafe { store.queries.index_of(q) }),
+            Some(QueryId(0))
+        );
+
+        store.push(
+            ElementId::default(),
+            &query.queries[0],
+            crate::XHtmlElement {
+                name: "section",
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(
+            store.elements.inner,
+            vec![
+                Element {
+                    name: "section",
+                    next_sibling: Some(ElementId(1)),
+                    ..Default::default()
+                },
+                Element {
+                    name: "section",
+                    ..Default::default()
+                },
+            ]
+        );
+
+        assert_eq!(
+            store.queries.inner,
+            vec![QueryNode {
+                query: "main > section",
+                next_sibling: None,
+                elements: Span::from(ElementId(0), ElementId(1))
+            },]
+        );
+
+        store.push(
+            ElementId(1),
+            &query.queries[1],
+            crate::XHtmlElement {
                 name: "a",
-                id: None,
-                class: Some("class"),
-                attributes: vec![],
-                inner_html: None,
-                text_content: None,
-                children: vec![
-                    Child {
-                        query: "p",
-                        index: ChildIndex::Many(vec![3])
-                    },
-                    Child {
-                        query: "span",
-                        index: ChildIndex::Many(vec![4])
-                    },
-                ]
-            }
+                ..Default::default()
+            },
         );
 
         assert_eq!(
-            store.arena[2],
-            Element {
-                name: "div",
-                id: None,
-                class: None,
-                attributes: vec![],
-                inner_html: None,
-                text_content: None,
-                children: vec![]
-            }
+            store.queries.inner,
+            vec![
+                QueryNode {
+                    query: "main > section",
+                    next_sibling: None,
+                    elements: Span::from(ElementId(0), ElementId(1))
+                },
+                QueryNode {
+                    query: "> a[href]",
+                    next_sibling: None,
+                    elements: Span::new(ElementId(2))
+                }
+            ]
         );
 
         assert_eq!(
-            store.arena[3],
-            Element {
-                name: "p",
-                id: None,
-                class: None,
-                attributes: vec![],
-                inner_html: None,
-                text_content: None,
-                children: vec![]
-            }
-        );
-
-        assert_eq!(
-            store.arena[4],
-            Element {
-                name: "span",
-                id: Some("id"),
-                class: None,
-                attributes: vec![],
-                inner_html: None,
-                text_content: None,
-                children: vec![Child {
-                    query: "p",
-                    index: ChildIndex::Many(vec![5])
-                }]
-            }
-        );
-
-        assert_eq!(
-            store.arena[5],
-            Element {
-                name: "p",
-                id: None,
-                class: None,
-                attributes: vec![],
-                inner_html: None,
-                text_content: None,
-                children: vec![]
-            }
+            store.elements.inner,
+            vec![
+                Element {
+                    name: "section",
+                    next_sibling: Some(ElementId(1)),
+                    ..Default::default()
+                },
+                Element {
+                    name: "section",
+                    first_child_query: Some(QueryId(1)),
+                    ..Default::default()
+                },
+                Element {
+                    name: "a",
+                    ..Default::default()
+                },
+            ]
         );
     }
 }
-*/

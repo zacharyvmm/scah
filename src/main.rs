@@ -18,7 +18,6 @@ fn main() {
     let queries = &[Query::all("a", Save::all()).build()];
 
     let store = parse(content.as_str(), queries);
-    let root = &store.elements[0];
     // assert_eq!(map["a"].len()?, 7);
     // println!("{:#?}", map);
 
@@ -27,6 +26,6 @@ fn main() {
         "Time elapsed: {:?} ({}s), Tags Found: {:#?}",
         duration,
         duration.as_secs_f64(),
-        root["a"].iter().unwrap().count()
+        store.get("a").iter().count()
     );
 }

@@ -1,18 +1,19 @@
 use std::fmt::Debug;
 
-use super::manager::DocumentPosition;
-use super::task::{FsmState, ScopedFsm};
+use super::cursor::{Cursor, ScopedCursor};
+use super::multiplexer::DocumentPosition;
 use crate::css::selector::{Query, Save};
-use crate::selection_engine::task::Fsm;
-use crate::store::{QueryError, Store};
+use crate::selection_engine::cursor::CursorOps;
+use crate::store::ElementId;
+use crate::store::Store;
 use crate::utils::Reader;
 use crate::{XHtmlElement, dbg_print};
 
 type StartIdx = Option<usize>;
 
 #[derive(Debug)]
-pub(crate) struct EndTagSaveContent {
-    element: usize,
+pub(crate) struct DeferredSave {
+    element: ElementId,
     on_depth: super::DepthSize,
     inner_html: StartIdx,
     text_content: StartIdx,
@@ -25,22 +26,22 @@ pub(crate) struct EndTagSaveContent {
  *  The important distinction is that the scoped task terminates at a set scope depth (when <= to current depth: terminate).
  */
 
-type ScopedFsmVec = Vec<ScopedFsm>;
-type EndTagEventVec = Vec<EndTagSaveContent>;
+type ScopedCursorVec = Vec<ScopedCursor>;
+type EndTagEventVec = Vec<DeferredSave>;
 
 #[derive(Debug)]
-pub struct SelectionRunner<'a, 'query> {
-    pub(crate) selection_tree: &'a Query<'query>,
-    pub(crate) fsm: FsmState,
-    pub(crate) scoped_fsms: ScopedFsmVec,
+pub struct QueryExecutor<'a, 'query> {
+    pub(crate) query: &'a Query<'query>,
+    pub(crate) fsm: Cursor,
+    pub(crate) scoped_fsms: ScopedCursorVec,
     pub(crate) on_close_tag_events: EndTagEventVec,
 }
 
-impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
-    pub fn new(selection_tree: &'a Query<'query>) -> Self {
+impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
+    pub fn new(query: &'a Query<'query>) -> Self {
         Self {
-            selection_tree,
-            fsm: FsmState::new(),
+            query,
+            fsm: Cursor::new(),
             scoped_fsms: Vec::new(),
             on_close_tag_events: Vec::new(),
         }
@@ -48,14 +49,14 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
     fn next_position(
         tree: &Query<'query>,
-        list: &mut ScopedFsmVec,
+        list: &mut ScopedCursorVec,
         depth: super::DepthSize,
-        fsm: &mut impl Fsm<'query, 'html>,
+        fsm: &mut impl CursorOps<'query, 'html>,
     ) {
         // 1) child, then 2) sibling, then 2) leaf of tree
         fsm.add_depth(depth);
-        if let Some(next_state) = fsm.get_position().next_state(tree) {
-            fsm.set_state(next_state);
+        if let Some(next_transition) = fsm.get_position().next_transition(tree) {
+            fsm.set_state(next_transition);
             fsm.set_end(false);
         } else if let Some(child) = fsm.get_position().next_child(tree) {
             fsm.set_position(child);
@@ -63,7 +64,11 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
             let mut has_sibling = fsm.get_position().next_sibling(tree);
             while let Some(sibling) = has_sibling {
-                list.push(ScopedFsm::new(depth, fsm.get_parent(), *fsm.get_position()));
+                list.push(ScopedCursor::new(
+                    depth,
+                    fsm.get_parent(),
+                    *fsm.get_position(),
+                ));
                 dbg_print!("Created Scoped FSM {:#?}", list.last().unwrap());
 
                 fsm.set_position(sibling);
@@ -84,14 +89,14 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             reader_position,
             text_content_position,
         }: &DocumentPosition,
-        fsm: &mut impl Fsm<'query, 'html>,
-    ) -> Result<(), QueryError<'query>> {
+        fsm: &mut impl CursorOps<'query, 'html>,
+    ) {
         // I can't check for this anymore, since the save is not instant and the fsm position is moved afterwards
         //debug_assert!(fsm.is_save_point(tree));
 
         let section = tree.get_selection(fsm.get_position().selection);
 
-        let element_pointer = store.push(section, fsm.get_parent(), element);
+        let element_pointer = store.push(fsm.get_parent(), section, element);
         if !tree.is_last_save_point(fsm.get_position()) {
             fsm.set_parent(element_pointer);
         }
@@ -101,7 +106,7 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             text_content,
         } = &section.save;
 
-        on_close_tag_events.push(EndTagSaveContent {
+        on_close_tag_events.push(DeferredSave {
             element: element_pointer,
             on_depth: element_depth,
             inner_html: if *inner_html {
@@ -118,8 +123,6 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
                 None
             },
         });
-
-        Ok(())
     }
 
     pub fn next(
@@ -127,30 +130,20 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
         store: &mut Store<'html, 'query>,
-    ) -> Result<(), QueryError<'_>> {
-        // STEP 1: check scoped tasks
-
+    ) {
         for i in 0..self.scoped_fsms.len() {
-            // println!("Scoped Fsm's {i}");
-
-            if !self.scoped_fsms[i].next(
-                self.selection_tree,
-                document_position.element_depth,
-                element,
-            ) {
+            if !self.scoped_fsms[i].next(self.query, document_position.element_depth, element) {
                 continue;
             }
 
             dbg_print!("Scoped FSM ({i}) Match with `{:?}`", element);
 
-            // println!("Scope Match with `{:?}`", element);
-
             if self
-                .selection_tree
+                .query
                 .is_descendant(self.scoped_fsms[i].get_position().state)
             {
                 // This should only be done if the task is not done (meaning it will move forward)
-                self.scoped_fsms.push(ScopedFsm::new(
+                self.scoped_fsms.push(ScopedCursor::new(
                     document_position.element_depth,
                     self.scoped_fsms[i].parent,
                     self.scoped_fsms[i].position,
@@ -159,22 +152,22 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 
             let mut new_scoped_fsm = self.scoped_fsms[i].clone();
 
-            if self.selection_tree.is_save_point(&new_scoped_fsm.position) {
+            if self.query.is_save_point(&new_scoped_fsm.position) {
                 Self::save_element(
                     &mut self.on_close_tag_events,
-                    self.selection_tree,
+                    self.query,
                     store,
                     element.clone(),
                     document_position,
                     &mut new_scoped_fsm,
-                )?;
+                );
 
                 dbg_print!("Scoped FSM ({i}) Saved `{:?}`", element);
             }
 
             if !element.is_self_closing() {
                 Self::next_position(
-                    self.selection_tree,
+                    self.query,
                     &mut self.scoped_fsms,
                     document_position.element_depth,
                     &mut new_scoped_fsm,
@@ -189,71 +182,53 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
         // STEP 2: check tasks
         let ref mut fsm = self.fsm;
 
-        if fsm.next(
-            self.selection_tree,
-            document_position.element_depth,
-            element,
-        ) {
+        if fsm.next(self.query, document_position.element_depth, element) {
             dbg_print!("FSM Match with `{:?}`", element);
 
-            let is_descendant_combinator = self.selection_tree.is_descendant(fsm.position.state);
-            let last_save_point = self.selection_tree.is_last_save_point(&fsm.position);
+            let is_descendant_combinator = self.query.is_descendant(fsm.position.state);
+            let last_save_point = self.query.is_last_save_point(&fsm.position);
             let section_kind = self
-                .selection_tree
+                .query
                 .get_section_selection_kind(fsm.position.selection);
             let is_all = matches!(section_kind, crate::css::selector::SelectionKind::All);
-            let is_root = fsm.position.is_root();
 
             if is_descendant_combinator && (!last_save_point || is_all) {
-                // This should only be done if the task is not done (meaning it will move forward)
-                self.scoped_fsms.push(ScopedFsm::new(
+                self.scoped_fsms.push(ScopedCursor::new(
                     document_position.element_depth,
                     fsm.parent,
                     fsm.position,
                 ));
                 dbg_print!("Created Scoped FSM {:#?}", self.scoped_fsms.last().unwrap());
-                // } else if is_all && !is_root {
-                //     let scope = fsm.depths.last().copied().unwrap_or(document_position.element_depth);
-                //     self.scoped_fsms
-                //         .push(ScopedFsm::new(scope, fsm.parent, fsm.position));
-                //     dbg_print!("Created Scoped FSM (is_all && !is_root) {:#?}", self.scoped_fsms.last().unwrap());
             }
 
-            // let parent: *mut E = fsm.parent;
-
-            if self.selection_tree.is_save_point(&fsm.position) {
+            if self.query.is_save_point(&fsm.position) {
                 Self::save_element(
                     &mut self.on_close_tag_events,
-                    self.selection_tree,
+                    self.query,
                     store,
                     element.clone(),
                     document_position,
                     fsm,
-                )?;
+                );
 
                 dbg_print!("FSM Saved `{:?}`", element);
             }
 
             if !element.is_self_closing() {
-                // let new_parent = fsm.parent;
-                // fsm.set_parent(parent);
                 Self::next_position(
-                    self.selection_tree,
+                    self.query,
                     &mut self.scoped_fsms,
                     document_position.element_depth,
                     fsm,
                 );
                 dbg_print!("New FSM {:#?}", fsm);
-                // fsm.set_parent(new_parent);
             }
             dbg_print!("Scoped FSM's: {:#?}", self.scoped_fsms)
         }
-
-        return Ok(());
     }
 
     pub fn early_exit(&self) -> bool {
-        if let Some(early_exit_section) = self.selection_tree.exit_at_section_end {
+        if let Some(early_exit_section) = self.query.exit_at_section_end {
             return early_exit_section == self.fsm.position.selection;
         }
 
@@ -320,18 +295,14 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
             .truncate(self.scoped_fsms.len() - remove_last_x_fsms);
 
         let ref mut fsm = self.fsm;
-        if fsm.back(
-            self.selection_tree,
-            document_position.element_depth,
-            element,
-        ) {
+        if fsm.back(self.query, document_position.element_depth, element) {
             if fsm.end {
                 fsm.end = false;
-                fsm.depths.pop();
+                fsm.match_stack.pop();
                 return true;
             }
             dbg_print!("FSM Before back: {:#?}", fsm);
-            fsm.step_backward(self.selection_tree);
+            fsm.step_backward(self.query);
             dbg_print!("FSM out of `{}`", element);
             dbg_print!("FSM After back: {:#?}", fsm);
             return true;
@@ -343,29 +314,28 @@ impl<'a, 'html, 'query: 'html> SelectionRunner<'a, 'query> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::XHtmlElement;
     use crate::css::selector::{Position, Query, Save};
-    use crate::store::ChildIndex;
     use crate::store::Store;
     use crate::utils::Reader;
+    use crate::{Element, XHtmlElement};
     use smallvec::smallvec;
 
-    const NULL_PARENT: usize = 0;
+    const NULL_PARENT: ElementId = ElementId(usize::MAX);
 
     #[test]
     fn test_fsm_next_descendant() {
-        let selection_tree = &Query::all("div a", Save::none()).build();
+        let query = &Query::all("div a", Save::none()).build();
 
         let mut store = Store::new();
 
-        let mut selection = SelectionRunner::new(selection_tree);
+        let mut selection = QueryExecutor::new(query);
 
         let _ = selection.next(
             &XHtmlElement {
                 name: "div",
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: &[],
             },
             &DocumentPosition {
                 reader_position: 0,
@@ -375,24 +345,24 @@ mod tests {
             &mut store,
         );
 
-        assert!(store.elements[0].children.is_empty());
+        assert!(store.get("div a").is_none());
 
         assert_eq!(
             selection.fsm,
-            FsmState {
+            Cursor {
                 parent: NULL_PARENT,
                 position: Position {
                     selection: 0,
                     state: 1
                 },
-                depths: smallvec![0],
+                match_stack: smallvec![0],
                 end: false,
             }
         );
 
         assert_eq!(
             selection.scoped_fsms.to_vec(),
-            vec![ScopedFsm {
+            vec![ScopedCursor {
                 scope_depth: 0,
                 parent: NULL_PARENT,
                 position: Position {
@@ -407,7 +377,7 @@ mod tests {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: &[],
             },
             &DocumentPosition {
                 reader_position: 0,
@@ -417,25 +387,17 @@ mod tests {
             &mut store,
         );
 
-        assert_eq!(store.elements[0].children.len(), 1);
-        let child = &store.elements[0].children[0];
-        assert_eq!(child.query, "div a");
-        match &child.index {
-            ChildIndex::Many(indices) => assert_eq!(indices, &vec![1]),
-            _ => panic!("Expected Many"),
-        }
+        assert_eq!(store.get("div a").unwrap().count(), 1);
+        let children = store.get("div a").unwrap();
 
-        assert_eq!(store.elements[1].name, "a");
-
-        // assert_eq!(
-        //     selection.tasks,
-        //     smallvec![], // After First Selection, their is no other information to gather, thus the task is removed.
-        // );
+        let children: Vec<&Element> = children.collect();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].name, "a");
 
         assert_eq!(
             selection.scoped_fsms.to_vec(),
             vec![
-                ScopedFsm {
+                ScopedCursor {
                     scope_depth: 0,
                     parent: NULL_PARENT,
                     position: Position {
@@ -443,7 +405,7 @@ mod tests {
                         state: 0
                     },
                 },
-                ScopedFsm {
+                ScopedCursor {
                     scope_depth: 1,
                     parent: NULL_PARENT,
                     position: Position {
@@ -457,19 +419,19 @@ mod tests {
 
     #[test]
     fn test_complex_fsm_query() {
-        let selection_tree = &Query::first("div p.class", Save::none())
+        let query = &Query::first("div p.class", Save::none())
             .then(|p| [p.first("span", Save::none()), p.first("a", Save::none())])
             .build();
 
         let mut store = Store::new();
-        let mut selection = SelectionRunner::new(selection_tree);
+        let mut selection = QueryExecutor::new(query);
 
         let _ = selection.next(
             &XHtmlElement {
                 name: "div",
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: &[],
             },
             &DocumentPosition {
                 reader_position: 0,
@@ -479,17 +441,17 @@ mod tests {
             &mut store,
         );
 
-        assert!(store.elements[0].children.is_empty());
+        assert!(store.get("div p.class").is_none());
 
         assert_eq!(
             selection.fsm,
-            FsmState {
+            Cursor {
                 parent: NULL_PARENT,
                 position: Position {
                     selection: 0,
                     state: 1
                 },
-                depths: smallvec![0],
+                match_stack: smallvec![0],
                 end: false,
             }
         );
@@ -497,7 +459,7 @@ mod tests {
         assert_eq!(selection.scoped_fsms.len(), 1);
         assert_eq!(
             selection.scoped_fsms[0],
-            ScopedFsm {
+            ScopedCursor {
                 scope_depth: 0,
                 parent: NULL_PARENT,
                 position: Position {
@@ -512,7 +474,7 @@ mod tests {
                 name: "p",
                 id: None,
                 class: Some("class"),
-                attributes: vec![],
+                attributes: &[],
             },
             &DocumentPosition {
                 reader_position: 0,
@@ -522,24 +484,22 @@ mod tests {
             &mut store,
         );
 
-        assert_eq!(store.elements[0].children.len(), 1);
-        let child = &store.elements[0].children[0];
-        assert_eq!(child.query, "div p.class");
-        match &child.index {
-            ChildIndex::One(idx) => assert_eq!(*idx, 1),
-            _ => panic!("Expected One"),
-        }
-        assert_eq!(store.elements[1].name, "p");
+        assert_eq!(store.get("div p.class").unwrap().count(), 1);
+        let children = store.get("div p.class").unwrap();
+        let children: Vec<&Element> = children.collect();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].name, "p");
+        assert_eq!(children[0].class, Some("class"));
 
         assert_eq!(
             selection.fsm,
-            FsmState {
-                parent: 1,
+            Cursor {
+                parent: ElementId(0),
                 position: Position {
                     selection: 2,
                     state: 3
                 },
-                depths: smallvec![0, 1],
+                match_stack: smallvec![0, 1],
                 end: false,
             }
         );
@@ -548,7 +508,7 @@ mod tests {
             selection.scoped_fsms.to_vec(),
             vec![
                 // ` div`
-                ScopedFsm {
+                ScopedCursor {
                     scope_depth: 0,
                     parent: NULL_PARENT,
                     position: Position {
@@ -557,7 +517,7 @@ mod tests {
                     },
                 },
                 // ` p.class`
-                ScopedFsm {
+                ScopedCursor {
                     scope_depth: 1,
                     parent: NULL_PARENT,
                     position: Position {
@@ -566,9 +526,9 @@ mod tests {
                     },
                 },
                 // `> span`
-                ScopedFsm {
+                ScopedCursor {
                     scope_depth: 1,
-                    parent: 1,
+                    parent: ElementId(0),
                     position: Position {
                         selection: 1,
                         state: 2
@@ -580,10 +540,10 @@ mod tests {
 
     #[test]
     fn test_simple_open_close() {
-        let selection_tree = Query::first("div", Save::none()).build();
+        let query = Query::first("div", Save::none()).build();
 
         let mut store = Store::new();
-        let mut selection = SelectionRunner::new(&selection_tree);
+        let mut selection = QueryExecutor::new(&query);
 
         let reader = Reader::new("<div></div>");
 
@@ -592,7 +552,7 @@ mod tests {
                 name: "div",
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: &[],
             },
             &DocumentPosition {
                 reader_position: 0,
@@ -609,13 +569,13 @@ mod tests {
 
         assert_eq!(
             selection.fsm,
-            FsmState {
+            Cursor {
                 parent: NULL_PARENT,
                 position: Position {
                     selection: 0,
                     state: 0
                 },
-                depths: smallvec![0],
+                match_stack: smallvec![0],
                 end: true,
             }
         );
@@ -636,13 +596,13 @@ mod tests {
 
         assert_eq!(
             selection.fsm,
-            FsmState {
+            Cursor {
                 parent: NULL_PARENT,
                 position: Position {
                     selection: 0,
                     state: 0
                 },
-                depths: smallvec![],
+                match_stack: smallvec![],
                 end: false,
             }
         );
