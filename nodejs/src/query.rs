@@ -1,8 +1,8 @@
 use ::scah::lazy::{LazyQuery, LazyQueryBuilder};
-use ::scah::{Query, Save, SelectionKind};
+use ::scah::{Query, Save};
 
+use napi::Result;
 use napi::bindgen_prelude::*;
-use napi::{Env, Result};
 use napi_derive::napi;
 
 #[napi(object, js_name = "Save")]
