@@ -1,12 +1,12 @@
 #![deny(clippy::all)]
 
+use napi::Result;
 use napi::bindgen_prelude::*;
-use napi::{Env, Result};
 use napi_derive::napi;
 
-use ::scah::{Query, QueryMultiplexer, Reader, Save, XHtmlParser};
+use ::scah::{Query, QueryMultiplexer, Reader, XHtmlParser};
 
-use std::ops::Range;
+use std::sync::Arc;
 
 mod query;
 use query::JsQuery;
@@ -24,8 +24,9 @@ fn parse(html: String, queries: Vec<Reference<JsQuery>>) -> Result<JSStore> {
     ));
   }
 
-  let len = html.as_bytes().len();
-  let html_bytes = unsafe { std::slice::from_raw_parts(html.as_ptr(), len) };
+  let html = Arc::new(html);
+  let html_bytes = html.as_ref().as_bytes();
+  let html_bytes = unsafe { std::slice::from_raw_parts(html_bytes.as_ptr(), html_bytes.len()) };
   let queries_rs = queries
     .iter()
     .map(|q| q.query.clone())

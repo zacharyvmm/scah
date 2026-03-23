@@ -1,6 +1,5 @@
 use crate::save::PySave;
 use ::scah::lazy::{LazyQuery, LazyQueryBuilder};
-use ::scah::{QueryBuilder, Save, SelectionKind};
 use pyo3::prelude::*;
 use scah::Query;
 

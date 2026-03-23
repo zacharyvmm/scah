@@ -154,7 +154,7 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
     pub unsafe fn to_query<'a>(self) -> (std::sync::Arc<Vec<u8>>, Query<'a>) {
         // I need to do this to unsafely get a slice from the String
         let string_tape_size = self.queries.iter().map(|q| q.source.as_ref().len()).sum();
-        let mut string_tape = Box::new(Vec::with_capacity(string_tape_size));
+        let mut string_tape = Vec::with_capacity(string_tape_size);
 
         let mut queries = Vec::with_capacity(self.queries.len());
         let mut states = Vec::with_capacity(self.queries.len() * 2);
@@ -196,7 +196,7 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
         }
 
         return (
-            unsafe { std::sync::Arc::from_raw(Box::into_raw(string_tape)) },
+            std::sync::Arc::new(string_tape),
             QueryBuilder {
                 states,
                 selection: queries,

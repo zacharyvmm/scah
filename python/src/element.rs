@@ -1,12 +1,12 @@
-use pyo3::exceptions::{PyTypeError, PyValueError};
-use pyo3::types::{PyBytes, PyDict, PyList, PyMemoryView, PySlice, PyString};
-use pyo3::{Bound, BoundObject, IntoPyObjectExt, prelude::*};
+use pyo3::exceptions::PyValueError;
+use pyo3::types::PyDict;
+use pyo3::{Bound, IntoPyObjectExt, prelude::*};
 use scah::{Attribute, ElementId, Store};
-use std::ops::{Index, Range};
+use std::sync::Arc;
 
 #[pyclass(name = "Element")]
 pub struct PyElement {
-    pub(crate) store: std::sync::Arc<Store<'static, 'static>>,
+    pub(crate) store: Arc<Store<'static, 'static>>,
     pub(crate) id: ElementId,
 }
 
@@ -115,8 +115,8 @@ impl PyElement {
 
 #[pyclass(name = "Store")]
 pub(crate) struct PyStore {
-    pub(crate) store: std::sync::Arc<Store<'static, 'static>>,
-    pub(crate) _html: String,
+    pub(crate) store: Arc<Store<'static, 'static>>,
+    pub(crate) _html: Arc<String>,
 }
 
 #[pymethods]

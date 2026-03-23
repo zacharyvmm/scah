@@ -3,10 +3,12 @@ use napi_derive::napi;
 use super::elements::JsElement;
 use scah::Store;
 
+use std::sync::Arc;
+
 #[napi(js_name = "Store")]
 pub struct JSStore {
-  pub(crate) store: std::sync::Arc<Store<'static, 'static>>,
-  pub(crate) _html: String,
+  pub(crate) store: Arc<Store<'static, 'static>>,
+  pub(crate) _html: Arc<String>,
 }
 
 #[napi]

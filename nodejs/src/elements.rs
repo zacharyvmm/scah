@@ -1,4 +1,4 @@
-use ::scah::{Attribute, Element, ElementId, Store};
+use ::scah::{Attribute, ElementId, Store};
 
 use napi::bindgen_prelude::*;
 use napi::{Env, Error, Result, Status};

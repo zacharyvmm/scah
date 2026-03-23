@@ -4,7 +4,7 @@ import io
 
 @pytest.fixture(scope="session")
 def spec_html_content():
-    path = "/home/zmm/Music/html.spec.whatwg.index.html"
+    path = "/home/zmm/Downloads/html.spec.whatwg.index.html"
     if os.path.exists(path):
         with open(path, 'r') as f:
             return f.read()
