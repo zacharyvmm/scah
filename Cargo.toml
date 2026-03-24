@@ -13,10 +13,11 @@ categories = ["parser-implementations", "web-programming"]
 exclude = [
     "nodejs/*",
     "python/*",
+    "benches/*",
 ]
 
 [workspace]
-members = ["python", "nodejs"]
+members = ["python", "nodejs", "benches"]
 
 [lib]
 name = "scah"
@@ -26,38 +27,7 @@ path = "src/lib.rs"
 smallvec = "1.15.1"
 
 [dev-dependencies]
-# Benchmarking Tools
-gungraun = "0.17"
-criterion = { version = "0.8.1", features = ["html_reports"] }
-
-# Competitor libraries
-lexbor_css = { git = "https://github.com/zacharyvmm/lexbor-rust-css-selection.git" }
-scraper = "0.25.0"
-tl = "0.7.8"
-# tl = { version = "0.7.8", features = ["simd"] }
-lol_html = "2.7.1"
-
 pretty_assertions = "1.4.1"
-
-[[bench]]
-name = "memory_bench_simple_all"
-path = "benches/simple/all/memory_bench.rs"
-harness = false
-
-[[bench]]
-name = "memory_bench_simple_first"
-path = "benches/simple/first/memory_bench.rs"
-harness = false
-
-[[bench]]
-name = "speed_bench_simple_all"
-path = "benches/simple/all/speed_bench.rs"
-harness = false
-
-[[bench]]
-name = "speed_bench_simple_first"
-path = "benches/simple/first/speed_bench.rs"
-harness = false
 
 [profile.release]
 opt-level = 3
