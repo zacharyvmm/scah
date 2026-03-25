@@ -23,7 +23,7 @@ World's fastest CSS Selector.
 ```toml
 # Cargo.toml
 [dependencies]
-scah = "0.0.1"
+scah = "0.0.4"
 ```
 
 #### Basic usage
@@ -107,6 +107,9 @@ Control what data is captured per selector:
 ![Criterion BenchMarks](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/criterion_bench.png)
 
 ### Python
+```bash
+pip install -U scah
+```
 ```python
 from scah import Query, Save, parse 
 

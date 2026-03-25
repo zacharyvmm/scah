@@ -24,6 +24,13 @@
         "prettier": "^3.6.2",
         "typescript": "^5.9.2",
       },
+      "optionalDependencies": {
+        "scah-darwin-arm64": "0.0.4",
+        "scah-darwin-x64": "0.0.4",
+        "scah-linux-arm64-gnu": "0.0.4",
+        "scah-linux-x64-gnu": "0.0.4",
+        "scah-win32-x64-msvc": "0.0.4",
+      },
     },
   },
   "packages": {
