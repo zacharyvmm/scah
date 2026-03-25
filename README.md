@@ -104,7 +104,7 @@ Control what data is captured per selector:
 > 📖 Full API documentation: [docs.rs/scah](https://docs.rs/scah)
 
 #### Benchmarks
-![Criterion BenchMarks](./benches/images/criterion_bench.png)
+![Criterion BenchMarks](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/criterion_bench.png)
 
 ### Python
 ```python
@@ -122,10 +122,10 @@ store = parse(html, [query])
 
 #### Benchmark's
 ##### Real Html BenchMark ([html.spec.whatwg.org](https://html.spec.whatwg.org/)) (select all `a` tags):
-![WhatWg Html Spec BenchMark](./python/benches/images/whatwg.png)
+![WhatWg Html Spec BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/python/benches/images/whatwg.png)
 
 ##### Synthetic Html BenchMark (select all `a` tags):
-![Synthetic Html BenchMark](./python/benches/images/synthetic.png)
+![Synthetic Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/python/benches/images/synthetic.png)
 
 ### Typescript / Javascript
 ```ts
