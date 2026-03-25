@@ -1,14 +1,9 @@
 {
   "name": "scah",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "description": "scah (scan HTML) nodejs bindings",
   "main": "index.js",
-  "repository": {
-    "type": "git",
-    "url": "git+ssh://git@github.com/napi-rs/package-template.git"
-  },
   "license": "MIT",
-  "browser": "browser.js",
   "keywords": [
     "napi-rs",
     "NAPI",
@@ -19,8 +14,7 @@
   ],
   "files": [
     "index.d.ts",
-    "index.js",
-    "browser.js"
+    "index.js"
   ],
   "napi": {
     "binaryName": "scah",
@@ -94,10 +88,10 @@
     "arrowParens": "always"
   },
   "optionalDependencies": {
-    "scah-win32-x64-msvc": "0.0.1",
-    "scah-darwin-x64": "0.0.1",
-    "scah-linux-x64-gnu": "0.0.1",
-    "scah-linux-arm64-gnu": "0.0.1",
-    "scah-darwin-arm64": "0.0.1"
+    "scah-win32-x64-msvc": "0.0.4",
+    "scah-darwin-x64": "0.0.4",
+    "scah-linux-x64-gnu": "0.0.4",
+    "scah-linux-arm64-gnu": "0.0.4",
+    "scah-darwin-arm64": "0.0.4"
   }
 }
