@@ -101,7 +101,7 @@ Control what data is captured per selector:
 | Adjacent sibling | `h1 + p` | Coming soon |
 | General sibling | `h1 ~ p` | Coming soon |
 
-> 📖 Full API documentation: [docs.rs/scah](https://docs.rs/scah)
+> Full API documentation: [docs.rs/scah](https://docs.rs/scah)
 
 #### Benchmarks
 ![Criterion BenchMarks](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/criterion_bench.png)
