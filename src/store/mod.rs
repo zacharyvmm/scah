@@ -105,22 +105,29 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             .map(|element_id| self.elements.iter_from(element_id))
     }
 
+    fn link_query_to_query(&mut self, query: QueryId, mut root: QueryId) {
+        loop {
+            if root == query {
+                return;
+            }
+            let query_node = &self.queries[root];
+            match query_node.next_sibling {
+                Some(sibling) => root = sibling,
+                None => {
+                    self.queries[root].next_sibling = Some(query);
+                    break;
+                }
+            }
+        }
+    }
+
+
     fn link_query_to_element(&mut self, query: QueryId, element: ElementId) {
         let id = self.elements[element].first_child_query;
 
         match id {
-            Some(mut id) => loop {
-                if id == query {
-                    return;
-                }
-                let query_node = &self.queries[id];
-                match query_node.next_sibling {
-                    Some(sibling) => id = sibling,
-                    None => {
-                        self.queries[id].next_sibling = Some(query);
-                        break;
-                    }
-                }
+            Some(id) => {
+                self.link_query_to_query(query, id);
             },
             None => {
                 self.elements[element].first_child_query = Some(query);
@@ -196,12 +203,8 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
         if !from.is_null() {
             self.link_query_to_element(query_id, from);
-        } else if query_id != QueryId(0)
-            && let Some(last) = self.queries.iter_from(QueryId(0)).last()
-        {
-            let last = unsafe { mut_prt_unchecked!(last).as_mut_unchecked() };
-            // Link Query to first query
-            last.next_sibling = Some(query_id);
+        } else {
+            self.link_query_to_query(query_id, QueryId(0));
         }
 
         self.link_element_to_query(query_id, index);
@@ -584,6 +587,9 @@ mod tests {
         );
 
         assert!(store.get("span").is_some());
+        assert_eq!(store.get("span").iter().count(), 1);
+
         assert!(store.get("a").is_some());
+        assert_eq!(store.get("a").iter().count(), 1);
     }
 }

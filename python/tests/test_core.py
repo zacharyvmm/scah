@@ -92,3 +92,55 @@ def test_intro():
     assert len(li_tags) == 2
     assert li_tags[0].text_content == "Python"
     assert li_tags[1].text_content == "Node.js"
+
+def test_multiple_root_queries():
+    # The HTML acts as a sandbox to demonstrate different selector types
+    html_api = """
+    <main id="api-reference">
+        <h2>Supported Selectors</h2>
+        <div class="sandbox">
+            <span class="badge status-working">Tag Name & Class</span>
+            
+            <div id="target-node">ID Selection</div>
+            
+            <ul class="combinators">
+                <li>Direct Child</li>
+                <div>
+                    <li>Deep Descendant</li>
+                </div>
+            </ul>
+            
+            <div class="attributes">
+                <a href="https://github.com/example" data-type="external">Exact Match & Presence</a>
+                <a href="/local/path" data-type="internal">Prefix/Suffix Match</a>
+            </div>
+        </div>
+    </main>
+    """
+
+    # Demonstrate the various selection types in a single multiplexed parse call
+    queries = [
+        # 1. Tag and Class
+        Query.all("span.status-working", Save.all()).build(),
+        
+        # 2. ID Selector
+        Query.all("#target-node", Save.all()).build(),
+        
+        # 3. Child Combinator (only gets the first li)
+        Query.all("ul.combinators > li", Save.all()).build(),
+        
+        # 4. Descendant Combinator (gets the nested li)
+        Query.all("ul.combinators li", Save.all()).build(),
+        
+        # 5. Attribute Presence and Exact Match
+        Query.all("a[href][data-type=\"external\"]", Save.all()).build(),
+        
+        # 6. Attribute Prefix Match
+        Query.all("a[href^=\"/\"]", Save.all()).build(),
+
+        # 7. First Link
+        Query.first("a", Save.all()).build()
+    ]
+
+    # The QueryMultiplexer evaluates all of these against the token stream simultaneously
+    store_api = parse(html_api, queries)
