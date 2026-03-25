@@ -19,11 +19,37 @@ pub use arena::{
 pub use element::Element;
 pub use query::QueryNode;
 
+/// The result set returned by [`parse`](crate::parse).
+///
+/// A `Store` is an arena-based container that holds all elements, attributes,
+/// and text content captured during parsing. You query it by CSS selector
+/// string using [`Store::get`].
+///
+/// # Example
+///
+/// ```rust
+/// use scah::{Query, Save, parse};
+///
+/// let html = "<div><a href='x'>Link1</a><a href='y'>Link2</a></div>";
+/// let queries = &[Query::all("a", Save::all()).build()];
+/// let store = parse(html, queries);
+///
+/// // Retrieve all matched <a> elements
+/// let anchors: Vec<_> = store.get("a").unwrap().collect();
+/// assert_eq!(anchors.len(), 2);
+///
+/// // Access attributes
+/// assert_eq!(anchors[0].attribute(&store, "href"), Some("x"));
+/// ```
 #[derive(Debug, PartialEq)]
 pub struct Store<'html, 'query> {
+    /// Arena of matched elements.
     pub elements: Arena<Element<'html>, ElementId>,
+    /// Arena of attributes belonging to matched elements.
     pub attributes: Arena<Attribute<'html>, AttributeId>,
+    /// Arena of query nodes that link selectors to their matched elements.
     pub queries: Arena<QueryNode<'query>, QueryId>,
+    /// Accumulated text-content buffer shared by all elements.
     pub text_content: TextContent,
 }
 
@@ -46,6 +72,27 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         }
     }
 
+    /// Look up all elements that matched a given CSS selector string.
+    ///
+    /// The `query` parameter must be the **exact same string** used when
+    /// building the [`Query`](crate::Query) (e.g. `"main > section > a[href]"`).
+    ///
+    /// Returns `None` if no elements were matched by any query, or if
+    /// the given selector string was not part of the executed queries.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use scah::{Query, Save, parse};
+    ///
+    /// let html = "<ul><li>A</li><li>B</li></ul>";
+    /// let queries = &[Query::all("li", Save::only_text_content()).build()];
+    /// let store = parse(html, queries);
+    ///
+    /// for li in store.get("li").unwrap() {
+    ///     println!("{}", li.text_content(&store).unwrap_or_default());
+    /// }
+    /// ```
     pub fn get(&'html self, query: &str) -> Option<impl Iterator<Item = &'html Element<'html>>> {
         if self.queries.is_empty() {
             return None;

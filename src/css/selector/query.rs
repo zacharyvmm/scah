@@ -79,8 +79,19 @@ impl<'query> Position {
     }
 }
 
+/// A single segment of a compiled [`Query`] tree.
+///
+/// Each `QuerySection` maps to one CSS selector string in the query chain
+/// (e.g. `"main > section"` or `"> a[href]"`) and tracks its position in
+/// the parent/sibling/child tree, what content to save, and whether it
+/// matches all or only the first occurrence.
+///
+/// This type is internal bookkeeping; you rarely interact with it directly.
+/// It is exposed publicly so that the [`Store`](crate::Store) can reference
+/// query metadata.
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuerySection<'query> {
+    /// The original CSS selector string for this section.
     pub(crate) source: &'query str,
 
     pub(super) range: std::ops::Range<usize>,
@@ -112,6 +123,47 @@ impl<'query> QuerySection<'query> {
     }
 }
 
+/// A compiled CSS query ready to be executed against an HTML document.
+///
+/// A `Query` encapsulates a tree of [`QuerySection`]s, each representing
+/// one CSS selector, compiled into an automaton of internal transitions.
+/// The automaton is evaluated during streaming parsing to match elements
+/// efficiently in a single pass.
+///
+/// # NFA Execution Model
+///
+/// Under the hood, a `Query` is compiled into a **Non-Deterministic Finite Automaton (NFA)**.
+///
+/// - **Fictitious States:** The NFA states themselves are implicit. They simply
+///   represent the position (the integer index) between sequential transitions 
+///   within the automaton's evaluation path.
+/// - **Transitions:** Defined by the internal `Transition` struct, each edge consists of a
+///   `guard` (a topological `Combinator` dictating depth requirements like `>` or ` `) 
+///   and a `predicate` (an `ElementPredicate` matching tags, classes, etc.).
+/// - **Branches:** A `QuerySection` represents a linear sequence of these transitions
+///   (usually representing a single string selector). Branching your query with
+///   [`QueryBuilder::then`] creates new sections that form a directed tree of sub-automata.
+///
+/// # Building a Query
+///
+/// Use [`Query::all`] or [`Query::first`] as entry points, then chain with
+/// [`QueryBuilder::all`], [`QueryBuilder::first`], or [`QueryBuilder::then`],
+/// and finalise with [`QueryBuilder::build`].
+///
+/// ```rust
+/// use scah::{Query, Save};
+///
+/// // Simple: find all <a> tags
+/// let q1 = Query::all("a", Save::all()).build();
+///
+/// // Compound: find sections, then extract links and text within them
+/// let q2 = Query::all("section", Save::none())
+///     .then(|s| [
+///         s.all("a[href]", Save::all()),
+///         s.first("p",     Save::only_text_content()),
+///     ])
+///     .build();
+/// ```
 #[derive(Debug, PartialEq, Clone)]
 pub struct Query<'query> {
     pub(crate) states: Box<[Transition<'query>]>,
@@ -121,6 +173,12 @@ pub struct Query<'query> {
 }
 
 impl<'query> Query<'query> {
+    /// Start building a query that matches only the **first** element
+    /// satisfying the given CSS selector.
+    ///
+    /// Using `first` enables an early-exit optimisation: once the
+    /// match is found and its content captured, parsing of this branch
+    /// can stop early.
     pub fn first(query: &'query str, save: Save) -> QueryBuilder<'query> {
         let states = Transition::generate_transitions_from_string(query);
         let queries = vec![QuerySection::new(
@@ -137,6 +195,20 @@ impl<'query> Query<'query> {
         }
     }
 
+    /// Start building a query that matches **all** elements satisfying
+    /// the given CSS selector.
+    ///
+    /// This is the most common entry point. The returned [`QueryBuilder`]
+    /// can be chained with `.all()`, `.first()`, `.then()`, and finally
+    /// `.build()` to produce a [`Query`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use scah::{Query, Save};
+    ///
+    /// let query = Query::all("a[href]", Save::all()).build();
+    /// ```
     pub fn all(query: &'query str, save: Save) -> QueryBuilder<'query> {
         let states = Transition::generate_transitions_from_string(query);
         let queries = vec![QuerySection::new(

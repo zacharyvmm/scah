@@ -1,21 +1,54 @@
 use super::tokenizer::ElementAttributeToken;
 use crate::utils::Reader;
 
+/// A key-value pair representing an HTML element attribute.
+///
+/// Both `key` and `value` are zero-copy `&str` references into the
+/// original HTML source.
+///
+/// # Example
+///
+/// ```rust
+/// use scah::{Query, Save, parse};
+///
+/// let html = r#"<a href="https://example.com" target="_blank">Link</a>"#;
+/// let queries = &[Query::all("a", Save::all()).build()];
+/// let store = parse(html, queries);
+///
+/// let a = store.get("a").unwrap().next().unwrap();
+/// let attrs = a.attributes(&store).unwrap();
+/// assert_eq!(attrs[0].key, "href");
+/// assert_eq!(attrs[0].value, Some("https://example.com"));
+/// assert_eq!(attrs[1].key, "target");
+/// assert_eq!(attrs[1].value, Some("_blank"));
+/// ```
 #[derive(Debug, PartialEq, Clone)]
 pub struct Attribute<'html> {
+    /// The attribute name (e.g. `"href"`, `"class"`, `"data-id"`).
     pub key: &'html str,
+    /// The attribute value, or `None` for boolean attributes (e.g. `disabled`).
     pub value: Option<&'html str>,
 }
 
 //pub type Attributes<'html> = SmallVec<[Attribute<'html>, 3]>;
 
+/// An HTML element as parsed from the token stream.
+///
+/// This is the *parser-level* representation used during streaming.
+/// Once an element is matched by a query, its data is copied into an
+/// [`Element`](crate::Element) inside the [`Store`](crate::Store).
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct XHtmlElement<'html> {
+    /// The tag name (e.g. `"div"`, `"a"`, `"section"`).
     pub name: &'html str,
+    /// The value of the `id` attribute, if present.
     pub id: Option<&'html str>,
+    /// The value of the `class` attribute, if present.
     pub class: Option<&'html str>,
+    /// Slice of additional attributes (excludes `id` and `class`).
     pub attributes: &'html [Attribute<'html>],
 }
+
 
 #[derive(Debug, PartialEq)]
 pub enum XHtmlTag<'html> {
