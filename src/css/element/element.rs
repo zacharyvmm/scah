@@ -1,8 +1,5 @@
 use super::string_search::AttributeSelectionKind;
-use crate::{
-    SelectionKind,
-    utils::{QuoteKind, Reader},
-};
+use crate::utils::{QuoteKind, Reader};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct AttributeSelection<'query> {
@@ -203,20 +200,6 @@ pub struct ElementPredicate<'a> {
 // 2.1) The parsing logic should continue to use the iterator parttern I have been using.
 // 2.1.1) The flow should look like this => Reader -> Tokenizer -> ElementIterator -> SelectionIterator
 impl<'a> ElementPredicate<'a> {
-    pub(crate) fn new(
-        name: Option<&'a str>,
-        id: Option<&'a str>,
-        class: Option<&'a str>,
-        attributes: Vec<AttributeSelection<'a>>,
-    ) -> Self {
-        return Self {
-            name: name,
-            id: id,
-            class: class,
-            attributes: attributes,
-        };
-    }
-
     fn parse_attribute(&mut self, reader: &mut Reader<'a>) {
         let attribute = AttributeSelection::from(reader);
         self.attributes.push(attribute);

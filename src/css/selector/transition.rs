@@ -39,7 +39,7 @@ impl<'query> Transition<'query> {
 
     pub fn back<'html>(
         &self,
-        element: &'html str,
+        _element: &'html str,
         current_depth: crate::selection_engine::DepthSize,
         last_depth: crate::selection_engine::DepthSize,
     ) -> bool {
