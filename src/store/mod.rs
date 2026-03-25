@@ -121,14 +121,13 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         }
     }
 
-
     fn link_query_to_element(&mut self, query: QueryId, element: ElementId) {
         let id = self.elements[element].first_child_query;
 
         match id {
             Some(id) => {
                 self.link_query_to_query(query, id);
-            },
+            }
             None => {
                 self.elements[element].first_child_query = Some(query);
             }
