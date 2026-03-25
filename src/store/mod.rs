@@ -196,8 +196,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
         if !from.is_null() {
             self.link_query_to_element(query_id, from);
-        }
-        if let Some(last) = self.queries.iter_from(QueryId(0)).last() {
+        } else if query_id != QueryId(0)
+            && let Some(last) = self.queries.iter_from(QueryId(0)).last()
+        {
             let last = unsafe { mut_prt_unchecked!(last).as_mut_unchecked() };
             // Link Query to first query
             last.next_sibling = Some(query_id);

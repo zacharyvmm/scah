@@ -132,8 +132,7 @@ impl PyStore {
         })
     }
 
-    #[getter]
-    fn length(&self) -> i64 {
-        self.store.elements.len() as i64
+    fn __len__(&self) -> usize {
+        self.store.elements.len()
     }
 }

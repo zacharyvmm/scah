@@ -9,7 +9,7 @@ export declare class Element {
   get attributes(): object
   get innerHtml(): string | null
   get textContent(): string | null
-  children(query: string): Array<Element>
+  get(query: string): Array<Element>
 }
 export type JsElement = Element
 
