@@ -31,7 +31,7 @@ test('Basic selection', () => {
     textContent: 'Hello World Example Website',
   })
 
-  let a = div?.children('a').at(0)
+  let a = div?.get('a').at(0)
 
   expect(a?.toJson()).toEqual({
     name: 'a',
@@ -80,15 +80,15 @@ test('Tree selection', () => {
   expect(products_section![0]?.name).toBe('section')
   expect(products_section![0]?.id).toBe('products')
 
-  const products = products_section![0].children('.product')!
+  const products = products_section![0].get('.product')!
 
   expect(products[0].name).toBe('div')
   expect(products[0].className).toBe('product')
 
   const product1 = {
-    h1: products[0].children('h1')[0],
-    img: products[0].children('img')[0],
-    p: products[0].children('p')[0],
+    h1: products[0].get('h1')[0],
+    img: products[0].get('img')[0],
+    p: products[0].get('p')[0],
   }
   expect(product1.h1.name).toBe('h1')
   expect(product1.h1.innerHtml).toBe('Product #1')
@@ -104,9 +104,9 @@ test('Tree selection', () => {
   expect(products[1].className).toBe('product')
 
   const product2 = {
-    h1: products[1].children('h1')[0],
-    img: products[1].children('img')[0],
-    p: products[1].children('p')[0],
+    h1: products[1].get('h1')[0],
+    img: products[1].get('img')[0],
+    p: products[1].get('p')[0],
   }
 
   expect(product2.h1.name).toBe('h1')

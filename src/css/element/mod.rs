@@ -7,3 +7,6 @@ pub(crate) use element::ElementPredicate;
 
 pub(crate) use lexer::Combinator;
 pub(super) use lexer::Lexer;
+
+pub(crate) use element::AttributeSelection;
+pub(crate) use string_search::AttributeSelectionKind;

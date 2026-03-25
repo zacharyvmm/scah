@@ -49,7 +49,6 @@ pub struct XHtmlElement<'html> {
     pub attributes: &'html [Attribute<'html>],
 }
 
-
 #[derive(Debug, PartialEq)]
 pub enum XHtmlTag<'html> {
     Open,

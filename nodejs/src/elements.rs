@@ -99,7 +99,7 @@ impl JsElement {
     }
 
     #[napi]
-    pub fn children(&self, query: String) -> Result<Vec<JsElement>> {
+    pub fn get(&self, query: String) -> Result<Vec<JsElement>> {
         let element = self
             .store
             .elements

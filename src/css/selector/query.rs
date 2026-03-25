@@ -135,10 +135,10 @@ impl<'query> QuerySection<'query> {
 /// Under the hood, a `Query` is compiled into a **Non-Deterministic Finite Automaton (NFA)**.
 ///
 /// - **Fictitious States:** The NFA states themselves are implicit. They simply
-///   represent the position (the integer index) between sequential transitions 
+///   represent the position (the integer index) between sequential transitions
 ///   within the automaton's evaluation path.
 /// - **Transitions:** Defined by the internal `Transition` struct, each edge consists of a
-///   `guard` (a topological `Combinator` dictating depth requirements like `>` or ` `) 
+///   `guard` (a topological `Combinator` dictating depth requirements like `>` or ` `)
 ///   and a `predicate` (an `ElementPredicate` matching tags, classes, etc.).
 /// - **Branches:** A `QuerySection` represents a linear sequence of these transitions
 ///   (usually representing a single string selector). Branching your query with
@@ -273,8 +273,10 @@ impl<'query> Query<'query> {
 
 #[cfg(test)]
 mod tests {
+    use crate::css::element::AttributeSelection;
+    use crate::css::element::AttributeSelectionKind;
     use crate::css::element::Combinator;
-    use crate::css::element::{AttributeSelection, AttributeSelectionKind, ElementPredicate};
+    use crate::css::element::ElementPredicate;
     use crate::css::selector::transition::Transition;
     use crate::{Query, QuerySection, Save, SelectionKind};
 

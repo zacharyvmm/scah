@@ -1,5 +1,5 @@
-use crate::Attribute;
 use crate::css::selector::QuerySection;
+use crate::{Attribute, mut_prt_unchecked};
 use std::ops::Range;
 
 mod text_content;
@@ -196,6 +196,11 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
         if !from.is_null() {
             self.link_query_to_element(query_id, from);
+        }
+        if let Some(last) = self.queries.iter_from(QueryId(0)).last() {
+            let last = unsafe { mut_prt_unchecked!(last).as_mut_unchecked() };
+            // Link Query to first query
+            last.next_sibling = Some(query_id);
         }
 
         self.link_element_to_query(query_id, index);
@@ -549,5 +554,35 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn test_multi_root_queries() {
+        let queries = &[
+            Query::all("span", Save::all()).build(),
+            Query::all("a", Save::all()).build(),
+        ];
+
+        let mut store = Store::new();
+
+        store.push(
+            ElementId::default(),
+            &queries[0].queries[0],
+            crate::XHtmlElement {
+                name: "span",
+                ..Default::default()
+            },
+        );
+        store.push(
+            ElementId::default(),
+            &queries[1].queries[0],
+            crate::XHtmlElement {
+                name: "a",
+                ..Default::default()
+            },
+        );
+
+        assert!(store.get("span").is_some());
+        assert!(store.get("a").is_some());
     }
 }

@@ -106,19 +106,24 @@ mod tests {
 
         assert_eq!(
             first_element,
-            ElementPredicate::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
+            ElementPredicate {
+                name: Some("element"),
+                id: Some("id"),
+                class: Some("class"),
+                attributes: vec![]
+            }
         );
 
         assert_eq!(second_combinator, Combinator::Child);
 
         assert_eq!(
             second_element,
-            ElementPredicate::new(
-                Some("other"),
-                Some("other_id"),
-                Some("other_class"),
-                Vec::new(),
-            )
+            ElementPredicate {
+                name: Some("other"),
+                id: Some("other_id"),
+                class: Some("other_class"),
+                attributes: Vec::new(),
+            }
         );
     }
 
@@ -132,19 +137,24 @@ mod tests {
 
         assert_eq!(
             first_element,
-            ElementPredicate::new(Some("element"), Some("id"), Some("class"), Vec::new(),)
+            ElementPredicate {
+                name: Some("element"),
+                id: Some("id"),
+                class: Some("class"),
+                attributes: vec![]
+            }
         );
 
         assert_eq!(second_combinator, Combinator::Child);
 
         assert_eq!(
             second_element,
-            ElementPredicate::new(
-                Some("other"),
-                Some("other_id"),
-                Some("other_class"),
-                Vec::new(),
-            )
+            ElementPredicate {
+                name: Some("other"),
+                id: Some("other_id"),
+                class: Some("other_class"),
+                attributes: Vec::new(),
+            }
         );
     }
 }

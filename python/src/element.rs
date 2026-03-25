@@ -67,7 +67,7 @@ impl PyElement {
             .and_then(|e| e.text_content(&self.store))
     }
 
-    pub fn children(&self, query: String) -> PyResult<Vec<PyElement>> {
+    pub fn get(&self, query: String) -> PyResult<Vec<PyElement>> {
         let element = self
             .store
             .elements
