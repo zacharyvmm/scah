@@ -1,11 +1,14 @@
-mod element;
-mod element_eq;
+mod builder;
+mod eq;
 mod lexer;
 mod string_search;
 
-pub(super) use element::AttributeSelection;
-pub(crate) use element::ElementPredicate;
-pub(super) use string_search::AttributeSelectionKind;
+pub(crate) use builder::ElementPredicate;
 
 pub(crate) use lexer::Combinator;
 pub(super) use lexer::Lexer;
+
+#[cfg(test)]
+pub(crate) use builder::AttributeSelection;
+#[cfg(test)]
+pub(crate) use string_search::AttributeSelectionKind;

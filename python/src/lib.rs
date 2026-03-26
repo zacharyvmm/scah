@@ -12,7 +12,7 @@ use crate::save::PySave;
 use element::{PyElement, PyStore};
 
 #[pyfunction]
-fn parse<'py>(html: String, queries: Vec<PyRef<PyQuery>>) -> PyResult<PyStore> {
+fn parse(html: String, queries: Vec<PyRef<PyQuery>>) -> PyResult<PyStore> {
     let html = Arc::new(html);
     let html_bytes = html.as_ref().as_bytes();
     let html_bytes = unsafe { std::slice::from_raw_parts(html_bytes.as_ptr(), html_bytes.len()) };

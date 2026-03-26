@@ -1,8 +1,5 @@
 use super::string_search::AttributeSelectionKind;
-use crate::{
-    SelectionKind,
-    utils::{QuoteKind, Reader},
-};
+use crate::utils::{QuoteKind, Reader};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct AttributeSelection<'query> {
@@ -60,10 +57,10 @@ impl<'query> From<&mut Reader<'query>> for AttributeSelection<'query> {
                         continue;
                     }
 
-                    if let Some(quote_kind) = &opened_quote {
-                        if *quote_kind != kind {
-                            continue;
-                        }
+                    if let Some(quote_kind) = &opened_quote
+                        && *quote_kind != kind
+                    {
+                        continue;
                     }
 
                     opened_quote = None;
@@ -117,7 +114,7 @@ impl<'query> From<&mut Reader<'query>> for AttributeSelection<'query> {
 enum SelectionKeyWords<'query> {
     String(&'query str),
     ID,
-    CLASS,
+    Class,
     Quote,
     OpenAttribute,  // [
     CloseAttribute, // ]
@@ -127,15 +124,15 @@ impl<'a> SelectionKeyWords<'a> {
     pub fn next(reader: &mut Reader<'a>) -> Option<Self> {
         let start_pos = reader.get_position();
 
-        if let Some(token) = reader.peek() {
-            if matches!(token, b'>' | b' ' | b'+' | b'~' | b'|') {
-                return None;
-            };
+        if let Some(token) = reader.peek()
+            && matches!(token, b'>' | b' ' | b'+' | b'~' | b'|')
+        {
+            return None;
         }
 
-        return match reader.next()? {
+        match reader.next()? {
             b'#' => Some(Self::ID),
-            b'.' => Some(Self::CLASS),
+            b'.' => Some(Self::Class),
             b'"' => Some(Self::Quote),
             b'\'' => Some(Self::Quote),
             b'[' => Some(Self::OpenAttribute),
@@ -144,9 +141,9 @@ impl<'a> SelectionKeyWords<'a> {
                 // Find end of word
                 // POTENTIAL BUG ??? |> I'm pretty sure this is missing '\'' and '"'
                 reader.next_until_list(&[b' ', b'#', b'.', b'[']);
-                return Some(Self::String(reader.slice(start_pos..reader.get_position())));
+                Some(Self::String(reader.slice(start_pos..reader.get_position())))
             }
-        };
+        }
     }
 }
 
@@ -163,7 +160,7 @@ impl<'a> SelectionAttributeToken<'a> {
 
         let start_pos = reader.get_position();
 
-        return match reader.next()? {
+        match reader.next()? {
             b'"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
             b'\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
             b'=' => Some(Self::Equal),
@@ -183,9 +180,9 @@ impl<'a> SelectionAttributeToken<'a> {
                     b' ', b'"', b'\'', b'=', b']', b'~', b'|', b'^', b'$', b'*',
                 ]);
 
-                return Some(Self::String(reader.slice(start_pos..reader.get_position())));
+                Some(Self::String(reader.slice(start_pos..reader.get_position())))
             }
-        };
+        }
     }
 }
 
@@ -203,20 +200,6 @@ pub struct ElementPredicate<'a> {
 // 2.1) The parsing logic should continue to use the iterator parttern I have been using.
 // 2.1.1) The flow should look like this => Reader -> Tokenizer -> ElementIterator -> SelectionIterator
 impl<'a> ElementPredicate<'a> {
-    pub(crate) fn new(
-        name: Option<&'a str>,
-        id: Option<&'a str>,
-        class: Option<&'a str>,
-        attributes: Vec<AttributeSelection<'a>>,
-    ) -> Self {
-        return Self {
-            name: name,
-            id: id,
-            class: class,
-            attributes: attributes,
-        };
-    }
-
     fn parse_attribute(&mut self, reader: &mut Reader<'a>) {
         let attribute = AttributeSelection::from(reader);
         self.attributes.push(attribute);
@@ -245,13 +228,13 @@ impl<'a> From<&mut Reader<'a>> for ElementPredicate<'a> {
                         element.id = Some(*id_name);
                     }
                 }
-                (Some(SelectionKeyWords::CLASS), SelectionKeyWords::String(class_name)) => {
+                (Some(SelectionKeyWords::Class), SelectionKeyWords::String(class_name)) => {
                     // BUG: their is more class that means it should be a list of class
                     element.class = Some(*class_name);
                 }
                 (_, SelectionKeyWords::OpenAttribute) => element.parse_attribute(reader),
 
-                (Some(SelectionKeyWords::ID), _) | (Some(SelectionKeyWords::CLASS), _) => (),
+                (Some(SelectionKeyWords::ID), _) | (Some(SelectionKeyWords::Class), _) => (),
 
                 (_, _) => (),
             }
@@ -259,7 +242,7 @@ impl<'a> From<&mut Reader<'a>> for ElementPredicate<'a> {
             previous = Some(word);
         }
 
-        return element;
+        element
     }
 }
 

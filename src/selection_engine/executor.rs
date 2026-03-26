@@ -29,6 +29,22 @@ pub(crate) struct DeferredSave {
 type ScopedCursorVec = Vec<ScopedCursor>;
 type EndTagEventVec = Vec<DeferredSave>;
 
+/// The `QueryExecutor` is an NFA execution engine optimized for streaming StAX events.
+///
+/// Because CSS selectors like descendant (` `) are non-deterministic (a match can
+/// occur at the current depth or any arbitrary depth below it), a single cursor
+/// isn't enough.
+///
+/// ## Execution Model
+/// 1. **Fictitious States**: Cursors track their position simply as an index into
+///    an array of `Transition`s.
+/// 2. **Forking (NFA Threads)**: When a transition allows ambiguity (like a descendant
+///    search matching but also allowing subsequent sibling/descendant matches), the
+///    engine forks a new `ScopedCursor`. This acts as an independent execution thread
+///    exploring that specific branch of the NFA.
+/// 3. **Pruning**: `ScopedCursor`s have a `scope_depth`. When the StAX parser emits
+///    a close tag that drops the document depth below the cursor's scope, that NFA
+///    thread is killed.
 #[derive(Debug)]
 pub struct QueryExecutor<'a, 'query> {
     pub(crate) query: &'a Query<'query>,
@@ -180,7 +196,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
         }
 
         // STEP 2: check tasks
-        let ref mut fsm = self.fsm;
+        let fsm = &mut self.fsm;
 
         if fsm.next(self.query, document_position.element_depth, element) {
             dbg_print!("FSM Match with `{:?}`", element);
@@ -279,9 +295,6 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
             }
         }
 
-        // self.scoped_fsms
-        //     .retain(|scoped_task| scoped_task.scope_depth < document_position.element_depth);
-
         let mut remove_last_x_fsms = 0;
         for scoped_fsm in self.scoped_fsms.iter().rev() {
             if scoped_fsm.scope_depth < document_position.element_depth {
@@ -294,7 +307,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
         self.scoped_fsms
             .truncate(self.scoped_fsms.len() - remove_last_x_fsms);
 
-        let ref mut fsm = self.fsm;
+        let fsm = &mut self.fsm;
         if fsm.back(self.query, document_position.element_depth, element) {
             if fsm.end {
                 fsm.end = false;
@@ -308,7 +321,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
             return true;
         }
 
-        return false;
+        false
     }
 }
 #[cfg(test)]
@@ -326,11 +339,11 @@ mod tests {
     fn test_fsm_next_descendant() {
         let query = &Query::all("div a", Save::none()).build();
 
-        let mut store = Store::new();
+        let mut store = Store::default();
 
         let mut selection = QueryExecutor::new(query);
 
-        let _ = selection.next(
+        selection.next(
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -372,7 +385,7 @@ mod tests {
             }]
         );
 
-        let _ = selection.next(
+        selection.next(
             &XHtmlElement {
                 name: "a",
                 id: None,
@@ -423,10 +436,10 @@ mod tests {
             .then(|p| [p.first("span", Save::none()), p.first("a", Save::none())])
             .build();
 
-        let mut store = Store::new();
+        let mut store = Store::default();
         let mut selection = QueryExecutor::new(query);
 
-        let _ = selection.next(
+        selection.next(
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -469,7 +482,7 @@ mod tests {
             }
         );
 
-        let _ = selection.next(
+        selection.next(
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -542,12 +555,12 @@ mod tests {
     fn test_simple_open_close() {
         let query = Query::first("div", Save::none()).build();
 
-        let mut store = Store::new();
+        let mut store = Store::default();
         let mut selection = QueryExecutor::new(&query);
 
         let reader = Reader::new("<div></div>");
 
-        let _ = selection.next(
+        selection.next(
             &XHtmlElement {
                 name: "div",
                 id: None,

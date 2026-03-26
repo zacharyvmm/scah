@@ -37,9 +37,10 @@ impl<'query> Transition<'query> {
         self.guard.evaluate(last_depth, current_depth) && &self.predicate == element
     }
 
+    #[allow(clippy::needless_lifetimes)]
     pub fn back<'html>(
         &self,
-        element: &'html str,
+        _element: &'html str,
         current_depth: crate::selection_engine::DepthSize,
         last_depth: crate::selection_engine::DepthSize,
     ) -> bool {

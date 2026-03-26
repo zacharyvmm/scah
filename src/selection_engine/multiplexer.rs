@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use super::selection::QueryExecutor;
+use super::executor::QueryExecutor;
 use crate::XHtmlElement;
 use crate::css::selector::Query;
 use crate::store::Store;
@@ -22,6 +22,7 @@ pub struct QueryMultiplexer<'query> {
 impl<'html, 'query: 'html> QueryMultiplexer<'query> {
     pub fn new(queries: &'query [Query<'query>]) -> Self {
         Self {
+            #[allow(clippy::redundant_closure)]
             runners: queries
                 .iter()
                 .map(|query| QueryExecutor::new(query))
@@ -37,7 +38,7 @@ impl<'html, 'query: 'html> QueryMultiplexer<'query> {
     ) {
         let len = store.elements.len();
         for session in self.runners.iter_mut() {
-            let _ = session.next(&xhtml_element, position, store);
+            session.next(xhtml_element, position, store);
         }
         if len == store.elements.len() {
             // Element was not saved
@@ -67,32 +68,5 @@ impl<'html, 'query: 'html> QueryMultiplexer<'query> {
         }
 
         self.runners.is_empty()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{Query, QueryMultiplexer, Save, Store};
-
-    use super::super::selection::QueryExecutor;
-    use smallvec::SmallVec;
-
-    #[test]
-    fn runner_size() {
-        println!(
-            "Vec size: {}",
-            std::mem::size_of::<Vec<QueryExecutor<'static, 'static>>>()
-        );
-        println!(
-            "Inline size: {}",
-            std::mem::size_of::<SmallVec<[QueryExecutor<'static, 'static>; 1]>>()
-        );
-    }
-
-    #[test]
-    fn test_single_element_query() {
-        let query = Query::first("a", Save::all()).build();
-        let q = &[query];
-        let manager = QueryMultiplexer::new(q);
     }
 }

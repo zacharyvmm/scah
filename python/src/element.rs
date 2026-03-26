@@ -36,7 +36,7 @@ impl PyElement {
 
     #[getter]
     pub fn attributes<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyDict>> {
-        let mut object = PyDict::new(py);
+        let object = PyDict::new(py);
         let attributes = self
             .store
             .elements
@@ -67,7 +67,7 @@ impl PyElement {
             .and_then(|e| e.text_content(&self.store))
     }
 
-    pub fn children(&self, query: String) -> PyResult<Vec<PyElement>> {
+    pub fn get(&self, query: String) -> PyResult<Vec<PyElement>> {
         let element = self
             .store
             .elements
@@ -75,11 +75,9 @@ impl PyElement {
             .expect("The Element ID should be valid");
         let children = element.get(&self.store, &query);
         match children {
-            None => {
-                return Err(PyValueError::new_err(format!(
-                    "This Element does not have children selected with `{query}`"
-                )));
-            }
+            None => Err(PyValueError::new_err(format!(
+                "This Element does not have children selected with `{query}`"
+            ))),
             Some(children) => Ok(children
                 .map(|e| PyElement {
                     store: self.store.clone(),
@@ -132,8 +130,7 @@ impl PyStore {
         })
     }
 
-    #[getter]
-    fn length(&self) -> i64 {
-        self.store.elements.len() as i64
+    fn __len__(&self) -> usize {
+        self.store.elements.len()
     }
 }

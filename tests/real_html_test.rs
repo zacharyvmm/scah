@@ -5,6 +5,7 @@ use std::io::prelude::*;
 use scah::{Query, Save, parse};
 
 #[test]
+#[ignore = "Real files"]
 fn test_all_anchor_tags_for_whatwg_html_spec() -> std::io::Result<()> {
     // 26th of december 2025 16:50
     let file = File::open("/home/zmm/Downloads/html.spec.whatwg.index.html")?;
@@ -22,7 +23,8 @@ fn test_all_anchor_tags_for_whatwg_html_spec() -> std::io::Result<()> {
 }
 
 #[test]
-fn test_all_anchor_tags_for_albert_einstein_wikipedia<'q>() -> std::io::Result<()> {
+#[ignore = "Real files"]
+fn test_all_anchor_tags_for_albert_einstein_wikipedia() -> std::io::Result<()> {
     // 26th of december 2025 16:50
     let file = File::open("/home/zmm/Downloads/Albert_Einstein.html")?;
     let mut buf_reader = BufReader::new(file);

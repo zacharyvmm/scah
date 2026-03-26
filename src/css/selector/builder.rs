@@ -1,14 +1,43 @@
 use super::query::{Query, QuerySection};
 use super::transition::Transition;
 
+/// Controls which pieces of content to capture for matched elements.
+///
+/// When an element matches a CSS selector, scah can optionally capture its
+/// **inner HTML** (the raw markup between the opening and closing tags) and/or
+/// its **text content** (the concatenated, whitespace-trimmed text nodes).
+///
+/// Use the convenience constructors [`Save::all`], [`Save::none`],
+/// [`Save::only_inner_html`], and [`Save::only_text_content`] to create
+/// common configurations.
+///
+/// # Example
+///
+/// ```rust
+/// use scah::Save;
+///
+/// // Capture everything
+/// let save = Save::all();
+/// assert!(save.inner_html);
+/// assert!(save.text_content);
+///
+/// // Capture only text content (lighter weight)
+/// let save = Save::only_text_content();
+/// assert!(!save.inner_html);
+/// assert!(save.text_content);
+/// ```
 #[derive(PartialEq, Debug, Default, Clone, Copy)]
 pub struct Save {
-    // attributes: bool, // If your saving this has to be on
+    /// When `true`, the raw HTML between the element's opening and closing
+    /// tags is stored as [`Element::inner_html`](crate::Element::inner_html).
     pub inner_html: bool,
+    /// When `true`, the concatenated text content of the element is stored
+    /// and retrievable via [`Element::text_content()`](crate::Element::text_content).
     pub text_content: bool,
 }
 
 impl Save {
+    /// Capture only the raw inner HTML of matched elements.
     pub fn only_inner_html() -> Self {
         Self {
             inner_html: true,
@@ -16,6 +45,7 @@ impl Save {
         }
     }
 
+    /// Capture only the text content of matched elements.
     pub fn only_text_content() -> Self {
         Self {
             inner_html: false,
@@ -23,6 +53,7 @@ impl Save {
         }
     }
 
+    /// Capture both inner HTML and text content.
     pub fn all() -> Self {
         Self {
             inner_html: true,
@@ -30,6 +61,10 @@ impl Save {
         }
     }
 
+    /// Capture neither inner HTML nor text content.
+    ///
+    /// The matched element's tag name, id, class, and attributes are still
+    /// stored; only the heavier content extraction is skipped.
     pub fn none() -> Self {
         Self {
             inner_html: false,
@@ -38,19 +73,53 @@ impl Save {
     }
 }
 
+/// Whether a query section should match **all** occurrences or only the
+/// **first** one.
+///
+/// Using [`SelectionKind::First`] enables an early-exit optimisation:
+/// once the first match is found (and its content captured), the parser
+/// can skip the remaining document for that query branch.
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum SelectionKind {
+    /// Match every occurrence of the selector.
     All,
+    /// Match only the first occurrence, enabling early exit.
     First,
 }
 
+/// An in-progress query being assembled via a builder pattern.
+///
+/// You typically don't construct a `QueryBuilder` directly; instead,
+/// start with [`Query::all`] or [`Query::first`] and then chain further
+/// selectors with [`.all()`](QueryBuilder::all), [`.first()`](QueryBuilder::first),
+/// or [`.then()`](QueryBuilder::then). Finalise with [`.build()`](QueryBuilder::build)
+/// to produce a [`Query`].
+///
+/// # Example
+///
+/// ```rust
+/// use scah::{Query, Save};
+///
+/// let query = Query::all("main > section", Save::all())
+///     .then(|ctx| [
+///         ctx.all("> a[href]", Save::all()),
+///         ctx.all("div a",    Save::only_text_content()),
+///     ])
+///     .build();
+/// ```
 #[derive(Debug, Clone)]
 pub struct QueryBuilder<'query> {
+    /// Internal automaton transitions (compiled selector segments).
     pub states: Vec<Transition<'query>>,
+    /// Internal ordered list of query sections.
     pub selection: Vec<QuerySection<'query>>,
 }
 
 impl<'query> QueryBuilder<'query> {
+    /// Append a child selector that matches **all** occurrences.
+    ///
+    /// The new selector is scoped to elements that already matched
+    /// the previous selector in the chain.
     pub fn all(mut self, query: &'query str, save: Save) -> Self {
         assert!(!self.states.is_empty());
         assert!(!self.selection.is_empty());
@@ -73,6 +142,9 @@ impl<'query> QueryBuilder<'query> {
         self
     }
 
+    /// Append a child selector that matches only the **first** occurrence.
+    ///
+    /// Enables early-exit optimisation for this branch of the query tree.
     pub fn first(mut self, query: &'query str, save: Save) -> Self {
         assert!(!self.states.is_empty());
         assert!(!self.selection.is_empty());
@@ -140,6 +212,27 @@ impl<'query> QueryBuilder<'query> {
         self.selection.append(&mut other.selection);
     }
 
+    /// Branch into multiple child queries using a closure.
+    ///
+    /// The closure receives a [`QueryFactory`] that can create new
+    /// sub-queries. Each sub-query is scoped to run only within elements
+    /// matched by the current (most recently added) selector.
+    ///
+    /// This is the key mechanism for **structured querying**; extracting
+    /// hierarchical data relationships in a single streaming pass.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use scah::{Query, Save};
+    ///
+    /// let query = Query::all("article", Save::none())
+    ///     .then(|article| [
+    ///         article.first("h1",      Save::only_text_content()),
+    ///         article.all("a[href]",   Save::all()),
+    ///     ])
+    ///     .build();
+    /// ```
     pub fn then<F, I>(mut self, func: F) -> Self
     where
         F: FnOnce(QueryFactory) -> I,
@@ -174,7 +267,7 @@ impl<'query> QueryBuilder<'query> {
                 SelectionKind::All => return None,
 
                 // This is it need's to find the </{element}> to get either inner_html or text_content
-                SelectionKind::First { .. } => section.save != Save::none(),
+                SelectionKind::First => section.save != Save::none(),
             };
             if stop_here {
                 return Some(index);
@@ -218,6 +311,11 @@ impl<'query> QueryBuilder<'query> {
 }
 
 impl<'query> QueryBuilder<'query> {
+    /// Finalise the builder and produce a compiled [`Query`].
+    ///
+    /// This computes early-exit optimisation metadata and converts the
+    /// internal vectors into boxed slices. After calling `build`, pass
+    /// the resulting `Query` to [`parse`](crate::parse).
     pub fn build(self) -> Query<'query> {
         let exit_at_section_end = self.exit_at_section();
         let states_box = self.states.into_boxed_slice();
@@ -230,12 +328,19 @@ impl<'query> QueryBuilder<'query> {
     }
 }
 
+/// A factory for creating child [`QueryBuilder`]s inside a
+/// [`QueryBuilder::then`] closure.
+///
+/// You never construct this directly; it is provided as the argument to
+/// the closure passed to `.then()`.
 pub struct QueryFactory {}
 impl<'query> QueryFactory {
+    /// Create a child query that matches **all** occurrences of the selector.
     pub fn all(&self, query: &'query str, save: Save) -> QueryBuilder<'query> {
         Query::all(query, save)
     }
 
+    /// Create a child query that matches only the **first** occurrence.
     pub fn first(&self, query: &'query str, save: Save) -> QueryBuilder<'query> {
         Query::first(query, save)
     }

@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use scah::{Attribute, Element, Query, Save, parse};
+use scah::{Attribute, Query, Save, parse};
 const HTML: &str = r#"
 <!DOCTYPE html>
 <html>
@@ -52,7 +52,7 @@ fn test_html_page() {
     let store = parse(HTML, queries);
     let list = store.get("main > section#id").unwrap().collect::<Vec<_>>();
 
-    println!("{:#?}", list);
+    assert_eq!(list.len(), 2);
 
     let last = list.last().unwrap();
 
@@ -68,7 +68,7 @@ fn test_html_page() {
         r#"Not selected (main has no red-background class)"#
     );
 
-    let first = list.iter().next().unwrap();
+    let first = list.first().unwrap();
     assert_eq!(
         first.inner_html.unwrap().trim(),
         r#"<!-- These 3 links will be selected by the selector -->
@@ -97,7 +97,7 @@ fn test_html_page_all_anchor_tag_selection() {
 
     let list = store.get("a").unwrap().collect::<Vec<_>>();
 
-    assert_eq!(list.iter().count(), 7);
+    assert_eq!(list.len(), 7);
     println!("List: {:#?}", list);
 }
 
