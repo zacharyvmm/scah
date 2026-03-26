@@ -14,12 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install mold
-        uses: rui314/setup-mold@v1
-        if: runner.os == 'Linux'
-      - name: Install clang
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -63,12 +57,6 @@ jobs:
             target: x64
     steps:
       - uses: actions/checkout@v4
-      - name: Install mold
-        uses: rui314/setup-mold@v1
-        if: runner.os == 'Linux'
-      - name: Install clang
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -129,12 +117,6 @@ jobs:
             target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v4
-      - name: Install mold
-        uses: rui314/setup-mold@v1
-        if: runner.os == 'Linux'
-      - name: Install clang
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
