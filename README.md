@@ -23,7 +23,7 @@ World's fastest CSS Selector.
 ```toml
 # Cargo.toml
 [dependencies]
-scah = "0.0.4"
+scah = "0.0.5"
 ```
 
 #### Basic usage

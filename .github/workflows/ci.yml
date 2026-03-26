@@ -177,7 +177,9 @@ jobs:
           merge-multiple: true
       - name: Move artifacts
         working-directory: nodejs
-        run: bun run artifacts
+        run: |
+          bunx napi create-npm-dirs
+          bun run artifacts
       - name: Publish to npm
         working-directory: nodejs
         env:
