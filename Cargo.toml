@@ -1,6 +1,6 @@
 [package]
 name = "scah"
-version = "0.0.5"
+version = "0.0.6"
 edition = "2024"
 license = "MIT"
 description = "CSS selectors meet streaming XML/HTML parsing. Filter StAX events and build targeted DOMs without loading the entire document."

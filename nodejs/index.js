@@ -75,10 +75,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-android-arm64')
-        const bindingPackageVersion = require('scah-android-arm64/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-android-arm64')
+        const bindingPackageVersion = require('@zacharymm/scah-android-arm64/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -91,10 +91,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-android-arm-eabi')
-        const bindingPackageVersion = require('scah-android-arm-eabi/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-android-arm-eabi')
+        const bindingPackageVersion = require('@zacharymm/scah-android-arm-eabi/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -112,10 +112,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-win32-x64-gnu')
-        const bindingPackageVersion = require('scah-win32-x64-gnu/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-win32-x64-gnu')
+        const bindingPackageVersion = require('@zacharymm/scah-win32-x64-gnu/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -128,10 +128,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-win32-x64-msvc')
-        const bindingPackageVersion = require('scah-win32-x64-msvc/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-win32-x64-msvc')
+        const bindingPackageVersion = require('@zacharymm/scah-win32-x64-msvc/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -145,10 +145,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-win32-ia32-msvc')
-        const bindingPackageVersion = require('scah-win32-ia32-msvc/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-win32-ia32-msvc')
+        const bindingPackageVersion = require('@zacharymm/scah-win32-ia32-msvc/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -161,10 +161,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-win32-arm64-msvc')
-        const bindingPackageVersion = require('scah-win32-arm64-msvc/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-win32-arm64-msvc')
+        const bindingPackageVersion = require('@zacharymm/scah-win32-arm64-msvc/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -180,10 +180,10 @@ function requireNative() {
       loadErrors.push(e)
     }
     try {
-      const binding = require('scah-darwin-universal')
-      const bindingPackageVersion = require('scah-darwin-universal/package.json').version
-      if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-        throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+      const binding = require('@zacharymm/scah-darwin-universal')
+      const bindingPackageVersion = require('@zacharymm/scah-darwin-universal/package.json').version
+      if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+        throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
       }
       return binding
     } catch (e) {
@@ -196,10 +196,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-darwin-x64')
-        const bindingPackageVersion = require('scah-darwin-x64/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-darwin-x64')
+        const bindingPackageVersion = require('@zacharymm/scah-darwin-x64/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -212,10 +212,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-darwin-arm64')
-        const bindingPackageVersion = require('scah-darwin-arm64/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-darwin-arm64')
+        const bindingPackageVersion = require('@zacharymm/scah-darwin-arm64/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -232,10 +232,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-freebsd-x64')
-        const bindingPackageVersion = require('scah-freebsd-x64/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-freebsd-x64')
+        const bindingPackageVersion = require('@zacharymm/scah-freebsd-x64/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -248,10 +248,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-freebsd-arm64')
-        const bindingPackageVersion = require('scah-freebsd-arm64/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-freebsd-arm64')
+        const bindingPackageVersion = require('@zacharymm/scah-freebsd-arm64/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -269,10 +269,10 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('scah-linux-x64-musl')
-          const bindingPackageVersion = require('scah-linux-x64-musl/package.json').version
-          if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          const binding = require('@zacharymm/scah-linux-x64-musl')
+          const bindingPackageVersion = require('@zacharymm/scah-linux-x64-musl/package.json').version
+          if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -285,10 +285,10 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('scah-linux-x64-gnu')
-          const bindingPackageVersion = require('scah-linux-x64-gnu/package.json').version
-          if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          const binding = require('@zacharymm/scah-linux-x64-gnu')
+          const bindingPackageVersion = require('@zacharymm/scah-linux-x64-gnu/package.json').version
+          if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -303,10 +303,10 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('scah-linux-arm64-musl')
-          const bindingPackageVersion = require('scah-linux-arm64-musl/package.json').version
-          if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          const binding = require('@zacharymm/scah-linux-arm64-musl')
+          const bindingPackageVersion = require('@zacharymm/scah-linux-arm64-musl/package.json').version
+          if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -319,10 +319,10 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('scah-linux-arm64-gnu')
-          const bindingPackageVersion = require('scah-linux-arm64-gnu/package.json').version
-          if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          const binding = require('@zacharymm/scah-linux-arm64-gnu')
+          const bindingPackageVersion = require('@zacharymm/scah-linux-arm64-gnu/package.json').version
+          if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -337,10 +337,10 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('scah-linux-arm-musleabihf')
-          const bindingPackageVersion = require('scah-linux-arm-musleabihf/package.json').version
-          if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          const binding = require('@zacharymm/scah-linux-arm-musleabihf')
+          const bindingPackageVersion = require('@zacharymm/scah-linux-arm-musleabihf/package.json').version
+          if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -353,10 +353,10 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('scah-linux-arm-gnueabihf')
-          const bindingPackageVersion = require('scah-linux-arm-gnueabihf/package.json').version
-          if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          const binding = require('@zacharymm/scah-linux-arm-gnueabihf')
+          const bindingPackageVersion = require('@zacharymm/scah-linux-arm-gnueabihf/package.json').version
+          if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -371,10 +371,10 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('scah-linux-loong64-musl')
-          const bindingPackageVersion = require('scah-linux-loong64-musl/package.json').version
-          if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          const binding = require('@zacharymm/scah-linux-loong64-musl')
+          const bindingPackageVersion = require('@zacharymm/scah-linux-loong64-musl/package.json').version
+          if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -387,10 +387,10 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('scah-linux-loong64-gnu')
-          const bindingPackageVersion = require('scah-linux-loong64-gnu/package.json').version
-          if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          const binding = require('@zacharymm/scah-linux-loong64-gnu')
+          const bindingPackageVersion = require('@zacharymm/scah-linux-loong64-gnu/package.json').version
+          if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -405,10 +405,10 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('scah-linux-riscv64-musl')
-          const bindingPackageVersion = require('scah-linux-riscv64-musl/package.json').version
-          if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          const binding = require('@zacharymm/scah-linux-riscv64-musl')
+          const bindingPackageVersion = require('@zacharymm/scah-linux-riscv64-musl/package.json').version
+          if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -421,10 +421,10 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('scah-linux-riscv64-gnu')
-          const bindingPackageVersion = require('scah-linux-riscv64-gnu/package.json').version
-          if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          const binding = require('@zacharymm/scah-linux-riscv64-gnu')
+          const bindingPackageVersion = require('@zacharymm/scah-linux-riscv64-gnu/package.json').version
+          if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -438,10 +438,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-linux-ppc64-gnu')
-        const bindingPackageVersion = require('scah-linux-ppc64-gnu/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-linux-ppc64-gnu')
+        const bindingPackageVersion = require('@zacharymm/scah-linux-ppc64-gnu/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -454,10 +454,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-linux-s390x-gnu')
-        const bindingPackageVersion = require('scah-linux-s390x-gnu/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-linux-s390x-gnu')
+        const bindingPackageVersion = require('@zacharymm/scah-linux-s390x-gnu/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -474,10 +474,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-openharmony-arm64')
-        const bindingPackageVersion = require('scah-openharmony-arm64/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-openharmony-arm64')
+        const bindingPackageVersion = require('@zacharymm/scah-openharmony-arm64/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -490,10 +490,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-openharmony-x64')
-        const bindingPackageVersion = require('scah-openharmony-x64/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-openharmony-x64')
+        const bindingPackageVersion = require('@zacharymm/scah-openharmony-x64/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -506,10 +506,10 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('scah-openharmony-arm')
-        const bindingPackageVersion = require('scah-openharmony-arm/package.json').version
-        if (bindingPackageVersion !== '0.0.5' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.0.5 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        const binding = require('@zacharymm/scah-openharmony-arm')
+        const bindingPackageVersion = require('@zacharymm/scah-openharmony-arm/package.json').version
+        if (bindingPackageVersion !== '0.0.6' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.0.6 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -538,7 +538,7 @@ if (!nativeBinding || process.env.NAPI_RS_FORCE_WASI) {
   }
   if (!nativeBinding || process.env.NAPI_RS_FORCE_WASI) {
     try {
-      wasiBinding = require('scah-wasm32-wasi')
+      wasiBinding = require('@zacharymm/scah-wasm32-wasi')
       nativeBinding = wasiBinding
     } catch (err) {
       if (process.env.NAPI_RS_FORCE_WASI) {
