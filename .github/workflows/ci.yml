@@ -184,6 +184,7 @@ jobs:
         working-directory: nodejs
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bun run prepublishOnly
           npm config set provenance true
