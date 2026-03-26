@@ -54,7 +54,7 @@ impl JsSave {
         }
     }
 
-    fn to_save(&self) -> Save {
+    fn to_save(self) -> Save {
         Save {
             inner_html: self.inner_html,
             text_content: self.text_content,
@@ -87,11 +87,11 @@ impl JsQueryBuilder {
     }
 
     #[napi]
-    pub fn then<'a>(
+    pub fn then(
         &mut self,
         callback: Function<JsQueryFactory, Vec<Reference<JsQueryBuilder>>>,
     ) -> Result<JsQueryBuilder> {
-        let factory = JsQueryFactory { data: true };
+        let factory = JsQueryFactory { _data: true };
         let builders = callback.call(factory)?;
         let children = builders.iter().map(|b| b.builder.clone());
 
@@ -107,14 +107,15 @@ impl JsQueryBuilder {
 
     #[napi]
     pub fn build(&self) -> JsQuery {
-        let (tape, query) = unsafe { self.builder.clone().to_query() };
-        JsQuery { tape, query }
+        let (_tape, query) = unsafe { self.builder.clone().to_query() };
+        JsQuery { _tape, query }
     }
 }
 
 #[napi(js_name = "QueryFactory")]
 pub struct JsQueryFactory {
-    data: bool,
+    // if their isn't any data in the struct, no object is created, thus the `.then` doesn't work
+    _data: bool,
 }
 
 #[napi]
@@ -137,16 +138,8 @@ impl JsQueryFactory {
 #[napi]
 #[derive(Clone)]
 pub struct JsQuery {
-    pub(super) tape: std::sync::Arc<Vec<u8>>,
+    _tape: std::sync::Arc<Vec<u8>>,
     pub(super) query: Query<'static>,
-}
-
-#[napi]
-impl JsQuery {
-    #[napi]
-    pub fn to_string(&self) -> String {
-        format!("JsQuery(tape={:?}, query={:?})", self.tape, self.query)
-    }
 }
 
 #[napi(js_name = "Query")]

@@ -267,7 +267,7 @@ impl<'query> QueryBuilder<'query> {
                 SelectionKind::All => return None,
 
                 // This is it need's to find the </{element}> to get either inner_html or text_content
-                SelectionKind::First { .. } => section.save != Save::none(),
+                SelectionKind::First => section.save != Save::none(),
             };
             if stop_here {
                 return Some(index);

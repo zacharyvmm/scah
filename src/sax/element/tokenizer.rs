@@ -39,7 +39,7 @@ impl<'a> ElementAttributeToken<'a> {
             _ => {
                 // Find end of word
                 reader.next_until_list(&[b' ', DOUBLEQUOTE, SINGLEQUOTE, EQUAL, END_OF_ELEMENT]);
-                return Some(Self::String(reader.slice(start_pos..reader.get_position())));
+                Some(Self::String(reader.slice(start_pos..reader.get_position())))
             }
         }
     }

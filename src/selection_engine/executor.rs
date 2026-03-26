@@ -196,7 +196,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
         }
 
         // STEP 2: check tasks
-        let ref mut fsm = self.fsm;
+        let fsm = &mut self.fsm;
 
         if fsm.next(self.query, document_position.element_depth, element) {
             dbg_print!("FSM Match with `{:?}`", element);
@@ -307,7 +307,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
         self.scoped_fsms
             .truncate(self.scoped_fsms.len() - remove_last_x_fsms);
 
-        let ref mut fsm = self.fsm;
+        let fsm = &mut self.fsm;
         if fsm.back(self.query, document_position.element_depth, element) {
             if fsm.end {
                 fsm.end = false;
@@ -321,7 +321,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
             return true;
         }
 
-        return false;
+        false
     }
 }
 #[cfg(test)]
@@ -339,11 +339,11 @@ mod tests {
     fn test_fsm_next_descendant() {
         let query = &Query::all("div a", Save::none()).build();
 
-        let mut store = Store::new();
+        let mut store = Store::default();
 
         let mut selection = QueryExecutor::new(query);
 
-        let _ = selection.next(
+        selection.next(
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -385,7 +385,7 @@ mod tests {
             }]
         );
 
-        let _ = selection.next(
+        selection.next(
             &XHtmlElement {
                 name: "a",
                 id: None,
@@ -436,10 +436,10 @@ mod tests {
             .then(|p| [p.first("span", Save::none()), p.first("a", Save::none())])
             .build();
 
-        let mut store = Store::new();
+        let mut store = Store::default();
         let mut selection = QueryExecutor::new(query);
 
-        let _ = selection.next(
+        selection.next(
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -482,7 +482,7 @@ mod tests {
             }
         );
 
-        let _ = selection.next(
+        selection.next(
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -555,12 +555,12 @@ mod tests {
     fn test_simple_open_close() {
         let query = Query::first("div", Save::none()).build();
 
-        let mut store = Store::new();
+        let mut store = Store::default();
         let mut selection = QueryExecutor::new(&query);
 
         let reader = Reader::new("<div></div>");
 
-        let _ = selection.next(
+        selection.next(
             &XHtmlElement {
                 name: "div",
                 id: None,

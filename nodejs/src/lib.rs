@@ -1,5 +1,3 @@
-#![deny(clippy::all)]
-
 use napi::Result;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -16,6 +14,7 @@ use store::JSStore;
 mod elements;
 
 #[napi]
+#[allow(dead_code)]
 fn parse(html: String, queries: Vec<Reference<JsQuery>>) -> Result<JSStore> {
     if queries.is_empty() {
         return Err(napi::Error::new(

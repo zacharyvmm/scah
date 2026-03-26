@@ -10,7 +10,7 @@ pub enum AttributeSelectionKind {
 }
 
 impl AttributeSelectionKind {
-    pub fn find<'a, 'b>(&self, query: &'a str, source: &'b str) -> bool {
+    pub fn find(&self, query: &str, source: &str) -> bool {
         match self {
             Self::Exact => query == source,
             Self::Presence => true,
@@ -24,9 +24,10 @@ impl AttributeSelectionKind {
                     return false;
                 }
 
-                // query is prefix of word with `-` nextup
-                return query == &word[0..query.len()]
-                    && "-" == &word[query.len()..query.len() + 1];
+                let is_prefix = query == &word[0..query.len()];
+                let is_dash_next = "-" == &word[query.len()..query.len() + 1];
+
+                is_prefix && is_dash_next
             }),
             Self::Prefix => {
                 if query.len() > source.len() {

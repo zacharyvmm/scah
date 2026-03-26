@@ -1,4 +1,4 @@
-use super::element::ElementPredicate;
+use super::builder::ElementPredicate;
 use crate::utils::Reader;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -17,10 +17,10 @@ pub enum Combinator {
 
 impl Combinator {
     fn next<'a>(reader: &mut Reader<'a>) -> Option<Self> {
-        if let Some(token) = reader.peek() {
-            if !matches!(token, b'>' | b' ' | b'+' | b'~' | b'|') {
-                return None;
-            };
+        if let Some(token) = reader.peek()
+            && !matches!(token, b'>' | b' ' | b'+' | b'~' | b'|')
+        {
+            return None;
         }
 
         match reader.next()? {
@@ -47,11 +47,7 @@ impl<'a> Combinator {
             }
         }
 
-        return combinator;
-    }
-
-    pub(crate) fn is_descendant(&self) -> bool {
-        *self == Self::Descendant
+        combinator
     }
 
     pub(crate) fn evaluate(&self, last_depth: u16, current_depth: u16) -> bool {
@@ -88,7 +84,7 @@ impl Lexer {
 
         let element = ElementPredicate::from(reader);
 
-        return Some((combinator, element));
+        Some((combinator, element))
     }
 }
 

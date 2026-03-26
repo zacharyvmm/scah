@@ -7,46 +7,34 @@ pub struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     pub fn new(input: &'a str) -> Self {
-        return Self {
+        Self {
             source: input.as_bytes(),
             position: 0,
-        };
+        }
     }
 
     pub fn from_bytes(input: &'a [u8]) -> Self {
-        return Self {
+        Self {
             source: input,
             position: 0,
-        };
+        }
     }
 
     #[inline]
     pub fn get_position(&self) -> usize {
-        return self.position;
+        self.position
     }
 
     #[inline]
     pub fn slice(&self, range: Range<usize>) -> &'a str {
         // SAFETY: The source was originally a &str, and structural characters are ASCII.
         // We should be careful about slicing in the middle of a UTF-8 character.
-        return unsafe { std::str::from_utf8_unchecked(&self.source[range]) };
+        unsafe { std::str::from_utf8_unchecked(&self.source[range]) }
     }
 
     #[inline]
     pub fn peek(&self) -> Option<u8> {
-        return self.source.get(self.position).copied();
-    }
-
-    #[inline]
-    #[deprecated]
-    pub fn next_while_legacy<F>(&mut self, condition: F)
-    where
-        F: Fn(u8) -> bool,
-    {
-        let len = self.source.len();
-        while self.position < len && condition(self.source[self.position]) {
-            self.position += 1;
-        }
+        self.source.get(self.position).copied()
     }
 
     #[inline]
@@ -167,35 +155,5 @@ mod tests {
         assert_eq!(reader.next(), Some(b'd'));
 
         assert_eq!(reader.slice(0..5), "Hello");
-    }
-
-    #[test]
-    fn next_while_deprecated_equivalence_until_character() {
-        let my_string = String::from("main > section#my-id.my-class a[href$=\".com\"]");
-        let mut deprecated_reader = Reader::new(&my_string);
-        let mut new_reader = Reader::new(&my_string);
-
-        deprecated_reader.next_while_legacy(|c| !matches!(c, b' ' | b'#' | b'.' | b'['));
-        new_reader.next_until_list(&[b' ', b'#', b'.', b'[']);
-        assert_eq!(deprecated_reader.position, new_reader.position);
-
-        deprecated_reader.next_while_legacy(|c| c != b' ');
-        new_reader.next_until(b' ');
-        assert_eq!(deprecated_reader.position, new_reader.position);
-    }
-
-    #[test]
-    fn next_while_deprecated_equivalence_while_character() {
-        let my_string = String::from(" #.my-class a[href$=\".com\"]");
-        let mut deprecated_reader = Reader::new(&my_string);
-        let mut new_reader = Reader::new(&my_string);
-
-        deprecated_reader.next_while_legacy(|c| matches!(c, b' ' | b'#' | b'.' | b'['));
-        new_reader.next_while_list(&[b' ', b'#', b'.', b'[']);
-        assert_eq!(deprecated_reader.position, new_reader.position);
-
-        deprecated_reader.next_while_legacy(|c| c == b' ');
-        new_reader.next_while(b' ');
-        assert_eq!(deprecated_reader.position, new_reader.position);
     }
 }

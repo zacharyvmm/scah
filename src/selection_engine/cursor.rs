@@ -36,7 +36,7 @@ pub trait CursorOps<'query, 'html> {
     fn add_depth(&mut self, depth: super::DepthSize);
 }
 
-impl<'query> Cursor {
+impl Cursor {
     pub fn new() -> Self {
         Self {
             parent: ElementId::default(),
@@ -105,17 +105,13 @@ pub struct ScopedCursor {
     pub position: Position,
 }
 
-impl<'query> ScopedCursor {
+impl ScopedCursor {
     pub fn new(scope_depth: super::DepthSize, parent: ElementId, position: Position) -> Self {
         Self {
             scope_depth,
             parent,
             position,
         }
-    }
-
-    pub fn in_scope(&self, current_depth: super::DepthSize) -> bool {
-        self.scope_depth > current_depth
     }
 }
 
@@ -160,16 +156,14 @@ mod tests {
     use super::{Cursor, CursorOps};
     use crate::Query;
     use crate::css::selector::Save;
-    use crate::sax::element::element::XHtmlElement;
+    use crate::sax::element::builder::XHtmlElement;
 
     #[test]
     fn test_fsm_next_descendant() {
         let query = Query::all("div a", Save::none()).build();
 
         let mut state = Cursor::new();
-        let mut next: bool = false;
-
-        next = state.next(
+        let mut next = state.next(
             &query,
             0,
             &XHtmlElement {

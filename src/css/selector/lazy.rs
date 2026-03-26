@@ -151,6 +151,8 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
         self.queries.len()
     }
 
+    /// # Safety
+    /// This is for an internal abstraction for bidings.
     pub unsafe fn to_query<'a>(self) -> (std::sync::Arc<Vec<u8>>, Query<'a>) {
         // I need to do this to unsafely get a slice from the String
         let string_tape_size = self.queries.iter().map(|q| q.source.as_ref().len()).sum();
@@ -195,19 +197,19 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
             });
         }
 
-        return (
+        (
             std::sync::Arc::new(string_tape),
             QueryBuilder {
                 states,
                 selection: queries,
             }
             .build(),
-        );
+        )
     }
 }
 
 pub struct LazyQueryFactory {}
-impl<'query> LazyQueryFactory {
+impl LazyQueryFactory {
     pub fn all<S: AsRef<str>>(&self, query: S, save: Save) -> LazyQueryBuilder<S> {
         LazyQuery::all(query, save)
     }
@@ -224,7 +226,7 @@ mod tests {
     use super::Transition;
     use super::*;
     use crate::css::element::Combinator;
-    use crate::css::element::{AttributeSelection, AttributeSelectionKind, ElementPredicate};
+    use crate::css::element::ElementPredicate;
     use crate::{Query, Save, SelectionKind};
 
     #[test]

@@ -96,7 +96,7 @@ impl<'html> XHtmlElement<'html> {
             return last_attribute.key == "\\";
         }
 
-        return false;
+        false
     }
 
     pub fn clear(&mut self) {
@@ -210,7 +210,7 @@ impl<'a> XHtmlTag<'a> {
                 return None;
             }
         }
-        return Some(Self::Open);
+        Some(Self::Open)
     }
 }
 

@@ -1,6 +1,6 @@
-use super::element::{AttributeSelection, ElementPredicate};
+use super::builder::{AttributeSelection, ElementPredicate};
 use super::string_search::AttributeSelectionKind;
-use crate::sax::element::element::{Attribute, XHtmlElement};
+use crate::sax::element::builder::{Attribute, XHtmlElement};
 
 impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
     fn eq(&self, other: &Attribute<'b>) -> bool {
@@ -16,7 +16,7 @@ impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
             return false;
         }
 
-        return self.kind.find(self.value.unwrap(), other.value.unwrap());
+        self.kind.find(self.value.unwrap(), other.value.unwrap())
     }
 }
 

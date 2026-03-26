@@ -11,6 +11,7 @@ impl<T: Copy + PartialOrd + Into<usize>> Span<T> {
         Self { start, end: start }
     }
 
+    #[cfg(test)]
     pub(crate) fn from(start: T, end: T) -> Self {
         Self { start, end }
     }

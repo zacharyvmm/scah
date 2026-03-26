@@ -29,6 +29,12 @@ smallvec = "1.15.1"
 [dev-dependencies]
 pretty_assertions = "1.4.1"
 
+[lints.clippy]
+let-and-return = "allow"
+byte_char_slices = "allow"
+redundant-field-names = "allow"
+len_without_is_empty = "allow"
+
 [profile.release]
 opt-level = 3
 lto = "fat"

@@ -16,7 +16,7 @@ impl<'query> Position {
         debug_assert!(self.selection < query.queries.len());
         debug_assert!(query.queries[self.selection].range.contains(&self.state));
 
-        let selection_range = &query.queries[self.selection.clone()].range;
+        let selection_range = &query.queries[self.selection].range;
         if self.state + 1 < selection_range.end {
             Some(self.state + 1)
         } else {
@@ -41,27 +41,19 @@ impl<'query> Position {
             });
         }
 
-        return None;
+        None
     }
 
     pub(crate) fn next_sibling(&self, query: &Query<'query>) -> Option<Self> {
         debug_assert!(self.selection < query.queries.len());
         debug_assert!(query.queries[self.selection].range.contains(&self.state));
 
-        if let Some(sibling) = query.queries[self.selection].next_sibling {
-            Some(Self {
+        query.queries[self.selection]
+            .next_sibling
+            .map(|sibling| Self {
                 selection: sibling,
                 state: query.queries[sibling].range.start,
             })
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn is_root(&self) -> bool {
-        //query.queries[self.selection].parent.is_none()
-
-        self.selection == 0 && self.state == 0
     }
 
     pub(crate) fn back(&mut self, query: &Query<'query>) {
@@ -259,15 +251,6 @@ impl<'query> Query<'query> {
         let is_last_state = self.queries[position.selection].range.end - 1 == position.state;
 
         is_last_query & is_last_state
-    }
-
-    pub(crate) fn can_move_foward(&self, position: &Position) -> bool {
-        debug_assert!(position.selection < self.queries.len());
-
-        let is_last_query = self.queries.len() - 1 == position.selection;
-        let is_last_state = self.queries[position.selection].range.end - 1 == position.state;
-
-        !is_last_query & is_last_state
     }
 }
 

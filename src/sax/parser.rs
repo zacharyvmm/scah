@@ -1,4 +1,4 @@
-use super::element::element::XHtmlTag;
+use super::element::builder::XHtmlTag;
 use crate::XHtmlElement;
 use crate::dbg_print;
 use crate::selection_engine::multiplexer::{DocumentPosition, QueryMultiplexer};
@@ -24,7 +24,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             selectors,
             element: XHtmlElement::default(),
             in_script: false,
-            store: Store::new(),
+            store: Store::default(),
         }
     }
 
@@ -51,12 +51,11 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                 }
 
                 if reader.match_ignore_case("</script>") {
-                    if self.store.text_content.text_start.is_some() {
-                        if let Some(position) =
+                    if self.store.text_content.text_start.is_some()
+                        && let Some(position) =
                             self.store.text_content.push(reader, reader.get_position())
-                        {
-                            self.position.text_content_position = position;
-                        }
+                    {
+                        self.position.text_content_position = position;
                     }
                     self.in_script = false;
                     break;

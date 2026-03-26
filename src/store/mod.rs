@@ -1,5 +1,5 @@
+use crate::Attribute;
 use crate::css::selector::QuerySection;
-use crate::{Attribute, mut_prt_unchecked};
 use std::ops::Range;
 
 mod text_content;
@@ -53,8 +53,8 @@ pub struct Store<'html, 'query> {
     pub text_content: TextContent,
 }
 
-impl<'html, 'query: 'html> Store<'html, 'query> {
-    pub fn new() -> Self {
+impl<'html, 'query: 'html> Default for Store<'html, 'query> {
+    fn default() -> Self {
         Self {
             elements: Arena::new(),
             queries: Arena::new(),
@@ -62,7 +62,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             attributes: Arena::new(),
         }
     }
+}
 
+impl<'html, 'query: 'html> Store<'html, 'query> {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             elements: Arena::with_capacity(capacity / 3),
@@ -191,9 +193,8 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
                     elements: Span::new(index),
                     next_sibling: None,
                 });
-                let new_id = QueryId(self.queries.len() - 1);
 
-                new_id
+                QueryId(self.queries.len() - 1)
             }
         };
 
@@ -217,7 +218,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         index
     }
 
-    pub fn set_content<'key>(
+    pub fn set_content(
         &mut self,
         element_id: ElementId,
         inner_html: Option<&'html str>,
@@ -240,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_find_next_query() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         store.queries.inner = vec![
             QueryNode {
                 query: "1",
@@ -301,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_link_query_to_element() {
-        let mut store = Store::new();
+        let mut store = Store::default();
 
         store.elements.inner = vec![
             Element {
@@ -346,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_branching_next_query() {
-        let mut store = Store::new();
+        let mut store = Store::default();
 
         let q = Query::all("1", Save::all())
             .then(|ctx| [ctx.all("2", Save::all()), ctx.all("3", Save::all())]);
@@ -460,7 +461,7 @@ mod tests {
             })
             .build();
 
-        let mut store = Store::new();
+        let mut store = Store::default();
 
         store.push(
             ElementId::default(),
@@ -566,7 +567,7 @@ mod tests {
             Query::all("a", Save::all()).build(),
         ];
 
-        let mut store = Store::new();
+        let mut store = Store::default();
 
         store.push(
             ElementId::default(),

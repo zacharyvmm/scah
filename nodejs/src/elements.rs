@@ -23,7 +23,7 @@ pub struct JsElement {
 #[napi]
 impl JsElement {
     #[napi]
-    pub fn to_json(&self, env: Env) -> Result<JsonElement> {
+    pub fn to_json<'a>(&'a self, env: Env) -> Result<JsonElement<'a>> {
         let element = self
             .store
             .elements
@@ -66,7 +66,7 @@ impl JsElement {
     }
 
     #[napi(getter)]
-    pub fn attributes(&self, env: Env) -> Result<Object> {
+    pub fn attributes<'a>(&'a self, env: Env) -> Result<Object<'a>> {
         let mut object = Object::new(&env)?;
         let attributes = self
             .store
@@ -107,12 +107,10 @@ impl JsElement {
             .expect("The Element ID should be valid");
         let children = element.get(&self.store, &query);
         match children {
-            None => {
-                return Err(Error::new(
-                    Status::GenericFailure,
-                    format!("This Element does not have children selected with `{query}`"),
-                ));
-            }
+            None => Err(Error::new(
+                Status::GenericFailure,
+                format!("This Element does not have children selected with `{query}`"),
+            )),
             Some(children) => Ok(children
                 .map(|e| JsElement {
                     store: self.store.clone(),
