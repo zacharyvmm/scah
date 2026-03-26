@@ -18,6 +18,10 @@
     "index.d.ts",
     "index.js"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zacharyvmm/scah.git"
+  },
   "napi": {
     "binaryName": "scah",
     "targets": [
