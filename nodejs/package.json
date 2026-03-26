@@ -1,6 +1,6 @@
 {
-  "name": "@zacharymm/scah",
-  "version": "0.0.9",
+  "name": "scah",
+  "version": "0.0.10",
   "description": "scah (scan HTML) nodejs bindings",
   "main": "index.js",
   "license": "MIT",
@@ -23,6 +23,7 @@
     "url": "git+https://github.com/zacharyvmm/scah.git"
   },
   "napi": {
+    "packageName": "@zacharymm/scah",
     "binaryName": "scah",
     "targets": [
       "x86_64-pc-windows-msvc",
@@ -94,10 +95,10 @@
     "arrowParens": "always"
   },
   "optionalDependencies": {
-    "scah-win32-x64-msvc": "0.0.5",
-    "scah-darwin-x64": "0.0.5",
-    "scah-linux-x64-gnu": "0.0.5",
-    "scah-linux-arm64-gnu": "0.0.5",
-    "scah-darwin-arm64": "0.0.5"
+    "@zacharymm/scah-win32-x64-msvc": "0.0.5",
+    "@zacharymm/scah-darwin-x64": "0.0.5",
+    "@zacharymm/scah-linux-x64-gnu": "0.0.5",
+    "@zacharymm/scah-linux-arm64-gnu": "0.0.5",
+    "@zacharymm/scah-darwin-arm64": "0.0.5"
   }
 }

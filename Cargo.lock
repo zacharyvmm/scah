@@ -1172,7 +1172,7 @@ dependencies = [
 
 [[package]]
 name = "scah"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "pretty_assertions",
  "smallvec",
@@ -1193,7 +1193,7 @@ dependencies = [
 
 [[package]]
 name = "scah-nodejs"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "napi",
  "napi-build",
@@ -1203,7 +1203,7 @@ dependencies = [
 
 [[package]]
 name = "scah-python"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "pyo3",
  "scah",
