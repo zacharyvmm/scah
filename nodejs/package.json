@@ -1,6 +1,6 @@
 {
   "name": "@zacharymm/scah",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "scah (scan HTML) nodejs bindings",
   "main": "index.js",
   "license": "MIT",
