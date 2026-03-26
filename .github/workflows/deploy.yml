@@ -1,42 +1,19 @@
-name: CI
+name: Deploy
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
-  pull_request:
 
 jobs:
-  rust:
-    name: Rust Check and Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Format
-        run: cargo fmt --all -- --check
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: Test
-        run: cargo test --all-targets --all-features
+  test:
+    name: Run Tests
+    uses: ./.github/workflows/tests.yml
 
   rust-publish:
     name: Publish Cargo package
-    needs: [rust]
+    needs: [test]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -47,6 +24,7 @@ jobs:
 
   python-build:
     name: Python Build Wheels (${{ matrix.target }})
+    needs: [test]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -76,9 +54,8 @@ jobs:
 
   python-publish:
     name: Publish Python wheels to PyPI
-    needs: [python-build, rust]
+    needs: [python-build]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -100,6 +77,7 @@ jobs:
 
   nodejs-build:
     name: Node.js Addon Build (${{ matrix.settings.target }})
+    needs: [test]
     runs-on: ${{ matrix.settings.host }}
     strategy:
       fail-fast: false
@@ -152,9 +130,8 @@ jobs:
 
   nodejs-publish:
     name: Publish Node.js Addon to NPM
-    needs: [nodejs-build, rust]
+    needs: [nodejs-build]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
       id-token: write
