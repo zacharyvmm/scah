@@ -52,7 +52,7 @@ fn test_html_page() {
     let store = parse(HTML, queries);
     let list = store.get("main > section#id").unwrap().collect::<Vec<_>>();
 
-    println!("{:#?}", list);
+    assert_eq!(list.len(), 2);
 
     let last = list.last().unwrap();
 

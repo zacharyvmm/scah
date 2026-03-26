@@ -14,7 +14,7 @@ export declare class Element {
 export type JsElement = Element
 
 export declare class JsQuery {
-  toString(): string
+
 }
 
 export declare class Query {

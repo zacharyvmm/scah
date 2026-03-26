@@ -189,7 +189,7 @@ impl<'html> XHtmlElement<'html> {
 // TODO: Parse the closing tag for the XHtmlTag
 impl<'a> XHtmlTag<'a> {
     pub fn from(reader: &mut Reader<'a>) -> Option<Self> {
-        reader.next_while_list(&[b' ', b'<']);
+        reader.next_while_list(&[b' ', b'\n', b'\r', b'\t', b'<']);
         if let Some(character) = reader.peek() {
             if character == b'/' {
                 let start = reader.get_position() + 1;
@@ -556,5 +556,25 @@ mod tests {
         let tag = XHtmlTag::from(&mut reader);
 
         assert_eq!(tag, Some(XHtmlTag::Close("p")));
+    }
+
+    #[test]
+    fn test_parsing_comment() {
+        let mut reader = Reader::new("<!-- These 3 links will be selected by the selector -->");
+        let tag = XHtmlTag::from(&mut reader);
+
+        assert!(tag.is_none())
+    }
+
+    #[test]
+    fn test_parsing_mutiline_comment() {
+        let mut reader = Reader::new(
+            r#"
+            <!-- These 3 links will be selected by the selector -->
+        "#,
+        );
+        let tag = XHtmlTag::from(&mut reader);
+
+        assert!(tag.is_none())
     }
 }
