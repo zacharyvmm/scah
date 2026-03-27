@@ -63,6 +63,7 @@ bump-rust new_version:
 bump-node new_version:
     sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' nodejs/Cargo.toml
     sed -i 's/^  "version": "[^"]*",/  "version": "{{new_version}}",/' nodejs/package.json
+    sed -Ei '/^  "optionalDependencies": \{/,/^  \}/ s/^    ("@zacharymm\/scah-[^"]+": )"[^"]+"(,?)$/    \1"{{new_version}}"\2/' nodejs/package.json
 
 bump-python new_version:
     sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' python/Cargo.toml

@@ -1,6 +1,6 @@
 {
-  "name": "scah",
-  "version": "0.0.11",
+  "name": "@zacharymm/scah",
+  "version": "0.0.13",
   "description": "scah (scan HTML) nodejs bindings",
   "main": "index.js",
   "license": "MIT",
@@ -95,10 +95,10 @@
     "arrowParens": "always"
   },
   "optionalDependencies": {
-    "@zacharymm/scah-win32-x64-msvc": "0.0.5",
-    "@zacharymm/scah-darwin-x64": "0.0.5",
-    "@zacharymm/scah-linux-x64-gnu": "0.0.5",
-    "@zacharymm/scah-linux-arm64-gnu": "0.0.5",
-    "@zacharymm/scah-darwin-arm64": "0.0.5"
+    "@zacharymm/scah-win32-x64-msvc": "0.0.13",
+    "@zacharymm/scah-darwin-x64": "0.0.13",
+    "@zacharymm/scah-linux-x64-gnu": "0.0.13",
+    "@zacharymm/scah-linux-arm64-gnu": "0.0.13",
+    "@zacharymm/scah-darwin-arm64": "0.0.13"
   }
 }

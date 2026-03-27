@@ -167,6 +167,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bun run prepublishOnly
-          npm config set provenance true
-          echo "//registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN" >> ~/.npmrc
-          npm publish --access public
+          npm publish --access public --provenance --ignore-scripts

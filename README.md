@@ -4,7 +4,7 @@ World's fastest CSS Selector.
 > CSS selectors meet streaming XML/HTML parsing. Filter StAX events and build targeted DOMs without loading the entire document.
 
 [![Crates.io](https://img.shields.io/crates/v/scah)](https://crates.io/crates/scah)
-[![npm](https://img.shields.io/npm/v/scah)](https://www.npmjs.com/package/scah)
+[![npm](https://img.shields.io/npm/v/%40zacharymm%2Fscah)](https://www.npmjs.com/package/@zacharymm/scah)
 [![PyPI](https://img.shields.io/pypi/v/scah)](https://pypi.org/project/scah/)
 
 ## What is scah?
@@ -23,7 +23,7 @@ World's fastest CSS Selector.
 ```toml
 # Cargo.toml
 [dependencies]
-scah = "0.0.11"
+scah = "0.0.13"
 ```
 
 #### Basic usage
@@ -131,6 +131,10 @@ store = parse(html, [query])
 ![Synthetic Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/python/benches/images/synthetic.png)
 
 ### Typescript / Javascript
+```bash
+npm install scah@npm:@zacharymm/scah
+```
+
 ```ts
 import { Query, parse } from 'scah';
 
