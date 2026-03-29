@@ -140,7 +140,7 @@ impl Lexer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::AttributeSelections;
+    use crate::{AttributeSelections, ClassSelections};
 
     #[test]
     fn test_whitespace_only_returns_none() {
@@ -159,7 +159,7 @@ mod tests {
             ElementPredicate {
                 name: Some("article"),
                 id: Some("main"),
-                class: Some("hero"),
+                classes: ClassSelections::from_static(&["hero"]),
                 attributes: AttributeSelections::from_static(&[]),
             }
         );
@@ -178,7 +178,7 @@ mod tests {
             ElementPredicate {
                 name: Some("element"),
                 id: Some("id"),
-                class: Some("class"),
+                classes: ClassSelections::from_static(&["class"]),
                 attributes: AttributeSelections::from_static(&[])
             }
         );
@@ -190,7 +190,7 @@ mod tests {
             ElementPredicate {
                 name: Some("other"),
                 id: Some("other_id"),
-                class: Some("other_class"),
+                classes: ClassSelections::from_static(&["other_class"]),
                 attributes: AttributeSelections::from_static(&[]),
             }
         );
@@ -215,7 +215,7 @@ mod tests {
             ElementPredicate {
                 name: Some("span"),
                 id: None,
-                class: Some("highlight"),
+                classes: ClassSelections::from_static(&["highlight"]),
                 attributes: AttributeSelections::from_static(&[]),
             }
         );

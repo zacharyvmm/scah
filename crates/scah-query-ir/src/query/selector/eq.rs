@@ -20,6 +20,42 @@ impl<'a> AttributeSelection<'a> {
 }
 
 impl<'a> ElementPredicate<'a> {
+    fn matches_classes(&self, element_classes: &str) -> bool {
+        let selector_classes = self.classes.as_slice();
+        match selector_classes.len() {
+            0 => true,
+            1 => element_classes
+                .split_whitespace()
+                .any(|word| word == selector_classes[0]),
+            len if len <= u64::BITS as usize => {
+                let mut matched = 0_u64;
+
+                for word in element_classes.split_whitespace() {
+                    for (index, selector_class) in selector_classes.iter().enumerate() {
+                        if word == *selector_class {
+                            matched |= 1 << index;
+                        }
+                    }
+                }
+
+                matched.count_ones() as usize == len
+            }
+            _ => {
+                let mut matched = vec![false; selector_classes.len()];
+
+                for word in element_classes.split_whitespace() {
+                    for (index, selector_class) in selector_classes.iter().enumerate() {
+                        if !matched[index] && word == *selector_class {
+                            matched[index] = true;
+                        }
+                    }
+                }
+
+                matched.into_iter().all(std::convert::identity)
+            }
+        }
+    }
+
     pub fn matches_element<'b, E: IElement<'b>>(&self, other: &E) -> bool {
         if let Some(name) = self.name
             && name != other.name()
@@ -31,15 +67,14 @@ impl<'a> ElementPredicate<'a> {
             return false;
         }
 
-        if self.class.is_some()
-            && (other.class().is_none()
-                || !other
-                    .class()
-                    .unwrap()
-                    .split_whitespace()
-                    .any(|word| word == self.class.unwrap()))
-        {
-            return false;
+        if !self.classes.as_slice().is_empty() {
+            let Some(element_classes) = other.class() else {
+                return false;
+            };
+
+            if !self.matches_classes(element_classes) {
+                return false;
+            }
         }
 
         self.attributes.as_slice().iter().all(|selector_attribute| {
@@ -54,7 +89,7 @@ impl<'a> ElementPredicate<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::AttributeSelections;
+    use crate::{AttributeSelections, ClassSelections};
 
     #[derive(Debug)]
     struct FakeElement<'a> {
@@ -103,7 +138,7 @@ mod tests {
             ElementPredicate {
                 name: Some("hello"),
                 id: Some("id"),
-                class: Some("world"),
+                classes: ClassSelections::from_static(&["world"]),
                 attributes: AttributeSelections::from(vec![AttributeSelection {
                     name: "selected",
                     value: Some("true"),
@@ -138,7 +173,7 @@ mod tests {
             ElementPredicate {
                 name: Some("a"),
                 id: None,
-                class: Some("underline-green"),
+                classes: ClassSelections::from_static(&["underline-green"]),
                 attributes: AttributeSelections::from(vec![AttributeSelection {
                     name: "href",
                     value: None,
@@ -165,5 +200,93 @@ mod tests {
                 ]
             })
         );
+    }
+
+    #[test]
+    fn test_multiple_class_selection_comparison() {
+        assert!(
+            ElementPredicate {
+                name: Some("a"),
+                id: None,
+                classes: ClassSelections::from_static(&["blue", "exit"]),
+                attributes: AttributeSelections::from_static(&[])
+            }
+            .matches_element(&FakeElement {
+                name: "a",
+                id: None,
+                class: Some("blue large exit"),
+                attributes: &[],
+            })
+        );
+    }
+
+    #[test]
+    fn test_multiple_class_selection_comparison_is_order_independent() {
+        assert!(
+            ElementPredicate {
+                name: Some("a"),
+                id: None,
+                classes: ClassSelections::from_static(&["exit", "blue"]),
+                attributes: AttributeSelections::from_static(&[])
+            }
+            .matches_element(&FakeElement {
+                name: "a",
+                id: None,
+                class: Some("blue large exit"),
+                attributes: &[],
+            })
+        );
+    }
+
+    #[test]
+    fn test_multiple_class_selection_comparison_requires_all_classes() {
+        assert!(
+            !ElementPredicate {
+                name: Some("a"),
+                id: None,
+                classes: ClassSelections::from_static(&["blue", "exit", "missing"]),
+                attributes: AttributeSelections::from_static(&[])
+            }
+            .matches_element(&FakeElement {
+                name: "a",
+                id: None,
+                class: Some("blue large exit"),
+                attributes: &[],
+            })
+        );
+    }
+
+    #[test]
+    fn test_class_matching_is_order_independent_for_selector_and_element() {
+        let selector_one = ElementPredicate {
+            name: Some("a"),
+            id: None,
+            classes: ClassSelections::from_static(&["blue", "exit"]),
+            attributes: AttributeSelections::from_static(&[]),
+        };
+        let selector_two = ElementPredicate {
+            name: Some("a"),
+            id: None,
+            classes: ClassSelections::from_static(&["exit", "blue"]),
+            attributes: AttributeSelections::from_static(&[]),
+        };
+
+        let element_one = FakeElement {
+            name: "a",
+            id: None,
+            class: Some("blue exit"),
+            attributes: &[],
+        };
+        let element_two = FakeElement {
+            name: "a",
+            id: None,
+            class: Some("exit blue"),
+            attributes: &[],
+        };
+
+        assert!(selector_one.matches_element(&element_one));
+        assert!(selector_one.matches_element(&element_two));
+        assert!(selector_two.matches_element(&element_one));
+        assert!(selector_two.matches_element(&element_two));
     }
 }

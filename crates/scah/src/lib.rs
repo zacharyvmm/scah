@@ -111,9 +111,9 @@ pub use html::parser::XHtmlParser;
 pub use scah_macros::query;
 pub use scah_query_ir::lazy;
 pub use scah_query_ir::{
-    Attribute, AttributeSelection, AttributeSelectionKind, AttributeSelections, Combinator,
-    ElementPredicate, IElement, Position, Query, QueryBuilder, QueryFactory, QuerySection,
-    QuerySpec, Save, SelectionKind, SelectorParseError, StaticQuery, Transition,
+    Attribute, AttributeSelection, AttributeSelectionKind, AttributeSelections, ClassSelections,
+    Combinator, ElementPredicate, IElement, Position, Query, QueryBuilder, QueryFactory,
+    QuerySection, QuerySpec, Save, SelectionKind, SelectorParseError, StaticQuery, Transition,
 };
 pub use scah_reader::Reader;
 pub use store::{Element, ElementId, Store};

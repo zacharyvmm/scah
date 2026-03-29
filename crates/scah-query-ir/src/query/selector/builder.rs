@@ -62,6 +62,43 @@ impl<'query> From<Vec<AttributeSelection<'query>>> for AttributeSelections<'quer
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ClassSelections<'query> {
+    Static(&'query [&'query str]),
+    Owned(Box<[&'query str]>),
+}
+
+impl<'query> ClassSelections<'query> {
+    pub const fn from_static(classes: &'query [&'query str]) -> Self {
+        Self::Static(classes)
+    }
+
+    pub fn as_slice(&self) -> &[&'query str] {
+        match self {
+            Self::Static(classes) => classes,
+            Self::Owned(classes) => classes,
+        }
+    }
+}
+
+impl<'query> Default for ClassSelections<'query> {
+    fn default() -> Self {
+        Self::Static(&[])
+    }
+}
+
+impl<'query> From<Vec<&'query str>> for ClassSelections<'query> {
+    fn from(value: Vec<&'query str>) -> Self {
+        Self::Owned(value.into_boxed_slice())
+    }
+}
+
+impl<'query> PartialEq for ClassSelections<'query> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
 /// Element Interface
 pub trait IElement<'html> {
     fn name(&self) -> &'html str;
@@ -295,7 +332,7 @@ impl<'a> SelectionAttributeToken<'a> {
 pub struct ElementPredicate<'a> {
     pub name: Option<&'a str>,
     pub id: Option<&'a str>,
-    pub class: Option<&'a str>,
+    pub classes: ClassSelections<'a>,
     pub attributes: AttributeSelections<'a>,
 }
 
@@ -303,15 +340,21 @@ impl<'a> ElementPredicate<'a> {
     pub const fn new_const(
         name: Option<&'a str>,
         id: Option<&'a str>,
-        class: Option<&'a str>,
+        classes: ClassSelections<'a>,
         attributes: AttributeSelections<'a>,
     ) -> Self {
         Self {
             name,
             id,
-            class,
+            classes,
             attributes,
         }
+    }
+
+    fn push_class(&mut self, class_name: &'a str) {
+        let mut classes = self.classes.as_slice().to_vec();
+        classes.push(class_name);
+        self.classes = ClassSelections::from(classes);
     }
 
     fn try_parse_attribute(&mut self, reader: &mut Reader<'a>) -> Result<(), SelectorParseError> {
@@ -326,7 +369,7 @@ impl<'a> ElementPredicate<'a> {
         let mut element = Self {
             name: None,
             id: None,
-            class: None,
+            classes: ClassSelections::default(),
             attributes: AttributeSelections::default(),
         };
 
@@ -367,7 +410,7 @@ impl<'a> ElementPredicate<'a> {
                             reader.get_position().saturating_sub(class_name.len()),
                         ));
                     }
-                    element.class = Some(*class_name);
+                    element.push_class(class_name);
                 }
                 (_, SelectionKeyWords::OpenAttribute) => element.try_parse_attribute(reader)?,
 
@@ -401,7 +444,7 @@ impl<'a> ElementPredicate<'a> {
             )),
             _ if element.name.is_none()
                 && element.id.is_none()
-                && element.class.is_none()
+                && element.classes.as_slice().is_empty()
                 && element.attributes.as_slice().is_empty() =>
             {
                 Err(SelectorParseError::new(
@@ -451,7 +494,7 @@ mod tests {
             ElementPredicate {
                 name: Some("element"),
                 id: Some("id"),
-                class: Some("class"),
+                classes: ClassSelections::from_static(&["class"]),
                 attributes: AttributeSelections::from_static(&[]),
             }
         );
@@ -468,7 +511,7 @@ mod tests {
             ElementPredicate {
                 name: Some("element"),
                 id: Some("id"),
-                class: Some("class"),
+                classes: ClassSelections::from_static(&["class"]),
                 attributes: AttributeSelections::from(vec![AttributeSelection {
                     name: "selected",
                     value: Some("true"),
@@ -489,7 +532,7 @@ mod tests {
             ElementPredicate {
                 name: Some("element"),
                 id: Some("id"),
-                class: Some("class"),
+                classes: ClassSelections::from_static(&["class"]),
                 attributes: AttributeSelections::from(vec![
                     AttributeSelection {
                         name: "href",
@@ -516,12 +559,28 @@ mod tests {
             ElementPredicate {
                 name: Some("element"),
                 id: Some("id"),
-                class: Some("class"),
+                classes: ClassSelections::from_static(&["class"]),
                 attributes: AttributeSelections::from(vec![AttributeSelection {
                     name: "selected",
                     value: Some("true"),
                     kind: AttributeSelectionKind::Exact
                 }]),
+            }
+        );
+    }
+
+    #[test]
+    fn test_multiple_classes_are_preserved() {
+        let mut reader = Reader::new("a.blue.exit");
+        let element = ElementPredicate::from(&mut reader);
+
+        assert_eq!(
+            element,
+            ElementPredicate {
+                name: Some("a"),
+                id: None,
+                classes: ClassSelections::from_static(&["blue", "exit"]),
+                attributes: AttributeSelections::from_static(&[]),
             }
         );
     }

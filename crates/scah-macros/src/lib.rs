@@ -157,6 +157,12 @@ fn expand_query(node: &QueryNode) -> Result<proc_macro2::TokenStream> {
         .enumerate()
         .map(attribute_const_tokens)
         .collect::<Vec<_>>();
+    let class_consts = compiled
+        .states
+        .iter()
+        .enumerate()
+        .map(class_const_tokens)
+        .collect::<Vec<_>>();
     let states = compiled
         .states
         .iter()
@@ -170,6 +176,7 @@ fn expand_query(node: &QueryNode) -> Result<proc_macro2::TokenStream> {
     Ok(quote! {
         {
             #(#attribute_consts)*
+            #(#class_consts)*
             ::scah::StaticQuery::<#num_states, #num_sections>::new(
                 [#(#states),*],
                 [#(#sections),*],
@@ -177,6 +184,19 @@ fn expand_query(node: &QueryNode) -> Result<proc_macro2::TokenStream> {
             )
         }
     })
+}
+
+fn class_const_tokens((index, transition): (usize, &Transition<'_>)) -> proc_macro2::TokenStream {
+    let ident = syn::Ident::new(&format!("__SCAH_CLASSES_{index}"), Span::call_site());
+    let classes = transition
+        .predicate
+        .classes
+        .as_slice()
+        .iter()
+        .map(|class| quote! { #class });
+    quote! {
+        const #ident: &[&'static str] = &[#(#classes),*];
+    }
 }
 
 fn attribute_const_tokens(
@@ -203,13 +223,13 @@ fn transition_tokens(index: usize, transition: &Transition<'_>) -> proc_macro2::
 fn predicate_tokens(index: usize, predicate: &ElementPredicate<'_>) -> proc_macro2::TokenStream {
     let name = option_str_tokens(predicate.name);
     let id = option_str_tokens(predicate.id);
-    let class = option_str_tokens(predicate.class);
+    let classes_ident = syn::Ident::new(&format!("__SCAH_CLASSES_{index}"), Span::call_site());
     let attrs_ident = syn::Ident::new(&format!("__SCAH_ATTRS_{index}"), Span::call_site());
     quote! {
         ::scah::ElementPredicate::new_const(
             #name,
             #id,
-            #class,
+            ::scah::ClassSelections::from_static(#classes_ident),
             ::scah::AttributeSelections::from_static(#attrs_ident),
         )
     }

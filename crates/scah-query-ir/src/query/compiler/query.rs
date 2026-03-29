@@ -261,6 +261,7 @@ mod tests {
     use crate::query::selector::AttributeSelection;
     use crate::query::selector::AttributeSelectionKind;
     use crate::query::selector::AttributeSelections;
+    use crate::query::selector::ClassSelections;
     use crate::query::selector::Combinator;
     use crate::query::selector::ElementPredicate;
     use crate::{Query, QuerySection, Save, SelectionKind};
@@ -275,7 +276,7 @@ mod tests {
                 predicate: ElementPredicate {
                     name: Some("a"),
                     id: None,
-                    class: None,
+                    classes: ClassSelections::from_static(&[]),
                     attributes: AttributeSelections::from_static(&[])
                 },
                 guard: Combinator::Descendant,
@@ -310,7 +311,7 @@ mod tests {
                     predicate: ElementPredicate {
                         name: Some("span"),
                         id: None,
-                        class: None,
+                        classes: ClassSelections::from_static(&[]),
                         attributes: AttributeSelections::from_static(&[])
                     },
                     guard: Combinator::Descendant,
@@ -319,7 +320,7 @@ mod tests {
                     predicate: ElementPredicate {
                         name: Some("a"),
                         id: None,
-                        class: None,
+                        classes: ClassSelections::from_static(&[]),
                         attributes: AttributeSelections::from_static(&[])
                     },
                     guard: Combinator::Descendant,
@@ -343,7 +344,7 @@ mod tests {
             ElementPredicate {
                 name: Some("a"),
                 id: Some("link1"),
-                class: Some("foo"),
+                classes: ClassSelections::from_static(&["foo"]),
                 attributes: AttributeSelections::from(vec![AttributeSelection {
                     name: "href",
                     value: Some("https"),

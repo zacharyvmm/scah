@@ -264,7 +264,10 @@ fn test_macro_query_matches_runtime_query_structure() {
         assert_eq!(static_state.guard, runtime_state.guard);
         assert_eq!(static_state.predicate.name, runtime_state.predicate.name);
         assert_eq!(static_state.predicate.id, runtime_state.predicate.id);
-        assert_eq!(static_state.predicate.class, runtime_state.predicate.class);
+        assert_eq!(
+            static_state.predicate.classes.as_slice(),
+            runtime_state.predicate.classes.as_slice()
+        );
         assert_eq!(
             static_state.predicate.attributes.as_slice(),
             runtime_state.predicate.attributes.as_slice()

@@ -1,6 +1,4 @@
 # scah (scan HTML)
-World's fastest CSS Selector.
-
 > CSS selectors meet streaming XML/HTML parsing. Filter StAX events and build targeted DOMs without loading the entire document.
 
 [![Crates.io](https://img.shields.io/crates/v/scah)](https://crates.io/crates/scah)
@@ -104,11 +102,14 @@ let query = query! {
 };
 
 let store = parse(html, &[query]);
-assert_eq!(store.get("article").unwrap().count(), 1);
-assert_eq!(store.get("a[href]").unwrap().count(), 2);
+let articles = store.get("article").unwrap();
+assert_eq!(articles.len(), 1);
+for article in articles {
+    assert_eq!(article.get("a[href]").unwrap().count(), 2);
+}
 ```
 
-Use the runtime builder when selectors come from config, CLI input, HTTP payloads, or other dynamic sources. Use `query!` when the selector tree is authored in Rust code and should fail at compile time if it becomes invalid.
+Use the runtime builder when you have dynamic sources. Use `query!` when the selector tree is authored in Rust code and should fail at compile time if it becomes invalid.
 
 #### `Save` options
 

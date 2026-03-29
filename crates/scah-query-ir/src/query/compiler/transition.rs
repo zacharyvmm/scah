@@ -57,7 +57,7 @@ impl<'query> Transition<'query> {
 
 #[cfg(test)]
 mod tests {
-    use crate::query::selector::{Attribute, AttributeSelections, IElement};
+    use crate::query::selector::{Attribute, AttributeSelections, ClassSelections, IElement};
 
     use super::*;
 
@@ -94,7 +94,7 @@ mod tests {
             ElementPredicate {
                 name: Some("a"),
                 id: None,
-                class: None,
+                classes: ClassSelections::from_static(&[]),
                 attributes: AttributeSelections::from_static(&[]),
             },
         );
@@ -117,7 +117,7 @@ mod tests {
             ElementPredicate {
                 name: Some("a"),
                 id: None,
-                class: None,
+                classes: ClassSelections::from_static(&[]),
                 attributes: AttributeSelections::from_static(&[]),
             },
         );
@@ -140,7 +140,7 @@ mod tests {
             ElementPredicate {
                 name: Some("a"),
                 id: None,
-                class: None,
+                classes: ClassSelections::from_static(&[]),
                 attributes: AttributeSelections::from_static(&[]),
             },
         );

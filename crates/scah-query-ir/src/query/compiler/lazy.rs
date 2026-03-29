@@ -238,7 +238,7 @@ mod tests {
     use super::Transition;
     use super::*;
     use crate::AttributeSelections;
-    use crate::query::selector::{Combinator, ElementPredicate};
+    use crate::query::selector::{ClassSelections, Combinator, ElementPredicate};
     use crate::{Query, Save, SelectionKind};
 
     #[test]
@@ -395,7 +395,7 @@ mod tests {
                         ElementPredicate {
                             name: Some("div"),
                             id: None,
-                            class: None,
+                            classes: ClassSelections::from_static(&[]),
                             attributes: AttributeSelections::from_static(&[])
                         }
                     ),
@@ -404,7 +404,7 @@ mod tests {
                         ElementPredicate {
                             name: Some("a"),
                             id: None,
-                            class: None,
+                            classes: ClassSelections::from_static(&[]),
                             attributes: AttributeSelections::from_static(&[])
                         }
                     ),
@@ -413,7 +413,7 @@ mod tests {
                         ElementPredicate {
                             name: Some("a"),
                             id: None,
-                            class: None,
+                            classes: ClassSelections::from_static(&[]),
                             attributes: AttributeSelections::from_static(&[])
                         }
                     ),

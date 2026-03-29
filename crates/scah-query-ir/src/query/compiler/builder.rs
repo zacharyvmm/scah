@@ -363,7 +363,16 @@ impl<'query> QueryFactory {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Query, Save, SelectionKind};
+    use crate::{ClassSelections, Query, Save, SelectionKind};
+
+    #[test]
+    fn test_builder_with_class_chaining() {
+        let query = Query::all("a.blue.exit", Save::all()).unwrap().build();
+        assert_eq!(
+            query.states[0].predicate.classes,
+            ClassSelections::from_static(&["blue", "exit"])
+        );
+    }
 
     #[test]
     fn test_early_exit() {

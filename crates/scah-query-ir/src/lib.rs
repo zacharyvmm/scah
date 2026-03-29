@@ -6,7 +6,7 @@ pub use query::compiler::{
     SelectorParseError, StaticQuery, Transition,
 };
 pub use query::selector::{
-    Attribute, AttributeSelection, AttributeSelectionKind, AttributeSelections, Combinator,
-    ElementPredicate, IElement,
+    Attribute, AttributeSelection, AttributeSelectionKind, AttributeSelections, ClassSelections,
+    Combinator, ElementPredicate, IElement,
 };
 pub use scah_reader::Reader;
