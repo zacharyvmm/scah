@@ -1,4 +1,4 @@
-use gungraun::{LibraryBenchmarkConfig, library_benchmark, library_benchmark_group, main};
+use gungraun::{library_benchmark, library_benchmark_group, main};
 use lol_html::errors::RewritingError;
 use std::error::Error;
 use std::fmt;
@@ -35,7 +35,9 @@ use scah::{Query, Save, parse};
 #[library_benchmark]
 #[bench::scah(setup_html())]
 fn bench_scah(html: String) {
-    let queries = &[Query::first(QUERY, Save::all()).build()];
+    let queries = &[Query::first(QUERY, Save::all())
+        .expect("simple bench selector should parse")
+        .build()];
 
     let store = parse(&html, queries);
 

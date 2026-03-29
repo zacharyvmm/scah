@@ -1,0 +1,914 @@
+use super::element::builder::XHtmlTag;
+use crate::QuerySpec;
+use crate::Reader;
+use crate::XHtmlElement;
+use crate::dbg_print;
+use crate::engine::multiplexer::{DocumentPosition, QueryMultiplexer};
+use crate::store::Store;
+
+pub struct XHtmlParser<'html, 'query, Q> {
+    position: DocumentPosition,
+    pub selectors: QueryMultiplexer<'query, Q>,
+    store: Store<'html, 'query>,
+    element: crate::XHtmlElement<'html>,
+    in_script: bool,
+}
+
+impl<'html, 'query: 'html, Q> XHtmlParser<'html, 'query, Q>
+where
+    Q: QuerySpec<'query>,
+{
+    pub fn new(selectors: QueryMultiplexer<'query, Q>) -> Self {
+        Self {
+            position: DocumentPosition {
+                element_depth: 0,
+                reader_position: 0, // for inner_html
+                text_content_position: usize::MAX,
+            },
+            selectors,
+            element: XHtmlElement::default(),
+            in_script: false,
+            store: Store::default(),
+        }
+    }
+
+    pub fn with_capacity(selectors: QueryMultiplexer<'query, Q>, capacity: usize) -> Self {
+        Self {
+            position: DocumentPosition {
+                element_depth: 0,
+                reader_position: 0, // for inner_html
+                text_content_position: usize::MAX,
+            },
+            selectors,
+            element: XHtmlElement::default(),
+            in_script: false,
+            store: Store::with_capacity(capacity),
+        }
+    }
+
+    pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
+        if self.in_script {
+            loop {
+                reader.next_until(b'<');
+                if reader.peek().is_none() {
+                    return false;
+                }
+
+                if reader.match_ignore_case("</script>") {
+                    if self.store.text_content.text_start.is_some()
+                        && let Some(position) =
+                            self.store.text_content.push(reader, reader.get_position())
+                    {
+                        self.position.text_content_position = position;
+                    }
+                    self.in_script = false;
+                    break;
+                } else {
+                    reader.skip();
+                }
+            }
+        }
+
+        // move until it finds the first `<`
+        reader.next_until(b'<');
+
+        if reader.peek().is_none() {
+            return false;
+        }
+
+        let tag = {
+            let mut tag: Option<XHtmlTag> = None;
+
+            while tag.is_none() {
+                self.position.reader_position = reader.get_position();
+                tag = XHtmlTag::from(reader);
+                if let Some(XHtmlTag::Open) = tag {
+                    self.element.from(reader, &mut self.store.attributes);
+                } else if tag.is_none()
+                    && self.store.text_content.text_start.is_some()
+                    && let Some(position) = self
+                        .store
+                        .text_content
+                        .push(reader, self.position.reader_position)
+                {
+                    self.position.text_content_position = position;
+                    self.store.text_content.set_start(reader.get_position());
+                }
+            }
+
+            tag.unwrap()
+        };
+
+        if self.store.text_content.text_start.is_some()
+            && let Some(position) = self
+                .store
+                .text_content
+                .push(reader, self.position.reader_position)
+        {
+            self.position.text_content_position = position;
+        }
+
+        self.store.text_content.set_start(reader.get_position());
+
+        // TODO: register the start
+        //reader.next_while(|c| c.is_whitespace());
+        let mut early_exit = false;
+
+        match tag {
+            XHtmlTag::Open => {
+                if self.element.name.eq_ignore_ascii_case("script") {
+                    self.in_script = true;
+                }
+
+                self.position.element_depth += 1;
+                self.position.reader_position = reader.get_position();
+
+                dbg_print!(
+                    "opening: `{}` ({})",
+                    self.element.name,
+                    self.position.element_depth
+                );
+
+                let mut remove_depth_after_next = false;
+                if self.element.is_self_closing() {
+                    remove_depth_after_next = true;
+                }
+
+                self.selectors
+                    .next(&self.element, &self.position, &mut self.store);
+
+                if remove_depth_after_next {
+                    self.position.element_depth -= 1;
+                }
+
+                self.element.clear();
+            }
+            XHtmlTag::Close(closing_tag) => {
+                dbg_print!("closing: `{closing_tag}` ({})", self.position.element_depth);
+
+                early_exit =
+                    self.selectors
+                        .back(closing_tag, &self.position, reader, &mut self.store);
+                self.position.element_depth -= 1;
+            }
+        }
+
+        !early_exit && !reader.eof()
+    }
+
+    pub fn matches(self) -> Store<'html, 'query> {
+        self.store
+    }
+}
+#[cfg(test)]
+mod tests {
+    use std::ops::Deref;
+
+    use super::*;
+    use crate::Attribute;
+    use crate::engine::multiplexer::QueryMultiplexer;
+    use crate::store::Element;
+    use crate::{Query, Reader, Save};
+    use pretty_assertions::assert_eq;
+
+    const BASIC_HTML: &str = r#"
+        <html>
+            <h1>Hello World</h1>
+            <p class="indent">
+                My name is <span id="name" class="bold">Zachary</span>
+            </p>
+        </html>
+        "#;
+
+    #[test]
+    fn test_basic_html() {
+        let mut reader = Reader::new(BASIC_HTML);
+
+        let queries = &[Query::all("p.indent > .bold", Save::none())
+            .unwrap()
+            .build()];
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
+
+        println!("{:?}", queries);
+
+        while parser.next(&mut reader) {
+            // println!("{:?}", parser.selectors);
+        }
+
+        let store = parser.matches();
+
+        println!("{:?}", store);
+
+        assert_eq!(store.get("p.indent > .bold").unwrap().count(), 1);
+        let children = store.get("p.indent > .bold").unwrap();
+
+        let children: Vec<&Element> = children.collect();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].name, "span");
+        assert_eq!(children[0].id, Some("name"));
+        assert_eq!(children[0].class, Some("bold"));
+    }
+
+    #[test]
+    fn test_text_content() {
+        let mut reader = Reader::new(BASIC_HTML);
+
+        let queries = &[Query::all("p.indent > .bold", Save::none())
+            .unwrap()
+            .build()];
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        let mut continue_parser = parser.next(&mut reader); // <html>
+        assert!(continue_parser);
+
+        continue_parser = parser.next(&mut reader); // <h1>
+        assert!(continue_parser);
+
+        continue_parser = parser.next(&mut reader); // </h1>
+        assert!(continue_parser);
+        assert_eq!(parser.store.text_content.content, b"Hello World ");
+
+        continue_parser = parser.next(&mut reader); // <p class="indent">
+        assert!(continue_parser);
+        assert_eq!(parser.store.text_content.content, b"Hello World ");
+
+        continue_parser = parser.next(&mut reader); // <span id="name" class="bold">
+        assert!(continue_parser);
+        assert_eq!(
+            parser.store.text_content.content,
+            b"Hello World My name is "
+        );
+
+        continue_parser = parser.next(&mut reader); // </span>
+        assert!(continue_parser);
+        assert_eq!(
+            parser.store.text_content.content,
+            b"Hello World My name is Zachary "
+        );
+
+        continue_parser = parser.next(&mut reader); // </p>
+        assert!(continue_parser);
+        assert_eq!(
+            parser.store.text_content.content,
+            b"Hello World My name is Zachary "
+        );
+
+        continue_parser = parser.next(&mut reader); // </html>
+        assert!(!continue_parser);
+        assert_eq!(
+            parser.store.text_content.content,
+            b"Hello World My name is Zachary "
+        );
+    }
+
+    #[test]
+    fn test_top_level_multi_selection() {
+        let mut reader = Reader::new(BASIC_HTML);
+
+        let queries = &[
+            Query::all("p.indent > .bold", Save::none())
+                .unwrap()
+                .build(),
+            Query::all(".indent #name", Save::none()).unwrap().build(),
+        ];
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
+
+        while parser.next(&mut reader) {}
+    }
+
+    const MORE_ADVANCED_BASIC_HTML: &str = r#"
+        <html>
+            <h1>Hello World</h1>
+            <main>
+                <section>
+                    <a href="https://hello.com">Hello</a>
+                    <div>
+                        <a href="https://world.com">World</a>
+                    </div>
+                </section>
+            </main>
+
+            <main>
+                <section>
+                    <a href="https://hello2.com">Hello2</a>
+
+                    <div>
+                        <a href="https://world2.com">World2</a>
+                        <div>
+                            <a href="https://world3.com">World3</a>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </html>
+        "#;
+
+    #[test]
+    #[ignore = "Known issue: Duplication of elements is not handled"]
+    fn test_multi_selection() {
+        let mut reader = Reader::new(MORE_ADVANCED_BASIC_HTML);
+        let queries = Query::all("main > section", Save::all())
+            .unwrap()
+            .then(|section| {
+                Ok([
+                    section.all("> a[href]", Save::all())?,
+                    section.all("div a", Save::all())?,
+                ])
+            })
+            .unwrap();
+        let queries = &[queries.build()];
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+        println!("{:#?}", store);
+
+        let sections: Vec<&Element> = store.get("main > section").unwrap().collect();
+        assert_eq!(sections.len(), 2);
+
+        // Section 1
+        let s1 = sections[0];
+        assert_eq!(s1.text_content(&store), Some("Hello World"));
+
+        let s1_div_a: Vec<&Element> = s1.get(&store, "div a").unwrap().collect();
+        assert_eq!(s1_div_a.len(), 1);
+        assert_eq!(s1_div_a[0].text_content(&store), Some("World"));
+        assert_eq!(
+            s1_div_a[0].attributes(&store).unwrap()[0].value,
+            Some("https://world.com")
+        );
+
+        println!("{:#?}", s1);
+
+        let s1_direct_a: Vec<&Element> = s1.get(&store, "> a[href]").unwrap().collect();
+        assert_eq!(s1_direct_a.len(), 1);
+        assert_eq!(s1_direct_a[0].text_content(&store), Some("Hello"));
+        assert_eq!(
+            s1_direct_a[0].attributes(&store).unwrap()[0].value,
+            Some("https://hello.com")
+        );
+
+        // Section 2
+        let s2 = sections[1];
+        assert_eq!(s2.text_content(&store), Some("Hello2 World2 World3"));
+
+        let s2_div_a: Vec<&Element> = s2.get(&store, "div a").unwrap().collect();
+        assert_eq!(s2_div_a.len(), 2, "World3 Element duplicated");
+        assert_eq!(s2_div_a[0].text_content(&store), Some("World2"));
+        assert_eq!(s2_div_a[1].text_content(&store), Some("World3"));
+
+        let s2_direct_a: Vec<&Element> = s2.get(&store, "> a[href]").unwrap().collect();
+        assert_eq!(s2_direct_a.len(), 1);
+        assert_eq!(s2_direct_a[0].text_content(&store), Some("Hello2"));
+    }
+
+    const BASIC_HTML_WITH_SCRIPT: &str = r#"
+        <html>
+            <h1>Hello World</h1>
+
+            <script>
+                let x = 123132.2;
+                let y = "<div>" + "Hello" + "</" + "div>";
+            </script>
+        </html>
+        "#;
+
+    #[test]
+    fn test_script_tag_with_html_like_content() {
+        let mut reader = Reader::new(BASIC_HTML_WITH_SCRIPT);
+
+        let queries = &[Query::all("div", Save::none()).unwrap().build()];
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
+
+        println!("{:?}", queries);
+
+        while parser.next(&mut reader) {
+            // println!("{:?}", parser.selectors);
+        }
+
+        let store = parser.matches();
+
+        // It should NOT find any div
+        if let Some(div_idx) = store.get("div") {
+            assert_eq!(div_idx.count(), 0);
+        }
+    }
+
+    const BASIC_HTML_WITH_SELF_CLOSING_TAG: &str = r#"
+        <html>
+            <h1>Hello World</h1>
+            <form action="/my-handling-form-page" method="post">
+                <p>
+                    <label for="name">Name:</label>
+                    <input type="text" id="name" name="user_name" />
+                </p>
+                <p>
+                    <label for="mail">Email:</label>
+                    <input type="email" id="mail" name="user_email" />
+                </p>
+                <p>
+                    <label for="msg">Message:</label>
+                    <textarea id="msg" name="user_message"></textarea>
+                </p>
+            </form>
+        </html>
+        "#;
+
+    #[test]
+    fn test_self_closing_tags() {
+        let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
+        let queries = &[Query::all("form > p > input", Save::none())
+            .unwrap()
+            .build()];
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        println!("{:?}", queries);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+
+        let inputs: Vec<&Element> = store.get("form > p > input").unwrap().collect();
+        assert_eq!(inputs.len(), 2);
+
+        assert_eq!(inputs[0].name, "input");
+        assert_eq!(inputs[0].id, Some("name"));
+        assert_eq!(inputs[0].attributes(&store).unwrap()[0].key, "type");
+        assert_eq!(inputs[0].attributes(&store).unwrap()[0].value, Some("text"));
+
+        assert_eq!(inputs[1].name, "input");
+        assert_eq!(inputs[1].id, Some("mail"));
+        assert_eq!(inputs[1].attributes(&store).unwrap()[0].key, "type");
+        assert_eq!(
+            inputs[1].attributes(&store).unwrap()[0].value,
+            Some("email")
+        );
+    }
+
+    #[test]
+    #[ignore = "Known issue: Conundrum of saving content of self closing tags"]
+    fn test_self_closing_tags_with_content_query() {
+        /*
+         * What should happen?
+         * Query Warning?
+         * Handle it anyway?
+         */
+        let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
+
+        let queries = &[Query::all("form > p > input", Save::all()).unwrap().build()];
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        // STEP 1
+        //let mut continue_parser = parser.next(&mut reader);
+
+        println!("{:?}", queries);
+
+        while parser.next(&mut reader) {
+            // println!("{:?}", parser.selectors);
+        }
+
+        let store = parser.matches();
+
+        let inputs: Vec<&Element> = store.get("form > p > input").unwrap().collect();
+        assert_eq!(inputs.len(), 2);
+        assert_eq!(inputs[0].text_content(&store), None);
+        assert_eq!(inputs[0].inner_html, None);
+
+        assert_eq!(inputs[1].text_content(&store), None);
+        assert_eq!(inputs[1].inner_html, None);
+    }
+
+    const BASIC_ANCHOR_LIST: &str = r#"
+        <a>Hello 1</a>
+        <a>Hello 2</a>
+        <a>Hello 3</a>
+        "#;
+
+    #[test]
+    fn test_anchor_list_selection() {
+        let mut reader = Reader::new(BASIC_ANCHOR_LIST);
+
+        let queries = &[Query::all("a", Save::all()).unwrap().build()];
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+
+        let anchors: Vec<&Element> = store.get("a").unwrap().collect();
+        assert_eq!(anchors.len(), 3);
+
+        assert_eq!(anchors[0].text_content(&store), Some("Hello 1"));
+        assert_eq!(anchors[1].text_content(&store), Some("Hello 2"));
+        assert_eq!(anchors[2].text_content(&store), Some("Hello 3"));
+    }
+
+    const POSTS: &str = r#"<div class="article"><a href="/post/0"><b>Post</b> &lt;0&gt;</a></div><div class="article"><a href="/post/1"><b>Post</b> &lt;1&gt;</a></div>"#;
+
+    #[test]
+    fn test_first_anchor_in_list_selection() {
+        let mut reader = Reader::new(POSTS);
+
+        let queries = &[Query::first("div.article a", Save::all()).unwrap().build()];
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+
+        let anchor = store.get("div.article a").unwrap().next().unwrap();
+
+        assert_eq!(anchor.name, "a");
+        assert_eq!(anchor.attributes(&store).unwrap()[0].value, Some("/post/0"));
+        assert_eq!(anchor.inner_html, Some("<b>Post</b> &lt;0&gt;"));
+        assert_eq!(anchor.text_content(&store), Some("Post &lt;0&gt;"));
+    }
+
+    const PYTHON_TEST_HTML: &str = r#"
+    <span class="hello" id="world" hello="world">
+        Hello <a href="https://www.example.com">World</a>
+    </span>
+    <p class="example_class" id="example_id" hello="example">
+        My <a href="https://www.example.com">Example</a> or <a href="https://www.notexample.com">Not Example</a>
+    </p>
+    "#;
+
+    #[test]
+    fn test_python_test_html() {
+        let mut reader = Reader::new(PYTHON_TEST_HTML);
+
+        let queries = &[Query::all("#world", Save::all())
+            .unwrap()
+            .all("a", Save::all())
+            .unwrap()
+            .build()];
+
+        // assert_eq!(queries, &[Query {
+        //     queries: vec![].into_boxed_slice(),
+        //     states: vec![].into_boxed_slice(),
+        //     exit_at_section_end: None,
+        // }]);
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+
+        assert_eq!(
+            store.attributes.deref().clone(),
+            vec![
+                Attribute {
+                    key: "hello",
+                    value: Some("world")
+                },
+                Attribute {
+                    key: "href",
+                    value: Some("https://www.example.com")
+                },
+            ]
+        );
+
+        let worlds: Vec<&Element> = store.get("#world").unwrap().collect();
+        assert_eq!(worlds.len(), 1);
+
+        let span = worlds[0];
+        assert_eq!(span.name, "span");
+        assert_eq!(span.class, Some("hello"));
+        assert_eq!(span.id, Some("world"));
+        assert_eq!(
+            span.attributes(&store).unwrap(),
+            &[Attribute {
+                key: "hello",
+                value: Some("world")
+            },]
+        );
+        assert_eq!(
+            span.inner_html,
+            Some(
+                r#"
+        Hello <a href="https://www.example.com">World</a>
+    "#
+            )
+        );
+        assert!(span.text_content(&store).is_some());
+
+        let anchors: Vec<&Element> = span.get(&store, "a").unwrap().collect();
+        assert_eq!(anchors.len(), 1);
+
+        let a = anchors[0];
+        assert_eq!(a.name, "a");
+        assert_eq!(a.class, None);
+        assert_eq!(a.id, None);
+        assert_eq!(
+            a.attributes(&store).unwrap(),
+            &[Attribute {
+                key: "href",
+                value: Some("https://www.example.com")
+            },]
+        );
+        assert_eq!(a.inner_html, Some("World"));
+        assert!(a.text_content(&store).is_some());
+    }
+
+    #[test]
+    fn test_first_anchor_tag_from_bench() {
+        fn generate_html(count: usize) -> String {
+            let mut html = String::with_capacity(count * 100);
+            html.push_str("<html><body><div id='content'>");
+            for i in 0..count {
+                // Added some entities (&lt;) and bold tags (<b>) to make text extraction work harder
+                html.push_str(&format!(
+                    r#"<div class="article"><a href="/post/{}"><b>Post</b> &lt;{}&gt;</a></div>"#,
+                    i, i
+                ));
+            }
+            html.push_str("</div></body></html>");
+            html
+        }
+
+        let html = generate_html(100);
+        let mut reader = Reader::from_bytes(html.as_bytes());
+
+        let query = Query::first("a", Save::all()).unwrap().build();
+        assert_eq!(query.exit_at_section_end, Some(0));
+        let queries = &[query];
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+
+        let element = store.get("a").unwrap().next().unwrap();
+
+        assert_eq!(
+            store.attributes.deref().clone(),
+            vec![Attribute {
+                key: "href",
+                value: Some("/post/0"),
+            }]
+        );
+
+        assert_eq!(element.inner_html, Some("<b>Post</b> &lt;0&gt;"));
+        assert_eq!(element.text_content(&store), Some("Post &lt;0&gt;"));
+    }
+
+    const SINGLE_PRODUCT_HTML: &str = r#"
+    <section id="products">
+        <div class="product">
+            <h1>Product #1</h1>
+            <img src="https://example.com/p1.png"/>
+            <p>
+                Hello World for Product #1
+            </p>
+        </div>
+    </section>
+    "#;
+
+    #[test]
+    fn test_single_product_listing_html() {
+        let mut reader = Reader::new(SINGLE_PRODUCT_HTML);
+
+        let queries = &[Query::all("#products", Save::all())
+            .unwrap()
+            .all(".product", Save::all())
+            .unwrap()
+            .then(|p| {
+                Ok([
+                    p.first("h1", Save::all())?,
+                    p.first("img", Save::none())?,
+                    p.first("p", Save::all())?,
+                ])
+            })
+            .unwrap()
+            .build()];
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+
+        println!("Store: {:#?}", store);
+
+        assert_eq!(store.elements.len(), 5);
+
+        assert_eq!(
+            store.attributes.deref().clone(),
+            vec![
+                Attribute {
+                    key: "src",
+                    value: Some("https://example.com/p1.png")
+                },
+                Attribute {
+                    key: "/",
+                    value: None
+                }
+            ]
+        );
+
+        let products_sections: Vec<&Element> = store.get("#products").unwrap().collect();
+        assert_eq!(products_sections.len(), 1);
+
+        let section = products_sections[0];
+        assert_eq!(section.name, "section");
+        assert_eq!(section.id, Some("products"));
+        assert!(section.inner_html.is_some());
+        assert!(section.text_content(&store).is_some());
+
+        let products: Vec<&Element> = section.get(&store, ".product").unwrap().collect();
+        assert_eq!(products.len(), 1);
+
+        let product = products[0];
+        assert_eq!(product.name, "div");
+        assert_eq!(product.class, Some("product"));
+        assert!(product.inner_html.is_some());
+        assert!(product.text_content(&store).is_some());
+
+        let h1 = product.get(&store, "h1").unwrap().next().unwrap();
+        assert_eq!(h1.name, "h1");
+        assert_eq!(h1.inner_html, Some("Product #1"));
+        assert!(h1.text_content(&store).is_some());
+
+        let img = product.get(&store, "img").unwrap().next().unwrap();
+        assert_eq!(img.name, "img");
+        assert!(img.attributes(&store).is_some());
+
+        let p = product.get(&store, "p").unwrap().next().unwrap();
+        assert_eq!(p.name, "p");
+        assert!(p.inner_html.is_some());
+        assert!(p.text_content(&store).is_some());
+    }
+
+    const PRODUCT_HTML: &str = r#"
+    <section id="products">
+        <div class="product">
+            <h1>Product #1</h1>
+            <img src="https://example.com/p1.png"/>
+            <p>
+                Hello World for Product #1
+            </p>
+        </div>
+        
+        <div class="product">
+            <h1>Product #2</h1>
+            <img src="https://example.com/p2.png"/>
+            <p>
+                Hello World for Product #2
+            </p>
+        </div>
+    </section>
+    "#;
+
+    #[test]
+    fn test_product_listing_html() {
+        let mut reader = Reader::new(PRODUCT_HTML);
+
+        let queries = &[Query::all("#products", Save::all())
+            .unwrap()
+            .all(".product", Save::all())
+            .unwrap()
+            .then(|p| {
+                Ok([
+                    p.first("h1", Save::all())?,
+                    p.first("img", Save::none())?,
+                    p.first("p", Save::all())?,
+                ])
+            })
+            .unwrap()
+            .build()];
+
+        let manager = QueryMultiplexer::new(queries);
+
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+
+        println!("Store: {:#?}", store);
+
+        assert_eq!(store.elements.len(), 9);
+
+        assert_eq!(
+            store.attributes.deref().clone(),
+            vec![
+                Attribute {
+                    key: "src",
+                    value: Some("https://example.com/p1.png")
+                },
+                Attribute {
+                    key: "/",
+                    value: None
+                },
+                Attribute {
+                    key: "src",
+                    value: Some("https://example.com/p2.png")
+                },
+                Attribute {
+                    key: "/",
+                    value: None
+                },
+            ]
+        );
+
+        let products_sections: Vec<&Element> = store.get("#products").unwrap().collect();
+        assert_eq!(products_sections.len(), 1);
+
+        let section = products_sections[0];
+        assert_eq!(section.name, "section");
+        assert_eq!(section.id, Some("products"));
+        assert!(section.inner_html.is_some());
+        assert!(section.text_content(&store).is_some());
+
+        let products: Vec<&Element> = section.get(&store, ".product").unwrap().collect();
+        assert_eq!(products.len(), 2);
+
+        // Product 1
+        let p1 = products[0];
+        assert_eq!(p1.name, "div");
+        assert_eq!(p1.class, Some("product"));
+        assert!(p1.inner_html.is_some());
+        assert!(p1.text_content(&store).is_some());
+
+        let p1_h1 = p1.get(&store, "h1").unwrap().next().unwrap();
+        assert_eq!(p1_h1.name, "h1");
+        assert_eq!(p1_h1.inner_html, Some("Product #1"));
+        assert!(p1_h1.text_content(&store).is_some());
+
+        let p1_img = p1.get(&store, "img").unwrap().next().unwrap();
+        assert_eq!(p1_img.name, "img");
+        assert!(p1_img.attributes(&store).is_some());
+
+        let p1_p = p1.get(&store, "p").unwrap().next().unwrap();
+        assert_eq!(p1_p.name, "p");
+        assert!(p1_p.inner_html.is_some());
+        assert!(p1_p.text_content(&store).is_some());
+
+        // Product 2
+        let p2 = products[1];
+        assert_eq!(p2.name, "div");
+        assert_eq!(p2.class, Some("product"));
+        assert!(p2.inner_html.is_some());
+        assert!(p2.text_content(&store).is_some());
+
+        let p2_h1 = p2.get(&store, "h1").unwrap().next().unwrap();
+        assert_eq!(p2_h1.name, "h1");
+        assert!(p2_h1.inner_html.is_some());
+        assert!(p2_h1.text_content(&store).is_some());
+
+        let p2_img = p2.get(&store, "img").unwrap().next().unwrap();
+        assert_eq!(p2_img.name, "img");
+        assert!(p2_img.attributes(&store).is_some());
+
+        let p2_p = p2.get(&store, "p").unwrap().next().unwrap();
+        assert_eq!(p2_p.name, "p");
+        assert!(p2_p.inner_html.is_some());
+        assert!(p2_p.text_content(&store).is_some());
+    }
+}

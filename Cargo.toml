@@ -1,53 +1,31 @@
-[package]
-name = "scah"
-version = "0.0.13"
-edition = "2024"
-license = "MIT"
-description = "CSS selectors meet streaming XML/HTML parsing. Filter StAX events and build targeted DOMs without loading the entire document."
-repository = "https://github.com/zacharyvmm/scah"
-homepage = "https://github.com/zacharyvmm/scah"
-documentation = "https://docs.rs/scah"
-readme = "README.md"
-keywords = ["css", "selector", "parser", "html", "sax"]
-categories = ["parser-implementations", "web-programming"]
-exclude = [
-    "nodejs/*",
-    "python/*",
-    "benches/*",
-]
-
 [workspace]
-members = ["python", "nodejs", "benches"]
-
-[lib]
-name = "scah"
-path = "src/lib.rs"
-
-[dependencies]
-smallvec = "1.15.1"
-
-[dev-dependencies]
-pretty_assertions = "1.4.1"
-
-[lints.clippy]
-let-and-return = "allow"
-byte_char_slices = "allow"
-redundant-field-names = "allow"
-len_without_is_empty = "allow"
+members = [
+    "crates/scah-reader",
+    "crates/scah-query-ir",
+    "crates/scah-macros",
+    "crates/scah",
+    "crates/bindings/scah-python",
+    "crates/bindings/scah-node",
+    "benches",
+]
+default-members = ["crates/scah"]
+resolver = "3"
 
 [profile.release]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-# panic = "abort"
 panic = "unwind"
-# strip = "symbols"
-strip = "none"
+strip = "symbols"
 overflow-checks = false
 incremental = false
-debug = 1
+debug = 0
+debug-assertions = false
 
 [profile.release.package."*"]
 opt-level = 3
 codegen-units = 1
-debug = 1
+debug = 0
+
+[profile.bench]
+inherits = "release"

@@ -1175,6 +1175,9 @@ name = "scah"
 version = "0.0.13"
 dependencies = [
  "pretty_assertions",
+ "scah-macros",
+ "scah-query-ir",
+ "scah-reader",
  "smallvec",
 ]
 
@@ -1189,6 +1192,16 @@ dependencies = [
  "scah",
  "scraper",
  "tl",
+]
+
+[[package]]
+name = "scah-macros"
+version = "0.0.13"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "scah-query-ir",
+ "syn",
 ]
 
 [[package]]
@@ -1208,6 +1221,19 @@ dependencies = [
  "pyo3",
  "scah",
 ]
+
+[[package]]
+name = "scah-query-ir"
+version = "0.0.13"
+dependencies = [
+ "pretty_assertions",
+ "scah-reader",
+ "smallvec",
+]
+
+[[package]]
+name = "scah-reader"
+version = "0.0.13"
 
 [[package]]
 name = "scopeguard"

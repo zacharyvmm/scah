@@ -1,0 +1,19 @@
+
+[package]
+authors = ["Zachary McSween Manickchand <contact@zacharymm.com>"]
+edition = "2024"
+name    = "scah-nodejs"
+version = "0.0.13"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi        = "3.0.0"
+napi-derive = "3.0.0"
+
+  [dependencies.scah]
+  path = "../../scah"
+
+[build-dependencies]
+napi-build = "2"

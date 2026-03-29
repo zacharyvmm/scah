@@ -9,7 +9,7 @@ on:
 
 jobs:
   rust:
-    name: Rust Check and Test
+    name: Rust Workspace Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +27,6 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --exclude scah-benches -- -D warnings
       - name: Test
-        run: cargo test --all-targets --all-features
+        run: cargo test --workspace --exclude scah-benches

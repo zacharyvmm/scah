@@ -1,0 +1,12 @@
+[package]
+name = "scah-python"
+version = "0.0.13"
+edition = "2024"
+
+[lib]
+name = "scah"
+crate-type = ["cdylib"]
+
+[dependencies]
+scah = { path = "../../scah" }
+pyo3 = { version = "0.27.2", features = ["extension-module", "abi3-py38"] }
