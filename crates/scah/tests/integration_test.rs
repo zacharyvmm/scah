@@ -221,25 +221,6 @@ fn test_macro_static_query() {
     assert_eq!(count(&static_store, "span"), count(&runtime_store, "span"));
 }
 
-fn collect_query_contents<'html, 'query>(
-    store: &Store<'html, 'query>,
-    selector: &str,
-) -> Vec<(String, Option<String>, Option<String>, Option<String>)> {
-    store
-        .get(selector)
-        .into_iter()
-        .flatten()
-        .map(|element| {
-            (
-                element.name.to_string(),
-                element.attribute(store, "href").map(str::to_string),
-                element.inner_html.map(str::trim).map(str::to_string),
-                element.text_content(store).map(str::to_string),
-            )
-        })
-        .collect()
-}
-
 #[test]
 fn test_macro_query_matches_runtime_query_structure() {
     let static_query = query! {
@@ -304,6 +285,27 @@ fn test_macro_query_matches_runtime_store_contents() {
     let runtime_queries = [runtime_query];
     let static_store = parse(HTML, &static_queries);
     let runtime_store = parse(HTML, &runtime_queries);
+
+    type Content = Vec<(String, Option<String>, Option<String>, Option<String>)>;
+
+    fn collect_query_contents<'html, 'query>(
+        store: &Store<'html, 'query>,
+        selector: &str,
+    ) -> Content {
+        store
+            .get(selector)
+            .into_iter()
+            .flatten()
+            .map(|element| {
+                (
+                    element.name.to_string(),
+                    element.attribute(store, "href").map(str::to_string),
+                    element.inner_html.map(str::trim).map(str::to_string),
+                    element.text_content(store).map(str::to_string),
+                )
+            })
+            .collect()
+    }
 
     for selector in ["main > section", "> a[href]", "span"] {
         assert_eq!(
