@@ -1,4 +1,4 @@
-use gungraun::{LibraryBenchmarkConfig, library_benchmark, library_benchmark_group, main};
+use gungraun::{library_benchmark, library_benchmark_group, main};
 use std::hint::black_box;
 
 const MAX_ELEMENT_LEN: usize = 1000;
@@ -22,7 +22,9 @@ use scah::{Query, Save, parse};
 #[library_benchmark]
 #[bench::scah(setup_html())]
 fn bench_scah(html: String) {
-    let queries = &[Query::all(QUERY, Save::all()).build()];
+    let queries = &[Query::all(QUERY, Save::all())
+        .expect("simple bench selector should parse")
+        .build()];
 
     let store = parse(&html, queries);
 

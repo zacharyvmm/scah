@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use scah::{Attribute, Query, Save, parse, query};
+use scah::{Attribute, Query, QuerySpec, Save, Store, parse, query};
 const HTML: &str = r#"
 <!DOCTYPE html>
 <html>
@@ -219,4 +219,94 @@ fn test_macro_static_query() {
         count(&runtime_store, "> a[href]")
     );
     assert_eq!(count(&static_store, "span"), count(&runtime_store, "span"));
+}
+
+fn collect_query_contents<'html, 'query>(
+    store: &Store<'html, 'query>,
+    selector: &str,
+) -> Vec<(String, Option<String>, Option<String>, Option<String>)> {
+    store
+        .get(selector)
+        .into_iter()
+        .flatten()
+        .map(|element| {
+            (
+                element.name.to_string(),
+                element.attribute(store, "href").map(str::to_string),
+                element.inner_html.map(str::trim).map(str::to_string),
+                element.text_content(store).map(str::to_string),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn test_macro_query_matches_runtime_query_structure() {
+    let static_query = query! {
+        all("main > section", Save::all()) => {
+            all("> a[href]", Save::all()),
+            first("span", Save::only_text_content()),
+        }
+    };
+    let runtime_query = Query::all("main > section", Save::all())
+        .unwrap()
+        .then(|ctx| {
+            Ok([
+                ctx.all("> a[href]", Save::all())?,
+                ctx.first("span", Save::only_text_content())?,
+            ])
+        })
+        .unwrap()
+        .build();
+
+    assert_eq!(static_query.states().len(), runtime_query.states().len());
+    for (static_state, runtime_state) in static_query.states().iter().zip(runtime_query.states()) {
+        assert_eq!(static_state.guard, runtime_state.guard);
+        assert_eq!(static_state.predicate.name, runtime_state.predicate.name);
+        assert_eq!(static_state.predicate.id, runtime_state.predicate.id);
+        assert_eq!(static_state.predicate.class, runtime_state.predicate.class);
+        assert_eq!(
+            static_state.predicate.attributes.as_slice(),
+            runtime_state.predicate.attributes.as_slice()
+        );
+    }
+
+    assert_eq!(static_query.queries(), runtime_query.queries());
+    assert_eq!(
+        static_query.exit_at_section_end(),
+        runtime_query.exit_at_section_end()
+    );
+}
+
+#[test]
+fn test_macro_query_matches_runtime_store_contents() {
+    let static_query = query! {
+        all("main > section", Save::all()) => {
+            all("> a[href]", Save::all()),
+            first("span", Save::only_text_content()),
+        }
+    };
+    let runtime_query = Query::all("main > section", Save::all())
+        .unwrap()
+        .then(|ctx| {
+            Ok([
+                ctx.all("> a[href]", Save::all())?,
+                ctx.first("span", Save::only_text_content())?,
+            ])
+        })
+        .unwrap()
+        .build();
+
+    let static_queries = [static_query];
+    let runtime_queries = [runtime_query];
+    let static_store = parse(HTML, &static_queries);
+    let runtime_store = parse(HTML, &runtime_queries);
+
+    for selector in ["main > section", "> a[href]", "span"] {
+        assert_eq!(
+            collect_query_contents(&static_store, selector),
+            collect_query_contents(&runtime_store, selector),
+            "selector mismatch for {selector}"
+        );
+    }
 }

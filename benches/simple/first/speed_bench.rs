@@ -45,7 +45,9 @@ fn bench_comparison(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("scah", size), &content, |b, html| {
             b.iter(|| {
-                let queries = &[Query::first(black_box(QUERY), Save::all()).build()];
+                let queries = &[Query::first(black_box(QUERY), Save::all())
+                    .expect("simple bench selector should parse")
+                    .build()];
 
                 let store = parse(&html, queries);
 

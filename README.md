@@ -81,6 +81,35 @@ for section in store.get("main > section").unwrap() {
 
 If selectors come from user input, `Query::all(...)` and `Query::first(...)` return `Result`, so malformed selectors surface as `SelectorParseError`. For fixed selectors in examples or tests, use `.expect(...)` explicitly if you want panic-on-invalid-selector behavior.
 
+#### Compile-time queries with `query!`
+
+For selectors that are known at compile time, prefer the `query!` macro. It validates the selector tree during compilation and emits a `StaticQuery` backed by inline arrays instead of heap-allocated query storage.
+
+```rust
+use scah::{Save, parse, query};
+
+let html = r#"
+    <article>
+        <h1>Title</h1>
+        <a href="/one">One</a>
+        <a href="/two">Two</a>
+    </article>
+"#;
+
+let query = query! {
+    all("article", Save::none()) => {
+        first("h1", Save::only_text_content()),
+        all("a[href]", Save::all()),
+    }
+};
+
+let store = parse(html, &[query]);
+assert_eq!(store.get("article").unwrap().count(), 1);
+assert_eq!(store.get("a[href]").unwrap().count(), 2);
+```
+
+Use the runtime builder when selectors come from config, CLI input, HTTP payloads, or other dynamic sources. Use `query!` when the selector tree is authored in Rust code and should fail at compile time if it becomes invalid.
+
 #### `Save` options
 
 Control what data is captured per selector:
@@ -113,6 +142,19 @@ Control what data is captured per selector:
 
 #### Benchmarks
 ![Criterion BenchMarks](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/criterion_bench.png)
+
+The repository includes two Rust benchmark tracks:
+
+- Cross-library comparisons for simple `all` and `first` selectors.
+- Runtime-builder vs `query!` macro comparisons to measure query-construction overhead separately from execution.
+
+Run them with:
+
+```bash
+cargo bench -p scah-benches --bench speed_bench_simple_all
+cargo bench -p scah-benches --bench speed_bench_simple_first
+cargo bench -p scah-benches --bench speed_bench_macro_queries
+```
 
 ### Python
 ```bash
@@ -155,3 +197,13 @@ const query = Query.all('main > section', { innerHtml: true, textContent: true }
 
 const store = parse(html, [query]);
 ```
+
+## Codebase layout
+
+The workspace is split by responsibility:
+
+- `crates/scah`: public Rust API, parser entry points, store types, and re-exports.
+- `crates/scah-query-ir`: selector parsing, compiled transitions, query builders, and shared query traits.
+- `crates/scah-macros`: the `query!` proc macro for compile-time query construction.
+- `crates/bindings/scah-python` and `crates/bindings/scah-node`: thin language bindings over the Rust core.
+- `benches/`: Criterion and Gungraun benchmarks, including macro-query benchmarks.
