@@ -34,14 +34,6 @@ fn bench_scah(html: String) {
         black_box(&element.text_content(&store));
     }
 }
-// use scah::fake_parse;
-// #[library_benchmark]
-// #[bench::scah_no_store(setup_html())]
-// fn bench_scah_no_store(html: String) {
-//     let queries = &[Query::all(QUERY, Save::none()).build()];
-
-//     let res = black_box(fake_parse(&html, queries));
-// }
 
 use scraper::{Html, Selector};
 #[library_benchmark]

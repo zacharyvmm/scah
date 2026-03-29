@@ -44,17 +44,6 @@ fn bench_comparison(c: &mut Criterion) {
             })
         });
 
-        // group.bench_with_input(
-        //     BenchmarkId::new("scah_no_store", size),
-        //     &content,
-        //     |b, html| {
-        //         b.iter(|| {
-        //             let queries = &[Query::all(black_box(QUERY), Save::none()).build()];
-        //             let res = black_box(fake_parse(html, queries));
-        //         })
-        //     },
-        // );
-
         group.bench_with_input(BenchmarkId::new("tl", size), &content, |b, html| {
             b.iter(|| {
                 let dom = tl::parse(html, ParserOptions::default()).unwrap();

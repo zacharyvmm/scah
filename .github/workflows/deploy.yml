@@ -11,14 +11,14 @@ jobs:
     uses: ./.github/workflows/tests.yml
 
   rust-publish:
-    name: Publish Cargo package
+    name: Publish Cargo crate
     needs: [test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Publish to crates.io
-        run: cargo publish
+      - name: Publish scah
+        run: cargo publish --manifest-path crates/scah/Cargo.toml
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
 
@@ -44,13 +44,13 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist
           sccache: 'true'
-          working-directory: python
+          working-directory: crates/bindings/scah-python
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: python-wheels-${{ matrix.os }}-${{ matrix.target }}
-          path: python/dist
+          path: crates/bindings/scah-python/dist
 
   python-publish:
     name: Publish Python wheels to PyPI
@@ -83,9 +83,9 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-26-intel
+          - host: macos-13
             target: x86_64-apple-darwin
-          - host: macos-26
+          - host: macos-14
             target: aarch64-apple-darwin
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -116,16 +116,16 @@ jobs:
             target
           key: ${{ runner.os }}-node-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install dependencies
-        working-directory: nodejs
+        working-directory: crates/bindings/scah-node
         run: bun install
       - name: Build addon
-        working-directory: nodejs
+        working-directory: crates/bindings/scah-node
         run: bun run build
       - name: Upload addon artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nodejs-addon-${{ matrix.settings.target }}
-          path: nodejs/*.node
+          path: crates/bindings/scah-node/*.node
           if-no-files-found: error
 
   nodejs-publish:
@@ -147,21 +147,21 @@ jobs:
         with:
           bun-version: latest
       - name: Install dependencies
-        working-directory: nodejs
+        working-directory: crates/bindings/scah-node
         run: bun install
       - name: Download all built addons
         uses: actions/download-artifact@v4
         with:
           pattern: nodejs-addon-*
-          path: nodejs/artifacts
+          path: crates/bindings/scah-node/artifacts
           merge-multiple: true
       - name: Move artifacts
-        working-directory: nodejs
+        working-directory: crates/bindings/scah-node
         run: |
           bunx napi create-npm-dirs
           bun run artifacts
       - name: Publish to npm
-        working-directory: nodejs
+        working-directory: crates/bindings/scah-node
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
