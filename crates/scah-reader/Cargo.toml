@@ -1,9 +1,12 @@
 [package]
 name = "scah-reader"
-version = "0.0.14"
+version = "0.0.15"
 edition = "2024"
 license = "MIT"
-publish = false
+description = "Streaming XML and HTML reader primitives used by scah."
+repository = "https://github.com/zacharyvmm/scah"
+homepage = "https://github.com/zacharyvmm/scah"
+documentation = "https://docs.rs/scah-reader"
 
 [lints.clippy]
 let-and-return = "allow"

@@ -10,9 +10,45 @@ jobs:
     name: Run Tests
     uses: ./.github/workflows/tests.yml
 
-  rust-publish:
-    name: Publish Cargo crate
+  rust-publish-reader:
+    name: Publish scah-reader
     needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish scah-reader
+        run: cargo publish --manifest-path crates/scah-reader/Cargo.toml
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+
+  rust-publish-query-ir:
+    name: Publish scah-query-ir
+    needs: [test, rust-publish-reader]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish scah-query-ir
+        run: cargo publish --manifest-path crates/scah-query-ir/Cargo.toml
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+
+  rust-publish-macros:
+    name: Publish scah-macros
+    needs: [test, rust-publish-query-ir]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish scah-macros
+        run: cargo publish --manifest-path crates/scah-macros/Cargo.toml
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+
+  rust-publish:
+    name: Publish scah
+    needs: [test, rust-publish-reader, rust-publish-query-ir, rust-publish-macros]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -83,9 +119,9 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-13
+          - host: macos-26-intel
             target: x86_64-apple-darwin
-          - host: macos-14
+          - host: macos-26
             target: aarch64-apple-darwin
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
