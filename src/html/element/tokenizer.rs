@@ -1,4 +1,4 @@
-use crate::utils::Reader;
+use crate::support::Reader;
 
 #[derive(Debug, PartialEq)]
 pub enum ElementAttributeToken<'a> {

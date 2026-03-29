@@ -2,13 +2,13 @@ use std::fmt::Debug;
 
 use super::executor::QueryExecutor;
 use crate::XHtmlElement;
-use crate::css::selector::Query;
+use crate::query::compiler::Query;
 use crate::store::Store;
 
 pub(crate) struct DocumentPosition {
     pub reader_position: usize,
     pub text_content_position: usize,
-    pub element_depth: crate::selection_engine::DepthSize,
+    pub element_depth: crate::engine::DepthSize,
 }
 
 //type Runner<'query, E> = SmallVec<[QueryExecutor<'query, 'query, E>; 1]>;
@@ -51,7 +51,7 @@ impl<'html, 'query: 'html> QueryMultiplexer<'query> {
         &mut self,
         xhtml_element: &'html str,
         position: &DocumentPosition,
-        reader: &crate::utils::Reader<'html>,
+        reader: &crate::support::Reader<'html>,
         store: &mut Store<'html, 'query>,
     ) -> bool {
         let mut remove_indices = vec![];

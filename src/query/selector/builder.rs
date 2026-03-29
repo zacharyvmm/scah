@@ -1,6 +1,6 @@
 use super::string_search::AttributeSelectionKind;
-use crate::css::selector::SelectorParseError;
-use crate::utils::{QuoteKind, Reader};
+use crate::query::compiler::SelectorParseError;
+use crate::support::{QuoteKind, Reader};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct AttributeSelection<'query> {

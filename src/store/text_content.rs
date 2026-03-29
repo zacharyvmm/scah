@@ -1,4 +1,4 @@
-use crate::utils::Reader;
+use crate::support::Reader;
 use std::ops::Range;
 
 #[derive(Debug, PartialEq)]

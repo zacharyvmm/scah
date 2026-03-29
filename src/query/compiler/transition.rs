@@ -1,7 +1,7 @@
 use crate::XHtmlElement;
-use crate::css::element::{Combinator, ElementPredicate, Lexer};
-use crate::css::selector::SelectorParseError;
-use crate::utils::Reader;
+use crate::query::compiler::SelectorParseError;
+use crate::query::selector::{Combinator, ElementPredicate, Lexer};
+use crate::support::Reader;
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Transition<'query> {
@@ -35,8 +35,8 @@ impl<'query> Transition<'query> {
     pub fn next(
         &self,
         element: &XHtmlElement,
-        current_depth: crate::selection_engine::DepthSize,
-        last_depth: crate::selection_engine::DepthSize,
+        current_depth: crate::engine::DepthSize,
+        last_depth: crate::engine::DepthSize,
     ) -> bool {
         assert!(
             current_depth >= last_depth,
@@ -50,8 +50,8 @@ impl<'query> Transition<'query> {
     pub fn back<'html>(
         &self,
         _element: &'html str,
-        current_depth: crate::selection_engine::DepthSize,
-        last_depth: crate::selection_engine::DepthSize,
+        current_depth: crate::engine::DepthSize,
+        last_depth: crate::engine::DepthSize,
     ) -> bool {
         // dbg_print!("'{last_depth}' == '{current_depth}'");
         last_depth == current_depth

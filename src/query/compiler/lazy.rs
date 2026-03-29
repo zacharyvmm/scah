@@ -237,8 +237,7 @@ mod tests {
 
     use super::Transition;
     use super::*;
-    use crate::css::element::Combinator;
-    use crate::css::element::ElementPredicate;
+    use crate::query::selector::{Combinator, ElementPredicate};
     use crate::{Query, Save, SelectionKind};
 
     #[test]

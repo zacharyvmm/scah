@@ -4,7 +4,7 @@ use super::builder::{QueryBuilder, SelectionKind};
 use super::error::SelectorParseError;
 use super::transition::Transition;
 use crate::Save;
-use crate::css::element::Combinator;
+use crate::query::selector::Combinator;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Position {
@@ -276,17 +276,17 @@ impl<'query> Query<'query> {
         let is_last_query = self.queries.len() - 1 == position.selection;
         let is_last_state = self.queries[position.selection].range.end - 1 == position.state;
 
-        is_last_query & is_last_state
+        is_last_query && is_last_state
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::css::element::AttributeSelection;
-    use crate::css::element::AttributeSelectionKind;
-    use crate::css::element::Combinator;
-    use crate::css::element::ElementPredicate;
-    use crate::css::selector::transition::Transition;
+    use crate::query::compiler::transition::Transition;
+    use crate::query::selector::AttributeSelection;
+    use crate::query::selector::AttributeSelectionKind;
+    use crate::query::selector::Combinator;
+    use crate::query::selector::ElementPredicate;
     use crate::{Query, QuerySection, Save, SelectionKind};
 
     #[test]

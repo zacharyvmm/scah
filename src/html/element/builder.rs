@@ -1,5 +1,5 @@
 use super::tokenizer::ElementAttributeToken;
-use crate::utils::Reader;
+use crate::support::Reader;
 
 /// A key-value pair representing an HTML element attribute.
 ///

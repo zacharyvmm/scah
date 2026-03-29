@@ -1,6 +1,6 @@
 use super::builder::ElementPredicate;
-use crate::css::selector::SelectorParseError;
-use crate::utils::Reader;
+use crate::query::compiler::SelectorParseError;
+use crate::support::Reader;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Combinator {

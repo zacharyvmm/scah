@@ -1,12 +1,12 @@
 use std::fmt::Debug;
 
+use super::cursor::CursorOps;
 use super::cursor::{Cursor, ScopedCursor};
 use super::multiplexer::DocumentPosition;
-use crate::css::selector::{Query, Save};
-use crate::selection_engine::cursor::CursorOps;
+use crate::query::compiler::{Query, Save};
 use crate::store::ElementId;
 use crate::store::Store;
-use crate::utils::Reader;
+use crate::support::Reader;
 use crate::{XHtmlElement, dbg_print};
 
 type StartIdx = Option<usize>;
@@ -206,7 +206,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
             let section_kind = self
                 .query
                 .get_section_selection_kind(fsm.position.selection);
-            let is_all = matches!(section_kind, crate::css::selector::SelectionKind::All);
+            let is_all = matches!(section_kind, crate::query::compiler::SelectionKind::All);
 
             if is_descendant_combinator && (!last_save_point || is_all) {
                 self.scoped_fsms.push(ScopedCursor::new(
@@ -327,9 +327,9 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::css::selector::{Position, Query, Save};
+    use crate::query::compiler::{Position, Query, Save};
     use crate::store::Store;
-    use crate::utils::Reader;
+    use crate::support::Reader;
     use crate::{Element, XHtmlElement};
     use smallvec::smallvec;
 

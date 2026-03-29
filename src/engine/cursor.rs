@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::XHtmlElement;
-use crate::css::selector::{Position, Query};
+use crate::query::compiler::{Position, Query};
 use smallvec::SmallVec;
 
 use crate::store::ElementId;
@@ -155,8 +155,8 @@ impl<'query, 'html> CursorOps<'query, 'html> for ScopedCursor {
 mod tests {
     use super::{Cursor, CursorOps};
     use crate::Query;
-    use crate::css::selector::Save;
-    use crate::sax::element::builder::XHtmlElement;
+    use crate::html::element::builder::XHtmlElement;
+    use crate::query::compiler::Save;
 
     #[test]
     fn test_fsm_next_descendant() {

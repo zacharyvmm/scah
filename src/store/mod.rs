@@ -1,5 +1,5 @@
 use crate::Attribute;
-use crate::css::selector::QuerySection;
+use crate::query::compiler::QuerySection;
 use std::ops::Range;
 
 mod text_content;
@@ -7,7 +7,7 @@ pub(crate) use text_content::TextContent;
 mod arena;
 mod attributes;
 mod element;
-mod query;
+mod query_node;
 
 pub(crate) use arena::id::Nullable;
 use arena::span::Span;
@@ -17,7 +17,7 @@ pub use arena::{
 };
 
 pub use element::Element;
-pub use query::QueryNode;
+pub use query_node::QueryNode;
 
 /// The result set returned by [`parse`](crate::parse).
 ///

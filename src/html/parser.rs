@@ -1,9 +1,9 @@
 use super::element::builder::XHtmlTag;
 use crate::XHtmlElement;
 use crate::dbg_print;
-use crate::selection_engine::multiplexer::{DocumentPosition, QueryMultiplexer};
+use crate::engine::multiplexer::{DocumentPosition, QueryMultiplexer};
 use crate::store::Store;
-use crate::utils::Reader;
+use crate::support::Reader;
 
 pub struct XHtmlParser<'html, 'query> {
     position: DocumentPosition,
@@ -162,10 +162,10 @@ mod tests {
 
     use super::*;
     use crate::Attribute;
-    use crate::css::selector::{Query, Save};
-    use crate::selection_engine::multiplexer::QueryMultiplexer;
+    use crate::engine::multiplexer::QueryMultiplexer;
     use crate::store::Element;
-    use crate::utils::Reader;
+    use crate::support::Reader;
+    use crate::{Query, Save};
     use pretty_assertions::assert_eq;
 
     const BASIC_HTML: &str = r#"

@@ -96,21 +96,21 @@
 //! | **Adjacent sibling** | `h1 + p` | Coming soon |
 //! | **General sibling** | `h1 ~ p` | Coming soon |
 
-mod css;
-mod sax;
-mod selection_engine;
+mod engine;
+mod html;
+mod query;
 mod store;
-mod utils;
+mod support;
 
-pub use css::selector::lazy;
-pub use css::selector::{
+pub use engine::multiplexer::QueryMultiplexer;
+pub use html::element::builder::{Attribute, XHtmlElement};
+pub use html::parser::XHtmlParser;
+pub use query::compiler::lazy;
+pub use query::compiler::{
     Query, QueryBuilder, QueryFactory, QuerySection, Save, SelectionKind, SelectorParseError,
 };
-pub use sax::element::builder::{Attribute, XHtmlElement};
-pub use sax::parser::XHtmlParser;
-pub use selection_engine::multiplexer::QueryMultiplexer;
 pub use store::{Element, ElementId, Store};
-pub use utils::Reader;
+pub use support::Reader;
 
 /// Parse an HTML string against one or more pre-built [`Query`] objects and
 /// return a [`Store`] containing all matched elements.
