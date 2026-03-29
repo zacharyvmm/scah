@@ -33,10 +33,11 @@ fn bench_runtime_all(html: String) {
 
     let queries = [query];
     let store = parse(&html, &queries);
-    black_box(store.get("main > article.post").unwrap().count());
-    black_box(store.get("> section > a[href]").unwrap().count());
-    black_box(store.get("h1").unwrap().count());
-    black_box(store.get("> section > span").unwrap().count());
+    for article in store.get("main > article.post").unwrap() {
+        black_box(article.get(&store, "h1").unwrap().count());
+        black_box(article.get(&store, "> section > a[href]").unwrap().count());
+        black_box(article.get(&store, "> section > span").unwrap().count());
+    }
 }
 
 #[library_benchmark]
@@ -52,10 +53,11 @@ fn bench_macro_all(html: String) {
 
     let queries = [query];
     let store = parse(&html, &queries);
-    black_box(store.get("main > article.post").unwrap().count());
-    black_box(store.get("> section > a[href]").unwrap().count());
-    black_box(store.get("h1").unwrap().count());
-    black_box(store.get("> section > span").unwrap().count());
+    for article in store.get("main > article.post").unwrap() {
+        black_box(article.get(&store, "h1").unwrap().count());
+        black_box(article.get(&store, "> section > a[href]").unwrap().count());
+        black_box(article.get(&store, "> section > span").unwrap().count());
+    }
 }
 
 #[library_benchmark]
@@ -74,9 +76,10 @@ fn bench_runtime_first(html: String) {
 
     let queries = [query];
     let store = parse(&html, &queries);
-    black_box(store.get("main > article.post").unwrap().count());
-    black_box(store.get("h1").unwrap().count());
-    black_box(store.get("> section > a[href]").unwrap().count());
+    for article in store.get("main > article.post").unwrap() {
+        black_box(article.get(&store, "h1").unwrap().count());
+        black_box(article.get(&store, "> section > a[href]").unwrap().count());
+    }
 }
 
 #[library_benchmark]
@@ -91,9 +94,10 @@ fn bench_macro_first(html: String) {
 
     let queries = [query];
     let store = parse(&html, &queries);
-    black_box(store.get("main > article.post").unwrap().count());
-    black_box(store.get("h1").unwrap().count());
-    black_box(store.get("> section > a[href]").unwrap().count());
+    for article in store.get("main > article.post").unwrap() {
+        black_box(article.get(&store, "h1").unwrap().count());
+        black_box(article.get(&store, "> section > a[href]").unwrap().count());
+    }
 }
 
 library_benchmark_group!(
