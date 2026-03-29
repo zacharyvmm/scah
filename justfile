@@ -9,10 +9,10 @@ build-rust:
     cargo build
 
 build-node:
-    cd nodejs && bun run build
+    cd crates/bindings/scah-node && bun run build
 
 build-python:
-    cd python && uv run maturin build
+    cd crates/bindings/scah-python && uv run maturin build
 
 test: test-rust test-node test-python
 
@@ -20,31 +20,31 @@ test-rust:
     cargo test --all-targets --all-features
 
 test-node:
-    cd nodejs && bun test
+    cd crates/bindings/scah-node && bun test
 
 test-python:
-    cd python && uv run pytest
+    cd crates/bindings/scah-python && uv run pytest
 
 format:
     cargo fmt --all
-    cd nodejs && bun run format
+    cd crates/bindings/scah-node && bun run format
 
 lint:
     cargo clippy --all-targets --all-features -- -D warnings
-    cd nodejs && bun run lint
+    cd crates/bindings/scah-node && bun run lint
 
 bench-rust:
     cargo bench -p scah-benches
 
 bench-rust-criterion:
     cargo criterion --message-format=json >> criterion.json
-    python3 ./python/benches/utils/criterion_figure.py ./criterion.json
+    python3 ./crates/bindings/scah-python/benches/utils/criterion_figure.py ./criterion.json
 
 bench-node:
-    cd nodejs && bun run bench
+    cd crates/bindings/scah-node && bun run bench
 
 bench-python:
-    cd python && uv run --all-extras poe bench
+    cd crates/bindings/scah-python && uv run --all-extras poe bench
 
 bump new_version:
     just bump-rust "{{new_version}}"
@@ -57,14 +57,14 @@ trigger-release new_version:
     git push origin v{{new_version}}
 
 bump-rust new_version:
-    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' Cargo.toml
+    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/scah/Cargo.toml
     sed -i 's/^scah = "[^"]*"/scah = "{{new_version}}"/' README.md
 
 bump-node new_version:
-    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' nodejs/Cargo.toml
-    sed -i 's/^  "version": "[^"]*",/  "version": "{{new_version}}",/' nodejs/package.json
-    sed -Ei '/^  "optionalDependencies": \{/,/^  \}/ s/^    ("@zacharymm\/scah-[^"]+": )"[^"]+"(,?)$/    \1"{{new_version}}"\2/' nodejs/package.json
+    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/bindings/scah-node/Cargo.toml
+    sed -i 's/^  "version": "[^"]*",/  "version": "{{new_version}}",/' crates/bindings/scah-node/package.json
+    sed -Ei '/^  "optionalDependencies": \{/,/^  \}/ s/^    ("@zacharymm\/scah-[^"]+": )"[^"]+"(,?)$/    \1"{{new_version}}"\2/' crates/bindings/scah-node/package.json
 
 bump-python new_version:
-    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' python/Cargo.toml
-    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' python/pyproject.toml
+    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/bindings/scah-python/Cargo.toml
+    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/bindings/scah-python/pyproject.toml

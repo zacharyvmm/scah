@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-scah = { path = ".." }
+scah = { path = "../crates/scah" }
 
 # Benchmarking Tools
 gungraun = "0.17"

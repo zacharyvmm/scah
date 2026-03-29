@@ -13,11 +13,7 @@ napi        = "3.0.0"
 napi-derive = "3.0.0"
 
   [dependencies.scah]
-  path = ".."
+  path = "../../scah"
 
 [build-dependencies]
 napi-build = "2"
-
-[profile.release]
-lto   = true
-strip = "symbols"
