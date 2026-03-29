@@ -72,6 +72,7 @@ bump-rust new_version:
     sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/scah-query-ir/Cargo.toml
     sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/scah-macros/Cargo.toml
     sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/scah/Cargo.toml
+    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' benches/Cargo.toml
     sed -i 's/^scah = "[^"]*"/scah = "{{new_version}}"/' README.md
 
 bump-node new_version:
