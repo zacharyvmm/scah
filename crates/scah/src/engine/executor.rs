@@ -43,15 +43,18 @@ type EndTagEventVec = Vec<DeferredSave>;
 /// 3. **Pruning**: `ScopedCursor`s have a `scope_depth`. When the StAX parser emits
 ///    a close tag that drops the document depth below the cursor's scope, that NFA
 ///    thread is killed.
-pub struct QueryExecutor<'a, 'query> {
-    pub(crate) query: &'a dyn QuerySpec<'query>,
+pub struct QueryExecutor<'a, Q> {
+    pub(crate) query: &'a Q,
     pub(crate) fsm: Cursor,
     pub(crate) scoped_fsms: ScopedCursorVec,
     pub(crate) on_close_tag_events: EndTagEventVec,
 }
 
-impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
-    pub fn new<Q: QuerySpec<'query> + 'a>(query: &'a Q) -> Self {
+impl<'a, 'html, 'query: 'html, Q> QueryExecutor<'a, Q>
+where
+    Q: QuerySpec<'query>,
+{
+    pub fn new(query: &'a Q) -> Self {
         Self {
             query,
             fsm: Cursor::new(),
@@ -61,7 +64,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
     }
 
     fn next_position(
-        tree: &dyn QuerySpec<'query>,
+        tree: &Q,
         list: &mut ScopedCursorVec,
         depth: super::DepthSize,
         fsm: &mut impl CursorOps<'query, 'html>,
@@ -94,7 +97,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
 
     pub fn save_element(
         on_close_tag_events: &mut EndTagEventVec,
-        tree: &dyn QuerySpec<'query>,
+        tree: &Q,
         store: &mut Store<'html, 'query>,
         element: XHtmlElement<'html>,
         &DocumentPosition {

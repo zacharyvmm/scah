@@ -9,21 +9,24 @@ pub(crate) struct DocumentPosition {
     pub element_depth: crate::engine::DepthSize,
 }
 
-//type Runner<'query, E> = SmallVec<[QueryExecutor<'query, 'query, E>; 1]>;
-type Runner<'query> = Vec<QueryExecutor<'query, 'query>>;
+//type Runner<'query, Q> = SmallVec<[QueryExecutor<'query, Q>; 1]>;
+type Runner<'query, Q> = Vec<QueryExecutor<'query, Q>>;
 
-pub struct QueryMultiplexer<'query> {
-    runners: Runner<'query>,
+pub struct QueryMultiplexer<'query, Q> {
+    runners: Runner<'query, Q>,
 }
 
-impl<'html, 'query: 'html> QueryMultiplexer<'query> {
-    pub fn new<Q: QuerySpec<'query>>(queries: &'query [Q]) -> Self {
+impl<'html, 'query: 'html, Q> QueryMultiplexer<'query, Q>
+where
+    Q: QuerySpec<'query>,
+{
+    pub fn new(queries: &'query [Q]) -> Self {
         Self {
             #[allow(clippy::redundant_closure)]
             runners: queries
                 .iter()
                 .map(|query| QueryExecutor::new(query))
-                .collect::<Runner<'query>>(),
+                .collect::<Runner<'query, Q>>(),
         }
     }
 

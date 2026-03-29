@@ -14,19 +14,19 @@ pub struct Cursor {
 }
 
 pub trait CursorOps<'query, 'html> {
-    fn next(
+    fn next<Q: QuerySpec<'query>>(
         &self,
-        tree: &dyn QuerySpec<'query>,
+        tree: &Q,
         depth: super::DepthSize,
         element: &XHtmlElement<'html>,
     ) -> bool;
-    fn back(
+    fn back<Q: QuerySpec<'query>>(
         &self,
-        tree: &dyn QuerySpec<'query>,
+        tree: &Q,
         depth: super::DepthSize,
         element: &'html str,
     ) -> bool;
-    fn step_backward(&mut self, tree: &dyn QuerySpec<'query>);
+    fn step_backward<Q: QuerySpec<'query>>(&mut self, tree: &Q);
 
     fn get_position(&self) -> &Position;
     fn set_position(&mut self, value: Position);
@@ -55,9 +55,9 @@ impl Cursor {
 }
 
 impl<'query, 'html> CursorOps<'query, 'html> for Cursor {
-    fn next(
+    fn next<Q: QuerySpec<'query>>(
         &self,
-        tree: &dyn QuerySpec<'query>,
+        tree: &Q,
         depth: super::DepthSize,
         element: &XHtmlElement,
     ) -> bool {
@@ -66,13 +66,13 @@ impl<'query, 'html> CursorOps<'query, 'html> for Cursor {
         fsm.next(element, depth, last_depth)
     }
 
-    fn back(&self, tree: &dyn QuerySpec<'query>, depth: super::DepthSize, element: &str) -> bool {
+    fn back<Q: QuerySpec<'query>>(&self, tree: &Q, depth: super::DepthSize, element: &str) -> bool {
         let fsm = tree.get_transition(self.position.state);
         let last_depth = *self.match_stack.last().unwrap_or(&0);
         fsm.back(element, depth, last_depth)
     }
 
-    fn step_backward(&mut self, tree: &dyn QuerySpec<'query>) {
+    fn step_backward<Q: QuerySpec<'query>>(&mut self, tree: &Q) {
         self.match_stack.pop();
 
         self.position.back(tree);
@@ -125,9 +125,9 @@ impl ScopedCursor {
 }
 
 impl<'query, 'html> CursorOps<'query, 'html> for ScopedCursor {
-    fn next(
+    fn next<Q: QuerySpec<'query>>(
         &self,
-        tree: &dyn QuerySpec<'query>,
+        tree: &Q,
         depth: super::DepthSize,
         element: &XHtmlElement,
     ) -> bool {
@@ -135,7 +135,7 @@ impl<'query, 'html> CursorOps<'query, 'html> for ScopedCursor {
         fsm.next(element, depth, self.scope_depth)
     }
 
-    fn back(&self, tree: &dyn QuerySpec<'query>, depth: super::DepthSize, element: &str) -> bool {
+    fn back<Q: QuerySpec<'query>>(&self, tree: &Q, depth: super::DepthSize, element: &str) -> bool {
         let fsm = tree.get_transition(self.position.state);
         fsm.back(element, depth, self.scope_depth)
     }
@@ -161,7 +161,7 @@ impl<'query, 'html> CursorOps<'query, 'html> for ScopedCursor {
     }
 
     fn add_depth(&mut self, _depth: super::DepthSize) {}
-    fn step_backward(&mut self, _tree: &dyn QuerySpec<'query>) {}
+    fn step_backward<Q: QuerySpec<'query>>(&mut self, _tree: &Q) {}
     fn set_end(&mut self, _: bool) {}
 }
 

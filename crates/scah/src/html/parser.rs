@@ -1,20 +1,24 @@
 use super::element::builder::XHtmlTag;
+use crate::QuerySpec;
 use crate::Reader;
 use crate::XHtmlElement;
 use crate::dbg_print;
 use crate::engine::multiplexer::{DocumentPosition, QueryMultiplexer};
 use crate::store::Store;
 
-pub struct XHtmlParser<'html, 'query> {
+pub struct XHtmlParser<'html, 'query, Q> {
     position: DocumentPosition,
-    pub selectors: QueryMultiplexer<'query>,
+    pub selectors: QueryMultiplexer<'query, Q>,
     store: Store<'html, 'query>,
     element: crate::XHtmlElement<'html>,
     in_script: bool,
 }
 
-impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
-    pub fn new(selectors: QueryMultiplexer<'query>) -> Self {
+impl<'html, 'query: 'html, Q> XHtmlParser<'html, 'query, Q>
+where
+    Q: QuerySpec<'query>,
+{
+    pub fn new(selectors: QueryMultiplexer<'query, Q>) -> Self {
         Self {
             position: DocumentPosition {
                 element_depth: 0,
@@ -28,7 +32,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         }
     }
 
-    pub fn with_capacity(selectors: QueryMultiplexer<'query>, capacity: usize) -> Self {
+    pub fn with_capacity(selectors: QueryMultiplexer<'query, Q>, capacity: usize) -> Self {
         Self {
             position: DocumentPosition {
                 element_depth: 0,
