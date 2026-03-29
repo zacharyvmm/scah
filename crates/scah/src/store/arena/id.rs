@@ -5,9 +5,17 @@ const NULL: usize = usize::MAX;
 macro_rules! define_id {
     ($name:ident) => {
         #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
-        pub struct $name(pub usize);
+        pub struct $name(pub(crate) usize);
+
+        impl $name {
+            #[inline(always)]
+            pub fn index(&self) -> usize {
+                self.0
+            }
+        }
 
         impl Nullable for $name {
+            #[inline(always)]
             fn is_null(&self) -> bool {
                 self.0 == NULL
             }

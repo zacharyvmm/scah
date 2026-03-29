@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::{Position, QuerySpec, XHtmlElement};
+use crate::{Position, QuerySectionId, QuerySpec, TransitionId, XHtmlElement};
 use smallvec::SmallVec;
 
 use crate::store::ElementId;
@@ -30,7 +30,7 @@ pub trait CursorOps<'query, 'html> {
 
     fn get_position(&self) -> &Position;
     fn set_position(&mut self, value: Position);
-    fn set_state(&mut self, value: usize);
+    fn set_state(&mut self, value: TransitionId);
 
     fn get_parent(&self) -> ElementId;
     fn set_parent(&mut self, value: ElementId);
@@ -45,8 +45,8 @@ impl Cursor {
         Self {
             parent: ElementId::default(),
             position: Position {
-                selection: 0,
-                state: 0,
+                selection: QuerySectionId(0),
+                state: TransitionId(0),
             },
             match_stack: SmallVec::new(),
             end: false,
@@ -86,7 +86,7 @@ impl<'query, 'html> CursorOps<'query, 'html> for Cursor {
         self.position = value;
     }
 
-    fn set_state(&mut self, value: usize) {
+    fn set_state(&mut self, value: TransitionId) {
         self.position.state = value;
     }
 
@@ -156,7 +156,7 @@ impl<'query, 'html> CursorOps<'query, 'html> for ScopedCursor {
         self.position = value;
     }
 
-    fn set_state(&mut self, value: usize) {
+    fn set_state(&mut self, value: TransitionId) {
         self.position.state = value;
     }
 

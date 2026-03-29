@@ -14,23 +14,26 @@ pub struct PyElement {
 impl PyElement {
     #[getter]
     pub fn name(&self) -> Option<&str> {
-        self.store.elements.get(self.id.0).map(|e| e.name)
+        self.store.elements.get(self.id.index()).map(|e| e.name)
     }
 
     #[getter]
     pub fn class_name(&self) -> Option<&str> {
-        self.store.elements.get(self.id.0).and_then(|e| e.class)
+        self.store
+            .elements
+            .get(self.id.index())
+            .and_then(|e| e.class)
     }
 
     #[getter]
     pub fn id(&self) -> Option<&str> {
-        self.store.elements.get(self.id.0).and_then(|e| e.id)
+        self.store.elements.get(self.id.index()).and_then(|e| e.id)
     }
 
     pub fn get_attribute(&self, key: String) -> Option<&str> {
         self.store
             .elements
-            .get(self.id.0)
+            .get(self.id.index())
             .and_then(|e| e.attribute(&self.store, &key))
     }
 
@@ -40,7 +43,7 @@ impl PyElement {
         let attributes = self
             .store
             .elements
-            .get(self.id.0)
+            .get(self.id.index())
             .and_then(|e| e.attributes(&self.store));
 
         if let Some(attrs) = attributes {
@@ -55,7 +58,7 @@ impl PyElement {
     pub fn inner_html(&self) -> Option<&str> {
         self.store
             .elements
-            .get(self.id.0)
+            .get(self.id.index())
             .and_then(|e| e.inner_html)
     }
 
@@ -63,7 +66,7 @@ impl PyElement {
     pub fn text_content(&self) -> Option<&str> {
         self.store
             .elements
-            .get(self.id.0)
+            .get(self.id.index())
             .and_then(|e| e.text_content(&self.store))
     }
 
@@ -71,7 +74,7 @@ impl PyElement {
         let element = self
             .store
             .elements
-            .get(self.id.0)
+            .get(self.id.index())
             .expect("The Element ID should be valid");
         let children = element.get(&self.store, &query);
         match children {

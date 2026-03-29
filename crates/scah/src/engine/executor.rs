@@ -328,7 +328,9 @@ where
 mod tests {
     use super::*;
     use crate::store::Store;
-    use crate::{Element, Position, Query, Reader, Save, XHtmlElement};
+    use crate::{
+        Element, Position, Query, QuerySectionId, Reader, Save, TransitionId, XHtmlElement,
+    };
     use smallvec::smallvec;
 
     const NULL_PARENT: ElementId = ElementId(usize::MAX);
@@ -363,8 +365,8 @@ mod tests {
             Cursor {
                 parent: NULL_PARENT,
                 position: Position {
-                    selection: 0,
-                    state: 1
+                    selection: QuerySectionId(0),
+                    state: TransitionId(1),
                 },
                 match_stack: smallvec![0],
                 end: false,
@@ -377,8 +379,8 @@ mod tests {
                 scope_depth: 0,
                 parent: NULL_PARENT,
                 position: Position {
-                    selection: 0,
-                    state: 0
+                    selection: QuerySectionId(0),
+                    state: TransitionId(0),
                 },
             }]
         );
@@ -412,16 +414,16 @@ mod tests {
                     scope_depth: 0,
                     parent: NULL_PARENT,
                     position: Position {
-                        selection: 0,
-                        state: 0
+                        selection: QuerySectionId(0),
+                        state: TransitionId(0),
                     },
                 },
                 ScopedCursor {
                     scope_depth: 1,
                     parent: NULL_PARENT,
                     position: Position {
-                        selection: 0,
-                        state: 1
+                        selection: QuerySectionId(0),
+                        state: TransitionId(1),
                     },
                 }
             ]
@@ -461,8 +463,8 @@ mod tests {
             Cursor {
                 parent: NULL_PARENT,
                 position: Position {
-                    selection: 0,
-                    state: 1
+                    selection: QuerySectionId(0),
+                    state: TransitionId(1),
                 },
                 match_stack: smallvec![0],
                 end: false,
@@ -476,8 +478,8 @@ mod tests {
                 scope_depth: 0,
                 parent: NULL_PARENT,
                 position: Position {
-                    selection: 0,
-                    state: 0
+                    selection: QuerySectionId(0),
+                    state: TransitionId(0),
                 },
             }
         );
@@ -509,8 +511,8 @@ mod tests {
             Cursor {
                 parent: ElementId(0),
                 position: Position {
-                    selection: 2,
-                    state: 3
+                    selection: QuerySectionId(2),
+                    state: TransitionId(3),
                 },
                 match_stack: smallvec![0, 1],
                 end: false,
@@ -525,8 +527,8 @@ mod tests {
                     scope_depth: 0,
                     parent: NULL_PARENT,
                     position: Position {
-                        selection: 0,
-                        state: 0
+                        selection: QuerySectionId(0),
+                        state: TransitionId(0),
                     },
                 },
                 // ` p.class`
@@ -534,8 +536,8 @@ mod tests {
                     scope_depth: 1,
                     parent: NULL_PARENT,
                     position: Position {
-                        selection: 0,
-                        state: 1
+                        selection: QuerySectionId(0),
+                        state: TransitionId(1),
                     },
                 },
                 // `> span`
@@ -543,8 +545,8 @@ mod tests {
                     scope_depth: 1,
                     parent: ElementId(0),
                     position: Position {
-                        selection: 1,
-                        state: 2
+                        selection: QuerySectionId(1),
+                        state: TransitionId(2),
                     },
                 },
             ]
@@ -585,8 +587,8 @@ mod tests {
             Cursor {
                 parent: NULL_PARENT,
                 position: Position {
-                    selection: 0,
-                    state: 0
+                    selection: QuerySectionId(0),
+                    state: TransitionId(0),
                 },
                 match_stack: smallvec![0],
                 end: true,
@@ -612,8 +614,8 @@ mod tests {
             Cursor {
                 parent: NULL_PARENT,
                 position: Position {
-                    selection: 0,
-                    state: 0
+                    selection: QuerySectionId(0),
+                    state: TransitionId(0),
                 },
                 match_stack: smallvec![],
                 end: false,

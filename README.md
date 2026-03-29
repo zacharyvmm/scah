@@ -30,9 +30,11 @@ use scah::{Query, Save, parse};
 
 let html = r#"<ul><li><a href="/one">One</a></li><li><a href="/two">Two</a></li></ul>"#;
 
-let queries = &[Query::all("a[href]", Save::all())
-    .expect("valid selector")
-    .build()];
+let queries = &[
+    Query::all("a[href]", Save::all())
+        .expect("valid selector")
+        .build()
+];
 let store = parse(html, queries);
 
 for a in store.get("a[href]").unwrap() {
@@ -63,7 +65,8 @@ let query = Query::all("main > section", Save::all())
     .expect("valid child selectors")
     .build();
 
-let store = parse(html, &[query]);
+let queries = [query];
+let store = parse(html, &queries);
 
 // Access nested results through parent elements
 for section in store.get("main > section").unwrap() {
@@ -71,7 +74,7 @@ for section in store.get("main > section").unwrap() {
 
     if let Some(links) = section.get(&store, "> a[href]") {
         for link in links {
-            println!("  Direct link: {}", link.attribute(&store, "href").unwrap());
+            println!("\tDirect link: {}", link.attribute(&store, "href").unwrap());
         }
     }
 }
@@ -100,8 +103,8 @@ let query = query! {
         all("a[href]", Save::all()),
     }
 };
-
-let store = parse(html, &[query]);
+let queries = [query]; 
+let store = parse(html, &queries);
 let articles = store.get("article").unwrap();
 assert_eq!(articles.len(), 1);
 for article in articles {

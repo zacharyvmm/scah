@@ -137,7 +137,7 @@ fn compile_node<'a>(node: &'a QueryNode) -> Result<QueryBuilder<'a>> {
     }
     .map_err(|err| syn::Error::new(node.selector.span(), err.to_string()))?;
 
-    let current_index = builder.selection.len() - 1;
+    let current_index = scah_query_ir::QuerySectionId(builder.selection.len() - 1);
     for child in &node.children {
         let child_builder = compile_node(child)?;
         builder.append(current_index, child_builder);
@@ -171,7 +171,7 @@ fn expand_query(node: &QueryNode) -> Result<proc_macro2::TokenStream> {
     let sections = compiled.queries.iter().map(query_section_tokens);
     let num_states = compiled.states.len();
     let num_sections = compiled.queries.len();
-    let exit = option_usize_tokens(compiled.exit_at_section_end);
+    let exit = option_query_section_id_tokens(compiled.exit_at_section_end);
 
     Ok(quote! {
         {
@@ -250,16 +250,16 @@ fn query_section_tokens(section: &QuerySection<'_>) -> proc_macro2::TokenStream 
     let source = section.source;
     let save = save_tokens(section.save);
     let kind = selection_kind_tokens(section.kind);
-    let start = section.range.start;
-    let end = section.range.end;
-    let parent = option_usize_tokens(section.parent);
-    let next_sibling = option_usize_tokens(section.next_sibling);
+    let start = section.range.start.index();
+    let end = section.range.end.index();
+    let parent = option_query_section_id_tokens(section.parent);
+    let next_sibling = option_query_section_id_tokens(section.next_sibling);
     quote! {
         ::scah::QuerySection::new_const(
             #source,
             #save,
             #kind,
-            #start..#end,
+            ::scah::TransitionId(#start)..::scah::TransitionId(#end),
             #parent,
             #next_sibling,
         )
@@ -312,9 +312,14 @@ fn option_str_tokens(value: Option<&str>) -> proc_macro2::TokenStream {
     }
 }
 
-fn option_usize_tokens(value: Option<usize>) -> proc_macro2::TokenStream {
+fn option_query_section_id_tokens(
+    value: Option<scah_query_ir::QuerySectionId>,
+) -> proc_macro2::TokenStream {
     match value {
-        Some(value) => quote! { Some(#value) },
+        Some(value) => {
+            let index = value.index();
+            quote! { Some(::scah::QuerySectionId(#index)) }
+        }
         None => quote! { None },
     }
 }

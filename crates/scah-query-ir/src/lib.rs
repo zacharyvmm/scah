@@ -2,8 +2,8 @@ mod query;
 
 pub use query::compiler::lazy;
 pub use query::compiler::{
-    Position, Query, QueryBuilder, QueryFactory, QuerySection, QuerySpec, Save, SelectionKind,
-    SelectorParseError, StaticQuery, Transition,
+    Position, Query, QueryBuilder, QueryFactory, QuerySection, QuerySectionId, QuerySpec, Save,
+    SelectionKind, SelectorParseError, StaticQuery, Transition, TransitionId,
 };
 pub use query::selector::{
     Attribute, AttributeSelection, AttributeSelectionKind, AttributeSelections, ClassSelections,

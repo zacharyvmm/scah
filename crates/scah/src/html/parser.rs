@@ -671,7 +671,7 @@ mod tests {
         let mut reader = Reader::from_bytes(html.as_bytes());
 
         let query = Query::first("a", Save::all()).unwrap().build();
-        assert_eq!(query.exit_at_section_end, Some(0));
+        assert_eq!(query.exit_at_section_end, Some(crate::QuerySectionId(0)));
         let queries = &[query];
 
         let manager = QueryMultiplexer::new(queries);
