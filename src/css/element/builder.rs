@@ -1,4 +1,5 @@
 use super::string_search::AttributeSelectionKind;
+use crate::css::selector::SelectorParseError;
 use crate::utils::{QuoteKind, Reader};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -34,6 +35,12 @@ impl<'query> KeyValueAttributeSelection<'query> {
 
 impl<'query> From<&mut Reader<'query>> for AttributeSelection<'query> {
     fn from(reader: &mut Reader<'query>) -> Self {
+        Self::try_from(reader).unwrap()
+    }
+}
+
+impl<'query> AttributeSelection<'query> {
+    fn try_from(reader: &mut Reader<'query>) -> Result<Self, SelectorParseError> {
         let mut position = reader.get_position();
 
         let mut opened_quote: Option<QuoteKind> = None;
@@ -48,7 +55,7 @@ impl<'query> From<&mut Reader<'query>> for AttributeSelection<'query> {
             value: None,
         };
 
-        while let Some(token) = SelectionAttributeToken::next(reader) {
+        while let Some(token) = SelectionAttributeToken::next(reader)? {
             match token {
                 SelectionAttributeToken::Quote(kind) => {
                     if opened_quote.is_none() {
@@ -87,10 +94,23 @@ impl<'query> From<&mut Reader<'query>> for AttributeSelection<'query> {
                 }
 
                 SelectionAttributeToken::Equal => {
-                    assert!(kv.name.is_some());
-                    assert!(kv.value.is_none());
+                    if kv.name.is_none() {
+                        return Err(SelectorParseError::new(
+                            "attribute selector is missing a key",
+                            reader.get_position(),
+                        ));
+                    }
+                    if kv.value.is_some() {
+                        return Err(SelectorParseError::new(
+                            "attribute selector has multiple values",
+                            reader.get_position(),
+                        ));
+                    }
                     if equal {
-                        panic!("Equal should not have been assigned twice");
+                        return Err(SelectorParseError::new(
+                            "attribute selector has multiple '=' tokens",
+                            reader.get_position(),
+                        ));
                     }
                     equal = true;
                 }
@@ -98,16 +118,39 @@ impl<'query> From<&mut Reader<'query>> for AttributeSelection<'query> {
         }
 
         if kv.name.is_none() {
-            panic!("Need to select a attribute by name");
+            return Err(SelectorParseError::new(
+                "attribute selector is missing a key",
+                reader.get_position(),
+            ));
+        }
+        if !is_valid_attribute_name(kv.name.unwrap()) {
+            return Err(SelectorParseError::new(
+                "attribute selector key is invalid",
+                reader.get_position(),
+            ));
+        }
+
+        if opened_quote.is_some() {
+            return Err(SelectorParseError::new(
+                "attribute selector has an unclosed quoted value",
+                reader.get_position(),
+            ));
+        }
+
+        if equal && kv.value.is_none() {
+            return Err(SelectorParseError::new(
+                "attribute selector is missing a value",
+                reader.get_position(),
+            ));
         }
 
         kv.refresh_equal();
 
-        AttributeSelection {
+        Ok(AttributeSelection {
             name: kv.name.unwrap(),
             value: kv.value,
             kind: kv.selection_kind,
-        }
+        })
     }
 }
 
@@ -155,12 +198,22 @@ enum SelectionAttributeToken<'a> {
 }
 
 impl<'a> SelectionAttributeToken<'a> {
-    pub fn next(reader: &mut Reader<'a>) -> Option<Self> {
+    pub fn next(reader: &mut Reader<'a>) -> Result<Option<Self>, SelectorParseError> {
         reader.next_while(b' ');
 
         let start_pos = reader.get_position();
 
-        match reader.next()? {
+        let token = match reader.next() {
+            None => {
+                return Err(SelectorParseError::new(
+                    "attribute selector is missing a closing ']'",
+                    reader.get_position(),
+                ));
+            }
+            Some(token) => token,
+        };
+
+        Ok(match token {
             b'"' => Some(Self::Quote(QuoteKind::DoubleQuoted)),
             b'\'' => Some(Self::Quote(QuoteKind::SingleQuoted)),
             b'=' => Some(Self::Equal),
@@ -179,10 +232,9 @@ impl<'a> SelectionAttributeToken<'a> {
                 reader.next_until_list(&[
                     b' ', b'"', b'\'', b'=', b']', b'~', b'|', b'^', b'$', b'*',
                 ]);
-
                 Some(Self::String(reader.slice(start_pos..reader.get_position())))
             }
-        }
+        })
     }
 }
 
@@ -200,14 +252,21 @@ pub struct ElementPredicate<'a> {
 // 2.1) The parsing logic should continue to use the iterator parttern I have been using.
 // 2.1.1) The flow should look like this => Reader -> Tokenizer -> ElementIterator -> SelectionIterator
 impl<'a> ElementPredicate<'a> {
-    fn parse_attribute(&mut self, reader: &mut Reader<'a>) {
-        let attribute = AttributeSelection::from(reader);
+    fn try_parse_attribute(&mut self, reader: &mut Reader<'a>) -> Result<(), SelectorParseError> {
+        let attribute = AttributeSelection::try_from(reader)?;
         self.attributes.push(attribute);
+        Ok(())
     }
 }
 
 impl<'a> From<&mut Reader<'a>> for ElementPredicate<'a> {
     fn from(reader: &mut Reader<'a>) -> Self {
+        Self::try_from(reader).unwrap()
+    }
+}
+
+impl<'a> ElementPredicate<'a> {
+    pub fn try_from(reader: &mut Reader<'a>) -> Result<Self, SelectorParseError> {
         let mut element = Self {
             name: None,
             id: None,
@@ -220,21 +279,55 @@ impl<'a> From<&mut Reader<'a>> for ElementPredicate<'a> {
         while let Some(word) = SelectionKeyWords::next(reader) {
             match (previous, &word) {
                 (Option::None, SelectionKeyWords::String(name)) => {
-                    assert_eq!(element.name, None);
+                    if !is_valid_selector_name(name) {
+                        return Err(SelectorParseError::new(
+                            "illegal selector token",
+                            reader.get_position().saturating_sub(name.len()),
+                        ));
+                    }
+                    if element.name.is_some() {
+                        return Err(SelectorParseError::new(
+                            "selector has multiple element names",
+                            reader.get_position().saturating_sub(name.len()),
+                        ));
+                    }
                     element.name = Some(*name);
                 }
                 (Some(SelectionKeyWords::ID), SelectionKeyWords::String(id_name)) => {
+                    if !is_valid_selector_name(id_name) {
+                        return Err(SelectorParseError::new(
+                            "missing id string",
+                            reader.get_position().saturating_sub(id_name.len()),
+                        ));
+                    }
                     if element.id.is_none() {
                         element.id = Some(*id_name);
                     }
                 }
                 (Some(SelectionKeyWords::Class), SelectionKeyWords::String(class_name)) => {
+                    if !is_valid_selector_name(class_name) {
+                        return Err(SelectorParseError::new(
+                            "missing class string",
+                            reader.get_position().saturating_sub(class_name.len()),
+                        ));
+                    }
                     // BUG: their is more class that means it should be a list of class
                     element.class = Some(*class_name);
                 }
-                (_, SelectionKeyWords::OpenAttribute) => element.parse_attribute(reader),
+                (_, SelectionKeyWords::OpenAttribute) => element.try_parse_attribute(reader)?,
 
-                (Some(SelectionKeyWords::ID), _) | (Some(SelectionKeyWords::Class), _) => (),
+                (Some(SelectionKeyWords::ID), _) => {
+                    return Err(SelectorParseError::new(
+                        "missing id string",
+                        reader.get_position(),
+                    ));
+                }
+                (Some(SelectionKeyWords::Class), _) => {
+                    return Err(SelectorParseError::new(
+                        "missing class string",
+                        reader.get_position(),
+                    ));
+                }
 
                 (_, _) => (),
             }
@@ -242,8 +335,45 @@ impl<'a> From<&mut Reader<'a>> for ElementPredicate<'a> {
             previous = Some(word);
         }
 
-        element
+        match previous {
+            Some(SelectionKeyWords::ID) => Err(SelectorParseError::new(
+                "missing id string",
+                reader.get_position(),
+            )),
+            Some(SelectionKeyWords::Class) => Err(SelectorParseError::new(
+                "missing class string",
+                reader.get_position(),
+            )),
+            _ if element.name.is_none()
+                && element.id.is_none()
+                && element.class.is_none()
+                && element.attributes.is_empty() =>
+            {
+                Err(SelectorParseError::new(
+                    "missing selector element",
+                    reader.get_position(),
+                ))
+            }
+            _ => Ok(element),
+        }
     }
+}
+
+fn is_valid_selector_name(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn is_valid_attribute_name(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    match bytes.next() {
+        Some(first) if first.is_ascii_alphabetic() || first == b'_' => (),
+        _ => return false,
+    }
+
+    bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 #[cfg(test)]

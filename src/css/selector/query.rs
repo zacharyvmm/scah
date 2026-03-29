@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use super::builder::{QueryBuilder, SelectionKind};
+use super::error::SelectorParseError;
 use super::transition::Transition;
 use crate::Save;
 use crate::css::element::Combinator;
@@ -138,23 +139,26 @@ impl<'query> QuerySection<'query> {
 ///
 /// # Building a Query
 ///
-/// Use [`Query::all`] or [`Query::first`] as entry points, then chain with
-/// [`QueryBuilder::all`], [`QueryBuilder::first`], or [`QueryBuilder::then`],
-/// and finalise with [`QueryBuilder::build`].
+/// Use [`Query::try_all`] or [`Query::try_first`] as the fallible entry points
+/// for user-provided selectors. [`Query::all`] and [`Query::first`] remain as
+/// panicking convenience wrappers. After construction, chain with
+/// [`QueryBuilder::try_all`], [`QueryBuilder::try_first`], or
+/// [`QueryBuilder::then`], and finalise with [`QueryBuilder::build`].
 ///
 /// ```rust
 /// use scah::{Query, Save};
 ///
 /// // Simple: find all <a> tags
-/// let q1 = Query::all("a", Save::all()).build();
+/// let q1 = Query::try_all("a", Save::all())?.build();
 ///
 /// // Compound: find sections, then extract links and text within them
-/// let q2 = Query::all("section", Save::none())
+/// let q2 = Query::try_all("section", Save::none())?
 ///     .then(|s| [
 ///         s.all("a[href]", Save::all()),
 ///         s.first("p",     Save::only_text_content()),
 ///     ])
 ///     .build();
+/// # Ok::<(), scah::SelectorParseError>(())
 /// ```
 #[derive(Debug, PartialEq, Clone)]
 pub struct Query<'query> {
@@ -165,14 +169,12 @@ pub struct Query<'query> {
 }
 
 impl<'query> Query<'query> {
-    /// Start building a query that matches only the **first** element
-    /// satisfying the given CSS selector.
-    ///
-    /// Using `first` enables an early-exit optimisation: once the
-    /// match is found and its content captured, parsing of this branch
-    /// can stop early.
-    pub fn first(query: &'query str, save: Save) -> QueryBuilder<'query> {
-        let states = Transition::generate_transitions_from_string(query);
+    /// Fallible variant of [`Query::first`].
+    pub fn try_first(
+        query: &'query str,
+        save: Save,
+    ) -> Result<QueryBuilder<'query>, SelectorParseError> {
+        let states = Transition::generate_transitions_from_string(query)?;
         let queries = vec![QuerySection::new(
             query,
             save,
@@ -181,10 +183,43 @@ impl<'query> Query<'query> {
             None,
         )];
 
-        QueryBuilder {
+        Ok(QueryBuilder {
             states,
             selection: queries,
-        }
+        })
+    }
+
+    /// Start building a query that matches only the **first** element
+    /// satisfying the given CSS selector.
+    ///
+    /// Using `first` enables an early-exit optimisation: once the
+    /// match is found and its content captured, parsing of this branch
+    /// can stop early.
+    ///
+    /// This convenience wrapper panics on invalid selectors. Prefer
+    /// [`Query::try_first`] for user-provided input.
+    pub fn first(query: &'query str, save: Save) -> QueryBuilder<'query> {
+        Self::try_first(query, save).unwrap_or_else(|err| panic!("invalid query selector: {err}"))
+    }
+
+    /// Fallible variant of [`Query::all`].
+    pub fn try_all(
+        query: &'query str,
+        save: Save,
+    ) -> Result<QueryBuilder<'query>, SelectorParseError> {
+        let states = Transition::generate_transitions_from_string(query)?;
+        let queries = vec![QuerySection::new(
+            query,
+            save,
+            SelectionKind::All,
+            0..states.len(),
+            None,
+        )];
+
+        Ok(QueryBuilder {
+            states,
+            selection: queries,
+        })
     }
 
     /// Start building a query that matches **all** elements satisfying
@@ -201,20 +236,11 @@ impl<'query> Query<'query> {
     ///
     /// let query = Query::all("a[href]", Save::all()).build();
     /// ```
+    ///
+    /// This convenience wrapper panics on invalid selectors. Prefer
+    /// [`Query::try_all`] for user-provided input.
     pub fn all(query: &'query str, save: Save) -> QueryBuilder<'query> {
-        let states = Transition::generate_transitions_from_string(query);
-        let queries = vec![QuerySection::new(
-            query,
-            save,
-            SelectionKind::All,
-            0..states.len(),
-            None,
-        )];
-
-        QueryBuilder {
-            states,
-            selection: queries,
-        }
+        Self::try_all(query, save).unwrap_or_else(|err| panic!("invalid query selector: {err}"))
     }
 
     pub(crate) fn get_transition(&self, state: usize) -> &Transition<'query> {

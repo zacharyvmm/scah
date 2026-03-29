@@ -268,7 +268,7 @@ mod tests {
 
         let queries = &[
             Query::all("p.indent > .bold", Save::none()).build(),
-            Query::all("h1 + .indent #name", Save::none()).build(),
+            Query::all(".indent #name", Save::none()).build(),
         ];
 
         let manager = QueryMultiplexer::new(queries);

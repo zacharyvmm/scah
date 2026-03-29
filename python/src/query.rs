@@ -37,8 +37,13 @@ impl PyQueryBuilder {
     }
 
     fn build(&self) -> PyQuery {
-        let (tape, query) = unsafe { self.builder.clone().to_query() };
-        PyQuery { tape, query }
+        self.try_build().unwrap()
+    }
+
+    fn try_build(&self) -> PyResult<PyQuery> {
+        let (tape, query) = unsafe { self.builder.clone().try_to_query() }
+            .map_err(|err| pyo3::exceptions::PyValueError::new_err(err.to_string()))?;
+        Ok(PyQuery { tape, query })
     }
 }
 

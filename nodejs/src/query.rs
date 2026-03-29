@@ -106,9 +106,10 @@ impl JsQueryBuilder {
     }
 
     #[napi]
-    pub fn build(&self) -> JsQuery {
-        let (_tape, query) = unsafe { self.builder.clone().to_query() };
-        JsQuery { _tape, query }
+    pub fn build(&self) -> Result<JsQuery> {
+        let (_tape, query) = unsafe { self.builder.clone().try_to_query() }
+            .map_err(|err| Error::from_reason(err.to_string()))?;
+        Ok(JsQuery { _tape, query })
     }
 }
 

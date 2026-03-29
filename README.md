@@ -73,6 +73,8 @@ for section in store.get("main > section").unwrap() {
 }
 ```
 
+If selectors come from user input, prefer `Query::try_all(...)` / `Query::try_first(...)` in Rust so malformed selectors return `SelectorParseError` instead of panicking.
+
 #### `Save` options
 
 Control what data is captured per selector:

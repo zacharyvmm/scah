@@ -1,6 +1,7 @@
 use super::transition::Transition;
 use crate::{Query, QueryBuilder, QuerySection};
 
+use super::SelectorParseError;
 use super::builder::{Save, SelectionKind};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -100,6 +101,9 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
         };
         for index in 0..other.queries.len() {
             let query = &mut other.queries[index];
+            if let Some(next_sibling) = query.next_sibling {
+                query.next_sibling = Some(next_sibling + selection_length);
+            }
 
             if let Some(idx) = query.parent {
                 query.parent = Some(idx + selection_length);
@@ -153,7 +157,9 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
 
     /// # Safety
     /// This is for an internal abstraction for bidings.
-    pub unsafe fn to_query<'a>(self) -> (std::sync::Arc<Vec<u8>>, Query<'a>) {
+    pub unsafe fn try_to_query<'a>(
+        self,
+    ) -> Result<(std::sync::Arc<Vec<u8>>, Query<'a>), SelectorParseError> {
         // I need to do this to unsafely get a slice from the String
         let string_tape_size = self.queries.iter().map(|q| q.source.as_ref().len()).sum();
         let mut string_tape = Vec::with_capacity(string_tape_size);
@@ -176,7 +182,7 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
                 }
             };
 
-            let mut string_states = Transition::generate_transitions_from_string(source);
+            let mut string_states = Transition::generate_transitions_from_string(source)?;
             let range = {
                 let start = states.len();
                 states.append(&mut string_states);
@@ -197,14 +203,20 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
             });
         }
 
-        (
+        Ok((
             std::sync::Arc::new(string_tape),
             QueryBuilder {
                 states,
                 selection: queries,
             }
             .build(),
-        )
+        ))
+    }
+
+    /// # Safety
+    /// This is for an internal abstraction for bidings.
+    pub unsafe fn to_query<'a>(self) -> (std::sync::Arc<Vec<u8>>, Query<'a>) {
+        unsafe { self.try_to_query() }.unwrap_or_else(|err| panic!("invalid query selector: {err}"))
     }
 }
 

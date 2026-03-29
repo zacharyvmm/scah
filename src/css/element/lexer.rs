@@ -1,4 +1,5 @@
 use super::builder::ElementPredicate;
+use crate::css::selector::SelectorParseError;
 use crate::utils::Reader;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -69,28 +70,99 @@ impl<'a> Combinator {
 
 pub struct Lexer {}
 impl Lexer {
+    #[cfg(test)]
     pub fn next<'query>(
         reader: &mut Reader<'query>,
     ) -> Option<(Combinator, ElementPredicate<'query>)> {
+        Self::try_next(reader, false).unwrap()
+    }
+
+    pub fn try_next<'query>(
+        reader: &mut Reader<'query>,
+        seen_selector: bool,
+    ) -> Result<Option<(Combinator, ElementPredicate<'query>)>, SelectorParseError> {
         if reader.eof() {
-            return None;
+            return Ok(None);
         }
 
-        // if it doesn't start with a Combinator the default is Combinator:Descendant,
-        // since a selector like `p` is technically a descendant search from the root,
-        // thus the actual query look like `%root% p`
+        let combinator = Self::parse_combinator(reader, seen_selector)?;
+        let element = ElementPredicate::try_from(reader)?;
 
-        let combinator = Combinator::try_from(reader).unwrap_or(Combinator::Descendant);
+        Ok(Some((combinator, element)))
+    }
 
-        let element = ElementPredicate::from(reader);
+    fn parse_combinator<'query>(
+        reader: &mut Reader<'query>,
+        seen_selector: bool,
+    ) -> Result<Combinator, SelectorParseError> {
+        let mut saw_whitespace = false;
+        while let Some(token) = reader.peek() {
+            if !token.is_ascii_whitespace() {
+                break;
+            }
+            saw_whitespace = true;
+            reader.skip();
+        }
 
-        Some((combinator, element))
+        match reader.peek() {
+            None => Err(SelectorParseError::new(
+                "missing selector after combinator",
+                reader.get_position(),
+            )),
+            Some(b'>') => {
+                reader.skip();
+                while let Some(token) = reader.peek() {
+                    if !token.is_ascii_whitespace() {
+                        break;
+                    }
+                    reader.skip();
+                }
+                Ok(Combinator::Child)
+            }
+            Some(b'+') => Err(SelectorParseError::new(
+                "unsupported combinator '+'",
+                reader.get_position(),
+            )),
+            Some(b'~') => Err(SelectorParseError::new(
+                "unsupported combinator '~'",
+                reader.get_position(),
+            )),
+            Some(b'|') => Err(SelectorParseError::new(
+                "unsupported combinator '|'",
+                reader.get_position(),
+            )),
+            Some(_) if saw_whitespace || !seen_selector => Ok(Combinator::Descendant),
+            Some(_) => Ok(Combinator::Descendant),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_whitespace_only_returns_none() {
+        let mut reader = Reader::new("   \n\t  ");
+        assert_eq!(Lexer::try_next(&mut reader, false).unwrap(), None);
+    }
+
+    #[test]
+    fn test_leading_whitespace_uses_descendant_combinator() {
+        let mut reader = Reader::new("   article#main.hero");
+        let (combinator, element) = Lexer::try_next(&mut reader, false).unwrap().unwrap();
+
+        assert_eq!(combinator, Combinator::Descendant);
+        assert_eq!(
+            element,
+            ElementPredicate {
+                name: Some("article"),
+                id: Some("main"),
+                class: Some("hero"),
+                attributes: vec![],
+            }
+        );
+    }
 
     #[test]
     fn test_basic_element_selection_with_combinator() {
@@ -124,33 +196,155 @@ mod tests {
     }
 
     #[test]
-    fn test_combinator_leading_selector() {
+    fn test_unsupported_combinator_leading_selector() {
         let mut reader = Reader::new("~ element#id.class > other#other_id.other_class");
-        let (first_combinator, first_element) = Lexer::next(&mut reader).unwrap();
-        let (second_combinator, second_element) = Lexer::next(&mut reader).unwrap();
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
 
-        assert_eq!(first_combinator, Combinator::SubsequentSibling);
+        assert_eq!(error.message(), "unsupported combinator '~'");
+    }
 
+    #[test]
+    fn test_child_combinator_after_seen_selector() {
+        let mut reader = Reader::new("> span.highlight");
+        let (combinator, element) = Lexer::try_next(&mut reader, true).unwrap().unwrap();
+
+        assert_eq!(combinator, Combinator::Child);
         assert_eq!(
-            first_element,
+            element,
             ElementPredicate {
-                name: Some("element"),
-                id: Some("id"),
-                class: Some("class"),
-                attributes: vec![]
+                name: Some("span"),
+                id: None,
+                class: Some("highlight"),
+                attributes: vec![],
             }
         );
+    }
 
-        assert_eq!(second_combinator, Combinator::Child);
+    #[test]
+    fn test_missing_selector_after_child_combinator() {
+        let mut reader = Reader::new(">   ");
+        let error = Lexer::try_next(&mut reader, true).unwrap_err();
 
-        assert_eq!(
-            second_element,
-            ElementPredicate {
-                name: Some("other"),
-                id: Some("other_id"),
-                class: Some("other_class"),
-                attributes: Vec::new(),
-            }
-        );
+        assert_eq!(error.message(), "missing selector element");
+    }
+
+    #[test]
+    fn test_unsupported_adjacent_sibling_combinator_after_selector() {
+        let mut reader = Reader::new("+ a");
+        let error = Lexer::try_next(&mut reader, true).unwrap_err();
+
+        assert_eq!(error.message(), "unsupported combinator '+'");
+    }
+
+    #[test]
+    fn test_unsupported_namespace_combinator_after_selector() {
+        let mut reader = Reader::new("| a");
+        let error = Lexer::try_next(&mut reader, true).unwrap_err();
+
+        assert_eq!(error.message(), "unsupported combinator '|'");
+    }
+
+    #[test]
+    fn test_illegal_character_bang() {
+        let mut reader = Reader::new("!");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_at() {
+        let mut reader = Reader::new("@");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_dollar() {
+        let mut reader = Reader::new("$");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_percent() {
+        let mut reader = Reader::new("%");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_caret() {
+        let mut reader = Reader::new("^");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_ampersand() {
+        let mut reader = Reader::new("&");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_open_paren() {
+        let mut reader = Reader::new("(");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_close_paren() {
+        let mut reader = Reader::new(")");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_question_mark() {
+        let mut reader = Reader::new("?");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_backtick() {
+        let mut reader = Reader::new("`");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_less_than() {
+        let mut reader = Reader::new("<");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_colon() {
+        let mut reader = Reader::new(":");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
+    }
+
+    #[test]
+    fn test_illegal_character_semicolon() {
+        let mut reader = Reader::new(";");
+        let error = Lexer::try_next(&mut reader, false).unwrap_err();
+
+        assert_eq!(error.message(), "illegal selector token");
     }
 }

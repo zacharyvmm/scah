@@ -103,7 +103,9 @@ mod store;
 mod utils;
 
 pub use css::selector::lazy;
-pub use css::selector::{Query, QueryBuilder, QueryFactory, QuerySection, Save, SelectionKind};
+pub use css::selector::{
+    Query, QueryBuilder, QueryFactory, QuerySection, Save, SelectionKind, SelectorParseError,
+};
 pub use sax::element::builder::{Attribute, XHtmlElement};
 pub use sax::parser::XHtmlParser;
 pub use selection_engine::multiplexer::QueryMultiplexer;
