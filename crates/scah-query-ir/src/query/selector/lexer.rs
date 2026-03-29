@@ -1,6 +1,6 @@
 use super::builder::ElementPredicate;
+use crate::Reader;
 use crate::query::compiler::SelectorParseError;
-use crate::support::Reader;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Combinator {
@@ -140,6 +140,7 @@ impl Lexer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AttributeSelections;
 
     #[test]
     fn test_whitespace_only_returns_none() {
@@ -159,7 +160,7 @@ mod tests {
                 name: Some("article"),
                 id: Some("main"),
                 class: Some("hero"),
-                attributes: vec![],
+                attributes: AttributeSelections::from_static(&[]),
             }
         );
     }
@@ -178,7 +179,7 @@ mod tests {
                 name: Some("element"),
                 id: Some("id"),
                 class: Some("class"),
-                attributes: vec![]
+                attributes: AttributeSelections::from_static(&[])
             }
         );
 
@@ -190,7 +191,7 @@ mod tests {
                 name: Some("other"),
                 id: Some("other_id"),
                 class: Some("other_class"),
-                attributes: Vec::new(),
+                attributes: AttributeSelections::from_static(&[]),
             }
         );
     }
@@ -215,7 +216,7 @@ mod tests {
                 name: Some("span"),
                 id: None,
                 class: Some("highlight"),
-                attributes: vec![],
+                attributes: AttributeSelections::from_static(&[]),
             }
         );
     }

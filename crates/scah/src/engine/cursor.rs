@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 
-use crate::XHtmlElement;
-use crate::query::compiler::{Position, Query};
+use crate::{Position, QuerySpec, XHtmlElement};
 use smallvec::SmallVec;
 
 use crate::store::ElementId;
@@ -17,12 +16,17 @@ pub struct Cursor {
 pub trait CursorOps<'query, 'html> {
     fn next(
         &self,
-        tree: &Query<'query>,
+        tree: &dyn QuerySpec<'query>,
         depth: super::DepthSize,
         element: &XHtmlElement<'html>,
     ) -> bool;
-    fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &'html str) -> bool;
-    fn step_backward(&mut self, tree: &Query<'query>);
+    fn back(
+        &self,
+        tree: &dyn QuerySpec<'query>,
+        depth: super::DepthSize,
+        element: &'html str,
+    ) -> bool;
+    fn step_backward(&mut self, tree: &dyn QuerySpec<'query>);
 
     fn get_position(&self) -> &Position;
     fn set_position(&mut self, value: Position);
@@ -51,19 +55,24 @@ impl Cursor {
 }
 
 impl<'query, 'html> CursorOps<'query, 'html> for Cursor {
-    fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
+    fn next(
+        &self,
+        tree: &dyn QuerySpec<'query>,
+        depth: super::DepthSize,
+        element: &XHtmlElement,
+    ) -> bool {
         let fsm = tree.get_transition(self.position.state);
         let last_depth = *self.match_stack.last().unwrap_or(&0);
         fsm.next(element, depth, last_depth)
     }
 
-    fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
+    fn back(&self, tree: &dyn QuerySpec<'query>, depth: super::DepthSize, element: &str) -> bool {
         let fsm = tree.get_transition(self.position.state);
         let last_depth = *self.match_stack.last().unwrap_or(&0);
         fsm.back(element, depth, last_depth)
     }
 
-    fn step_backward(&mut self, tree: &Query<'query>) {
+    fn step_backward(&mut self, tree: &dyn QuerySpec<'query>) {
         self.match_stack.pop();
 
         self.position.back(tree);
@@ -116,12 +125,17 @@ impl ScopedCursor {
 }
 
 impl<'query, 'html> CursorOps<'query, 'html> for ScopedCursor {
-    fn next(&self, tree: &Query<'query>, depth: super::DepthSize, element: &XHtmlElement) -> bool {
+    fn next(
+        &self,
+        tree: &dyn QuerySpec<'query>,
+        depth: super::DepthSize,
+        element: &XHtmlElement,
+    ) -> bool {
         let fsm = tree.get_transition(self.position.state);
         fsm.next(element, depth, self.scope_depth)
     }
 
-    fn back(&self, tree: &Query<'query>, depth: super::DepthSize, element: &str) -> bool {
+    fn back(&self, tree: &dyn QuerySpec<'query>, depth: super::DepthSize, element: &str) -> bool {
         let fsm = tree.get_transition(self.position.state);
         fsm.back(element, depth, self.scope_depth)
     }
@@ -147,20 +161,19 @@ impl<'query, 'html> CursorOps<'query, 'html> for ScopedCursor {
     }
 
     fn add_depth(&mut self, _depth: super::DepthSize) {}
-    fn step_backward(&mut self, _tree: &Query<'query>) {}
+    fn step_backward(&mut self, _tree: &dyn QuerySpec<'query>) {}
     fn set_end(&mut self, _: bool) {}
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Cursor, CursorOps};
-    use crate::Query;
     use crate::html::element::builder::XHtmlElement;
-    use crate::query::compiler::Save;
+    use crate::{Query, Save};
 
     #[test]
     fn test_fsm_next_descendant() {
-        let query = Query::all("div a", Save::none()).build();
+        let query = Query::all("div a", Save::none()).unwrap().build();
 
         let mut state = Cursor::new();
         let mut next = state.next(

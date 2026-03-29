@@ -17,6 +17,9 @@ path = "src/lib.rs"
 
 [dependencies]
 smallvec = "1.15.1"
+scah-reader = { path = "../scah-reader" }
+scah-query-ir = { path = "../scah-query-ir" }
+scah-macros = { path = "../scah-macros" }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

@@ -97,7 +97,9 @@ impl<'html> Element<'html> {
     /// use scah::{Query, Save, parse};
     ///
     /// let html = r#"<a href="https://example.com">Link</a>"#;
-    /// let queries = &[Query::all("a", Save::all()).build()];
+    /// let queries = &[Query::all("a", Save::all())
+    ///     .expect("valid selector")
+    ///     .build()];
     /// let store = parse(html, queries);
     ///
     /// let a = store.get("a").unwrap().next().unwrap();

@@ -1,5 +1,6 @@
 use super::tokenizer::ElementAttributeToken;
-use crate::support::Reader;
+use crate::Reader;
+use scah_query_ir::{Attribute, IElement};
 
 /// A key-value pair representing an HTML element attribute.
 ///
@@ -12,7 +13,9 @@ use crate::support::Reader;
 /// use scah::{Query, Save, parse};
 ///
 /// let html = r#"<a href="https://example.com" target="_blank">Link</a>"#;
-/// let queries = &[Query::all("a", Save::all()).build()];
+/// let queries = &[Query::all("a", Save::all())
+///     .expect("valid selector")
+///     .build()];
 /// let store = parse(html, queries);
 ///
 /// let a = store.get("a").unwrap().next().unwrap();
@@ -22,16 +25,6 @@ use crate::support::Reader;
 /// assert_eq!(attrs[1].key, "target");
 /// assert_eq!(attrs[1].value, Some("_blank"));
 /// ```
-#[derive(Debug, PartialEq, Clone)]
-pub struct Attribute<'html> {
-    /// The attribute name (e.g. `"href"`, `"class"`, `"data-id"`).
-    pub key: &'html str,
-    /// The attribute value, or `None` for boolean attributes (e.g. `disabled`).
-    pub value: Option<&'html str>,
-}
-
-//pub type Attributes<'html> = SmallVec<[Attribute<'html>, 3]>;
-
 /// An HTML element as parsed from the token stream.
 ///
 /// This is the *parser-level* representation used during streaming.
@@ -183,6 +176,24 @@ impl<'html> XHtmlElement<'html> {
                 attribute_tape.len() - start_len,
             )
         };
+    }
+}
+
+impl<'html> IElement<'html> for XHtmlElement<'html> {
+    fn name(&self) -> &'html str {
+        self.name
+    }
+
+    fn id(&self) -> Option<&'html str> {
+        self.id
+    }
+
+    fn class(&self) -> Option<&'html str> {
+        self.class
+    }
+
+    fn attributes(&self) -> &[Attribute<'html>] {
+        self.attributes
     }
 }
 

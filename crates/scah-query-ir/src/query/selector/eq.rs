@@ -1,9 +1,8 @@
-use super::builder::{AttributeSelection, ElementPredicate};
+use super::builder::{Attribute, AttributeSelection, ElementPredicate, IElement};
 use super::string_search::AttributeSelectionKind;
-use crate::html::element::builder::{Attribute, XHtmlElement};
 
-impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
-    fn eq(&self, other: &Attribute<'b>) -> bool {
+impl<'a> AttributeSelection<'a> {
+    pub fn matches_attribute(&self, other: &Attribute<'_>) -> bool {
         if self.name != other.key {
             return false;
         }
@@ -20,22 +19,22 @@ impl<'a, 'b> PartialEq<Attribute<'b>> for AttributeSelection<'a> {
     }
 }
 
-impl<'a, 'b> PartialEq<XHtmlElement<'b>> for ElementPredicate<'a> {
-    fn eq(&self, other: &XHtmlElement<'b>) -> bool {
+impl<'a> ElementPredicate<'a> {
+    pub fn matches_element<'b, E: IElement<'b>>(&self, other: &E) -> bool {
         if let Some(name) = self.name
-            && name != other.name
+            && name != other.name()
         {
             return false;
         }
 
-        if self.id.is_some() && self.id != other.id {
+        if self.id.is_some() && self.id != other.id() {
             return false;
         }
 
         if self.class.is_some()
-            && (other.class.is_none()
+            && (other.class().is_none()
                 || !other
-                    .class
+                    .class()
                     .unwrap()
                     .split_whitespace()
                     .any(|word| word == self.class.unwrap()))
@@ -43,54 +42,75 @@ impl<'a, 'b> PartialEq<XHtmlElement<'b>> for ElementPredicate<'a> {
             return false;
         }
 
-        let other_attributes_conform_to_selector =
-            !self.attributes.iter().all(|selector_attribute| {
-                other
-                    .attributes
-                    .iter()
-                    .any(|xhtml_attribute| selector_attribute == xhtml_attribute)
-            });
-        if other_attributes_conform_to_selector {
-            return false;
-        }
-
-        true
+        self.attributes.as_slice().iter().all(|selector_attribute| {
+            other
+                .attributes()
+                .iter()
+                .any(|xhtml_attribute| selector_attribute.matches_attribute(xhtml_attribute))
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AttributeSelections;
+
+    #[derive(Debug)]
+    struct FakeElement<'a> {
+        name: &'a str,
+        id: Option<&'a str>,
+        class: Option<&'a str>,
+        attributes: &'a [Attribute<'a>],
+    }
+
+    impl<'a> IElement<'a> for FakeElement<'a> {
+        fn name(&self) -> &'a str {
+            self.name
+        }
+
+        fn id(&self) -> Option<&'a str> {
+            self.id
+        }
+
+        fn class(&self) -> Option<&'a str> {
+            self.class
+        }
+
+        fn attributes(&self) -> &[Attribute<'a>] {
+            self.attributes
+        }
+    }
 
     #[test]
     fn test_attribute_selection_comparison() {
-        assert_eq!(
+        assert!(
             AttributeSelection {
                 name: "hello",
                 value: Some("World"),
                 kind: AttributeSelectionKind::Exact,
-            },
-            Attribute {
+            }
+            .matches_attribute(&Attribute {
                 key: "hello",
                 value: Some("World")
-            }
+            })
         );
     }
 
     #[test]
     fn test_element_selection_comparison() {
-        assert_eq!(
+        assert!(
             ElementPredicate {
                 name: Some("hello"),
                 id: Some("id"),
                 class: Some("world"),
-                attributes: Vec::from([AttributeSelection {
+                attributes: AttributeSelections::from(vec![AttributeSelection {
                     name: "selected",
                     value: Some("true"),
                     kind: AttributeSelectionKind::Exact
                 }])
-            },
-            XHtmlElement {
+            }
+            .matches_element(&FakeElement {
                 name: "hello",
                 id: Some("id"),
                 class: Some("hello world"),
@@ -108,24 +128,24 @@ mod tests {
                         value: Some("true")
                     },
                 ]
-            }
+            })
         );
     }
 
     #[test]
     fn test_realistic_search() {
-        assert_eq!(
+        assert!(
             ElementPredicate {
                 name: Some("a"),
                 id: None,
                 class: Some("underline-green"),
-                attributes: Vec::from([AttributeSelection {
+                attributes: AttributeSelections::from(vec![AttributeSelection {
                     name: "href",
                     value: None,
                     kind: AttributeSelectionKind::Presence,
                 }])
-            },
-            XHtmlElement {
+            }
+            .matches_element(&FakeElement {
                 name: "a",
                 id: Some("search-link"),
                 class: Some("text-white underline-green p-4"),
@@ -143,7 +163,7 @@ mod tests {
                         value: Some("true")
                     },
                 ]
-            }
+            })
         );
     }
 }

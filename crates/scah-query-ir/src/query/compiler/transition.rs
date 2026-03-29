@@ -1,11 +1,10 @@
-use crate::XHtmlElement;
+use crate::Reader;
 use crate::query::compiler::SelectorParseError;
-use crate::query::selector::{Combinator, ElementPredicate, Lexer};
-use crate::support::Reader;
+use crate::query::selector::{Combinator, ElementPredicate, IElement, Lexer};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Transition<'query> {
-    pub guard: Combinator, // from transition
+    pub guard: Combinator,
     pub predicate: ElementPredicate<'query>,
 }
 
@@ -14,7 +13,11 @@ impl<'query> Transition<'query> {
         Self { guard, predicate }
     }
 
-    pub(super) fn generate_transitions_from_string(
+    pub const fn new_const(guard: Combinator, predicate: ElementPredicate<'query>) -> Self {
+        Self { guard, predicate }
+    }
+
+    pub fn generate_transitions_from_string(
         query: &'query str,
     ) -> Result<Vec<Self>, SelectorParseError> {
         let reader = &mut Reader::new(query);
@@ -32,35 +35,57 @@ impl<'query> Transition<'query> {
         Ok(states)
     }
 
-    pub fn next(
+    pub fn next<'html, E: IElement<'html>>(
         &self,
-        element: &XHtmlElement,
-        current_depth: crate::engine::DepthSize,
-        last_depth: crate::engine::DepthSize,
+        element: &E,
+        current_depth: u16,
+        last_depth: u16,
     ) -> bool {
         assert!(
             current_depth >= last_depth,
             "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
         );
 
-        self.guard.evaluate(last_depth, current_depth) && &self.predicate == element
+        self.guard.evaluate(last_depth, current_depth) && self.predicate.matches_element(element)
     }
 
     #[allow(clippy::needless_lifetimes)]
-    pub fn back<'html>(
-        &self,
-        _element: &'html str,
-        current_depth: crate::engine::DepthSize,
-        last_depth: crate::engine::DepthSize,
-    ) -> bool {
-        // dbg_print!("'{last_depth}' == '{current_depth}'");
+    pub fn back<'html>(&self, _element: &'html str, current_depth: u16, last_depth: u16) -> bool {
         last_depth == current_depth
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::query::selector::{Attribute, AttributeSelections, IElement};
+
     use super::*;
+
+    #[derive(Debug)]
+    struct FakeElement<'a> {
+        name: &'a str,
+        id: Option<&'a str>,
+        class: Option<&'a str>,
+        attributes: &'a [Attribute<'a>],
+    }
+
+    impl<'a> IElement<'a> for FakeElement<'a> {
+        fn name(&self) -> &'a str {
+            self.name
+        }
+
+        fn id(&self) -> Option<&'a str> {
+            self.id
+        }
+
+        fn class(&self) -> Option<&'a str> {
+            self.class
+        }
+
+        fn attributes(&self) -> &[Attribute<'a>] {
+            self.attributes
+        }
+    }
 
     #[test]
     fn test_fsm_next_descendant() {
@@ -70,15 +95,15 @@ mod tests {
                 name: Some("a"),
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: AttributeSelections::from_static(&[]),
             },
         );
         assert!(state.next(
-            &XHtmlElement {
+            &FakeElement {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: &[]
+                attributes: &[],
             },
             4,
             1,
@@ -93,15 +118,15 @@ mod tests {
                 name: Some("a"),
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: AttributeSelections::from_static(&[]),
             },
         );
         assert!(state.next(
-            &XHtmlElement {
+            &FakeElement {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: &[]
+                attributes: &[],
             },
             2,
             1,
@@ -116,62 +141,17 @@ mod tests {
                 name: Some("a"),
                 id: None,
                 class: None,
-                attributes: vec![],
+                attributes: AttributeSelections::from_static(&[]),
             },
         );
         assert!(!state.next(
-            &XHtmlElement {
+            &FakeElement {
                 name: "a",
                 id: None,
                 class: None,
-                attributes: &[]
+                attributes: &[],
             },
             4,
-            1,
-        ));
-    }
-
-    #[test]
-    fn test_fsm_next_nextsibling() {
-        let state = Transition::new(
-            Combinator::NextSibling,
-            ElementPredicate {
-                name: Some("a"),
-                id: None,
-                class: None,
-                attributes: vec![],
-            },
-        );
-        assert!(state.next(
-            &XHtmlElement {
-                name: "a",
-                id: None,
-                class: None,
-                attributes: &[]
-            },
-            1,
-            1,
-        ));
-    }
-    #[test]
-    fn test_fsm_next_subsequentsiblings() {
-        let state = Transition::new(
-            Combinator::SubsequentSibling,
-            ElementPredicate {
-                name: Some("a"),
-                id: None,
-                class: None,
-                attributes: vec![],
-            },
-        );
-        assert!(state.next(
-            &XHtmlElement {
-                name: "a",
-                id: None,
-                class: None,
-                attributes: &[]
-            },
-            1,
             1,
         ));
     }

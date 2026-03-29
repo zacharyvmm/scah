@@ -1,5 +1,8 @@
 [workspace]
 members = [
+    "crates/scah-reader",
+    "crates/scah-query-ir",
+    "crates/scah-macros",
     "crates/scah",
     "crates/bindings/scah-python",
     "crates/bindings/scah-node",
@@ -13,12 +16,16 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 panic = "unwind"
-strip = "none"
+strip = "symbols"
 overflow-checks = false
 incremental = false
-debug = 1
+debug = 0
+debug-assertions = false
 
 [profile.release.package."*"]
 opt-level = 3
 codegen-units = 1
-debug = 1
+debug = 0
+
+[profile.bench]
+inherits = "release"

@@ -1,9 +1,9 @@
 use super::element::builder::XHtmlTag;
+use crate::Reader;
 use crate::XHtmlElement;
 use crate::dbg_print;
 use crate::engine::multiplexer::{DocumentPosition, QueryMultiplexer};
 use crate::store::Store;
-use crate::support::Reader;
 
 pub struct XHtmlParser<'html, 'query> {
     position: DocumentPosition,
@@ -164,8 +164,7 @@ mod tests {
     use crate::Attribute;
     use crate::engine::multiplexer::QueryMultiplexer;
     use crate::store::Element;
-    use crate::support::Reader;
-    use crate::{Query, Save};
+    use crate::{Query, Reader, Save};
     use pretty_assertions::assert_eq;
 
     const BASIC_HTML: &str = r#"
@@ -181,7 +180,9 @@ mod tests {
     fn test_basic_html() {
         let mut reader = Reader::new(BASIC_HTML);
 
-        let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
+        let queries = &[Query::all("p.indent > .bold", Save::none())
+            .unwrap()
+            .build()];
 
         let manager = QueryMultiplexer::new(queries);
 
@@ -214,7 +215,9 @@ mod tests {
     fn test_text_content() {
         let mut reader = Reader::new(BASIC_HTML);
 
-        let queries = &[Query::all("p.indent > .bold", Save::none()).build()];
+        let queries = &[Query::all("p.indent > .bold", Save::none())
+            .unwrap()
+            .build()];
         let manager = QueryMultiplexer::new(queries);
 
         let mut parser = XHtmlParser::new(manager);
@@ -267,8 +270,10 @@ mod tests {
         let mut reader = Reader::new(BASIC_HTML);
 
         let queries = &[
-            Query::all("p.indent > .bold", Save::none()).build(),
-            Query::all(".indent #name", Save::none()).build(),
+            Query::all("p.indent > .bold", Save::none())
+                .unwrap()
+                .build(),
+            Query::all(".indent #name", Save::none()).unwrap().build(),
         ];
 
         let manager = QueryMultiplexer::new(queries);
@@ -278,10 +283,7 @@ mod tests {
         // STEP 1
         //let mut continue_parser = parser.next(&mut reader);
 
-        println!("Queries: {:#?}", queries);
-
         while parser.next(&mut reader) {}
-        println!("Selectors: {:#?}", parser.selectors);
     }
 
     const MORE_ADVANCED_BASIC_HTML: &str = r#"
@@ -315,12 +317,15 @@ mod tests {
     #[ignore = "Known issue: Duplication of elements is not handled"]
     fn test_multi_selection() {
         let mut reader = Reader::new(MORE_ADVANCED_BASIC_HTML);
-        let queries = Query::all("main > section", Save::all()).then(|section| {
-            [
-                section.all("> a[href]", Save::all()),
-                section.all("div a", Save::all()),
-            ]
-        });
+        let queries = Query::all("main > section", Save::all())
+            .unwrap()
+            .then(|section| {
+                Ok([
+                    section.all("> a[href]", Save::all())?,
+                    section.all("div a", Save::all())?,
+                ])
+            })
+            .unwrap();
         let queries = &[queries.build()];
         let manager = QueryMultiplexer::new(queries);
 
@@ -388,7 +393,7 @@ mod tests {
     fn test_script_tag_with_html_like_content() {
         let mut reader = Reader::new(BASIC_HTML_WITH_SCRIPT);
 
-        let queries = &[Query::all("div", Save::none()).build()];
+        let queries = &[Query::all("div", Save::none()).unwrap().build()];
 
         let manager = QueryMultiplexer::new(queries);
 
@@ -434,7 +439,9 @@ mod tests {
     #[test]
     fn test_self_closing_tags() {
         let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
-        let queries = &[Query::all("form > p > input", Save::none()).build()];
+        let queries = &[Query::all("form > p > input", Save::none())
+            .unwrap()
+            .build()];
 
         let manager = QueryMultiplexer::new(queries);
 
@@ -473,7 +480,7 @@ mod tests {
          */
         let mut reader = Reader::new(BASIC_HTML_WITH_SELF_CLOSING_TAG);
 
-        let queries = &[Query::all("form > p > input", Save::all()).build()];
+        let queries = &[Query::all("form > p > input", Save::all()).unwrap().build()];
 
         let manager = QueryMultiplexer::new(queries);
 
@@ -509,7 +516,7 @@ mod tests {
     fn test_anchor_list_selection() {
         let mut reader = Reader::new(BASIC_ANCHOR_LIST);
 
-        let queries = &[Query::all("a", Save::all()).build()];
+        let queries = &[Query::all("a", Save::all()).unwrap().build()];
 
         let manager = QueryMultiplexer::new(queries);
 
@@ -533,7 +540,7 @@ mod tests {
     fn test_first_anchor_in_list_selection() {
         let mut reader = Reader::new(POSTS);
 
-        let queries = &[Query::first("div.article a", Save::all()).build()];
+        let queries = &[Query::first("div.article a", Save::all()).unwrap().build()];
 
         let manager = QueryMultiplexer::new(queries);
 
@@ -565,7 +572,9 @@ mod tests {
         let mut reader = Reader::new(PYTHON_TEST_HTML);
 
         let queries = &[Query::all("#world", Save::all())
+            .unwrap()
             .all("a", Save::all())
+            .unwrap()
             .build()];
 
         // assert_eq!(queries, &[Query {
@@ -657,7 +666,7 @@ mod tests {
         let html = generate_html(100);
         let mut reader = Reader::from_bytes(html.as_bytes());
 
-        let query = Query::first("a", Save::all()).build();
+        let query = Query::first("a", Save::all()).unwrap().build();
         assert_eq!(query.exit_at_section_end, Some(0));
         let queries = &[query];
 
@@ -700,14 +709,17 @@ mod tests {
         let mut reader = Reader::new(SINGLE_PRODUCT_HTML);
 
         let queries = &[Query::all("#products", Save::all())
+            .unwrap()
             .all(".product", Save::all())
+            .unwrap()
             .then(|p| {
-                [
-                    p.first("h1", Save::all()),
-                    p.first("img", Save::none()),
-                    p.first("p", Save::all()),
-                ]
+                Ok([
+                    p.first("h1", Save::all())?,
+                    p.first("img", Save::none())?,
+                    p.first("p", Save::all())?,
+                ])
             })
+            .unwrap()
             .build()];
 
         let manager = QueryMultiplexer::new(queries);
@@ -794,14 +806,17 @@ mod tests {
         let mut reader = Reader::new(PRODUCT_HTML);
 
         let queries = &[Query::all("#products", Save::all())
+            .unwrap()
             .all(".product", Save::all())
+            .unwrap()
             .then(|p| {
-                [
-                    p.first("h1", Save::all()),
-                    p.first("img", Save::none()),
-                    p.first("p", Save::all()),
-                ]
+                Ok([
+                    p.first("h1", Save::all())?,
+                    p.first("img", Save::none())?,
+                    p.first("p", Save::all())?,
+                ])
             })
+            .unwrap()
             .build()];
 
         let manager = QueryMultiplexer::new(queries);

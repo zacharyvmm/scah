@@ -237,6 +237,7 @@ mod tests {
 
     use super::Transition;
     use super::*;
+    use crate::AttributeSelections;
     use crate::query::selector::{Combinator, ElementPredicate};
     use crate::{Query, Save, SelectionKind};
 
@@ -395,7 +396,7 @@ mod tests {
                             name: Some("div"),
                             id: None,
                             class: None,
-                            attributes: vec![]
+                            attributes: AttributeSelections::from_static(&[])
                         }
                     ),
                     Transition::new(
@@ -404,7 +405,7 @@ mod tests {
                             name: Some("a"),
                             id: None,
                             class: None,
-                            attributes: vec![]
+                            attributes: AttributeSelections::from_static(&[])
                         }
                     ),
                     Transition::new(
@@ -413,7 +414,7 @@ mod tests {
                             name: Some("a"),
                             id: None,
                             class: None,
-                            attributes: vec![]
+                            attributes: AttributeSelections::from_static(&[])
                         }
                     ),
                 ]

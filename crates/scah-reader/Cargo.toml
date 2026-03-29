@@ -1,0 +1,12 @@
+[package]
+name = "scah-reader"
+version = "0.0.13"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lints.clippy]
+let-and-return = "allow"
+byte_char_slices = "allow"
+redundant-field-names = "allow"
+len_without_is_empty = "allow"

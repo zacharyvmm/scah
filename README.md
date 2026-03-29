@@ -32,7 +32,9 @@ use scah::{Query, Save, parse};
 
 let html = r#"<ul><li><a href="/one">One</a></li><li><a href="/two">Two</a></li></ul>"#;
 
-let queries = &[Query::all("a[href]", Save::all()).build()];
+let queries = &[Query::all("a[href]", Save::all())
+    .expect("valid selector")
+    .build()];
 let store = parse(html, queries);
 
 for a in store.get("a[href]").unwrap() {
@@ -53,10 +55,14 @@ Instead of flat filtering, nest queries with closures. Child queries only run wi
 use scah::{Query, Save, parse};
 
 let query = Query::all("main > section", Save::all())
-    .then(|section| [
-        section.all("> a[href]", Save::all()),
-        section.all("div a", Save::all()),
-    ])
+    .expect("valid selector")
+    .then(|section| {
+        Ok([
+            section.all("> a[href]", Save::all())?,
+            section.all("div a", Save::all())?,
+        ])
+    })
+    .expect("valid child selectors")
     .build();
 
 let store = parse(html, &[query]);
@@ -73,7 +79,7 @@ for section in store.get("main > section").unwrap() {
 }
 ```
 
-If selectors come from user input, prefer `Query::try_all(...)` / `Query::try_first(...)` in Rust so malformed selectors return `SelectorParseError` instead of panicking.
+If selectors come from user input, `Query::all(...)` and `Query::first(...)` return `Result`, so malformed selectors surface as `SelectorParseError`. For fixed selectors in examples or tests, use `.expect(...)` explicitly if you want panic-on-invalid-selector behavior.
 
 #### `Save` options
 

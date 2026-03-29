@@ -28,7 +28,7 @@ impl<'a> Reader<'a> {
     #[inline]
     pub fn slice(&self, range: Range<usize>) -> &'a str {
         // SAFETY: The source was originally a &str, and structural characters are ASCII.
-        // We should be careful about slicing in the middle of a UTF-8 character.
+        // Should be careful about slicing in the middle of a UTF-8 character.
         unsafe { std::str::from_utf8_unchecked(&self.source[range]) }
     }
 
@@ -61,7 +61,6 @@ impl<'a> Reader<'a> {
         }
     }
 
-    // move cursor to <character> position
     pub fn next_until(&mut self, character: u8) {
         let len = self.source.len();
         while self.position < len && self.source[self.position] != character {

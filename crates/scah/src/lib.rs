@@ -33,7 +33,9 @@
 //! // Build a query: find all <a> tags with an href attribute
 //! // that are direct children of a <section> inside <main>.
 //! let queries = &[
-//!     Query::all("main > section > a[href]", Save::all()).build()
+//!     Query::all("main > section > a[href]", Save::all())
+//!         .expect("valid selector")
+//!         .build()
 //! ];
 //!
 //! let store = parse(html, queries);
@@ -54,14 +56,16 @@
 //! use scah::{Query, Save, parse};
 //!
 //! # let html = "<main><section><a href='x'>Link</a></section></main>";
-//! let queries = &[
-//!     Query::all("main > section", Save::all())
-//!         .then(|section| [
-//!             section.all("> a[href]", Save::all()),
-//!             section.all("div a", Save::all()),
+//! let queries = &[Query::all("main > section", Save::all())
+//!     .expect("valid selector")
+//!     .then(|section| {
+//!         Ok([
+//!             section.all("> a[href]", Save::all())?,
+//!             section.all("div a", Save::all())?,
 //!         ])
-//!         .build()
-//! ];
+//!     })
+//!     .expect("valid child selectors")
+//!     .build()];
 //!
 //! let store = parse(html, queries);
 //! ```
@@ -98,19 +102,21 @@
 
 mod engine;
 mod html;
-mod query;
 mod store;
 mod support;
 
 pub use engine::multiplexer::QueryMultiplexer;
-pub use html::element::builder::{Attribute, XHtmlElement};
+pub use html::element::builder::XHtmlElement;
 pub use html::parser::XHtmlParser;
-pub use query::compiler::lazy;
-pub use query::compiler::{
-    Query, QueryBuilder, QueryFactory, QuerySection, Save, SelectionKind, SelectorParseError,
+pub use scah_macros::query;
+pub use scah_query_ir::lazy;
+pub use scah_query_ir::{
+    Attribute, AttributeSelection, AttributeSelectionKind, AttributeSelections, Combinator,
+    ElementPredicate, IElement, Position, Query, QueryBuilder, QueryFactory, QuerySection,
+    QuerySpec, Save, SelectionKind, SelectorParseError, StaticQuery, Transition,
 };
+pub use scah_reader::Reader;
 pub use store::{Element, ElementId, Store};
-pub use support::Reader;
 
 /// Parse an HTML string against one or more pre-built [`Query`] objects and
 /// return a [`Store`] containing all matched elements.
@@ -136,20 +142,25 @@ pub use support::Reader;
 /// use scah::{Query, Save, parse};
 ///
 /// let html = "<div><a href='link'>Hello</a></div>";
-/// let queries = &[Query::all("a", Save::all()).build()];
+/// let queries = &[Query::all("a", Save::all())
+///     .expect("valid selector")
+///     .build()];
 /// let store = parse(html, queries);
 ///
 /// let links: Vec<_> = store.get("a").unwrap().collect();
 /// assert_eq!(links.len(), 1);
 /// assert_eq!(links[0].name, "a");
 /// ```
-pub fn parse<'a: 'query, 'html: 'query, 'query: 'html>(
+pub fn parse<'a: 'query, 'html: 'query, 'query: 'html, Q>(
     html: &'html str,
-    queries: &'a [Query<'query>],
-) -> Store<'html, 'query> {
+    queries: &'a [Q],
+) -> Store<'html, 'query>
+where
+    Q: QuerySpec<'query>,
+{
     let selectors = QueryMultiplexer::new(queries);
 
-    let no_extra_allocations = queries.iter().all(|q| q.exit_at_section_end.is_some());
+    let no_extra_allocations = queries.iter().all(|q| q.exit_at_section_end().is_some());
     let mut parser = if no_extra_allocations {
         XHtmlParser::new(selectors)
     } else {

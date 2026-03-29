@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use scah::{Attribute, Query, Save, parse};
+use scah::{Attribute, Query, Save, parse, query};
 const HTML: &str = r#"
 <!DOCTYPE html>
 <html>
@@ -46,7 +46,7 @@ const HTML: &str = r#"
 
 #[test]
 fn test_html_page() {
-    let selection_tree = Query::all("main > section#id", Save::all());
+    let selection_tree = Query::all("main > section#id", Save::all()).unwrap();
 
     let queries = &[selection_tree.build()];
     let store = parse(HTML, queries);
@@ -91,7 +91,7 @@ fn test_html_page() {
 
 #[test]
 fn test_html_page_all_anchor_tag_selection() {
-    let queries = &[Query::all("a", Save::all()).build()];
+    let queries = &[Query::all("a", Save::all()).unwrap().build()];
     let store = parse(HTML, queries);
     println!("Store: {:#?}", store);
 
@@ -103,7 +103,7 @@ fn test_html_page_all_anchor_tag_selection() {
 
 #[test]
 fn test_html_page_first_anchor_tag_selection() {
-    let queries = &[Query::first("a", Save::all()).build()];
+    let queries = &[Query::first("a", Save::all()).unwrap().build()];
     let store = parse(HTML, queries);
     let mut children = store.get("a").unwrap();
 
@@ -129,7 +129,7 @@ fn test_html_page_first_anchor_tag_selection() {
 
 #[test]
 fn test_html_page_all_anchor_tag_starting_with_link_selection() {
-    let queries = &[Query::all("a[href^=link]", Save::all()).build()];
+    let queries = &[Query::all("a[href^=link]", Save::all()).unwrap().build()];
     let store = parse(HTML, queries);
     let list = store.get("a[href^=link]").unwrap();
 
@@ -138,7 +138,9 @@ fn test_html_page_all_anchor_tag_starting_with_link_selection() {
 
 #[test]
 fn test_html_page_children_valid_anchor_tags_in_main() {
-    let queries = &[Query::all("main > section > a[href]", Save::all()).build()];
+    let queries = &[Query::all("main > section > a[href]", Save::all())
+        .unwrap()
+        .build()];
 
     let store = parse(HTML, queries);
     let list = store.get("main > section > a[href]").unwrap();
@@ -148,7 +150,9 @@ fn test_html_page_children_valid_anchor_tags_in_main() {
 
 #[test]
 fn test_html_page_single_main() {
-    let queries = &[Query::all("main.red-background > section#id", Save::all()).build()];
+    let queries = &[Query::all("main.red-background > section#id", Save::all())
+        .unwrap()
+        .build()];
     let store = parse(HTML, queries);
     let list = store.get("main.red-background > section#id").unwrap();
 
@@ -158,16 +162,18 @@ fn test_html_page_single_main() {
 #[test]
 fn test_html_multi_selection() {
     let query = Query::all("main > section", Save::all())
+        .unwrap()
         .then(|section| {
-            [
+            Ok([
                 // BUG: first selection not working because their is no locking mechanism
                 //section.first("> a[href]", Save::all()),
-                section.all("> a[href]", Save::all()),
-                section.all("div a", Save::all()),
+                section.all("> a[href]", Save::all())?,
+                section.all("div a", Save::all())?,
                 // BUG: If their are 2 identical sub-queries their should be an error.
                 //section.all("> a[href]", Save::all()),
-            ]
+            ])
         })
+        .unwrap()
         .build();
 
     let q = &[query];
@@ -175,4 +181,42 @@ fn test_html_multi_selection() {
     let list = store.get("main > section").unwrap();
 
     println!("List: {:#?}", list.collect::<Vec<_>>());
+}
+
+#[test]
+fn test_macro_static_query() {
+    let static_query = query! {
+        all("main > section", Save::all()) => {
+            all("> a[href]", Save::all()),
+            first("span", Save::only_text_content()),
+        }
+    };
+    let runtime_query = Query::all("main > section", Save::all())
+        .unwrap()
+        .then(|ctx| {
+            Ok([
+                ctx.all("> a[href]", Save::all())?,
+                ctx.first("span", Save::only_text_content())?,
+            ])
+        })
+        .unwrap()
+        .build();
+
+    let static_queries = [static_query];
+    let runtime_queries = [runtime_query];
+    let static_store = parse(HTML, &static_queries);
+    let runtime_store = parse(HTML, &runtime_queries);
+    let count = |store: &scah::Store<'_, '_>, selector| {
+        store.get(selector).map(|items| items.count()).unwrap_or(0)
+    };
+
+    assert_eq!(
+        count(&static_store, "main > section"),
+        count(&runtime_store, "main > section")
+    );
+    assert_eq!(
+        count(&static_store, "> a[href]"),
+        count(&runtime_store, "> a[href]")
+    );
+    assert_eq!(count(&static_store, "span"), count(&runtime_store, "span"));
 }

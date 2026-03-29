@@ -6,12 +6,23 @@ default:
 build: build-rust build-node build-python
 
 build-rust:
-    cargo build
+    cargo build --release
 
 build-node:
     cd crates/bindings/scah-node && bun run build
 
 build-python:
+    cd crates/bindings/scah-python && uv run maturin build --release
+
+dev: dev-rust dev-node dev-python
+
+dev-rust:
+    cargo build
+
+dev-node:
+    cd crates/bindings/scah-node && bun run build:debug
+
+dev-python:
     cd crates/bindings/scah-python && uv run maturin build
 
 test: test-rust test-node test-python
@@ -57,6 +68,9 @@ trigger-release new_version:
     git push origin v{{new_version}}
 
 bump-rust new_version:
+    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/scah-reader/Cargo.toml
+    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/scah-query-ir/Cargo.toml
+    sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/scah-macros/Cargo.toml
     sed -i 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/scah/Cargo.toml
     sed -i 's/^scah = "[^"]*"/scah = "{{new_version}}"/' README.md
 

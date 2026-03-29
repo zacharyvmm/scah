@@ -1,12 +1,73 @@
 use super::string_search::AttributeSelectionKind;
+use crate::Reader;
 use crate::query::compiler::SelectorParseError;
-use crate::support::{QuoteKind, Reader};
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum QuoteKind {
+    DoubleQuoted,
+    SingleQuoted,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Attribute<'html> {
+    pub key: &'html str,
+    pub value: Option<&'html str>,
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct AttributeSelection<'query> {
-    pub(crate) name: &'query str,
-    pub(crate) value: Option<&'query str>,
-    pub(crate) kind: AttributeSelectionKind,
+    pub name: &'query str,
+    pub value: Option<&'query str>,
+    pub kind: AttributeSelectionKind,
+}
+
+impl<'query> AttributeSelection<'query> {
+    pub const fn new_const(
+        name: &'query str,
+        value: Option<&'query str>,
+        kind: AttributeSelectionKind,
+    ) -> Self {
+        Self { name, value, kind }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum AttributeSelections<'query> {
+    Static(&'query [AttributeSelection<'query>]),
+    Owned(Box<[AttributeSelection<'query>]>),
+}
+
+impl<'query> AttributeSelections<'query> {
+    pub const fn from_static(attributes: &'query [AttributeSelection<'query>]) -> Self {
+        Self::Static(attributes)
+    }
+
+    pub fn as_slice(&self) -> &[AttributeSelection<'query>] {
+        match self {
+            Self::Static(attributes) => attributes,
+            Self::Owned(attributes) => attributes,
+        }
+    }
+}
+
+impl<'query> Default for AttributeSelections<'query> {
+    fn default() -> Self {
+        Self::Static(&[])
+    }
+}
+
+impl<'query> From<Vec<AttributeSelection<'query>>> for AttributeSelections<'query> {
+    fn from(value: Vec<AttributeSelection<'query>>) -> Self {
+        Self::Owned(value.into_boxed_slice())
+    }
+}
+
+/// Element Interface
+pub trait IElement<'html> {
+    fn name(&self) -> &'html str;
+    fn id(&self) -> Option<&'html str>;
+    fn class(&self) -> Option<&'html str>;
+    fn attributes(&self) -> &[Attribute<'html>];
 }
 
 struct KeyValueAttributeSelection<'query> {
@@ -46,9 +107,6 @@ impl<'query> AttributeSelection<'query> {
         let mut opened_quote: Option<QuoteKind> = None;
         let mut equal = false;
 
-        // let mut name: Option<&str> = None;
-        // let mut value: Option<&str> = None;
-        // let mut selection_kind: AttributeSelectionKind = AttributeSelectionKind::Presence;
         let mut kv = KeyValueAttributeSelection {
             name: None,
             selection_kind: AttributeSelectionKind::Presence,
@@ -72,9 +130,7 @@ impl<'query> AttributeSelection<'query> {
 
                     opened_quote = None;
 
-                    // `"` and `'` are always of size 1
                     const SIZE_OF_QUOTE: usize = 1;
-
                     let end_position = reader.get_position() - SIZE_OF_QUOTE;
                     let content_inside_quotes = reader.slice(position..end_position);
 
@@ -159,8 +215,8 @@ enum SelectionKeyWords<'query> {
     ID,
     Class,
     Quote,
-    OpenAttribute,  // [
-    CloseAttribute, // ]
+    OpenAttribute,
+    CloseAttribute,
 }
 
 impl<'a> SelectionKeyWords<'a> {
@@ -181,8 +237,6 @@ impl<'a> SelectionKeyWords<'a> {
             b'[' => Some(Self::OpenAttribute),
             b']' => Some(Self::CloseAttribute),
             _ => {
-                // Find end of word
-                // POTENTIAL BUG ??? |> I'm pretty sure this is missing '\'' and '"'
                 reader.next_until_list(&[b' ', b'#', b'.', b'[']);
                 Some(Self::String(reader.slice(start_pos..reader.get_position())))
             }
@@ -228,7 +282,6 @@ impl<'a> SelectionAttributeToken<'a> {
             b'*' => Some(Self::StringMatchSelector(AttributeSelectionKind::Substring)),
             b']' => None,
             _ => {
-                // Find end of word
                 reader.next_until_list(&[
                     b' ', b'"', b'\'', b'=', b']', b'~', b'|', b'^', b'$', b'*',
                 ]);
@@ -243,35 +296,38 @@ pub struct ElementPredicate<'a> {
     pub name: Option<&'a str>,
     pub id: Option<&'a str>,
     pub class: Option<&'a str>,
-    pub attributes: Vec<AttributeSelection<'a>>,
+    pub attributes: AttributeSelections<'a>,
 }
 
-// TODO: I don't like this abstraction
-// 1) `build` should be called something like `from`
-// 2) The data (Element struct) should be seperated from the parsing logic
-// 2.1) The parsing logic should continue to use the iterator parttern I have been using.
-// 2.1.1) The flow should look like this => Reader -> Tokenizer -> ElementIterator -> SelectionIterator
 impl<'a> ElementPredicate<'a> {
+    pub const fn new_const(
+        name: Option<&'a str>,
+        id: Option<&'a str>,
+        class: Option<&'a str>,
+        attributes: AttributeSelections<'a>,
+    ) -> Self {
+        Self {
+            name,
+            id,
+            class,
+            attributes,
+        }
+    }
+
     fn try_parse_attribute(&mut self, reader: &mut Reader<'a>) -> Result<(), SelectorParseError> {
         let attribute = AttributeSelection::try_from(reader)?;
-        self.attributes.push(attribute);
+        let mut attributes = self.attributes.as_slice().to_vec();
+        attributes.push(attribute);
+        self.attributes = AttributeSelections::from(attributes);
         Ok(())
     }
-}
 
-impl<'a> From<&mut Reader<'a>> for ElementPredicate<'a> {
-    fn from(reader: &mut Reader<'a>) -> Self {
-        Self::try_from(reader).unwrap()
-    }
-}
-
-impl<'a> ElementPredicate<'a> {
     pub fn try_from(reader: &mut Reader<'a>) -> Result<Self, SelectorParseError> {
         let mut element = Self {
             name: None,
             id: None,
             class: None,
-            attributes: Vec::new(),
+            attributes: AttributeSelections::default(),
         };
 
         let mut previous: Option<SelectionKeyWords> = None;
@@ -311,7 +367,6 @@ impl<'a> ElementPredicate<'a> {
                             reader.get_position().saturating_sub(class_name.len()),
                         ));
                     }
-                    // BUG: their is more class that means it should be a list of class
                     element.class = Some(*class_name);
                 }
                 (_, SelectionKeyWords::OpenAttribute) => element.try_parse_attribute(reader)?,
@@ -347,7 +402,7 @@ impl<'a> ElementPredicate<'a> {
             _ if element.name.is_none()
                 && element.id.is_none()
                 && element.class.is_none()
-                && element.attributes.is_empty() =>
+                && element.attributes.as_slice().is_empty() =>
             {
                 Err(SelectorParseError::new(
                     "missing selector element",
@@ -356,6 +411,12 @@ impl<'a> ElementPredicate<'a> {
             }
             _ => Ok(element),
         }
+    }
+}
+
+impl<'a> From<&mut Reader<'a>> for ElementPredicate<'a> {
+    fn from(reader: &mut Reader<'a>) -> Self {
+        Self::try_from(reader).unwrap()
     }
 }
 
@@ -391,7 +452,7 @@ mod tests {
                 name: Some("element"),
                 id: Some("id"),
                 class: Some("class"),
-                attributes: Vec::new(),
+                attributes: AttributeSelections::from_static(&[]),
             }
         );
     }
@@ -408,7 +469,7 @@ mod tests {
                 name: Some("element"),
                 id: Some("id"),
                 class: Some("class"),
-                attributes: Vec::from([AttributeSelection {
+                attributes: AttributeSelections::from(vec![AttributeSelection {
                     name: "selected",
                     value: Some("true"),
                     kind: AttributeSelectionKind::Exact
@@ -429,7 +490,7 @@ mod tests {
                 name: Some("element"),
                 id: Some("id"),
                 class: Some("class"),
-                attributes: Vec::from([
+                attributes: AttributeSelections::from(vec![
                     AttributeSelection {
                         name: "href",
                         value: Some("_blank"),
@@ -448,7 +509,6 @@ mod tests {
     #[test]
     fn test_handle_duplicates_in_element_definition() {
         let mut reader = Reader::new("element#id.class[selected=true]#id#notid");
-        // Since this is used by the developer is acceptable to throw an error in the system
         let element = ElementPredicate::from(&mut reader);
 
         assert_eq!(
@@ -457,7 +517,7 @@ mod tests {
                 name: Some("element"),
                 id: Some("id"),
                 class: Some("class"),
-                attributes: Vec::from([AttributeSelection {
+                attributes: AttributeSelections::from(vec![AttributeSelection {
                     name: "selected",
                     value: Some("true"),
                     kind: AttributeSelectionKind::Exact

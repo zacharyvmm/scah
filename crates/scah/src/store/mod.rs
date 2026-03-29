@@ -1,5 +1,5 @@
 use crate::Attribute;
-use crate::query::compiler::QuerySection;
+use crate::QuerySection;
 use std::ops::Range;
 
 mod text_content;
@@ -31,7 +31,9 @@ pub use query_node::QueryNode;
 /// use scah::{Query, Save, parse};
 ///
 /// let html = "<div><a href='x'>Link1</a><a href='y'>Link2</a></div>";
-/// let queries = &[Query::all("a", Save::all()).build()];
+/// let queries = &[Query::all("a", Save::all())
+///     .expect("valid selector")
+///     .build()];
 /// let store = parse(html, queries);
 ///
 /// // Retrieve all matched <a> elements
@@ -88,7 +90,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     /// use scah::{Query, Save, parse};
     ///
     /// let html = "<ul><li>A</li><li>B</li></ul>";
-    /// let queries = &[Query::all("li", Save::only_text_content()).build()];
+    /// let queries = &[Query::all("li", Save::only_text_content())
+    ///     .expect("valid selector")
+    ///     .build()];
     /// let store = parse(html, queries);
     ///
     /// for li in store.get("li").unwrap() {
@@ -350,7 +354,9 @@ mod tests {
         let mut store = Store::default();
 
         let q = Query::all("1", Save::all())
-            .then(|ctx| [ctx.all("2", Save::all()), ctx.all("3", Save::all())]);
+            .unwrap()
+            .then(|ctx| Ok([ctx.all("2", Save::all())?, ctx.all("3", Save::all())?]))
+            .unwrap();
 
         // `1` MATCH
         store.push(
@@ -453,12 +459,14 @@ mod tests {
     #[test]
     fn test_push_multi_section() {
         let query = Query::all("main > section", Save::all())
+            .unwrap()
             .then(|section| {
-                [
-                    section.all("> a[href]", Save::all()),
-                    section.all("div a", Save::all()),
-                ]
+                Ok([
+                    section.all("> a[href]", Save::all())?,
+                    section.all("div a", Save::all())?,
+                ])
             })
+            .unwrap()
             .build();
 
         let mut store = Store::default();
@@ -563,8 +571,8 @@ mod tests {
     #[test]
     fn test_multi_root_queries() {
         let queries = &[
-            Query::all("span", Save::all()).build(),
-            Query::all("a", Save::all()).build(),
+            Query::all("span", Save::all()).unwrap().build(),
+            Query::all("a", Save::all()).unwrap().build(),
         ];
 
         let mut store = Store::default();

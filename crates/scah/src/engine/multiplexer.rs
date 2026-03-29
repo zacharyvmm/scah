@@ -1,9 +1,7 @@
-use std::fmt::Debug;
-
 use super::executor::QueryExecutor;
 use crate::XHtmlElement;
-use crate::query::compiler::Query;
 use crate::store::Store;
+use crate::{QuerySpec, Reader};
 
 pub(crate) struct DocumentPosition {
     pub reader_position: usize,
@@ -14,13 +12,12 @@ pub(crate) struct DocumentPosition {
 //type Runner<'query, E> = SmallVec<[QueryExecutor<'query, 'query, E>; 1]>;
 type Runner<'query> = Vec<QueryExecutor<'query, 'query>>;
 
-#[derive(Debug)]
 pub struct QueryMultiplexer<'query> {
     runners: Runner<'query>,
 }
 
 impl<'html, 'query: 'html> QueryMultiplexer<'query> {
-    pub fn new(queries: &'query [Query<'query>]) -> Self {
+    pub fn new<Q: QuerySpec<'query>>(queries: &'query [Q]) -> Self {
         Self {
             #[allow(clippy::redundant_closure)]
             runners: queries
@@ -51,7 +48,7 @@ impl<'html, 'query: 'html> QueryMultiplexer<'query> {
         &mut self,
         xhtml_element: &'html str,
         position: &DocumentPosition,
-        reader: &crate::support::Reader<'html>,
+        reader: &Reader<'html>,
         store: &mut Store<'html, 'query>,
     ) -> bool {
         let mut remove_indices = vec![];

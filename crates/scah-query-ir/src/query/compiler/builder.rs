@@ -15,7 +15,7 @@ use super::transition::Transition;
 /// # Example
 ///
 /// ```rust
-/// use scah::Save;
+/// use scah_query_ir::Save;
 ///
 /// // Capture everything
 /// let save = Save::all();
@@ -91,25 +91,24 @@ pub enum SelectionKind {
 /// An in-progress query being assembled via a builder pattern.
 ///
 /// You typically don't construct a `QueryBuilder` directly; instead,
-/// start with [`Query::try_all`](crate::Query::try_all) or
-/// [`Query::try_first`](crate::Query::try_first) and then chain further
-/// selectors with [`.try_all()`](QueryBuilder::try_all),
-/// [`.try_first()`](QueryBuilder::try_first), [`.try_then()`](QueryBuilder::try_then),
-/// or [`.then()`](QueryBuilder::then). Finalise with [`.build()`](QueryBuilder::build)
-/// to produce a [`Query`].
+/// start with [`Query::all`](crate::Query::all) or
+/// [`Query::first`](crate::Query::first) and then chain further
+/// selectors with [`.all()`](QueryBuilder::all),
+/// [`.first()`](QueryBuilder::first), and [`.then()`](QueryBuilder::then).
+/// Finalise with [`.build()`](QueryBuilder::build) to produce a [`Query`].
 ///
 /// # Example
 ///
 /// ```rust
-/// use scah::{Query, Save};
+/// use scah_query_ir::{Query, Save};
 ///
-/// let query = Query::try_all("main > section", Save::all())?
-///     .then(|ctx| [
-///         ctx.all("> a[href]", Save::all()),
-///         ctx.all("div a",    Save::only_text_content()),
-///     ])
+/// let query = Query::all("main > section", Save::all())?
+///     .then(|ctx| Ok([
+///         ctx.all("> a[href]", Save::all())?,
+///         ctx.all("div a", Save::only_text_content())?,
+///     ]))?
 ///     .build();
-/// # Ok::<(), scah::SelectorParseError>(())
+/// # Ok::<(), scah_query_ir::SelectorParseError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct QueryBuilder<'query> {
@@ -120,8 +119,7 @@ pub struct QueryBuilder<'query> {
 }
 
 impl<'query> QueryBuilder<'query> {
-    /// Fallible variant of [`QueryBuilder::all`].
-    pub fn try_all(mut self, query: &'query str, save: Save) -> Result<Self, SelectorParseError> {
+    pub fn all(mut self, query: &'query str, save: Save) -> Result<Self, SelectorParseError> {
         assert!(!self.selection.is_empty());
 
         let current_state_len = self.states.len();
@@ -147,15 +145,7 @@ impl<'query> QueryBuilder<'query> {
     /// The new selector is scoped to elements that already matched
     /// the previous selector in the chain.
     ///
-    /// This convenience wrapper panics on invalid selectors. Prefer
-    /// [`QueryBuilder::try_all`] for user-provided input.
-    pub fn all(self, query: &'query str, save: Save) -> Self {
-        self.try_all(query, save)
-            .unwrap_or_else(|err| panic!("invalid query selector: {err}"))
-    }
-
-    /// Fallible variant of [`QueryBuilder::first`].
-    pub fn try_first(mut self, query: &'query str, save: Save) -> Result<Self, SelectorParseError> {
+    pub fn first(mut self, query: &'query str, save: Save) -> Result<Self, SelectorParseError> {
         assert!(!self.selection.is_empty());
 
         let current_state_len = self.states.len();
@@ -180,13 +170,6 @@ impl<'query> QueryBuilder<'query> {
     ///
     /// Enables early-exit optimisation for this branch of the query tree.
     ///
-    /// This convenience wrapper panics on invalid selectors. Prefer
-    /// [`QueryBuilder::try_first`] for user-provided input.
-    pub fn first(self, query: &'query str, save: Save) -> Self {
-        self.try_first(query, save)
-            .unwrap_or_else(|err| panic!("invalid query selector: {err}"))
-    }
-
     pub fn append(&mut self, parent: usize, mut other: Self) {
         let state_length = self.states.len();
         let selection_length = self.selection.len();
@@ -247,36 +230,17 @@ impl<'query> QueryBuilder<'query> {
     /// # Example
     ///
     /// ```rust
-    /// use scah::{Query, Save};
+    /// use scah_query_ir::{Query, Save};
     ///
-    /// let query = Query::try_all("article", Save::none())?
-    ///     .then(|article| [
-    ///         article.first("h1",      Save::only_text_content()),
-    ///         article.all("a[href]",   Save::all()),
-    ///     ])
+    /// let query = Query::all("article", Save::none())?
+    ///     .then(|article| Ok([
+    ///         article.first("h1", Save::only_text_content())?,
+    ///         article.all("a[href]", Save::all())?,
+    ///     ]))?
     ///     .build();
-    /// # Ok::<(), scah::SelectorParseError>(())
+    /// # Ok::<(), scah_query_ir::SelectorParseError>(())
     /// ```
-    pub fn then<F, I>(mut self, func: F) -> Self
-    where
-        F: FnOnce(QueryFactory) -> I,
-        I: IntoIterator<Item = Self>,
-    {
-        let factory = QueryFactory {};
-        let children = func(factory);
-
-        let current_index = self.selection.len() - 1;
-        for child in children {
-            self.append(current_index, child);
-        }
-        self
-    }
-
-    /// Fallible variant of [`QueryBuilder::then`].
-    ///
-    /// This is useful when child selectors are user-provided and you want to
-    /// use [`QueryFactory::try_all`] or [`QueryFactory::try_first`] inside the callback.
-    pub fn try_then<F, I>(mut self, func: F) -> Result<Self, SelectorParseError>
+    pub fn then<F, I>(mut self, func: F) -> Result<Self, SelectorParseError>
     where
         F: FnOnce(QueryFactory) -> Result<I, SelectorParseError>,
         I: IntoIterator<Item = Self>,
@@ -378,29 +342,21 @@ impl<'query> QueryBuilder<'query> {
 /// the closure passed to `.then()`.
 pub struct QueryFactory {}
 impl<'query> QueryFactory {
-    pub fn try_all(
+    /// Create a child query that matches **all** occurrences of the selector.
+    pub fn all(
         &self,
         query: &'query str,
         save: Save,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        Query::try_all(query, save)
-    }
-
-    /// Create a child query that matches **all** occurrences of the selector.
-    pub fn all(&self, query: &'query str, save: Save) -> QueryBuilder<'query> {
         Query::all(query, save)
     }
 
-    pub fn try_first(
+    /// Create a child query that matches only the **first** occurrence.
+    pub fn first(
         &self,
         query: &'query str,
         save: Save,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        Query::try_first(query, save)
-    }
-
-    /// Create a child query that matches only the **first** occurrence.
-    pub fn first(&self, query: &'query str, save: Save) -> QueryBuilder<'query> {
         Query::first(query, save)
     }
 }
@@ -411,28 +367,40 @@ mod tests {
 
     #[test]
     fn test_early_exit() {
-        let query = Query::all("a", Save::all());
+        let query = Query::all("a", Save::all()).unwrap();
         assert_eq!(query.exit_at_section(), None);
 
-        let query = Query::all("a", Save::none());
+        let query = Query::all("a", Save::none()).unwrap();
         assert_eq!(query.exit_at_section(), None);
 
-        let query = Query::first("a", Save::all());
+        let query = Query::first("a", Save::all()).unwrap();
         assert_eq!(query.exit_at_section(), Some(0));
 
-        let query = Query::first("a", Save::none());
+        let query = Query::first("a", Save::none()).unwrap();
         assert_eq!(query.exit_at_section(), Some(0));
 
-        let query = Query::all("p", Save::all()).first("a", Save::all());
+        let query = Query::all("p", Save::all())
+            .unwrap()
+            .first("a", Save::all())
+            .unwrap();
         assert_eq!(query.exit_at_section(), None);
 
-        let query = Query::first("p", Save::all()).all("a", Save::all());
+        let query = Query::first("p", Save::all())
+            .unwrap()
+            .all("a", Save::all())
+            .unwrap();
         assert_eq!(query.exit_at_section(), Some(0));
 
-        let query = Query::first("p", Save::all()).first("a", Save::all());
+        let query = Query::first("p", Save::all())
+            .unwrap()
+            .first("a", Save::all())
+            .unwrap();
         assert_eq!(query.exit_at_section(), Some(0));
 
-        let query = Query::first("p", Save::none()).first("a", Save::none());
+        let query = Query::first("p", Save::none())
+            .unwrap()
+            .first("a", Save::none())
+            .unwrap();
         assert_eq!(query.exit_at_section(), Some(1));
     }
 
@@ -451,21 +419,18 @@ mod tests {
         ];
 
         for selector in invalid {
-            assert!(
-                Query::try_all(selector, Save::none()).is_err(),
-                "{selector}"
-            );
+            assert!(Query::all(selector, Save::none()).is_err(), "{selector}");
         }
     }
 
     #[test]
-    fn test_try_then_with_try_all_and_try_first() {
-        let query = Query::try_all("article", Save::none())
+    fn test_then_with_all_and_first() {
+        let query = Query::all("article", Save::none())
             .unwrap()
-            .try_then(|article| {
+            .then(|article| {
                 Ok([
-                    article.try_all("a[href]", Save::all())?,
-                    article.try_first("h1", Save::only_text_content())?,
+                    article.all("a[href]", Save::all())?,
+                    article.first("h1", Save::only_text_content())?,
                 ])
             })
             .unwrap()
@@ -477,13 +442,13 @@ mod tests {
     }
 
     #[test]
-    fn test_try_then_propagates_invalid_selector_from_callback() {
-        let error = Query::try_all("article", Save::none())
+    fn test_then_propagates_invalid_selector_from_callback() {
+        let error = Query::all("article", Save::none())
             .unwrap()
-            .try_then(|article| {
+            .then(|article| {
                 Ok([
-                    article.try_all("a[href]", Save::all())?,
-                    article.try_first("a + b", Save::only_text_content())?,
+                    article.all("a[href]", Save::all())?,
+                    article.first("a + b", Save::only_text_content())?,
                 ])
             })
             .unwrap_err();
@@ -492,14 +457,14 @@ mod tests {
     }
 
     #[test]
-    fn test_try_then_builds_sibling_links_in_callback_order() {
-        let query = Query::try_all("article", Save::none())
+    fn test_then_builds_sibling_links_in_callback_order() {
+        let query = Query::all("article", Save::none())
             .unwrap()
-            .try_then(|article| {
+            .then(|article| {
                 Ok([
-                    article.try_all("a[href]", Save::all())?,
-                    article.try_first("h1", Save::only_text_content())?,
-                    article.try_all("p", Save::none())?,
+                    article.all("a[href]", Save::all())?,
+                    article.first("h1", Save::only_text_content())?,
+                    article.all("p", Save::none())?,
                 ])
             })
             .unwrap()
@@ -518,18 +483,16 @@ mod tests {
     }
 
     #[test]
-    fn test_nested_try_then_supports_try_all_and_try_first() {
-        let query = Query::try_all("article", Save::none())
+    fn test_nested_then_supports_all_and_first() {
+        let query = Query::all("article", Save::none())
             .unwrap()
-            .try_then(|article| {
-                Ok([article
-                    .try_all("section", Save::none())?
-                    .try_then(|section| {
-                        Ok([
-                            section.try_first("h2", Save::only_text_content())?,
-                            section.try_all("a[href]", Save::all())?,
-                        ])
-                    })?])
+            .then(|article| {
+                Ok([article.all("section", Save::none())?.then(|section| {
+                    Ok([
+                        section.first("h2", Save::only_text_content())?,
+                        section.all("a[href]", Save::all())?,
+                    ])
+                })?])
             })
             .unwrap()
             .build();
@@ -544,12 +507,12 @@ mod tests {
     }
 
     #[test]
-    fn test_try_then_returns_error_without_partial_append() {
-        let builder = Query::try_all("article", Save::none())
+    fn test_then_returns_error_without_partial_append() {
+        let builder = Query::all("article", Save::none())
             .unwrap()
-            .try_then(|article| {
-                let first = article.try_all("section", Save::none())?;
-                let second = article.try_first("a + b", Save::all());
+            .then(|article| {
+                let first = article.all("section", Save::none())?;
+                let second = article.first("a + b", Save::all());
                 match second {
                     Ok(second) => Ok([first, second]),
                     Err(err) => Err(err),

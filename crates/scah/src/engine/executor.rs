@@ -3,11 +3,9 @@ use std::fmt::Debug;
 use super::cursor::CursorOps;
 use super::cursor::{Cursor, ScopedCursor};
 use super::multiplexer::DocumentPosition;
-use crate::query::compiler::{Query, Save};
 use crate::store::ElementId;
 use crate::store::Store;
-use crate::support::Reader;
-use crate::{XHtmlElement, dbg_print};
+use crate::{QuerySpec, Reader, Save, SelectionKind, XHtmlElement, dbg_print};
 
 type StartIdx = Option<usize>;
 
@@ -45,16 +43,15 @@ type EndTagEventVec = Vec<DeferredSave>;
 /// 3. **Pruning**: `ScopedCursor`s have a `scope_depth`. When the StAX parser emits
 ///    a close tag that drops the document depth below the cursor's scope, that NFA
 ///    thread is killed.
-#[derive(Debug)]
 pub struct QueryExecutor<'a, 'query> {
-    pub(crate) query: &'a Query<'query>,
+    pub(crate) query: &'a dyn QuerySpec<'query>,
     pub(crate) fsm: Cursor,
     pub(crate) scoped_fsms: ScopedCursorVec,
     pub(crate) on_close_tag_events: EndTagEventVec,
 }
 
 impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
-    pub fn new(query: &'a Query<'query>) -> Self {
+    pub fn new<Q: QuerySpec<'query> + 'a>(query: &'a Q) -> Self {
         Self {
             query,
             fsm: Cursor::new(),
@@ -64,7 +61,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
     }
 
     fn next_position(
-        tree: &Query<'query>,
+        tree: &dyn QuerySpec<'query>,
         list: &mut ScopedCursorVec,
         depth: super::DepthSize,
         fsm: &mut impl CursorOps<'query, 'html>,
@@ -97,7 +94,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
 
     pub fn save_element(
         on_close_tag_events: &mut EndTagEventVec,
-        tree: &Query<'query>,
+        tree: &dyn QuerySpec<'query>,
         store: &mut Store<'html, 'query>,
         element: XHtmlElement<'html>,
         &DocumentPosition {
@@ -206,7 +203,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
             let section_kind = self
                 .query
                 .get_section_selection_kind(fsm.position.selection);
-            let is_all = matches!(section_kind, crate::query::compiler::SelectionKind::All);
+            let is_all = matches!(section_kind, SelectionKind::All);
 
             if is_descendant_combinator && (!last_save_point || is_all) {
                 self.scoped_fsms.push(ScopedCursor::new(
@@ -244,7 +241,7 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
     }
 
     pub fn early_exit(&self) -> bool {
-        if let Some(early_exit_section) = self.query.exit_at_section_end {
+        if let Some(early_exit_section) = self.query.exit_at_section_end() {
             return early_exit_section == self.fsm.position.selection;
         }
 
@@ -327,17 +324,15 @@ impl<'a, 'html, 'query: 'html> QueryExecutor<'a, 'query> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::compiler::{Position, Query, Save};
     use crate::store::Store;
-    use crate::support::Reader;
-    use crate::{Element, XHtmlElement};
+    use crate::{Element, Position, Query, Reader, Save, XHtmlElement};
     use smallvec::smallvec;
 
     const NULL_PARENT: ElementId = ElementId(usize::MAX);
 
     #[test]
     fn test_fsm_next_descendant() {
-        let query = &Query::all("div a", Save::none()).build();
+        let query = &Query::all("div a", Save::none()).unwrap().build();
 
         let mut store = Store::default();
 
@@ -433,7 +428,9 @@ mod tests {
     #[test]
     fn test_complex_fsm_query() {
         let query = &Query::first("div p.class", Save::none())
-            .then(|p| [p.first("span", Save::none()), p.first("a", Save::none())])
+            .unwrap()
+            .then(|p| Ok([p.first("span", Save::none())?, p.first("a", Save::none())?]))
+            .unwrap()
             .build();
 
         let mut store = Store::default();
@@ -553,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_simple_open_close() {
-        let query = Query::first("div", Save::none()).build();
+        let query = Query::first("div", Save::none()).unwrap().build();
 
         let mut store = Store::default();
         let mut selection = QueryExecutor::new(&query);
