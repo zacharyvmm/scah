@@ -152,14 +152,6 @@ The repository includes two Rust benchmark tracks:
 - Cross-library comparisons for simple `all` and `first` selectors.
 - Runtime-builder vs `query!` macro comparisons to measure query-construction overhead separately from execution.
 
-Run them with:
-
-```bash
-cargo bench -p scah-benches --bench speed_bench_simple_all
-cargo bench -p scah-benches --bench speed_bench_simple_first
-cargo bench -p scah-benches --bench speed_bench_macro_queries
-```
-
 ### Python
 ```bash
 pip install -U scah
@@ -201,13 +193,3 @@ const query = Query.all('main > section', { innerHtml: true, textContent: true }
 
 const store = parse(html, [query]);
 ```
-
-## Codebase layout
-
-The workspace is split by responsibility:
-
-- `crates/scah`: public Rust API, parser entry points, store types, and re-exports.
-- `crates/scah-query-ir`: selector parsing, compiled transitions, query builders, and shared query traits.
-- `crates/scah-macros`: the `query!` proc macro for compile-time query construction.
-- `crates/bindings/scah-python` and `crates/bindings/scah-node`: thin language bindings over the Rust core.
-- `benches/`: Criterion and Gungraun benchmarks, including macro-query benchmarks.

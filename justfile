@@ -41,7 +41,7 @@ bench-rust-criterion:
     cargo criterion --message-format=json >> criterion.json
     python3 ./crates/bindings/scah-python/benches/utils/criterion_figure.py ./criterion.json
 bench-node:
-    cd crates/bindings/scah-node && bun run bench
+    cd crates/bindings/scah-node && bun run bench:image
 bench-python:
     cd crates/bindings/scah-python && uv run --all-extras poe bench
 
