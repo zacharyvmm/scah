@@ -1,5 +1,6 @@
 use super::executor::QueryExecutor;
 use crate::XHtmlElement;
+use crate::store::ElementId;
 use crate::store::Store;
 use crate::{QuerySpec, Reader};
 
@@ -7,6 +8,13 @@ pub(crate) struct DocumentPosition {
     pub reader_position: usize,
     pub text_content_position: usize,
     pub element_depth: crate::engine::DepthSize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SaveHit {
+    pub element_id: ElementId,
+    pub save_inner_html: bool,
+    pub save_text_content: bool,
 }
 
 //type Runner<'query, Q> = SmallVec<[QueryExecutor<'query, Q>; 1]>;
@@ -35,29 +43,30 @@ where
         xhtml_element: &XHtmlElement<'html>,
         position: &DocumentPosition,
         store: &mut Store<'html, 'query>,
-    ) {
+    ) -> Vec<SaveHit> {
         let len = store.elements.len();
+        let mut save_hits = Vec::new();
         for session in self.runners.iter_mut() {
-            session.next(xhtml_element, position, store);
+            session.next(xhtml_element, position, store, &mut save_hits);
         }
         if len == store.elements.len() {
             // Element was not saved
             // Thus delete from the tape
             xhtml_element.remove_attributes(&mut store.attributes);
         }
+        save_hits
     }
 
     pub(crate) fn back(
         &mut self,
         xhtml_element: &'html str,
         position: &DocumentPosition,
-        reader: &Reader<'html>,
-        store: &mut Store<'html, 'query>,
+        _reader: &Reader<'html>,
     ) -> bool {
         let mut remove_indices = vec![];
         for (index, session) in self.runners.iter_mut().enumerate() {
             let early_exit = session.early_exit();
-            let back = session.back(store, xhtml_element, position, reader);
+            let back = session.back(xhtml_element, position);
 
             if early_exit && back {
                 remove_indices.push(index);

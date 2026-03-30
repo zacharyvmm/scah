@@ -44,7 +44,8 @@ struct PositionIterator<'query, Q: QuerySpec<'query>> {
 impl<'query, Q: QuerySpec<'query>> Iterator for PositionIterator<'query, Q> {
     type Item = Position;
     fn next(&mut self) -> Option<Self::Item> {
-        self.current.inspect(|position| self.current = position.next_sibling(self.arena))
+        self.current
+            .inspect(|position| self.current = position.next_sibling(self.arena))
     }
 }
 
@@ -90,12 +91,10 @@ pub trait QuerySpec<'query> {
     where
         Self: Sized,
     {
-        position.next_child(self).map(|child|
-            PositionIterator {
-                arena: self,
-                current: Some(child),
-            }
-        )
+        position.next_child(self).map(|child| PositionIterator {
+            arena: self,
+            current: Some(child),
+        })
     }
 }
 

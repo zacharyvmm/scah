@@ -1,21 +1,8 @@
-use std::fmt::Debug;
-
 use super::cursor::CursorOps;
 use super::cursor::{Cursor, ScopedCursor};
-use super::multiplexer::DocumentPosition;
-use crate::store::ElementId;
+use super::multiplexer::{DocumentPosition, SaveHit};
 use crate::store::Store;
-use crate::{QuerySpec, Reader, Save, SelectionKind, XHtmlElement, dbg_print};
-
-type StartIdx = Option<usize>;
-
-#[derive(Debug)]
-pub(crate) struct DeferredSave {
-    element: ElementId,
-    on_depth: super::DepthSize,
-    inner_html: StartIdx,
-    text_content: StartIdx,
-}
+use crate::{QuerySpec, SelectionKind, XHtmlElement, dbg_print};
 
 /*
  * A Selection works runs the fsm's using 2 types of tasks:
@@ -25,7 +12,6 @@ pub(crate) struct DeferredSave {
  */
 
 type ScopedCursorVec = Vec<ScopedCursor>;
-type EndTagEventVec = Vec<DeferredSave>;
 
 /// The `QueryExecutor` is an NFA execution engine optimized for streaming StAX events.
 ///
@@ -47,7 +33,6 @@ pub struct QueryExecutor<'a, Q> {
     pub(crate) query: &'a Q,
     pub(crate) fsm: Cursor,
     pub(crate) scoped_fsms: ScopedCursorVec,
-    pub(crate) on_close_tag_events: EndTagEventVec,
 }
 
 impl<'a, 'html, 'query: 'html, Q> QueryExecutor<'a, Q>
@@ -59,7 +44,6 @@ where
             query,
             fsm: Cursor::new(),
             scoped_fsms: Vec::new(),
-            on_close_tag_events: Vec::new(),
         }
     }
 
@@ -96,17 +80,11 @@ where
     }
 
     pub fn save_element(
-        on_close_tag_events: &mut EndTagEventVec,
         tree: &Q,
         store: &mut Store<'html, 'query>,
         element: XHtmlElement<'html>,
-        &DocumentPosition {
-            element_depth,
-            reader_position,
-            text_content_position,
-        }: &DocumentPosition,
         fsm: &mut impl CursorOps<'query, 'html>,
-    ) {
+    ) -> SaveHit {
         // I can't check for this anymore, since the save is not instant and the fsm position is moved afterwards
         //debug_assert!(fsm.is_save_point(tree));
 
@@ -117,28 +95,11 @@ where
             fsm.set_parent(element_pointer);
         }
 
-        let Save {
-            inner_html,
-            text_content,
-        } = &section.save;
-
-        on_close_tag_events.push(DeferredSave {
-            element: element_pointer,
-            on_depth: element_depth,
-            inner_html: if *inner_html {
-                // Since thiis is triggered on opening tag, the start is the current position in the content
-                // array is about the previous elements text content item, thus I need to add 1 to get the correct position
-                // Their could be a BUG here if there is no text content ("" -> no item added)
-                Some(reader_position)
-            } else {
-                None
-            },
-            text_content: if *text_content {
-                Some(text_content_position)
-            } else {
-                None
-            },
-        });
+        SaveHit {
+            element_id: element_pointer,
+            save_inner_html: section.save.inner_html,
+            save_text_content: section.save.text_content,
+        }
     }
 
     pub fn next(
@@ -146,6 +107,7 @@ where
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
         store: &mut Store<'html, 'query>,
+        save_hits: &mut Vec<SaveHit>,
     ) {
         for i in 0..self.scoped_fsms.len() {
             if !self.scoped_fsms[i].next(self.query, document_position.element_depth, element) {
@@ -169,14 +131,12 @@ where
             let mut new_scoped_fsm = self.scoped_fsms[i].clone();
 
             if self.query.is_save_point(&new_scoped_fsm.position) {
-                Self::save_element(
-                    &mut self.on_close_tag_events,
+                save_hits.push(Self::save_element(
                     self.query,
                     store,
                     element.clone(),
-                    document_position,
                     &mut new_scoped_fsm,
-                );
+                ));
 
                 dbg_print!("Scoped FSM ({i}) Saved `{:?}`", element);
             }
@@ -218,14 +178,7 @@ where
             }
 
             if self.query.is_save_point(&fsm.position) {
-                Self::save_element(
-                    &mut self.on_close_tag_events,
-                    self.query,
-                    store,
-                    element.clone(),
-                    document_position,
-                    fsm,
-                );
+                save_hits.push(Self::save_element(self.query, store, element.clone(), fsm));
 
                 dbg_print!("FSM Saved `{:?}`", element);
             }
@@ -251,50 +204,7 @@ where
         false
     }
 
-    pub fn back(
-        &mut self,
-        store: &mut Store<'html, 'query>,
-        element: &'html str,
-        document_position: &DocumentPosition,
-        reader: &Reader<'html>,
-    ) -> bool {
-        //println!("&BACK: {:#?}", self);
-        for i in (0..self.on_close_tag_events.len()).rev() {
-            let content_trigger = &self.on_close_tag_events[i];
-            if content_trigger.on_depth == document_position.element_depth {
-                // println!("Closing tag save content for `{element}`");
-                let inner_html = {
-                    if let Some(start_idx) = content_trigger.inner_html {
-                        let slice = reader.slice(start_idx..document_position.reader_position);
-                        Some(slice)
-                    } else {
-                        None
-                    }
-                };
-                let text_content = {
-                    if let Some(start_idx) = content_trigger.text_content {
-                        if start_idx == usize::MAX {
-                            if store.text_content.is_empty() {
-                                None
-                            } else {
-                                Some(0..store.text_content.get_position())
-                            }
-                        } else if start_idx == store.text_content.get_position() {
-                            // No new text content was added after the element opened
-                            None
-                        } else {
-                            // to skip the text content before the element (When the start was just opened, thus thier was no text content yet)
-                            Some((start_idx + 1)..store.text_content.get_position())
-                        }
-                    } else {
-                        None
-                    }
-                };
-                store.set_content(content_trigger.element, inner_html, text_content);
-                self.on_close_tag_events.remove(i);
-            }
-        }
-
+    pub fn back(&mut self, element: &'html str, document_position: &DocumentPosition) -> bool {
         let mut remove_last_x_fsms = 0;
         for scoped_fsm in self.scoped_fsms.iter().rev() {
             if scoped_fsm.scope_depth < document_position.element_depth {
@@ -329,7 +239,8 @@ mod tests {
     use super::*;
     use crate::store::Store;
     use crate::{
-        Element, Position, Query, QuerySectionId, Reader, Save, TransitionId, XHtmlElement,
+        Element, ElementId, Position, Query, QuerySectionId, Reader, Save, TransitionId,
+        XHtmlElement,
     };
     use smallvec::smallvec;
 
@@ -356,6 +267,7 @@ mod tests {
                 element_depth: 0,
             },
             &mut store,
+            &mut Vec::new(),
         );
 
         assert!(store.get("div a").is_none());
@@ -398,6 +310,7 @@ mod tests {
                 element_depth: 1,
             },
             &mut store,
+            &mut Vec::new(),
         );
 
         assert_eq!(store.get("div a").unwrap().count(), 1);
@@ -454,6 +367,7 @@ mod tests {
                 element_depth: 0,
             },
             &mut store,
+            &mut Vec::new(),
         );
 
         assert!(store.get("div p.class").is_none());
@@ -497,6 +411,7 @@ mod tests {
                 element_depth: 1,
             },
             &mut store,
+            &mut Vec::new(),
         );
 
         assert_eq!(store.get("div p.class").unwrap().count(), 1);
@@ -575,6 +490,7 @@ mod tests {
                 element_depth: 0,
             },
             &mut store,
+            &mut Vec::new(),
         );
         store.text_content.set_start(4);
         println!("{:?}", store);
@@ -597,14 +513,12 @@ mod tests {
 
         store.text_content.push(&reader, 4);
         let _ = selection.back(
-            &mut store,
             "div",
             &DocumentPosition {
                 reader_position: 0,
                 text_content_position: 0,
                 element_depth: 0,
             },
-            &reader,
         );
 
         assert!(selection.scoped_fsms.is_empty());
