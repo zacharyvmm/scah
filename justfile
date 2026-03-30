@@ -38,7 +38,7 @@ lint:
 bench-rust:
     cargo bench -p scah-benches
 bench-rust-criterion:
-    cargo criterion --message-format=json >> criterion.json
+    cargo criterion -p scah-benches --message-format=json >> criterion.json
     python3 ./crates/bindings/scah-python/benches/utils/criterion_figure.py ./criterion.json
 bench-node:
     cd crates/bindings/scah-node && bun run bench:image
