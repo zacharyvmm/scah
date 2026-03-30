@@ -25,7 +25,7 @@ test-rust:
 test-node:
     cd crates/bindings/scah-node && bun test
 test-python:
-    cd crates/bindings/scah-python && uv run pytest
+    source ./crates/bindings/scah-python/.venv/bin/activate && uv run pytest ./crates/bindings/scah-python/tests/
 
 format:
     cargo fmt --all
