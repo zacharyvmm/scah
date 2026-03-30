@@ -132,9 +132,7 @@ where
 
                 self.position.reader_position = tag_start_position;
                 let implied_closes = self.open_elements.prepare_for_open(self.element.name);
-                for open_element in implied_closes {
-                    self.pop_open_element(open_element, reader);
-                }
+                self.pop_open_elements(implied_closes, reader);
                 self.position.reader_position = reader.get_position();
 
                 let is_self_closing = self.element.is_self_closing();
@@ -174,9 +172,7 @@ where
                 dbg_print!("closing: `{closing_tag}` ({})", self.position.element_depth);
 
                 let closing_elements = self.open_elements.close_by_end_tag(closing_tag);
-                for open_element in closing_elements {
-                    early_exit = self.pop_open_element(open_element, reader) || early_exit;
-                }
+                early_exit = self.pop_open_elements(closing_elements, reader) || early_exit;
             }
         }
 
@@ -190,12 +186,31 @@ where
     fn pop_open_element(
         &mut self,
         open_element: OpenElement<'html>,
+        close_depth: crate::engine::DepthSize,
         reader: &Reader<'html>,
     ) -> bool {
         self.finalize_open_element(&open_element, reader);
-        self.position.element_depth = self.open_elements.depth().saturating_add(1);
+        self.position.element_depth = close_depth;
         self.selectors
             .back(open_element.name, &self.position, reader)
+    }
+
+    fn pop_open_elements(
+        &mut self,
+        open_elements: Vec<OpenElement<'html>>,
+        reader: &Reader<'html>,
+    ) -> bool {
+        let base_depth = self.open_elements.depth();
+        let total = open_elements.len();
+        let mut early_exit = false;
+
+        for (index, open_element) in open_elements.into_iter().enumerate() {
+            let close_depth =
+                base_depth.saturating_add((total - index) as crate::engine::DepthSize);
+            early_exit = self.pop_open_element(open_element, close_depth, reader) || early_exit;
+        }
+
+        early_exit
     }
 
     fn finalize_open_element(&mut self, open_element: &OpenElement<'html>, reader: &Reader<'html>) {
@@ -236,9 +251,7 @@ where
         }
         self.position.reader_position = reader.get_position();
         let remaining = self.open_elements.close_all_at_eof();
-        for open_element in remaining {
-            self.pop_open_element(open_element, reader);
-        }
+        self.pop_open_elements(remaining, reader);
         self.eof_drained = true;
     }
 }
@@ -848,6 +861,164 @@ mod tests {
         assert_eq!(a.text_content(&store), Some("Link"));
         assert_eq!(section.inner_html, Some("<a href='x'>Link"));
         assert_eq!(section.text_content(&store), Some("Link"));
+    }
+
+    #[test]
+    fn test_li_auto_close_on_next_li() {
+        let html = "<ul><li>One<li>Two</ul>";
+        let mut reader = Reader::new(html);
+        let queries = &[Query::all("li", Save::all()).unwrap().build()];
+        let manager = QueryMultiplexer::new(queries);
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+        let items: Vec<&Element> = store.get("li").unwrap().collect();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].text_content(&store), Some("One"));
+        assert_eq!(items[0].inner_html, Some("One"));
+        assert_eq!(items[1].text_content(&store), Some("Two"));
+        assert_eq!(items[1].inner_html, Some("Two"));
+    }
+
+    #[test]
+    fn test_dt_dd_auto_close_sequence() {
+        let html = "<dl><dt>Term<dd>Def<dt>Next</dl>";
+        let mut reader = Reader::new(html);
+        let queries = &[
+            Query::all("dt", Save::all()).unwrap().build(),
+            Query::all("dd", Save::all()).unwrap().build(),
+        ];
+        let manager = QueryMultiplexer::new(queries);
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+        let dts: Vec<&Element> = store.get("dt").unwrap().collect();
+        let dds: Vec<&Element> = store.get("dd").unwrap().collect();
+
+        assert_eq!(dts.len(), 2);
+        assert_eq!(dds.len(), 1);
+        assert_eq!(dts[0].text_content(&store), Some("Term"));
+        assert_eq!(dds[0].text_content(&store), Some("Def"));
+        assert_eq!(dts[1].text_content(&store), Some("Next"));
+    }
+
+    #[test]
+    fn test_option_auto_close_on_next_option() {
+        let html = "<select><option>One<option>Two</select>";
+        let mut reader = Reader::new(html);
+        let queries = &[Query::all("option", Save::all()).unwrap().build()];
+        let manager = QueryMultiplexer::new(queries);
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+        let options: Vec<&Element> = store.get("option").unwrap().collect();
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].text_content(&store), Some("One"));
+        assert_eq!(options[1].text_content(&store), Some("Two"));
+    }
+
+    #[test]
+    fn test_optgroup_closes_previous_option_and_optgroup() {
+        let html = "<select><optgroup><option>One<optgroup><option>Two</select>";
+        let mut reader = Reader::new(html);
+        let queries = &[
+            Query::all("optgroup", Save::all()).unwrap().build(),
+            Query::all("option", Save::all()).unwrap().build(),
+        ];
+        let manager = QueryMultiplexer::new(queries);
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+        let optgroups: Vec<&Element> = store.get("optgroup").unwrap().collect();
+        let options: Vec<&Element> = store.get("option").unwrap().collect();
+
+        assert_eq!(optgroups.len(), 2);
+        assert_eq!(options.len(), 2);
+        assert_eq!(optgroups[0].text_content(&store), Some("One"));
+        assert_eq!(optgroups[1].text_content(&store), Some("Two"));
+        assert_eq!(options[0].text_content(&store), Some("One"));
+        assert_eq!(options[1].text_content(&store), Some("Two"));
+    }
+
+    #[test]
+    fn test_td_auto_close_on_next_td() {
+        let html = "<table><tr><td>One<td>Two</tr></table>";
+        let mut reader = Reader::new(html);
+        let queries = &[Query::all("td", Save::all()).unwrap().build()];
+        let manager = QueryMultiplexer::new(queries);
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+        let cells: Vec<&Element> = store.get("td").unwrap().collect();
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0].text_content(&store), Some("One"));
+        assert_eq!(cells[1].text_content(&store), Some("Two"));
+    }
+
+    #[test]
+    fn test_multiple_queries_attach_to_same_open_element() {
+        let html = "<div class='x'>Hello</div>";
+        let mut reader = Reader::new(html);
+        let queries = &[
+            Query::all("div", Save::all()).unwrap().build(),
+            Query::all(".x", Save::all()).unwrap().build(),
+        ];
+        let manager = QueryMultiplexer::new(queries);
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+        let div = store.get("div").unwrap().next().unwrap();
+        let class_match = store.get(".x").unwrap().next().unwrap();
+
+        assert_eq!(div.inner_html, Some("Hello"));
+        assert_eq!(div.text_content(&store), Some("Hello"));
+        assert_eq!(class_match.inner_html, Some("Hello"));
+        assert_eq!(class_match.text_content(&store), Some("Hello"));
+    }
+
+    #[test]
+    fn test_descendant_and_child_queries_remain_stable_on_malformed_html() {
+        let html = "<div><span>One</div><div><span>Two</span></div>";
+        let mut reader = Reader::new(html);
+        let queries = &[
+            Query::all("div span", Save::all()).unwrap().build(),
+            Query::all("div > span", Save::all()).unwrap().build(),
+        ];
+        let manager = QueryMultiplexer::new(queries);
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+        assert_eq!(store.get("div span").unwrap().count(), 2);
+        assert_eq!(store.get("div > span").unwrap().count(), 2);
+    }
+
+    #[test]
+    fn test_text_before_first_tag_does_not_break_text_content() {
+        let html = "intro<div>Hello</div>";
+        let mut reader = Reader::new(html);
+        let queries = &[Query::all("div", Save::all()).unwrap().build()];
+        let manager = QueryMultiplexer::new(queries);
+        let mut parser = XHtmlParser::new(manager);
+
+        while parser.next(&mut reader) {}
+
+        let store = parser.matches();
+        let div = store.get("div").unwrap().next().unwrap();
+        assert_eq!(div.text_content(&store), Some("Hello"));
     }
 
     const SINGLE_PRODUCT_HTML: &str = r#"

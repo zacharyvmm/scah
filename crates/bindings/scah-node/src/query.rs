@@ -1,5 +1,5 @@
 use ::scah::lazy::{LazyQuery, LazyQueryBuilder};
-use ::scah::{Query, Save};
+use ::scah::{Query, QuerySectionId, Save};
 
 use napi::Result;
 use napi::bindgen_prelude::*;
@@ -95,7 +95,7 @@ impl JsQueryBuilder {
         let builders = callback.call(factory)?;
         let children = builders.iter().map(|b| b.builder.clone());
 
-        let current_index = self.builder.len() - 1;
+        let current_index = QuerySectionId(self.builder.len() - 1);
         for child in children {
             self.builder.append(current_index, child);
         }

@@ -14,7 +14,7 @@ pub(crate) struct OpenElement<'html> {
     pub saved: Vec<SavedElement>,
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct OpenElementStack<'html> {
     entries: Vec<OpenElement<'html>>,
 }
@@ -26,6 +26,15 @@ enum ScopeKind {
     Button,
     Table,
     Select,
+}
+
+impl<'html> Default for OpenElementStack<'html> {
+    fn default() -> Self {
+        const ASSUMED_MAX_DEPTH: usize = 16;
+        Self {
+            entries: Vec::with_capacity(ASSUMED_MAX_DEPTH),
+        }
+    }
 }
 
 impl<'html> OpenElementStack<'html> {
@@ -251,5 +260,64 @@ mod tests {
         let popped = stack.prepare_for_open("li");
         assert_eq!(popped.len(), 1);
         assert_eq!(popped[0].name, "li");
+    }
+
+    #[test]
+    fn test_opening_option_closes_previous_option() {
+        let mut stack = OpenElementStack::default();
+        stack.push("select");
+        stack.push("option");
+
+        let popped = stack.prepare_for_open("option");
+        assert_eq!(popped.len(), 1);
+        assert_eq!(popped[0].name, "option");
+    }
+
+    #[test]
+    fn test_opening_optgroup_closes_option_then_optgroup() {
+        let mut stack = OpenElementStack::default();
+        stack.push("select");
+        stack.push("optgroup");
+        stack.push("option");
+
+        let popped = stack.prepare_for_open("optgroup");
+        assert_eq!(popped.len(), 2);
+        assert_eq!(popped[0].name, "option");
+        assert_eq!(popped[1].name, "optgroup");
+    }
+
+    #[test]
+    fn test_opening_td_closes_previous_cell() {
+        let mut stack = OpenElementStack::default();
+        stack.push("table");
+        stack.push("tr");
+        stack.push("td");
+
+        let popped = stack.prepare_for_open("td");
+        assert_eq!(popped.len(), 1);
+        assert_eq!(popped[0].name, "td");
+    }
+
+    #[test]
+    fn test_opening_button_closes_previous_button() {
+        let mut stack = OpenElementStack::default();
+        stack.push("div");
+        stack.push("button");
+
+        let popped = stack.prepare_for_open("button");
+        assert_eq!(popped.len(), 1);
+        assert_eq!(popped[0].name, "button");
+        assert_eq!(stack.depth(), 1);
+    }
+
+    #[test]
+    fn test_select_scope_ignores_non_select_end_tags() {
+        let mut stack = OpenElementStack::default();
+        stack.push("select");
+        stack.push("option");
+
+        let popped = stack.close_by_end_tag("div");
+        assert!(popped.is_empty());
+        assert_eq!(stack.depth(), 2);
     }
 }
