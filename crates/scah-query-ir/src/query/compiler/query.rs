@@ -37,6 +37,17 @@ impl From<usize> for QuerySectionId {
     }
 }
 
+struct PositionIterator<'query, Q: QuerySpec<'query>> {
+    arena: &'query Q,
+    current: Option<Position>,
+}
+impl<'query, Q: QuerySpec<'query>> Iterator for PositionIterator<'query, Q> {
+    type Item = Position;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.current.inspect(|position| self.current = position.next_sibling(self.arena))
+    }
+}
+
 pub trait QuerySpec<'query> {
     fn states(&self) -> &[Transition<'query>];
     fn queries(&self) -> &[QuerySection<'query>];
@@ -73,6 +84,18 @@ pub trait QuerySpec<'query> {
         let is_last_state =
             self.get_selection(position.selection).range.end.index() - 1 == position.state.index();
         is_last_query && is_last_state
+    }
+
+    fn children(&'query self, position: &Position) -> Option<impl Iterator<Item = Position>>
+    where
+        Self: Sized,
+    {
+        position.next_child(self).map(|child|
+            PositionIterator {
+                arena: self,
+                current: Some(child),
+            }
+        )
     }
 }
 
