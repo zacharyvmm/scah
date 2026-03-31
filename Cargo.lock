@@ -1172,7 +1172,7 @@ dependencies = [
 
 [[package]]
 name = "scah"
-version = "0.0.15"
+version = "0.0.16"
 dependencies = [
  "pretty_assertions",
  "scah-macros",
@@ -1183,7 +1183,7 @@ dependencies = [
 
 [[package]]
 name = "scah-benches"
-version = "0.0.15"
+version = "0.0.16"
 dependencies = [
  "criterion",
  "gungraun",
@@ -1196,7 +1196,7 @@ dependencies = [
 
 [[package]]
 name = "scah-macros"
-version = "0.0.15"
+version = "0.0.16"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1206,7 +1206,7 @@ dependencies = [
 
 [[package]]
 name = "scah-nodejs"
-version = "0.0.15"
+version = "0.0.16"
 dependencies = [
  "napi",
  "napi-build",
@@ -1216,7 +1216,7 @@ dependencies = [
 
 [[package]]
 name = "scah-python"
-version = "0.0.15"
+version = "0.0.16"
 dependencies = [
  "pyo3",
  "scah",
@@ -1224,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "scah-query-ir"
-version = "0.0.15"
+version = "0.0.16"
 dependencies = [
  "pretty_assertions",
  "scah-reader",
@@ -1233,7 +1233,7 @@ dependencies = [
 
 [[package]]
 name = "scah-reader"
-version = "0.0.15"
+version = "0.0.16"
 
 [[package]]
 name = "scopeguard"

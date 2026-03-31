@@ -203,7 +203,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         };
 
         assert!(!self.queries.is_empty());
-        assert!(query_id.0 < self.queries.len());
+        assert!(query_id.index() < self.queries.len());
 
         if !from.is_null() {
             self.link_query_to_element(query_id, from);
@@ -229,7 +229,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         text_content: Option<Range<usize>>,
     ) {
         assert!(!self.elements.is_empty());
-        assert!(element_id.0 < self.elements.len());
+        assert!(element_id.index() < self.elements.len());
 
         let element = &mut self.elements[element_id];
         element.inner_html = inner_html;

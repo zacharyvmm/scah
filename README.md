@@ -21,7 +21,7 @@
 ```toml
 # Cargo.toml
 [dependencies]
-scah = "0.0.15"
+scah = "0.0.16"
 ```
 
 #### Basic usage
@@ -30,9 +30,11 @@ use scah::{Query, Save, parse};
 
 let html = r#"<ul><li><a href="/one">One</a></li><li><a href="/two">Two</a></li></ul>"#;
 
-let queries = &[Query::all("a[href]", Save::all())
-    .expect("valid selector")
-    .build()];
+let queries = &[
+    Query::all("a[href]", Save::all())
+        .expect("valid selector")
+        .build()
+];
 let store = parse(html, queries);
 
 for a in store.get("a[href]").unwrap() {
@@ -63,7 +65,8 @@ let query = Query::all("main > section", Save::all())
     .expect("valid child selectors")
     .build();
 
-let store = parse(html, &[query]);
+let queries = [query];
+let store = parse(html, &queries);
 
 // Access nested results through parent elements
 for section in store.get("main > section").unwrap() {
@@ -71,7 +74,7 @@ for section in store.get("main > section").unwrap() {
 
     if let Some(links) = section.get(&store, "> a[href]") {
         for link in links {
-            println!("  Direct link: {}", link.attribute(&store, "href").unwrap());
+            println!("\tDirect link: {}", link.attribute(&store, "href").unwrap());
         }
     }
 }
@@ -100,8 +103,8 @@ let query = query! {
         all("a[href]", Save::all()),
     }
 };
-
-let store = parse(html, &[query]);
+let queries = [query]; 
+let store = parse(html, &queries);
 let articles = store.get("article").unwrap();
 assert_eq!(articles.len(), 1);
 for article in articles {
@@ -149,14 +152,6 @@ The repository includes two Rust benchmark tracks:
 - Cross-library comparisons for simple `all` and `first` selectors.
 - Runtime-builder vs `query!` macro comparisons to measure query-construction overhead separately from execution.
 
-Run them with:
-
-```bash
-cargo bench -p scah-benches --bench speed_bench_simple_all
-cargo bench -p scah-benches --bench speed_bench_simple_first
-cargo bench -p scah-benches --bench speed_bench_macro_queries
-```
-
 ### Python
 ```bash
 pip install -U scah
@@ -174,7 +169,7 @@ query = Query.all("main > section", Save.all())
 store = parse(html, [query])
 ```
 
-#### Benchmark's
+#### Benchmarks
 ##### Real Html BenchMark ([html.spec.whatwg.org](https://html.spec.whatwg.org/)) (select all `a` tags):
 ![WhatWg Html Spec BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/whatwg.png)
 
@@ -199,12 +194,6 @@ const query = Query.all('main > section', { innerHtml: true, textContent: true }
 const store = parse(html, [query]);
 ```
 
-## Codebase layout
-
-The workspace is split by responsibility:
-
-- `crates/scah`: public Rust API, parser entry points, store types, and re-exports.
-- `crates/scah-query-ir`: selector parsing, compiled transitions, query builders, and shared query traits.
-- `crates/scah-macros`: the `query!` proc macro for compile-time query construction.
-- `crates/bindings/scah-python` and `crates/bindings/scah-node`: thin language bindings over the Rust core.
-- `benches/`: Criterion and Gungraun benchmarks, including macro-query benchmarks.
+#### Benchmarks
+Synthetic Html BenchMark (select all 5_000 `a` tags):
+![Synthetic Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-node/benchmark/images/synthetic.png)

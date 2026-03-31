@@ -1,7 +1,7 @@
 use crate::save::PySave;
 use ::scah::lazy::{LazyQuery, LazyQueryBuilder};
 use pyo3::prelude::*;
-use scah::Query;
+use scah::{Query, QuerySectionId};
 
 #[pyclass]
 pub struct PyQueryBuilder {
@@ -28,7 +28,7 @@ impl PyQueryBuilder {
         let builders: Vec<PyRef<PyQueryBuilder>> = result.extract()?;
         let children = builders.iter().map(|b| b.builder.clone());
 
-        let current_index = slf.builder.len() - 1;
+        let current_index = QuerySectionId(slf.builder.len() - 1);
         for child in children {
             slf.builder.append(current_index, child);
         }

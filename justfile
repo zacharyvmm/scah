@@ -25,7 +25,7 @@ test-rust:
 test-node:
     cd crates/bindings/scah-node && bun test
 test-python:
-    cd crates/bindings/scah-python && uv run pytest
+    source ./crates/bindings/scah-python/.venv/bin/activate && uv run pytest ./crates/bindings/scah-python/tests/
 
 format:
     cargo fmt --all
@@ -38,10 +38,10 @@ lint:
 bench-rust:
     cargo bench -p scah-benches
 bench-rust-criterion:
-    cargo criterion --message-format=json >> criterion.json
+    cargo criterion -p scah-benches --message-format=json >> criterion.json
     python3 ./crates/bindings/scah-python/benches/utils/criterion_figure.py ./criterion.json
 bench-node:
-    cd crates/bindings/scah-node && bun run bench
+    cd crates/bindings/scah-node && bun run bench:image
 bench-python:
     cd crates/bindings/scah-python && uv run --all-extras poe bench
 

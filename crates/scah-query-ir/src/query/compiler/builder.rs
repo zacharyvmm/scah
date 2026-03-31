@@ -1,5 +1,5 @@
 use super::SelectorParseError;
-use super::query::{Query, QuerySection};
+use super::query::{Query, QuerySection, QuerySectionId, TransitionId};
 use super::transition::Transition;
 
 /// Controls which pieces of content to capture for matched elements.
@@ -125,8 +125,8 @@ impl<'query> QueryBuilder<'query> {
         let current_state_len = self.states.len();
         let mut states = Transition::generate_transitions_from_string(query)?;
 
-        let parent_index = self.selection.len() - 1;
-        let range = (current_state_len)..(current_state_len + states.len());
+        let parent_index = QuerySectionId(self.selection.len() - 1);
+        let range = TransitionId(current_state_len)..TransitionId(current_state_len + states.len());
         self.selection.push(QuerySection::new(
             query,
             save,
@@ -151,8 +151,8 @@ impl<'query> QueryBuilder<'query> {
         let current_state_len = self.states.len();
         let mut states = Transition::generate_transitions_from_string(query)?;
 
-        let parent_index = self.selection.len() - 1;
-        let range = (current_state_len)..(current_state_len + states.len());
+        let parent_index = QuerySectionId(self.selection.len() - 1);
+        let range = TransitionId(current_state_len)..TransitionId(current_state_len + states.len());
         self.selection.push(QuerySection::new(
             query,
             save,
@@ -170,17 +170,17 @@ impl<'query> QueryBuilder<'query> {
     ///
     /// Enables early-exit optimisation for this branch of the query tree.
     ///
-    pub fn append(&mut self, parent: usize, mut other: Self) {
+    pub fn append(&mut self, parent: QuerySectionId, mut other: Self) {
         let state_length = self.states.len();
         let selection_length = self.selection.len();
 
-        let mut last_sibling: Option<usize> = {
-            if parent + 1 == self.selection.len() {
+        let mut last_sibling: Option<QuerySectionId> = {
+            if parent.index() + 1 == self.selection.len() {
                 None
             } else {
-                let mut sibling_index = parent + 1;
-                while self.selection[sibling_index].next_sibling.is_some() {
-                    sibling_index = self.selection[sibling_index].next_sibling.unwrap();
+                let mut sibling_index = QuerySectionId(parent.index() + 1);
+                while self.selection[sibling_index.index()].next_sibling.is_some() {
+                    sibling_index = self.selection[sibling_index.index()].next_sibling.unwrap();
                 }
 
                 Some(sibling_index)
@@ -188,24 +188,24 @@ impl<'query> QueryBuilder<'query> {
         };
         for index in 0..other.selection.len() {
             let query = &mut other.selection[index];
-            query.range.start += state_length;
-            query.range.end += state_length;
+            query.range.start = TransitionId(query.range.start.index() + state_length);
+            query.range.end = TransitionId(query.range.end.index() + state_length);
             if let Some(next_sibling) = query.next_sibling {
-                query.next_sibling = Some(next_sibling + selection_length);
+                query.next_sibling = Some(QuerySectionId(next_sibling.index() + selection_length));
             }
 
             if let Some(idx) = query.parent {
-                query.parent = Some(idx + selection_length);
+                query.parent = Some(QuerySectionId(idx.index() + selection_length));
             } else {
                 query.parent = Some(parent);
 
-                let current_index = selection_length + index;
+                let current_index = QuerySectionId(selection_length + index);
                 last_sibling = match last_sibling {
                     Some(sibling) => {
-                        if sibling < selection_length {
-                            self.selection[sibling].next_sibling = Some(current_index);
+                        if sibling.index() < selection_length {
+                            self.selection[sibling.index()].next_sibling = Some(current_index);
                         } else {
-                            other.selection[sibling - selection_length].next_sibling =
+                            other.selection[sibling.index() - selection_length].next_sibling =
                                 Some(current_index);
                         }
                         Some(current_index)
@@ -248,27 +248,30 @@ impl<'query> QueryBuilder<'query> {
         let factory = QueryFactory {};
         let children = func(factory)?;
 
-        let current_index = self.selection.len() - 1;
+        let current_index = QuerySectionId(self.selection.len() - 1);
         for child in children {
             self.append(current_index, child);
         }
         Ok(self)
     }
 
-    fn exit_at_section(&self) -> Option<usize> {
+    fn exit_at_section(&self) -> Option<QuerySectionId> {
         // returns the position in the selection tree where it can early exit
         // TODO: I should add a required flag for QuerySections, so that the first selection is nulled
         //  -> Basicly you can't return the first section without a perticular section behind added
         //  -> If you come back to the section without saving the required section,
         //      then you delete the saved data and you start over.
 
-        fn search_for_single_exit_section(index: usize, list: &Vec<QuerySection>) -> Option<usize> {
+        fn search_for_single_exit_section(
+            index: QuerySectionId,
+            list: &[QuerySection<'_>],
+        ) -> Option<QuerySectionId> {
             // If you have a section with MULTIPLE children that can early exit,
             //   then this parent node will become the exit section
-            if index >= list.len() {
+            if index.index() >= list.len() {
                 return None;
             }
-            let section = &list[index];
+            let section = &list[index.index()];
             let stop_here = match &section.kind {
                 //BUG: you can only early exit when the ALL of them have been found, thus the parent must be awaited for
                 SelectionKind::All => return None,
@@ -280,13 +283,13 @@ impl<'query> QueryBuilder<'query> {
                 return Some(index);
             }
 
-            let mut child = index + 1;
-            if child >= list.len() {
+            let mut child = QuerySectionId(index.index() + 1);
+            if child.index() >= list.len() {
                 return Some(index);
             }
 
-            let mut child_response: Option<usize> = None;
-            if let Some(parent) = list[child].parent
+            let mut child_response: Option<QuerySectionId> = None;
+            if let Some(parent) = list[child.index()].parent
                 && parent == index
             {
                 loop {
@@ -299,7 +302,7 @@ impl<'query> QueryBuilder<'query> {
                         }
                     };
 
-                    if let Some(sibling) = list[child].next_sibling {
+                    if let Some(sibling) = list[child.index()].next_sibling {
                         child = sibling;
                     } else {
                         break;
@@ -313,7 +316,7 @@ impl<'query> QueryBuilder<'query> {
             Some(index)
         }
 
-        search_for_single_exit_section(0, &self.selection)
+        search_for_single_exit_section(QuerySectionId(0), &self.selection)
     }
 }
 
@@ -363,7 +366,7 @@ impl<'query> QueryFactory {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ClassSelections, Query, Save, SelectionKind};
+    use crate::{ClassSelections, Query, QuerySectionId, Save, SelectionKind};
 
     #[test]
     fn test_builder_with_class_chaining() {
@@ -383,10 +386,10 @@ mod tests {
         assert_eq!(query.exit_at_section(), None);
 
         let query = Query::first("a", Save::all()).unwrap();
-        assert_eq!(query.exit_at_section(), Some(0));
+        assert_eq!(query.exit_at_section(), Some(QuerySectionId(0)));
 
         let query = Query::first("a", Save::none()).unwrap();
-        assert_eq!(query.exit_at_section(), Some(0));
+        assert_eq!(query.exit_at_section(), Some(QuerySectionId(0)));
 
         let query = Query::all("p", Save::all())
             .unwrap()
@@ -398,19 +401,19 @@ mod tests {
             .unwrap()
             .all("a", Save::all())
             .unwrap();
-        assert_eq!(query.exit_at_section(), Some(0));
+        assert_eq!(query.exit_at_section(), Some(QuerySectionId(0)));
 
         let query = Query::first("p", Save::all())
             .unwrap()
             .first("a", Save::all())
             .unwrap();
-        assert_eq!(query.exit_at_section(), Some(0));
+        assert_eq!(query.exit_at_section(), Some(QuerySectionId(0)));
 
         let query = Query::first("p", Save::none())
             .unwrap()
             .first("a", Save::none())
             .unwrap();
-        assert_eq!(query.exit_at_section(), Some(1));
+        assert_eq!(query.exit_at_section(), Some(QuerySectionId(1)));
     }
 
     #[test]
@@ -480,11 +483,11 @@ mod tests {
             .build();
 
         assert_eq!(query.queries.len(), 4);
-        assert_eq!(query.queries[1].parent, Some(0));
-        assert_eq!(query.queries[2].parent, Some(0));
-        assert_eq!(query.queries[3].parent, Some(0));
-        assert_eq!(query.queries[1].next_sibling, Some(2));
-        assert_eq!(query.queries[2].next_sibling, Some(3));
+        assert_eq!(query.queries[1].parent, Some(QuerySectionId(0)));
+        assert_eq!(query.queries[2].parent, Some(QuerySectionId(0)));
+        assert_eq!(query.queries[3].parent, Some(QuerySectionId(0)));
+        assert_eq!(query.queries[1].next_sibling, Some(QuerySectionId(2)));
+        assert_eq!(query.queries[2].next_sibling, Some(QuerySectionId(3)));
         assert_eq!(query.queries[3].next_sibling, None);
         assert_eq!(query.queries[1].kind, SelectionKind::All);
         assert_eq!(query.queries[2].kind, SelectionKind::First);
@@ -510,9 +513,9 @@ mod tests {
         assert_eq!(query.queries[1].source, "section");
         assert_eq!(query.queries[2].source, "h2");
         assert_eq!(query.queries[3].source, "a[href]");
-        assert_eq!(query.queries[2].parent, Some(1));
-        assert_eq!(query.queries[3].parent, Some(1));
-        assert_eq!(query.queries[2].next_sibling, Some(3));
+        assert_eq!(query.queries[2].parent, Some(QuerySectionId(1)));
+        assert_eq!(query.queries[3].parent, Some(QuerySectionId(1)));
+        assert_eq!(query.queries[2].next_sibling, Some(QuerySectionId(3)));
     }
 
     #[test]

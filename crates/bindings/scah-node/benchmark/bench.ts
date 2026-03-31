@@ -1,3 +1,7 @@
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
+
 import { bench, group, run } from 'mitata'
 
 import { parse, Query } from '../index.js'
@@ -21,6 +25,151 @@ function generateHtml(count: number): string {
 
 const QUERY = 'a'
 const HTML = generateHtml(5_000)
+const BENCHMARK_NAME = 'node-parse-query'
+const DEFAULT_JSON_OUTPUT = './benchmark/results/synthethic.json'
+const DEFAULT_IMAGE_OUTPUT = './benchmark/images/synthethic.png'
+
+type CliOptions = {
+  jsonOutput?: string
+  imageOutput?: string
+}
+
+type MitataRun = {
+  name: string
+  stats?: {
+    avg: number
+    samples?: number[]
+  }
+}
+
+type MitataBenchmark = {
+  alias: string
+  runs: MitataRun[]
+}
+
+function parseCliArgs(argv: string[]): CliOptions {
+  const options: CliOptions = {}
+
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index]
+
+    if (arg === '--json') {
+      const next = argv[index + 1]
+      if (next && !next.startsWith('--')) {
+        options.jsonOutput = next
+        index++
+      } else {
+        options.jsonOutput = DEFAULT_JSON_OUTPUT
+      }
+    }
+
+    if (arg === '--image') {
+      const next = argv[index + 1]
+      if (next && !next.startsWith('--')) {
+        options.imageOutput = next
+        index++
+      } else {
+        options.imageOutput = DEFAULT_IMAGE_OUTPUT
+      }
+    }
+  }
+
+  return options
+}
+
+function mean(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0) / values.length
+}
+
+function standardDeviation(values: number[]): number {
+  if (values.length < 2) {
+    return 0
+  }
+
+  const average = mean(values)
+  const variance = values.reduce((total, value) => total + (value - average) ** 2, 0) / values.length
+  return Math.sqrt(variance)
+}
+
+function toPytestBenchmarkJson(benchmarks: MitataBenchmark[]) {
+  return {
+    machine_info: {
+      runtime: 'bun',
+    },
+    bench_name: BENCHMARK_NAME,
+    benchmarks: benchmarks.flatMap((benchmark) =>
+      benchmark.runs.map((run) => {
+        const samples = run.stats?.samples ?? []
+        const meanNanoseconds = run.stats?.avg ?? 0
+        const stddevNanoseconds = standardDeviation(samples)
+
+        return {
+          group: 'Node parse + query',
+          name: run.name,
+          fullname: `${benchmark.alias}::${run.name}`,
+          stats: {
+            mean: meanNanoseconds / 1_000_000_000,
+            stddev: stddevNanoseconds / 1_000_000_000,
+            rounds: samples.length,
+          },
+        }
+      }),
+    ),
+  }
+}
+
+function writeJsonOutput(outputPath: string, benchmarks: MitataBenchmark[]) {
+  const absolutePath = resolve(outputPath)
+  mkdirSync(dirname(absolutePath), { recursive: true })
+  writeFileSync(absolutePath, JSON.stringify(toPytestBenchmarkJson(benchmarks), null, 2))
+  console.log(`Benchmark JSON saved to ${absolutePath}`)
+  return absolutePath
+}
+
+function renderImageFromJson(jsonPath: string, imagePath: string) {
+  const absoluteImagePath = resolve(imagePath)
+  mkdirSync(dirname(absoluteImagePath), { recursive: true })
+
+  const figureScript = resolve('../scah-python/benches/utils/figure.py')
+  const env = {
+    ...process.env,
+    MPLCONFIGDIR: process.env.MPLCONFIGDIR ?? '/tmp/matplotlib',
+    UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? '/tmp/uv-cache',
+  }
+  const pythonBindingRoot = resolve('../scah-python')
+
+  const commands: Array<[string, string[]]> = [
+    [
+      'uv',
+      [
+        'run',
+        '--directory',
+        pythonBindingRoot,
+        '--all-extras',
+        'python3',
+        './benches/utils/figure.py',
+        jsonPath,
+        '-o',
+        absoluteImagePath,
+      ],
+    ],
+    ['python3', [figureScript, jsonPath, '-o', absoluteImagePath]],
+  ]
+
+  for (const [command, args] of commands) {
+    const result = spawnSync(command, args, { env, stdio: 'inherit' })
+    if (result.status === 0) {
+      console.log(`Benchmark image saved to ${absoluteImagePath}`)
+      return
+    }
+
+    if (result.error && 'code' in result.error && result.error.code === 'ENOENT') {
+      continue
+    }
+  }
+
+  throw new Error(`Failed to render benchmark image via ${figureScript}`)
+}
 
 group('parse + query', () => {
   bench('scah', () => {
@@ -85,4 +234,19 @@ group('parse + query', () => {
   })
 })
 
-await run()
+const options = parseCliArgs(process.argv.slice(2))
+
+if (!options.jsonOutput && !options.imageOutput) {
+  await run()
+} else {
+  const result = await run({
+    format: 'quiet',
+  })
+
+  const benchmarks = result.benchmarks as MitataBenchmark[]
+  const jsonPath = writeJsonOutput(options.jsonOutput ?? DEFAULT_JSON_OUTPUT, benchmarks)
+
+  if (options.imageOutput) {
+    renderImageFromJson(jsonPath, options.imageOutput)
+  }
+}
