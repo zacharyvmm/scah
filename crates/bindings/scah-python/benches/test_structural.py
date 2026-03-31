@@ -1,0 +1,102 @@
+import pytest
+
+from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser as SelectolaxParser
+from parsel import Selector
+from scah import Query, Save, parse
+
+
+PRODUCT_COUNT = 5_000
+
+
+
+
+def parse_bs4_lxml(html: str):
+    soup = BeautifulSoup(html, "lxml")
+    out = []
+    for product in soup.select(".product"):
+        out.append((
+            product.select_one("h1").get_text(strip=True),
+            product.select_one(".rating").get_text(strip=True),
+            product.select_one(".description").get_text(strip=True),
+        ))
+    return out
+
+
+def parse_selectolax(html: str):
+    tree = SelectolaxParser(html)
+    out = []
+    for product in tree.css(".product"):
+        out.append((
+            product.css_first("h1").text(strip=True),
+            product.css_first(".rating").text(strip=True),
+            product.css_first(".description").text(strip=True),
+        ))
+    return out
+
+
+def parse_parsel(html: str):
+    selector = Selector(text=html)
+    out = []
+    for product in selector.css(".product"):
+        out.append((
+            product.css("h1::text").get(),
+            product.css(".rating::text").get(),
+            product.css(".description::text").get(),
+        ))
+    return out
+
+
+def parse_scah(html: str):
+    # This benchmarks the structured query itself.
+    q = (
+        Query.all(".product", Save.all())
+        .then(lambda product: [
+            product.all("> h1", Save.all()),
+            product.all("> .rating", Save.all()),
+            product.all("> .description", Save.all()),
+        ])
+        .build()
+    )
+
+    store = parse(html, [q])
+    return store.get(".product")
+
+
+PARSERS = {
+    "Scah": parse_scah,
+    "BS4 (lxml)": parse_bs4_lxml,
+    "Selectolax": parse_selectolax,
+    "Parsel": parse_parsel,
+    #"Gazpacho": parse_gazpacho,
+}
+
+
+@pytest.fixture(scope="session")
+def html_content():
+    products = "".join(
+        f"""
+        <div class="product">
+            <h1>Product {i}</h1>
+            <span class="rating">{(i % 5) + 1}/5</span>
+            <p class="description">Description {i}</p>
+            <div class="meta">
+                <span class="sku">SKU-{i}</span>
+                <a href="/products/{i}">View</a>
+            </div>
+        </div>
+        """
+        for i in range(PRODUCT_COUNT)
+    )
+    return f"<html><body><main>{products}</main></body></html>"
+
+
+@pytest.mark.parametrize("name", PARSERS.keys())
+def test_structured_benchmark(benchmark, html_content, name):
+    lib = PARSERS[name]
+
+    benchmark.group = f"Structured Product Extraction ({PRODUCT_COUNT} products)"
+    benchmark.name = name
+
+    result = benchmark(lib, html_content)
+    assert len(result) == PRODUCT_COUNT

@@ -35,6 +35,7 @@ lint:
     cargo clippy --all-targets --all-features -- -D warnings
     cd crates/bindings/scah-node && bun run lint
 
+bench: bench-rust bench-node bench-python
 bench-rust:
     cargo bench -p scah-benches
 bench-rust-criterion:
@@ -43,7 +44,7 @@ bench-rust-criterion:
 bench-node:
     cd crates/bindings/scah-node && bun run bench:image
 bench-python:
-    cd crates/bindings/scah-python && uv run --all-extras poe bench
+    cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras poe bench
 
 bump new_version:
     just bump-rust "{{new_version}}"

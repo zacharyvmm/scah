@@ -31,8 +31,10 @@ bench = [
     { cmd = "uv pip install -e . --reinstall --no-cache"},
     { cmd = "pytest benches/test_synthetic.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic.json" },
     { cmd = "pytest benches/test_spec.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/whatwg.json" },
+    { cmd = "pytest benches/test_structural.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/structural.json" },
     { cmd = "python3 ./benches/utils/figure.py ./benches/synthetic.json -o ./benches/images/synthetic.png" },
     { cmd = "python3 ./benches/utils/figure.py ./benches/whatwg.json -o ./benches/images/whatwg.png" },
+    { cmd = "python3 ./benches/utils/figure.py ./benches/structural.json -o ./benches/images/structural.png" },
     { cmd = "rm ./benches/*.json" },
 ]
 
