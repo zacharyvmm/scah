@@ -47,3 +47,13 @@ harness = false
 name = "memory_bench_macro_queries"
 path = "macro/memory_bench.rs"
 harness = false
+
+[[bench]]
+name = "speed_bench_nested_queries"
+path = "nested/speed_bench.rs"
+harness = false
+
+[[bench]]
+name = "memory_bench_nested_queries"
+path = "nested/memory_bench.rs"
+harness = false

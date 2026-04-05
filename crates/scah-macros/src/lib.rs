@@ -42,7 +42,7 @@ impl Parse for QueryNode {
         let kind = parse_kind(input)?;
         let content;
         parenthesized!(content in input);
-        let selector: LitStr = content.parse()?;
+        let selector = parse_selector_literal(&content)?;
         content.parse::<Token![,]>()?;
         let save_expr: Expr = content.parse()?;
         let save = parse_save_expr(&save_expr)?;
@@ -70,6 +70,18 @@ impl Parse for QueryNode {
             children,
         })
     }
+}
+
+fn parse_selector_literal(input: ParseStream<'_>) -> Result<LitStr> {
+    if input.peek(LitStr) {
+        return input.parse();
+    }
+
+    let expr: Expr = input.parse()?;
+    Err(syn::Error::new_spanned(
+        expr,
+        "query! selector must be a string literal, for example `\"a[href]\"`; constants like `QUERY` are not resolved by this macro, so use `Query::all(QUERY, ...)` for shared selector constants",
+    ))
 }
 
 fn parse_kind(input: ParseStream<'_>) -> Result<SelectionKind> {
@@ -123,6 +135,24 @@ fn parse_save_expr(expr: &Expr) -> Result<Save> {
             expr,
             "unsupported save expression in query! (too many segments)",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::QueryNode;
+
+    #[test]
+    fn rejects_selector_constants_with_actionable_error() {
+        let error = match syn::parse_str::<QueryNode>("all(QUERY, Save::all())") {
+            Ok(_) => panic!("selector constant should not parse"),
+            Err(error) => error,
+        };
+
+        let message = error.to_string();
+        assert!(message.contains("selector must be a string literal"));
+        assert!(message.contains("constants like `QUERY` are not resolved by this macro"));
+        assert!(message.contains("Query::all(QUERY, ...)"));
     }
 }
 
