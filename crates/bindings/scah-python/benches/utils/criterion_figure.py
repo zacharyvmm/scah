@@ -6,6 +6,7 @@ from matplotlib.patches import Patch
 import argparse
 import os
 
+
 def parse_criterion_json(filename):
     results = []
     with open(filename, 'r') as f:
@@ -58,17 +59,24 @@ def generate_markdown_table(df):
         
     return md_content
 
-def create_timeline_plots(df, output_base_name):
+
+def create_simple_timeline_plots(df, output_base_name):
     pivot_df = df.pivot(index=['Library', 'Size'], columns='Group', values='Mean_ms').reset_index()
-    
-    pivot_df.rename(columns={'simple_all_selection_comparison': 'All', 'simple_first_selection_comparison': 'First'}, inplace=True)
+
+    pivot_df.rename(
+        columns={
+            'simple_all_selection_comparison': 'All',
+            'simple_first_selection_comparison': 'First',
+        },
+        inplace=True,
+    )
     if 'All' not in pivot_df.columns or 'First' not in pivot_df.columns:
-        print("Error: The benchmark JSON must contain both 'All' and 'First' groups.")
+        print("Skipping simple timeline plots: missing simple 'All' or 'First' groups.")
         return
 
     pivot_df['Selection_Time'] = pivot_df['All'] - pivot_df['First']
     pivot_df['DOM_Time'] = pivot_df['First']
-    
+
     # pivot_df.to_csv('library_performance.csv', index=False)
 
     sizes = sorted(pivot_df['Size'].unique())
@@ -132,6 +140,41 @@ def create_timeline_plots(df, output_base_name):
         print(f"Generated image: {specific_filename}")
         plt.close(fig)
 
+
+def create_total_time_plots(df, output_base_name, group_name, label, file_stem_suffix):
+    group_df = df[df['Group'] == group_name].copy()
+    if group_df.empty:
+        print(f"Skipping {label} plots: missing '{group_name}' group.")
+        return
+
+    sizes = sorted(group_df['Size'].unique())
+    base_name, ext = os.path.splitext(output_base_name)
+    if not ext:
+        ext = ".png"
+
+    output_base = f"{base_name}_{file_stem_suffix}"
+
+    for size in sizes:
+        fig, ax = plt.subplots(figsize=(10, 5))
+
+        subset = group_df[group_df['Size'] == size].sort_values(by='Mean_ms', ascending=False).reset_index(drop=True)
+
+        y_pos = list(range(1, len(subset) + 1))
+        ax.barh(y_pos, subset['Mean_ms'], color="C0")
+        ax.invert_yaxis()
+
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(subset['Library'])
+        ax.set_title(f"{label} - Input Size: {size} Elements", fontsize=14, pad=10)
+        ax.set_xlabel("Time (ms)", fontsize=12)
+        ax.tick_params(axis='both', which='major', labelsize=11)
+
+        specific_filename = f"{output_base}_{size}{ext}"
+        plt.tight_layout()
+        plt.savefig(specific_filename, dpi=300)
+        print(f"Generated image: {specific_filename}")
+        plt.close(fig)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Parse Criterion JSON into separate Timeline Plots.")
     parser.add_argument('filename', type=str, help="Path to criterion.json")
@@ -142,7 +185,14 @@ if __name__ == "__main__":
     benchmark_df = parse_criterion_json(args.filename)
 
     if not benchmark_df.empty:
-        create_timeline_plots(benchmark_df, args.output)
+        create_simple_timeline_plots(benchmark_df, args.output)
+        create_total_time_plots(
+            benchmark_df,
+            args.output,
+            'nested_all_selection_comparison',
+            'Nested All',
+            'nested_all',
+        )
 
         md_table = generate_markdown_table(benchmark_df)
         with open('criterion.md', 'w') as f:

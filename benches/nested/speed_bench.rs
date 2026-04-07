@@ -5,6 +5,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use lexbor_css::HtmlDocument;
 use lol_html::errors::RewritingError;
 use lol_html::{HtmlRewriter, Settings, element, text};
+use lxml::HtmlDocument as LxmlDocument;
 #[allow(unused_imports)]
 use scah::Save;
 use scah::{parse, query};
@@ -30,6 +31,11 @@ impl fmt::Display for StopParsing {
 }
 
 impl Error for StopParsing {}
+
+const PRODUCT_XPATH: &str = "//div[@class='product']";
+const PRODUCT_TITLE_XPATH: &str = "//div[@class='product']/h1";
+const PRODUCT_RATING_XPATH: &str = "//div[@class='product']/span[@class='rating']";
+const PRODUCT_DESCRIPTION_XPATH: &str = "//div[@class='product']/p[@class='description']";
 
 fn bench_nested_all(c: &mut Criterion) {
     let mut group = c.benchmark_group("nested_all_selection_comparison");
@@ -177,6 +183,33 @@ fn bench_nested_all(c: &mut Criterion) {
                 }
 
                 for description in doc.select(PRODUCT_DESCRIPTION_GLOBAL_SELECTOR).iter() {
+                    black_box(description.inner_html());
+                    black_box(description.text_content());
+                }
+            })
+        });
+
+        group.bench_with_input(BenchmarkId::new("lxml", size), &content, |b, html| {
+            b.iter(|| {
+                let doc = LxmlDocument::new(html).expect("Failed to parse HTML");
+
+                for product in doc.xpath(PRODUCT_XPATH).iter() {
+                    black_box(product.get_attribute("class"));
+                    black_box(product.inner_html());
+                    black_box(product.text_content());
+                }
+
+                for title in doc.xpath(PRODUCT_TITLE_XPATH).iter() {
+                    black_box(title.inner_html());
+                    black_box(title.text_content());
+                }
+
+                for rating in doc.xpath(PRODUCT_RATING_XPATH).iter() {
+                    black_box(rating.inner_html());
+                    black_box(rating.text_content());
+                }
+
+                for description in doc.xpath(PRODUCT_DESCRIPTION_XPATH).iter() {
                     black_box(description.inner_html());
                     black_box(description.text_content());
                 }
@@ -367,6 +400,33 @@ fn bench_nested_first(c: &mut Criterion) {
 
                 let description = doc.select(PRODUCT_DESCRIPTION_GLOBAL_SELECTOR);
                 let description = description.iter().next().unwrap();
+                black_box(description.inner_html());
+                black_box(description.text_content());
+            })
+        });
+
+        group.bench_with_input(BenchmarkId::new("lxml", size), &content, |b, html| {
+            b.iter(|| {
+                let doc = LxmlDocument::new(html).expect("Failed to parse HTML");
+
+                let products = doc.xpath(PRODUCT_XPATH);
+                let product = products.iter().next().unwrap();
+                black_box(product.get_attribute("class"));
+                black_box(product.inner_html());
+                black_box(product.text_content());
+
+                let titles = doc.xpath(PRODUCT_TITLE_XPATH);
+                let title = titles.iter().next().unwrap();
+                black_box(title.inner_html());
+                black_box(title.text_content());
+
+                let ratings = doc.xpath(PRODUCT_RATING_XPATH);
+                let rating = ratings.iter().next().unwrap();
+                black_box(rating.inner_html());
+                black_box(rating.text_content());
+
+                let descriptions = doc.xpath(PRODUCT_DESCRIPTION_XPATH);
+                let description = descriptions.iter().next().unwrap();
                 black_box(description.inner_html());
                 black_box(description.text_content());
             })

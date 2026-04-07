@@ -1,5 +1,6 @@
 use gungraun::{library_benchmark, library_benchmark_group, main};
 use lol_html::errors::RewritingError;
+use lxml::HtmlDocument as LxmlDocument;
 use std::error::Error;
 use std::fmt;
 use std::hint::black_box;
@@ -92,6 +93,18 @@ fn bench_lexbor(html: String) {
     black_box(node.attributes());
 }
 
+#[library_benchmark]
+#[bench::lxml(setup_html())]
+fn bench_lxml(html: String) {
+    let doc = LxmlDocument::new(&html).expect("Failed to parse HTML");
+    let nodes = doc.select(QUERY);
+    let node = nodes.iter().next().unwrap();
+
+    black_box(node.get_attribute("href"));
+    black_box(node.inner_html());
+    black_box(node.text_content());
+}
+
 use lol_html::{HtmlRewriter, Settings, element};
 #[library_benchmark]
 #[bench::lol_html(setup_html())]
@@ -123,7 +136,7 @@ fn bench_lol_html(html: String) {
 
 library_benchmark_group!(
     name = comparison_group;
-    benchmarks = bench_scah, bench_tl, bench_scraper, bench_lexbor, bench_lol_html
+    benchmarks = bench_scah, bench_tl, bench_scraper, bench_lexbor, bench_lxml, bench_lol_html
 );
 
 main!(library_benchmark_groups = comparison_group);
