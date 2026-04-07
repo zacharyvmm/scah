@@ -1,0 +1,114 @@
+#[path = "../support/mod.rs"]
+#[allow(dead_code)]
+mod support;
+
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use lexbor_css::HtmlDocument;
+use lol_html::{HtmlRewriter, Settings, element};
+use lxml::HtmlDocument as LxmlDocument;
+use scah::{Query, Save, parse};
+use scraper::{Html, Selector};
+use std::hint::black_box;
+use tl::ParserOptions;
+
+const QUERY: &str = "a";
+const SPEC_HTML_FILE: &str = "html.spec.whatwg.org.html";
+
+fn bench_spec_links(c: &mut Criterion) {
+    let mut group = c.benchmark_group("whatwg_html_spec_all_links");
+    let content = support::load_bench_data(SPEC_HTML_FILE);
+    group.throughput(Throughput::Bytes(content.len() as u64));
+
+    group.bench_function("scah", |b| {
+        b.iter(|| {
+            let queries = &[Query::all(QUERY, Save::all())
+                .expect("spec selector should parse")
+                .build()];
+            let store = parse(&content, queries);
+
+            for element in store.get(QUERY).unwrap() {
+                black_box(&element.attributes(&store));
+                black_box(&element.inner_html);
+                black_box(&element.text_content(&store));
+            }
+        })
+    });
+
+    group.bench_function("tl", |b| {
+        b.iter(|| {
+            let dom = tl::parse(&content, ParserOptions::default()).unwrap();
+            let parser = dom.parser();
+            let query = dom.query_selector(QUERY).unwrap();
+
+            for node_handle in query {
+                if let Some(node) = node_handle.get(parser) {
+                    let attributes = node.as_tag().unwrap().attributes();
+                    black_box(attributes.get("href"));
+                    black_box(node.inner_html(parser));
+                    black_box(node.inner_text(parser));
+                }
+            }
+        })
+    });
+
+    group.bench_function("scraper", |b| {
+        b.iter(|| {
+            let document = Html::parse_document(&content);
+            let selector = Selector::parse(QUERY).unwrap();
+
+            for element in document.select(&selector) {
+                black_box(element.attr("href"));
+                black_box(element.inner_html());
+                black_box(element.text().collect::<Vec<&str>>());
+            }
+        })
+    });
+
+    group.bench_function("lexbor", |b| {
+        b.iter(|| {
+            let doc = HtmlDocument::new(content.as_str()).expect("Failed to parse HTML");
+            let nodes = doc.select(QUERY);
+
+            for node in nodes.iter() {
+                black_box(node.text_content());
+                black_box(node.inner_html());
+                black_box(node.attributes());
+            }
+        })
+    });
+
+    group.bench_function("lxml", |b| {
+        b.iter(|| {
+            let doc = LxmlDocument::new(&content).expect("Failed to parse HTML");
+            let nodes = doc.select(QUERY);
+
+            for node in nodes.iter() {
+                black_box(node.get_attribute("href"));
+                black_box(node.inner_html());
+                black_box(node.text_content());
+            }
+        })
+    });
+
+    group.bench_function("lol_html", |b| {
+        b.iter(|| {
+            let mut rewriter = HtmlRewriter::new(
+                Settings {
+                    element_content_handlers: vec![element!(QUERY, |el| {
+                        black_box(el.get_attribute("href"));
+                        Ok(())
+                    })],
+                    ..Settings::default()
+                },
+                |_: &[u8]| {},
+            );
+            rewriter.write(content.as_bytes()).unwrap();
+            rewriter.end().unwrap();
+        })
+    });
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_spec_links);
+criterion_main!(benches);

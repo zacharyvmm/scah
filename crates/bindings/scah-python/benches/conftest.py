@@ -1,13 +1,16 @@
 import pytest
-import os
-import io
+from pathlib import Path
 
 @pytest.fixture(scope="session")
 def spec_html_content():
-    path = "/home/zmm/Downloads/html.spec.whatwg.index.html"
-    if os.path.exists(path):
-        with open(path, 'r') as f:
-            return f.read()
+    path = (
+        Path(__file__).resolve().parents[4]
+        / "benches"
+        / "bench_data"
+        / "html.spec.whatwg.org.html"
+    )
+    if path.exists():
+        return path.read_text()
     pytest.skip(f"Spec file not found at {path}")
 
 @pytest.fixture(scope="session")

@@ -58,3 +58,8 @@ harness = false
 name = "memory_bench_nested_queries"
 path = "nested/memory_bench.rs"
 harness = false
+
+[[bench]]
+name = "speed_bench_spec_all_links"
+path = "spec/speed_bench.rs"
+harness = false

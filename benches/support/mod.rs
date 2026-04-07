@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::PathBuf;
+
 #[allow(dead_code)]
 pub const SPEED_BENCH_SIZES: [usize; 3] = [100, 1_000, 10_000];
 #[allow(dead_code)]
@@ -25,4 +28,18 @@ pub fn generate_product_catalog_html(count: usize) -> String {
 
     html.push_str("</section></body></html>");
     html
+}
+
+#[allow(dead_code)]
+pub fn bench_data_path(filename: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("bench_data")
+        .join(filename)
+}
+
+#[allow(dead_code)]
+pub fn load_bench_data(filename: &str) -> String {
+    let path = bench_data_path(filename);
+    fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("failed to read bench data {}: {err}", path.display()))
 }

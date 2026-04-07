@@ -38,9 +38,13 @@ lint:
 bench: bench-rust bench-node bench-python
 bench-rust:
     cargo bench -p scah-benches
-bench-rust-criterion:
+generate-graph-data:
     cargo criterion -p scah-benches --message-format=json >> criterion.json
+generate-graphs:
     source ./crates/bindings/scah-python/.venv/bin/activate && python3 ./crates/bindings/scah-python/benches/utils/criterion_figure.py ./criterion.json
+download-html-spec-bench:
+    mkdir -p benches/bench_data
+    curl -L "https://html.spec.whatwg.org/" -o benches/bench_data/html.spec.whatwg.org.html
 bench-node:
     cd crates/bindings/scah-node && bun run bench:image
 bench-python:
