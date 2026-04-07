@@ -3,37 +3,12 @@ import re
 from io import BytesIO
 
 from html.parser import HTMLParser
-
-try:
-    from bs4 import BeautifulSoup
-except ImportError:
-    BeautifulSoup = None
-
-try:
-    import lxml.html
-    from lxml import etree
-except ImportError:
-    lxml = None
-
-try:
-    from selectolax.parser import HTMLParser as SelectolaxParser
-except ImportError:
-    SelectolaxParser = None
-
-try:
-    from parsel import Selector
-except ImportError:
-    Selector = None
-
-try:
-    from gazpacho import Soup as GazpachoSoup
-except ImportError:
-    GazpachoSoup = None
-
-try:
-    import scah
-except ImportError:
-    scah = None
+from bs4 import BeautifulSoup
+import lxml.html
+from selectolax.parser import HTMLParser as SelectolaxParser
+from parsel import Selector
+from gazpacho import Soup as GazpachoSoup
+import scah
 
 def parse_bs4_htmlparser(html:str, query:str):
     soup = BeautifulSoup(html, "html.parser")
@@ -42,6 +17,10 @@ def parse_bs4_htmlparser(html:str, query:str):
 def parse_bs4_lxml(html:str, query:str):
     soup = BeautifulSoup(html, "lxml")
     return soup.find_all(query)
+
+def parse_lxml(html:str, query:str):
+    tree = lxml.html.fromstring(html)
+    return tree.cssselect(query)
 
 def parse_selectolax(html:str, query:str):
     tree = SelectolaxParser(html)
@@ -64,6 +43,7 @@ def parse_scah(html: str, query:str):
 PARSERS = {
     "Scah": parse_scah,
     # "BS4 (html.parser)": parse_bs4_htmlparser,
+    "lxml": parse_lxml,
     "BS4 (lxml)": parse_bs4_lxml,
     "Selectolax": parse_selectolax,
     "Parsel": parse_parsel,
@@ -71,17 +51,4 @@ PARSERS = {
 }
 
 def get_available_parsers():
-    available = {}
-    for name, func in PARSERS.items():
-        is_avail = True
-        if "BS4" in name and BeautifulSoup is None: is_avail = False
-        if "lxml" in name and lxml is None: is_avail = False
-        if "Selectolax" in name and SelectolaxParser is None: is_avail = False
-        if "Parsel" in name and Selector is None: is_avail = False
-        if "Gazpacho" in name and GazpachoSoup is None: is_avail = False
-        if "Scah" in name and scah is None: is_avail = False
-        
-        if is_avail:
-            available[name] = func
-            
-    return available
+    return PARSERS
