@@ -36,8 +36,30 @@ lint:
     cd crates/bindings/scah-node && bun run lint
 
 bench: bench-rust bench-node bench-python
-bench-rust:
-    cargo bench -p scah-benches
+bench-simple-all: bench-rust-simple-all bench-node-simple-all bench-python-simple-all
+bench-first: bench-rust-first bench-node-first bench-python-first
+bench-whatwg: bench-rust-whatwg bench-node-whatwg bench-python-whatwg
+bench-rust: bench-rust-simple-all bench-rust-first bench-rust-whatwg
+bench-rust-simple-all:
+    cargo bench -p scah-benches --bench speed_bench_simple_all
+bench-rust-first:
+    cargo bench -p scah-benches --bench speed_bench_simple_first
+bench-rust-whatwg:
+    cargo bench -p scah-benches --bench speed_bench_spec_all_links
+bench-node: bench-node-simple-all bench-node-first bench-node-whatwg
+bench-node-simple-all:
+    cd crates/bindings/scah-node && bun run bench:image:simple
+bench-node-first:
+    cd crates/bindings/scah-node && bun run bench:image:first
+bench-node-whatwg:
+    cd crates/bindings/scah-node && bun run bench:image:whatwg
+bench-python: bench-python-simple-all bench-python-first bench-python-whatwg
+bench-python-simple-all:
+    cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_synthetic.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic.json && python3 ./benches/utils/figure.py ./benches/synthetic.json -o ./benches/images/synthetic.png && rm ./benches/synthetic.json
+bench-python-first:
+    cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_synthetic_first.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic_first.json && python3 ./benches/utils/figure.py ./benches/synthetic_first.json -o ./benches/images/synthetic_first.png && rm ./benches/synthetic_first.json
+bench-python-whatwg:
+    cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_spec.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/whatwg.json && python3 ./benches/utils/figure.py ./benches/whatwg.json -o ./benches/images/whatwg.png && rm ./benches/whatwg.json
 generate-graph-data:
     cargo criterion -p scah-benches --message-format=json >> criterion.json
 generate-graphs:
@@ -45,10 +67,6 @@ generate-graphs:
 download-html-spec-bench:
     mkdir -p benches/bench_data
     curl -L "https://html.spec.whatwg.org/" -o benches/bench_data/html.spec.whatwg.org.html
-bench-node:
-    cd crates/bindings/scah-node && bun run bench:image
-bench-python:
-    cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras poe bench
 
 bump new_version:
     just bump-rust "{{new_version}}"

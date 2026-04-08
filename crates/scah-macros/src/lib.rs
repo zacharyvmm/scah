@@ -138,24 +138,6 @@ fn parse_save_expr(expr: &Expr) -> Result<Save> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::QueryNode;
-
-    #[test]
-    fn rejects_selector_constants_with_actionable_error() {
-        let error = match syn::parse_str::<QueryNode>("all(QUERY, Save::all())") {
-            Ok(_) => panic!("selector constant should not parse"),
-            Err(error) => error,
-        };
-
-        let message = error.to_string();
-        assert!(message.contains("selector must be a string literal"));
-        assert!(message.contains("constants like `QUERY` are not resolved by this macro"));
-        assert!(message.contains("Query::all(QUERY, ...)"));
-    }
-}
-
 fn compile_node<'a>(node: &'a QueryNode) -> Result<QueryBuilder<'a>> {
     let mut builder = match node.kind {
         SelectionKind::All => {
@@ -351,5 +333,23 @@ fn option_query_section_id_tokens(
             quote! { Some(::scah::QuerySectionId(#index)) }
         }
         None => quote! { None },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::QueryNode;
+
+    #[test]
+    fn rejects_selector_constants_with_actionable_error() {
+        let error = match syn::parse_str::<QueryNode>("all(QUERY, Save::all())") {
+            Ok(_) => panic!("selector constant should not parse"),
+            Err(error) => error,
+        };
+
+        let message = error.to_string();
+        assert!(message.contains("selector must be a string literal"));
+        assert!(message.contains("constants like `QUERY` are not resolved by this macro"));
+        assert!(message.contains("Query::all(QUERY, ...)"));
     }
 }

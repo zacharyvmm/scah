@@ -1,9 +1,10 @@
 import pytest
 
 from bs4 import BeautifulSoup
-from selectolax.parser import HTMLParser as SelectolaxParser
+import lxml.html
 from parsel import Selector
 from scah import Query, Save, parse
+from selectolax.parser import HTMLParser as SelectolaxParser
 
 
 PRODUCT_COUNT = 5_000
@@ -19,6 +20,18 @@ def parse_bs4_lxml(html: str):
             product.select_one("h1").get_text(strip=True),
             product.select_one(".rating").get_text(strip=True),
             product.select_one(".description").get_text(strip=True),
+        ))
+    return out
+
+
+def parse_lxml(html: str):
+    tree = lxml.html.fromstring(html)
+    out = []
+    for product in tree.cssselect(".product"):
+        out.append((
+            product.cssselect("h1")[0].text_content().strip(),
+            product.cssselect(".rating")[0].text_content().strip(),
+            product.cssselect(".description")[0].text_content().strip(),
         ))
     return out
 
@@ -65,10 +78,10 @@ def parse_scah(html: str):
 
 PARSERS = {
     "Scah": parse_scah,
+    "lxml": parse_lxml,
     "BS4 (lxml)": parse_bs4_lxml,
     "Selectolax": parse_selectolax,
     "Parsel": parse_parsel,
-    #"Gazpacho": parse_gazpacho,
 }
 
 

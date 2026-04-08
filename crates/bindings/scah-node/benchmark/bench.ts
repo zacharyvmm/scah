@@ -1,37 +1,27 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 
-import { bench, group, run } from 'mitata'
-
-import { parse, Query } from '../index.js'
 import * as cheerio from 'cheerio'
-import { parse as nhpParse } from 'node-html-parser'
+import { Window as HappyWindow } from 'happy-dom'
 import { JSDOM } from 'jsdom'
 import { parseHTML as linkedomParse } from 'linkedom'
-import { Window as HappyWindow } from 'happy-dom'
+import { bench, group, run } from 'mitata'
+import { parse as nhpParse } from 'node-html-parser'
 
-function generateHtml(count: number): string {
-  let html = "<html><body><div id='content'>"
-
-  for (let i = 0; i < count; i++) {
-    // Added some entities (&lt;) and bold tags (<b>) to make text extraction work harder
-    html += `<div class="article"><a href="/post/${i}"><b>Post</b> &lt;${i}&gt;</a></div>`
-  }
-
-  html += '</div></body></html>'
-  return html
-}
-
-const QUERY = 'a'
-const HTML = generateHtml(5_000)
-const BENCHMARK_NAME = 'node-parse-query'
-const DEFAULT_JSON_OUTPUT = './benchmark/results/synthethic.json'
-const DEFAULT_IMAGE_OUTPUT = './benchmark/images/synthethic.png'
+import { Query, parse } from '../index.js'
 
 type CliOptions = {
-  jsonOutput?: string
   imageOutput?: string
+  jsonOutput?: string
+  scenario?: ScenarioName
+}
+
+type ScenarioName = 'simple-all' | 'simple-first' | 'whatwg-all-links'
+
+type BenchmarkCase = {
+  all: (html: string, query: string) => unknown[]
+  first: (html: string, query: string) => unknown | null | undefined
 }
 
 type MitataRun = {
@@ -45,6 +35,117 @@ type MitataRun = {
 type MitataBenchmark = {
   alias: string
   runs: MitataRun[]
+}
+
+const QUERY = 'a'
+const BENCHMARK_NAME = 'node-parse-query'
+const DEFAULT_JSON_OUTPUT = './benchmark/results/synthetic.json'
+const DEFAULT_IMAGE_OUTPUT = './benchmark/images/synthetic.png'
+const SPEC_HTML_FILE = resolve('../../../benches/bench_data/html.spec.whatwg.org.html')
+const SIMPLE_HTML = generateHtml(5_000)
+
+const CASES: Record<string, BenchmarkCase> = {
+  scah: {
+    all: (html, query) => {
+      const compiledQuery = Query.all(query, { innerHtml: true, textContent: true }).build()
+      const store = parse(html, [compiledQuery])
+      return store.get(query) ?? []
+    },
+    first: (html, query) => {
+      const compiledQuery = Query.first(query, { innerHtml: true, textContent: true }).build()
+      const store = parse(html, [compiledQuery])
+      return store.get(query)?.[0] ?? null
+    },
+  },
+  cheerio: {
+    all: (html, query) => {
+      const $ = cheerio.load(html)
+      return $(query)
+        .toArray()
+        .map((element) => ({
+          innerHtml: $(element).html(),
+          textContent: $(element).text(),
+        }))
+    },
+    first: (html, query) => {
+      const $ = cheerio.load(html)
+      const element = $(query).first()
+      if (element.length === 0) {
+        return null
+      }
+      return {
+        innerHtml: element.html(),
+        textContent: element.text(),
+      }
+    },
+  },
+  jsdom: {
+    all: (html, query) => {
+      const dom = new JSDOM(html)
+      return Array.from(dom.window.document.querySelectorAll(query))
+    },
+    first: (html, query) => {
+      const dom = new JSDOM(html)
+      return dom.window.document.querySelector(query)
+    },
+  },
+  'node-html-parser': {
+    all: (html, query) => {
+      const root = nhpParse(html)
+      return root.querySelectorAll(query)
+    },
+    first: (html, query) => {
+      const root = nhpParse(html)
+      return root.querySelector(query)
+    },
+  },
+  linkedom: {
+    all: (html, query) => {
+      const { document } = linkedomParse(html)
+      return Array.from(document.querySelectorAll(query))
+    },
+    first: (html, query) => {
+      const { document } = linkedomParse(html)
+      return document.querySelector(query)
+    },
+  },
+  'happy-dom': {
+    all: (html, query) => {
+      const window = new HappyWindow()
+      window.document.write(html)
+      const elements = Array.from(window.document.getElementsByTagName(query))
+      const snapshot = elements.map((element) => ({
+        innerHtml: element.innerHTML,
+        textContent: element.textContent,
+      }))
+      window.close()
+      return snapshot
+    },
+    first: (html, query) => {
+      const window = new HappyWindow()
+      window.document.write(html)
+      const element = window.document.getElementsByTagName(query).item(0)
+      const snapshot = element
+        ? {
+            innerHtml: element.innerHTML,
+            textContent: element.textContent,
+          }
+        : null
+      window.close()
+      return snapshot
+    },
+  },
+}
+
+function generateHtml(count: number): string {
+  let html = "<html><body><div id='content'>"
+
+  for (let i = 0; i < count; i++) {
+    html += `<div class="article"><a href="/post/${i}"><b>Post</b> &lt;${i}&gt;</a></div>`
+  }
+
+  html += '</div></body></html>'
+  return html
 }
 
 function parseCliArgs(argv: string[]): CliOptions {
@@ -70,6 +171,14 @@ function parseCliArgs(argv: string[]): CliOptions {
         index++
       } else {
         options.imageOutput = DEFAULT_IMAGE_OUTPUT
+      }
+    }
+
+    if (arg === '--scenario') {
+      const next = argv[index + 1] as ScenarioName | undefined
+      if (next) {
+        options.scenario = next
+        index++
       }
     }
   }
@@ -104,7 +213,7 @@ function toPytestBenchmarkJson(benchmarks: MitataBenchmark[]) {
         const stddevNanoseconds = standardDeviation(samples)
 
         return {
-          group: 'Node parse + query',
+          group: benchmark.alias,
           name: run.name,
           fullname: `${benchmark.alias}::${run.name}`,
           stats: {
@@ -171,70 +280,88 @@ function renderImageFromJson(jsonPath: string, imagePath: string) {
   throw new Error(`Failed to render benchmark image via ${figureScript}`)
 }
 
-group('parse + query', () => {
-  bench('scah', () => {
-    const query = Query.all(QUERY, { innerHtml: true, textContent: true }).build()
-    const store = parse(HTML, [query])
+function consumeElements(elements: unknown[]) {
+  for (const element of elements) {
+    void readElement(element)
+  }
+}
 
-    for (const element of store.get(QUERY)!) {
-      const _inner = element?.innerHtml
-      const _text = element?.textContent
+function readElement(element: unknown) {
+  if (element && typeof element === 'object') {
+    if ('innerHtml' in element) {
+      void element.innerHtml
+    }
+    if ('textContent' in element) {
+      void element.textContent
+    }
+    if ('innerHTML' in element) {
+      void element.innerHTML
+    }
+  }
+}
+
+function registerSimpleAllBenchmarks() {
+  group('Simple Selection', () => {
+    for (const [name, benchmarkCase] of Object.entries(CASES)) {
+      bench(name, () => {
+        consumeElements(benchmarkCase.all(SIMPLE_HTML, QUERY))
+      })
     }
   })
+}
 
-  bench('cheerio', () => {
-    const $ = cheerio.load(HTML)
-    $(QUERY).each((_, el) => {
-      const _inner = $(el).html()
-      const _text = $(el).text()
-    })
-  })
-
-  bench('jsdom', () => {
-    const dom = new JSDOM(HTML)
-    const els = dom.window.document.querySelectorAll(QUERY)
-
-    for (const el of els) {
-      const _inner = el.innerHTML
-      const _text = el.textContent
+function registerSimpleFirstBenchmarks() {
+  group('Simple First Selection', () => {
+    for (const [name, benchmarkCase] of Object.entries(CASES)) {
+      bench(name, () => {
+        const element = benchmarkCase.first(SIMPLE_HTML, QUERY)
+        if (element) {
+          readElement(element)
+        }
+      })
     }
   })
+}
 
-  bench('node-html-parser', () => {
-    const root = nhpParse(HTML)
-    const els = root.querySelectorAll(QUERY)
+function registerWhatwgBenchmarks() {
+  if (!existsSync(SPEC_HTML_FILE)) {
+    console.warn(`Skipping WHATWG benchmark: missing ${SPEC_HTML_FILE}`)
+    return
+  }
 
-    for (const el of els) {
-      const _inner = el.innerHTML
-      const _text = el.textContent
+  const specHtml = readFileSync(SPEC_HTML_FILE, 'utf8')
+  group('WHATWG All Links', () => {
+    for (const [name, benchmarkCase] of Object.entries(CASES)) {
+      if (name === 'jsdom' || name === 'happy-dom') {
+        continue
+      }
+      bench(name, () => {
+        consumeElements(benchmarkCase.all(specHtml, QUERY))
+      })
     }
   })
+}
 
-  bench('linkedom', () => {
-    const { document } = linkedomParse(HTML)
-    const els = document.querySelectorAll(QUERY)
-
-    for (const el of els) {
-      const _inner = el.innerHTML
-      const _text = el.textContent
-    }
-  })
-
-  // happy-dom's querySelectorAll crashes under Bun, so use getElementsByTagName
-  bench('happy-dom', () => {
-    const window = new HappyWindow()
-    window.document.write(HTML)
-    const els = window.document.getElementsByTagName(QUERY)
-
-    for (const el of els) {
-      const _inner = el.innerHTML
-      const _text = el.textContent
-    }
-    window.close()
-  })
-})
+function registerBenchmarks(scenario?: ScenarioName) {
+  switch (scenario) {
+    case 'simple-all':
+      registerSimpleAllBenchmarks()
+      return
+    case 'simple-first':
+      registerSimpleFirstBenchmarks()
+      return
+    case 'whatwg-all-links':
+      registerWhatwgBenchmarks()
+      return
+    default:
+      registerSimpleAllBenchmarks()
+      registerSimpleFirstBenchmarks()
+      registerWhatwgBenchmarks()
+  }
+}
 
 const options = parseCliArgs(process.argv.slice(2))
+registerBenchmarks(options.scenario)
 
 if (!options.jsonOutput && !options.imageOutput) {
   await run()
