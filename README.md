@@ -149,7 +149,7 @@ Control what data is captured per selector:
 
 ![Criterion Simple](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/criterion_simple.png)
 
-![Criterion WhatWg HTML Spec][https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/criterion_whatwg_html_spec_all_links.png)
+![Criterion WhatWg HTML Spec](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/criterion_whatwg_html_spec_all_links.png)
 
 The repository includes two Rust benchmark tracks:
 
