@@ -7,7 +7,7 @@ from scah import Query, Save, parse
 from selectolax.parser import HTMLParser as SelectolaxParser
 
 
-PRODUCT_COUNT = 5_000
+PRODUCT_COUNT = 10_000
 
 
 
@@ -61,7 +61,6 @@ def parse_parsel(html: str):
 
 
 def parse_scah(html: str):
-    # This benchmarks the structured query itself.
     q = (
         Query.all(".product", Save.all())
         .then(lambda product: [
@@ -73,7 +72,17 @@ def parse_scah(html: str):
     )
 
     store = parse(html, [q])
-    return store.get(".product")
+    products = store.get(".product")
+    out = []
+
+    for product in products:
+        out.append((
+            product.get("> h1")[0].text_content,
+            product.get("> .rating")[0].text_content,
+            product.get("> .description")[0].text_content,
+        ))
+
+    return out
 
 
 PARSERS = {
@@ -108,7 +117,7 @@ def html_content():
 def test_structured_benchmark(benchmark, html_content, name):
     lib = PARSERS[name]
 
-    benchmark.group = f"Structured Product Extraction ({PRODUCT_COUNT} products)"
+    benchmark.group = f"Synthetic Nested Query ({PRODUCT_COUNT} products)"
     benchmark.name = name
 
     result = benchmark(lib, html_content)

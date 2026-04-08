@@ -17,7 +17,7 @@ type CliOptions = {
   scenario?: ScenarioName
 }
 
-type ScenarioName = 'simple-all' | 'simple-first' | 'whatwg-all-links'
+type ScenarioName = 'simple-all' | 'simple-first' | 'whatwg-all-links' | 'nested-all'
 
 type BenchmarkCase = {
   all: (html: string, query: string) => unknown[]
@@ -42,7 +42,8 @@ const BENCHMARK_NAME = 'node-parse-query'
 const DEFAULT_JSON_OUTPUT = './benchmark/results/synthetic.json'
 const DEFAULT_IMAGE_OUTPUT = './benchmark/images/synthetic.png'
 const SPEC_HTML_FILE = resolve('../../../benches/bench_data/html.spec.whatwg.org.html')
-const SIMPLE_HTML = generateHtml(5_000)
+const SIMPLE_HTML = generateHtml(10_000)
+const PRODUCT_HTML = generateProductCatalogHtml(10_000)
 
 const CASES: Record<string, BenchmarkCase> = {
   scah: {
@@ -127,9 +128,9 @@ const CASES: Record<string, BenchmarkCase> = {
       const element = window.document.getElementsByTagName(query).item(0)
       const snapshot = element
         ? {
-            innerHtml: element.innerHTML,
-            textContent: element.textContent,
-          }
+          innerHtml: element.innerHTML,
+          textContent: element.textContent,
+        }
         : null
       window.close()
       return snapshot
@@ -145,6 +146,18 @@ function generateHtml(count: number): string {
   }
 
   html += '</div></body></html>'
+  return html
+}
+
+function generateProductCatalogHtml(count: number): string {
+  let html = '<html><body><section id="products">'
+
+  for (let i = 1; i <= count; i++) {
+    const rating = ((i - 1) % 5) + 1
+    html += `<div class="product"><h1>Product #${i}</h1><span class="rating">${rating}/5</span><p class="description">Description</p></div>`
+  }
+
+  html += '</section></body></html>'
   return html
 }
 
@@ -342,6 +355,94 @@ function registerWhatwgBenchmarks() {
   })
 }
 
+function registerNestedBenchmarks() {
+  group('Synthetic Nested Query', () => {
+    bench('scah', () => {
+      const compiledQuery = Query.all('.product', { innerHtml: true, textContent: true })
+        .then((product) => [
+          product.first('> h1', { innerHtml: true, textContent: true }),
+          product.first('> .rating', { innerHtml: true, textContent: true }),
+          product.first('> .description', { innerHtml: true, textContent: true }),
+        ])
+        .build()
+      const store = parse(PRODUCT_HTML, [compiledQuery])
+      const products = store.get('.product') ?? []
+
+      for (const product of products) {
+        readElement(product)
+        consumeElements(product.get('> h1'))
+        consumeElements(product.get('> .rating'))
+        consumeElements(product.get('> .description'))
+      }
+    })
+
+    bench('cheerio', () => {
+      const $ = cheerio.load(PRODUCT_HTML)
+      for (const product of $('.product').toArray()) {
+        const node = $(product)
+        void node.attr('class')
+        void node.html()
+        void node.text()
+        void node.children('h1').first().text()
+        void node.children('.rating').first().text()
+        void node.children('.description').first().text()
+      }
+    })
+
+    bench('jsdom', () => {
+      const dom = new JSDOM(PRODUCT_HTML)
+      const products = Array.from(dom.window.document.querySelectorAll('.product'))
+      for (const product of products) {
+        void product.className
+        void product.innerHTML
+        void product.textContent
+        readElement(product.querySelector(':scope > h1'))
+        readElement(product.querySelector(':scope > .rating'))
+        readElement(product.querySelector(':scope > .description'))
+      }
+    })
+
+    bench('node-html-parser', () => {
+      const root = nhpParse(PRODUCT_HTML)
+      for (const product of root.querySelectorAll('.product')) {
+        void product.getAttribute('class')
+        void product.innerHTML
+        void product.textContent
+        readElement(product.querySelector('h1'))
+        readElement(product.querySelector('.rating'))
+        readElement(product.querySelector('.description'))
+      }
+    })
+
+    bench('linkedom', () => {
+      const { document } = linkedomParse(PRODUCT_HTML)
+      for (const product of Array.from(document.querySelectorAll('.product'))) {
+        void product.className
+        void product.innerHTML
+        void product.textContent
+        readElement(product.querySelector(':scope > h1'))
+        readElement(product.querySelector(':scope > .rating'))
+        readElement(product.querySelector(':scope > .description'))
+      }
+    })
+
+    bench('happy-dom', () => {
+      const window = new HappyWindow()
+      window.document.write(PRODUCT_HTML)
+      const products = Array.from(window.document.querySelectorAll('.product'))
+      for (const product of products) {
+        void product.className
+        void product.innerHTML
+        void product.textContent
+        readElement(product.querySelector(':scope > h1'))
+        readElement(product.querySelector(':scope > .rating'))
+        readElement(product.querySelector(':scope > .description'))
+      }
+      window.close()
+    })
+  })
+}
+
 function registerBenchmarks(scenario?: ScenarioName) {
   switch (scenario) {
     case 'simple-all':
@@ -353,10 +454,14 @@ function registerBenchmarks(scenario?: ScenarioName) {
     case 'whatwg-all-links':
       registerWhatwgBenchmarks()
       return
+    case 'nested-all':
+      registerNestedBenchmarks()
+      return
     default:
       registerSimpleAllBenchmarks()
       registerSimpleFirstBenchmarks()
       registerWhatwgBenchmarks()
+      registerNestedBenchmarks()
   }
 }
 
