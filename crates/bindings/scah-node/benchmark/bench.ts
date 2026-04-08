@@ -60,10 +60,12 @@ const CASES: Record<string, BenchmarkCase> = {
   cheerio: {
     all: (html, query) => {
       const $ = cheerio.load(html)
-      return $(query).toArray().map((element) => ({
-        innerHtml: $(element).html(),
-        textContent: $(element).text(),
-      }))
+      return $(query)
+        .toArray()
+        .map((element) => ({
+          innerHtml: $(element).html(),
+          textContent: $(element).text(),
+        }))
     },
     first: (html, query) => {
       const $ = cheerio.load(html)
@@ -125,9 +127,9 @@ const CASES: Record<string, BenchmarkCase> = {
       const element = window.document.getElementsByTagName(query).item(0)
       const snapshot = element
         ? {
-          innerHtml: element.innerHTML,
-          textContent: element.textContent,
-        }
+            innerHtml: element.innerHTML,
+            textContent: element.textContent,
+          }
         : null
       window.close()
       return snapshot
@@ -331,7 +333,7 @@ function registerWhatwgBenchmarks() {
   group('WHATWG All Links', () => {
     for (const [name, benchmarkCase] of Object.entries(CASES)) {
       if (name === 'jsdom' || name === 'happy-dom') {
-        continue;
+        continue
       }
       bench(name, () => {
         consumeElements(benchmarkCase.all(specHtml, QUERY))
