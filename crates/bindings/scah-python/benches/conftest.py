@@ -15,5 +15,5 @@ def spec_html_content():
 
 @pytest.fixture(scope="session")
 def html_content():
-    element_number = 5000
+    element_number = 10_000
     return f"""<html><body>{"".join(f"<div class='container'><a href='#'>Link {i}</a></div>" for i in range(element_number))}</body></html>"""

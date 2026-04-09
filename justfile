@@ -39,27 +39,34 @@ bench: bench-rust bench-node bench-python
 bench-simple-all: bench-rust-simple-all bench-node-simple-all bench-python-simple-all
 bench-first: bench-rust-first bench-node-first bench-python-first
 bench-whatwg: bench-rust-whatwg bench-node-whatwg bench-python-whatwg
-bench-rust: bench-rust-simple-all bench-rust-first bench-rust-whatwg
+bench-nested: bench-rust-nested bench-node-nested bench-python-nested
+bench-rust: bench-rust-simple-all bench-rust-whatwg bench-rust-nested
 bench-rust-simple-all:
     cargo bench -p scah-benches --bench speed_bench_simple_all
 bench-rust-first:
     cargo bench -p scah-benches --bench speed_bench_simple_first
 bench-rust-whatwg:
     cargo bench -p scah-benches --bench speed_bench_spec_all_links
-bench-node: bench-node-simple-all bench-node-first bench-node-whatwg
+bench-rust-nested:
+    cargo bench -p scah-benches --bench speed_bench_nested_queries
+bench-node: bench-node-simple-all bench-node-whatwg bench-node-nested
 bench-node-simple-all:
     cd crates/bindings/scah-node && bun run bench:image:simple
 bench-node-first:
     cd crates/bindings/scah-node && bun run bench:image:first
 bench-node-whatwg:
     cd crates/bindings/scah-node && bun run bench:image:whatwg
-bench-python: bench-python-simple-all bench-python-first bench-python-whatwg
+bench-node-nested:
+    cd crates/bindings/scah-node && bun run bench:image:nested
+bench-python: bench-python-simple-all bench-python-whatwg bench-python-nested
 bench-python-simple-all:
     cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_synthetic.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic.json && python3 ./benches/utils/figure.py ./benches/synthetic.json -o ./benches/images/synthetic.png && rm ./benches/synthetic.json
 bench-python-first:
     cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_synthetic_first.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic_first.json && python3 ./benches/utils/figure.py ./benches/synthetic_first.json -o ./benches/images/synthetic_first.png && rm ./benches/synthetic_first.json
 bench-python-whatwg:
     cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_spec.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/whatwg.json && python3 ./benches/utils/figure.py ./benches/whatwg.json -o ./benches/images/whatwg.png && rm ./benches/whatwg.json
+bench-python-nested:
+    cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_structural.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/nested.json && python3 ./benches/utils/figure.py ./benches/nested.json -o ./benches/images/nested.png && rm ./benches/nested.json
 generate-graph-data:
     cargo criterion -p scah-benches --message-format=json >> criterion.json
 generate-graphs:

@@ -17,11 +17,22 @@ type CliOptions = {
   scenario?: ScenarioName
 }
 
-type ScenarioName = 'simple-all' | 'simple-first' | 'whatwg-all-links'
+type ScenarioName = 'simple-all' | 'simple-first' | 'whatwg-all-links' | 'nested-all'
 
 type BenchmarkCase = {
   all: (html: string, query: string) => unknown[]
   first: (html: string, query: string) => unknown | null | undefined
+}
+
+type ElementSnapshot = {
+  innerHtml?: string | null
+  textContent?: string | null
+}
+
+type NestedProductSnapshot = ElementSnapshot & {
+  title: ElementSnapshot | null
+  rating: ElementSnapshot | null
+  description: ElementSnapshot | null
 }
 
 type MitataRun = {
@@ -42,7 +53,8 @@ const BENCHMARK_NAME = 'node-parse-query'
 const DEFAULT_JSON_OUTPUT = './benchmark/results/synthetic.json'
 const DEFAULT_IMAGE_OUTPUT = './benchmark/images/synthetic.png'
 const SPEC_HTML_FILE = resolve('../../../benches/bench_data/html.spec.whatwg.org.html')
-const SIMPLE_HTML = generateHtml(5_000)
+const SIMPLE_HTML = generateHtml(10_000)
+const PRODUCT_HTML = generateProductCatalogHtml(10_000)
 
 const CASES: Record<string, BenchmarkCase> = {
   scah: {
@@ -127,9 +139,9 @@ const CASES: Record<string, BenchmarkCase> = {
       const element = window.document.getElementsByTagName(query).item(0)
       const snapshot = element
         ? {
-            innerHtml: element.innerHTML,
-            textContent: element.textContent,
-          }
+          innerHtml: element.innerHTML,
+          textContent: element.textContent,
+        }
         : null
       window.close()
       return snapshot
@@ -145,6 +157,18 @@ function generateHtml(count: number): string {
   }
 
   html += '</div></body></html>'
+  return html
+}
+
+function generateProductCatalogHtml(count: number): string {
+  let html = '<html><body><section id="products">'
+
+  for (let i = 1; i <= count; i++) {
+    const rating = ((i - 1) % 5) + 1
+    html += `<div class="product"><h1>Product #${i}</h1><span class="rating">${rating}/5</span><p class="description">Description</p></div>`
+  }
+
+  html += '</section></body></html>'
   return html
 }
 
@@ -300,6 +324,69 @@ function readElement(element: unknown) {
   }
 }
 
+function snapshotElement(element: unknown): ElementSnapshot | null {
+  if (!element || typeof element !== 'object') {
+    return null
+  }
+
+  if ('innerHtml' in element || 'textContent' in element) {
+    return {
+      innerHtml:
+        'innerHtml' in element && typeof element.innerHtml !== 'undefined'
+          ? (element.innerHtml as string | null)
+          : null,
+      textContent:
+        'textContent' in element && typeof element.textContent !== 'undefined'
+          ? (element.textContent as string | null)
+          : null,
+    }
+  }
+
+  if ('innerHTML' in element || 'textContent' in element) {
+    return {
+      innerHtml:
+        'innerHTML' in element && typeof element.innerHTML !== 'undefined'
+          ? (element.innerHTML as string | null)
+          : null,
+      textContent:
+        'textContent' in element && typeof element.textContent !== 'undefined'
+          ? (element.textContent as string | null)
+          : null,
+    }
+  }
+
+  return null
+}
+
+function consumeNestedProducts(products: NestedProductSnapshot[]) {
+  for (const product of products) {
+    readElement(product)
+    readElement(product.title)
+    readElement(product.rating)
+    readElement(product.description)
+  }
+}
+
+function snapshotNestedProducts<T>(
+  products: Iterable<T>,
+  selectChild: (product: T, selector: string) => unknown | null | undefined,
+) {
+  const snapshots: NestedProductSnapshot[] = []
+
+  for (const product of products) {
+    const productSnapshot = snapshotElement(product)
+    snapshots.push({
+      innerHtml: productSnapshot?.innerHtml ?? null,
+      textContent: productSnapshot?.textContent ?? null,
+      title: snapshotElement(selectChild(product, 'h1')),
+      rating: snapshotElement(selectChild(product, '.rating')),
+      description: snapshotElement(selectChild(product, '.description')),
+    })
+  }
+
+  return snapshots
+}
+
 function registerSimpleAllBenchmarks() {
   group('Simple Selection', () => {
     for (const [name, benchmarkCase] of Object.entries(CASES)) {
@@ -342,6 +429,88 @@ function registerWhatwgBenchmarks() {
   })
 }
 
+function registerNestedBenchmarks() {
+  group('Synthetic Nested Query', () => {
+    bench('scah', () => {
+      const compiledQuery = Query.all('.product', { innerHtml: true, textContent: true })
+        .then((product) => [
+          product.first('> h1', { innerHtml: true, textContent: true }),
+          product.first('> .rating', { innerHtml: true, textContent: true }),
+          product.first('> .description', { innerHtml: true, textContent: true }),
+        ])
+        .build()
+      const store = parse(PRODUCT_HTML, [compiledQuery])
+      const products = store.get('.product') ?? []
+      const snapshots = products.map((product) => ({
+        innerHtml: product.innerHtml,
+        textContent: product.textContent,
+        title: snapshotElement(product.get('> h1')[0]),
+        rating: snapshotElement(product.get('> .rating')[0]),
+        description: snapshotElement(product.get('> .description')[0]),
+      }))
+      consumeNestedProducts(snapshots)
+    })
+
+    bench('cheerio', () => {
+      const $ = cheerio.load(PRODUCT_HTML)
+      const snapshots = $('.product')
+        .toArray()
+        .map((product) => {
+          const node = $(product)
+          return {
+            innerHtml: node.html(),
+            textContent: node.text(),
+            title: {
+              innerHtml: node.children('h1').first().html(),
+              textContent: node.children('h1').first().text(),
+            },
+            rating: {
+              innerHtml: node.children('.rating').first().html(),
+              textContent: node.children('.rating').first().text(),
+            },
+            description: {
+              innerHtml: node.children('.description').first().html(),
+              textContent: node.children('.description').first().text(),
+            },
+          }
+        })
+      consumeNestedProducts(snapshots)
+    })
+
+    bench('jsdom', () => {
+      const dom = new JSDOM(PRODUCT_HTML)
+      const products = Array.from(dom.window.document.querySelectorAll('.product'))
+      const snapshots = snapshotNestedProducts(products, (product, selector) => product.querySelector(selector))
+      consumeNestedProducts(snapshots)
+    })
+
+    bench('node-html-parser', () => {
+      const root = nhpParse(PRODUCT_HTML)
+      const snapshots = snapshotNestedProducts(root.querySelectorAll('.product'), (product, selector) =>
+        product.querySelector(selector),
+      )
+      consumeNestedProducts(snapshots)
+    })
+
+    bench('linkedom', () => {
+      const { document } = linkedomParse(PRODUCT_HTML)
+      const products = Array.from(document.querySelectorAll('.product'))
+      const snapshots = snapshotNestedProducts(products, (product, selector) => product.querySelector(selector))
+      consumeNestedProducts(snapshots)
+    })
+
+    // Happy DOM doesn't work in this bench
+    // bench('happy-dom', () => {
+    //   const window = new HappyWindow()
+    //   window.document.write(PRODUCT_HTML)
+    //   const products = Array.from(window.document.querySelectorAll('.product'))
+    //   const snapshots = snapshotNestedProducts(products, (product, selector) => product.querySelector(selector))
+    //   consumeNestedProducts(snapshots)
+    //   window.close()
+    // })
+  })
+}
+
 function registerBenchmarks(scenario?: ScenarioName) {
   switch (scenario) {
     case 'simple-all':
@@ -353,10 +522,14 @@ function registerBenchmarks(scenario?: ScenarioName) {
     case 'whatwg-all-links':
       registerWhatwgBenchmarks()
       return
+    case 'nested-all':
+      registerNestedBenchmarks()
+      return
     default:
       registerSimpleAllBenchmarks()
       registerSimpleFirstBenchmarks()
       registerWhatwgBenchmarks()
+      registerNestedBenchmarks()
   }
 }
 
