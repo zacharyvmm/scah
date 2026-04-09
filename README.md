@@ -177,8 +177,14 @@ store = parse(html, [query])
 ##### Real Html BenchMark ([html.spec.whatwg.org](https://html.spec.whatwg.org/)) (select all `a` tags):
 ![WhatWg Html Spec BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/whatwg.png)
 
-##### Structural Html BenchMark (select all `Products`):
-![Structural Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/structural.png)
+##### Nested Html BenchMark (select all `Products`):
+![Nested Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/nested.png)
+
+##### Structural Html BenchMark (select all `a` tags):
+![Structural Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/synthethic.png)
+
+##### First Element Html BenchMark (select first `a`):
+![First Element Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/synthethic_first.png)
 
 ### Typescript / Javascript
 ```bash
@@ -199,8 +205,14 @@ const store = parse(html, [query]);
 ```
 
 #### Benchmarks
-Synthetic Html BenchMark (select all 5_000 `a` tags):
-![Synthetic Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-node/benchmark/images/synthetic.png)
 ##### Real Html BenchMark ([html.spec.whatwg.org](https://html.spec.whatwg.org/)) (select all `a` tags):
 ![Real Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-node/benchmark/images/whatwg.png)
 
+##### Nested Html BenchMark (select all `a` tags):
+![Nested Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-node/benchmark/images/nested.png)
+
+##### Synthetic Html BenchMark (select all `a` tags):
+![Synthetic Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-node/benchmark/images/synthetic.png)
+
+##### First Element Html BenchMark (select first `a`):
+![First Element Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-node/benchmark/images/synthetic_first.png)

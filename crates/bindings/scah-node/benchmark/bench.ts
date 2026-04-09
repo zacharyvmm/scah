@@ -24,6 +24,17 @@ type BenchmarkCase = {
   first: (html: string, query: string) => unknown | null | undefined
 }
 
+type ElementSnapshot = {
+  innerHtml?: string | null
+  textContent?: string | null
+}
+
+type NestedProductSnapshot = ElementSnapshot & {
+  title: ElementSnapshot | null
+  rating: ElementSnapshot | null
+  description: ElementSnapshot | null
+}
+
 type MitataRun = {
   name: string
   stats?: {
@@ -313,6 +324,69 @@ function readElement(element: unknown) {
   }
 }
 
+function snapshotElement(element: unknown): ElementSnapshot | null {
+  if (!element || typeof element !== 'object') {
+    return null
+  }
+
+  if ('innerHtml' in element || 'textContent' in element) {
+    return {
+      innerHtml:
+        'innerHtml' in element && typeof element.innerHtml !== 'undefined'
+          ? (element.innerHtml as string | null)
+          : null,
+      textContent:
+        'textContent' in element && typeof element.textContent !== 'undefined'
+          ? (element.textContent as string | null)
+          : null,
+    }
+  }
+
+  if ('innerHTML' in element || 'textContent' in element) {
+    return {
+      innerHtml:
+        'innerHTML' in element && typeof element.innerHTML !== 'undefined'
+          ? (element.innerHTML as string | null)
+          : null,
+      textContent:
+        'textContent' in element && typeof element.textContent !== 'undefined'
+          ? (element.textContent as string | null)
+          : null,
+    }
+  }
+
+  return null
+}
+
+function consumeNestedProducts(products: NestedProductSnapshot[]) {
+  for (const product of products) {
+    readElement(product)
+    readElement(product.title)
+    readElement(product.rating)
+    readElement(product.description)
+  }
+}
+
+function snapshotNestedProducts<T>(
+  products: Iterable<T>,
+  selectChild: (product: T, selector: string) => unknown | null | undefined,
+) {
+  const snapshots: NestedProductSnapshot[] = []
+
+  for (const product of products) {
+    const productSnapshot = snapshotElement(product)
+    snapshots.push({
+      innerHtml: productSnapshot?.innerHtml ?? null,
+      textContent: productSnapshot?.textContent ?? null,
+      title: snapshotElement(selectChild(product, 'h1')),
+      rating: snapshotElement(selectChild(product, '.rating')),
+      description: snapshotElement(selectChild(product, '.description')),
+    })
+  }
+
+  return snapshots
+}
+
 function registerSimpleAllBenchmarks() {
   group('Simple Selection', () => {
     for (const [name, benchmarkCase] of Object.entries(CASES)) {
@@ -367,79 +441,73 @@ function registerNestedBenchmarks() {
         .build()
       const store = parse(PRODUCT_HTML, [compiledQuery])
       const products = store.get('.product') ?? []
-
-      for (const product of products) {
-        readElement(product)
-        consumeElements(product.get('> h1'))
-        consumeElements(product.get('> .rating'))
-        consumeElements(product.get('> .description'))
-      }
+      const snapshots = products.map((product) => ({
+        innerHtml: product.innerHtml,
+        textContent: product.textContent,
+        title: snapshotElement(product.get('> h1')[0]),
+        rating: snapshotElement(product.get('> .rating')[0]),
+        description: snapshotElement(product.get('> .description')[0]),
+      }))
+      consumeNestedProducts(snapshots)
     })
 
     bench('cheerio', () => {
       const $ = cheerio.load(PRODUCT_HTML)
-      for (const product of $('.product').toArray()) {
-        const node = $(product)
-        void node.attr('class')
-        void node.html()
-        void node.text()
-        void node.children('h1').first().text()
-        void node.children('.rating').first().text()
-        void node.children('.description').first().text()
-      }
+      const snapshots = $('.product')
+        .toArray()
+        .map((product) => {
+          const node = $(product)
+          return {
+            innerHtml: node.html(),
+            textContent: node.text(),
+            title: {
+              innerHtml: node.children('h1').first().html(),
+              textContent: node.children('h1').first().text(),
+            },
+            rating: {
+              innerHtml: node.children('.rating').first().html(),
+              textContent: node.children('.rating').first().text(),
+            },
+            description: {
+              innerHtml: node.children('.description').first().html(),
+              textContent: node.children('.description').first().text(),
+            },
+          }
+        })
+      consumeNestedProducts(snapshots)
     })
 
     bench('jsdom', () => {
       const dom = new JSDOM(PRODUCT_HTML)
       const products = Array.from(dom.window.document.querySelectorAll('.product'))
-      for (const product of products) {
-        void product.className
-        void product.innerHTML
-        void product.textContent
-        readElement(product.querySelector(':scope > h1'))
-        readElement(product.querySelector(':scope > .rating'))
-        readElement(product.querySelector(':scope > .description'))
-      }
+      const snapshots = snapshotNestedProducts(products, (product, selector) => product.querySelector(selector))
+      consumeNestedProducts(snapshots)
     })
 
     bench('node-html-parser', () => {
       const root = nhpParse(PRODUCT_HTML)
-      for (const product of root.querySelectorAll('.product')) {
-        void product.getAttribute('class')
-        void product.innerHTML
-        void product.textContent
-        readElement(product.querySelector('h1'))
-        readElement(product.querySelector('.rating'))
-        readElement(product.querySelector('.description'))
-      }
+      const snapshots = snapshotNestedProducts(root.querySelectorAll('.product'), (product, selector) =>
+        product.querySelector(selector),
+      )
+      consumeNestedProducts(snapshots)
     })
 
     bench('linkedom', () => {
       const { document } = linkedomParse(PRODUCT_HTML)
-      for (const product of Array.from(document.querySelectorAll('.product'))) {
-        void product.className
-        void product.innerHTML
-        void product.textContent
-        readElement(product.querySelector(':scope > h1'))
-        readElement(product.querySelector(':scope > .rating'))
-        readElement(product.querySelector(':scope > .description'))
-      }
+      const products = Array.from(document.querySelectorAll('.product'))
+      const snapshots = snapshotNestedProducts(products, (product, selector) => product.querySelector(selector))
+      consumeNestedProducts(snapshots)
     })
 
-    bench('happy-dom', () => {
-      const window = new HappyWindow()
-      window.document.write(PRODUCT_HTML)
-      const products = Array.from(window.document.querySelectorAll('.product'))
-      for (const product of products) {
-        void product.className
-        void product.innerHTML
-        void product.textContent
-        readElement(product.querySelector(':scope > h1'))
-        readElement(product.querySelector(':scope > .rating'))
-        readElement(product.querySelector(':scope > .description'))
-      }
-      window.close()
-    })
+    // Happy DOM doesn't work in this bench
+    // bench('happy-dom', () => {
+    //   const window = new HappyWindow()
+    //   window.document.write(PRODUCT_HTML)
+    //   const products = Array.from(window.document.querySelectorAll('.product'))
+    //   const snapshots = snapshotNestedProducts(products, (product, selector) => product.querySelector(selector))
+    //   consumeNestedProducts(snapshots)
+    //   window.close()
+    // })
   })
 }
 
