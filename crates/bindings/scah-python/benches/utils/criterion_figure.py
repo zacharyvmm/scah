@@ -45,12 +45,25 @@ def parse_criterion_json(filename):
                     except ValueError:
                         size = None
 
+                per_iteration_ns = [
+                    measured / iterations
+                    for measured, iterations in zip(
+                        data.get("measured_values", []), data.get("iteration_count", [])
+                    )
+                    if iterations
+                ]
+
+                stdev_ms = pd.Series(per_iteration_ns).std(ddof=1) / 1_000_000
+                if pd.isna(stdev_ms):
+                    stdev_ms = 0.0
+
                 results.append(
                     {
                         "Group": parts[0],
                         "Library": parts[1],
                         "Size": size,
                         "Mean_ms": data["mean"]["estimate"] / 1_000_000,
+                        "stdev_ms": stdev_ms,
                     }
                 )
             except (json.JSONDecodeError, KeyError, IndexError, ValueError):
@@ -73,9 +86,17 @@ def generate_markdown_table(df):
         sizes = [size for size in group_df["Size"].unique() if pd.notna(size)]
         if not sizes:
             size_df = group_df.sort_values("Mean_ms", ascending=True).reset_index(drop=True)
-            md_content += "| Library | Mean (ms) |\n| :--- | :--- |\n"
+            baseline_mean = size_df.iloc[0]["Mean_ms"]
+            md_content += (
+                "| Library | Mean (ms) | stdev | multiplier |\n"
+                "| :--- | :--- | :--- | :--- |\n"
+            )
             for _, row in size_df.iterrows():
-                md_content += f"| {row['Library']} | **{row['Mean_ms']:,.6f}** \n"
+                multiplier = format_multiplier(row["Mean_ms"], baseline_mean)
+                md_content += (
+                    f"| {row['Library']} | **{row['Mean_ms']:,.6f}** | "
+                    f"{row['stdev_ms']:,.6f} | {multiplier} |\n"
+                )
             md_content += "\n"
             md_content += "---\n\n"
             continue
@@ -86,17 +107,38 @@ def generate_markdown_table(df):
                 .sort_values("Mean_ms", ascending=True)
                 .reset_index(drop=True)
             )
+            baseline_mean = size_df.iloc[0]["Mean_ms"]
 
             md_content += f"### Input Size: {int(size)} Elements\n\n"
-            md_content += "| Library | Mean (ms) |\n| :--- | :--- |\n"
+            md_content += (
+                "| Library | Mean (ms) | stdev | multiplier |\n"
+                "| :--- | :--- | :--- | :--- |\n"
+            )
 
             for _, row in size_df.iterrows():
-                md_content += f"| {row['Library']} | **{row['Mean_ms']:,.6f}** \n"
+                multiplier = format_multiplier(row["Mean_ms"], baseline_mean)
+                md_content += (
+                    f"| {row['Library']} | **{row['Mean_ms']:,.6f}** | "
+                    f"{row['stdev_ms']:,.6f} | {multiplier} |\n"
+                )
             md_content += "\n"
 
         md_content += "---\n\n"
 
     return md_content
+
+
+def format_multiplier(mean_ms, baseline_mean_ms):
+    if baseline_mean_ms <= 0:
+        return "n/a"
+
+    ratio = mean_ms / baseline_mean_ms
+    formatted = f"{ratio:.2f}".rstrip("0").rstrip(".")
+    return f"{formatted}x"
+
+
+def format_bar_labels(values):
+    return [f"{value:.3f}" for value in values]
 
 
 def create_simple_timeline_plots(df):
@@ -118,7 +160,8 @@ def create_simple_timeline_plots(df):
     pivot_df["Selection Time"] = (pivot_df["All"] - pivot_df["First"]).clip(lower=0)
     pivot_df["DOM Time"] = pivot_df["First"].clip(lower=0)
 
-    for size in sorted(pivot_df["Size"].unique()):
+    sizes = [size for size in pivot_df["Size"].unique() if pd.notna(size)]
+    for size in sorted(sizes):
         subset = (
             pivot_df[pivot_df["Size"] == size]
             .sort_values(by="All", ascending=True)
@@ -127,13 +170,13 @@ def create_simple_timeline_plots(df):
 
         apply_graph_style()
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.barh(
+        dom_bars = ax.barh(
             subset["Library"],
             subset["DOM Time"],
             color=TIMING_COLORS["DOM Time"],
             label="DOM Time (First)",
         )
-        ax.barh(
+        selection_bars = ax.barh(
             subset["Library"],
             subset["Selection Time"],
             left=subset["DOM Time"],
@@ -141,10 +184,18 @@ def create_simple_timeline_plots(df):
             label="Selection Time (All - First)",
         )
 
+        ax.bar_label(dom_bars, labels=format_bar_labels(subset["DOM Time"]), label_type="center")
+        ax.bar_label(
+            selection_bars,
+            labels=format_bar_labels(subset["Selection Time"]),
+            label_type="center",
+            color="white",
+        )
+
         finalize_horizontal_bar_chart(ax, f"Simple Selection Breakdown: {size} Elements", "Time (ms)")
         ax.legend(loc="lower right", frameon=True)
 
-        specific_filename = RUST_BENCH_IMAGE_DIR / f"criterion_simple_breakdown_{size}.png"
+        specific_filename = RUST_BENCH_IMAGE_DIR / f"simple_breakdown_{int(size)}.png"
         plt.tight_layout()
         plt.savefig(specific_filename, dpi=300)
         print(f"Generated image: {specific_filename}")
@@ -164,7 +215,7 @@ def create_group_benchmark_plots(df):
                 subset,
                 group_label,
                 "Mean (ms)",
-                RUST_BENCH_IMAGE_DIR / f"criterion_{group_slug}.png",
+                RUST_BENCH_IMAGE_DIR / f"{group_slug}.png",
             )
             continue
 
@@ -176,7 +227,7 @@ def create_group_benchmark_plots(df):
                 subset,
                 f"{group_label}: {int(size)} Elements",
                 "Mean (ms)",
-                RUST_BENCH_IMAGE_DIR / f"criterion_{group_slug}_{int(size)}.png",
+                RUST_BENCH_IMAGE_DIR / f"{group_slug}_{int(size)}.png",
             )
 
 

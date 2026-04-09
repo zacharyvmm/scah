@@ -1,167 +1,125 @@
 # Performance Benchmark Report
 
-## Nested All Selection Comparison
-
-![Criterion Simple](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/criterion_nested.png)
+## Nested All
 
 ### Input Size: 100 Elements
 
-| Library | Mean (ms) |
-| :--- | :--- |
-| scah | **0.072955** 
-| tl | **0.155305** 
-| lol_html | **0.168812** 
-| lexbor | **0.215914** 
-| scraper | **0.431706** 
-| lxml | **0.578461** 
+| Library | Mean (ms) | stdev | multiplier |
+| :--- | :--- | :--- | :--- |
+| scah | **0.072955** | 0.004286 | 1x |
+| tl | **0.155305** | 0.005613 | 2.13x |
+| lol_html | **0.168812** | 0.008241 | 2.31x |
+| lexbor | **0.215914** | 0.008629 | 2.96x |
+| scraper | **0.431706** | 0.015014 | 5.92x |
+| lxml | **0.578461** | 0.024190 | 7.93x |
 
 ### Input Size: 1000 Elements
 
-| Library | Mean (ms) |
-| :--- | :--- |
-| scah | **0.717624** 
-| tl | **1.608891** 
-| lol_html | **1.650700** 
-| lexbor | **2.016662** 
-| scraper | **4.281605** 
-| lxml | **5.561729** 
+| Library | Mean (ms) | stdev | multiplier |
+| :--- | :--- | :--- | :--- |
+| scah | **0.717624** | 0.022313 | 1x |
+| tl | **1.608891** | 0.039479 | 2.24x |
+| lol_html | **1.650700** | 0.071889 | 2.3x |
+| lexbor | **2.016662** | 0.015532 | 2.81x |
+| scraper | **4.281605** | 0.043791 | 5.97x |
+| lxml | **5.561729** | 0.044555 | 7.75x |
 
 ### Input Size: 10000 Elements
 
-| Library | Mean (ms) |
-| :--- | :--- |
-| scah | **7.577791** 
-| tl | **15.956983** 
-| lol_html | **16.366029** 
-| lexbor | **23.950227** 
-| scraper | **42.663811** 
-| lxml | **70.249608** 
+| Library | Mean (ms) | stdev | multiplier |
+| :--- | :--- | :--- | :--- |
+| scah | **7.577791** | 0.086048 | 1x |
+| tl | **15.956983** | 0.096643 | 2.11x |
+| lol_html | **16.366029** | 0.077409 | 2.16x |
+| lexbor | **23.950227** | 0.257542 | 3.16x |
+| scraper | **42.663811** | 0.214088 | 5.63x |
+| lxml | **70.249608** | 0.858105 | 9.27x |
 
 ---
 
-## Nested First Selection Comparison
+## Simple All
 
 ### Input Size: 100 Elements
 
-| Library | Mean (ms) |
-| :--- | :--- |
-| lol_html | **0.004932** 
-| tl | **0.036061** 
-| scah | **0.073914** 
-| lexbor | **0.142988** 
-| scraper | **0.258404** 
-| lxml | **0.415266** 
+| Library | Mean (ms) | stdev | multiplier |
+| :--- | :--- | :--- | :--- |
+| scah | **0.032746** | 0.000972 | 1x |
+| tl | **0.043941** | 0.001718 | 1.34x |
+| lol_html | **0.048846** | 0.001769 | 1.49x |
+| lexbor | **0.116722** | 0.004347 | 3.56x |
+| lxml | **0.232907** | 0.008891 | 7.11x |
+| scraper | **0.284249** | 0.011305 | 8.68x |
 
 ### Input Size: 1000 Elements
 
-| Library | Mean (ms) |
-| :--- | :--- |
-| lol_html | **0.004937** 
-| tl | **0.315313** 
-| scah | **0.722124** 
-| lexbor | **1.300084** 
-| scraper | **2.526277** 
-| lxml | **3.963909** 
+| Library | Mean (ms) | stdev | multiplier |
+| :--- | :--- | :--- | :--- |
+| scah | **0.322802** | 0.014551 | 1x |
+| tl | **0.452792** | 0.016120 | 1.4x |
+| lol_html | **0.477883** | 0.016045 | 1.48x |
+| lexbor | **1.035157** | 0.052636 | 3.21x |
+| lxml | **2.212452** | 0.015480 | 6.85x |
+| scraper | **2.851043** | 0.024136 | 8.83x |
 
 ### Input Size: 10000 Elements
 
-| Library | Mean (ms) |
-| :--- | :--- |
-| lol_html | **0.005199** 
-| tl | **3.603669** 
-| scah | **7.245054** 
-| lexbor | **16.735194** 
-| scraper | **26.918348** 
-| lxml | **58.037319** 
+| Library | Mean (ms) | stdev | multiplier |
+| :--- | :--- | :--- | :--- |
+| scah | **3.636213** | 0.028963 | 1x |
+| tl | **4.444398** | 0.041332 | 1.22x |
+| lol_html | **4.743502** | 0.044130 | 1.3x |
+| lexbor | **10.939556** | 0.092103 | 3.01x |
+| lxml | **23.978326** | 0.215802 | 6.59x |
+| scraper | **28.734239** | 0.184870 | 7.9x |
 
 ---
 
-## Simple All Selection Comparison
+## Simple First
 
 ### Input Size: 100 Elements
 
-| Library | Mean (ms) |
-| :--- | :--- |
-| scah | **0.032746** 
-| tl | **0.043941** 
-| lol_html | **0.048846** 
-| lexbor | **0.116722** 
-| lxml | **0.232907** 
-| scraper | **0.284249** 
+| Library | Mean (ms) | stdev | multiplier |
+| :--- | :--- | :--- | :--- |
+| scah | **0.000607** | 0.000030 | 1x |
+| lol_html | **0.001129** | 0.000034 | 1.86x |
+| tl | **0.020985** | 0.000777 | 34.56x |
+| lexbor | **0.092363** | 0.004990 | 152.11x |
+| lxml | **0.176442** | 0.006825 | 290.57x |
+| scraper | **0.254047** | 0.013139 | 418.38x |
 
 ### Input Size: 1000 Elements
 
-| Library | Mean (ms) |
-| :--- | :--- |
-| scah | **0.322802** 
-| tl | **0.452792** 
-| lol_html | **0.477883** 
-| lexbor | **1.035157** 
-| lxml | **2.212452** 
-| scraper | **2.851043** 
+| Library | Mean (ms) | stdev | multiplier |
+| :--- | :--- | :--- | :--- |
+| scah | **0.000583** | 0.000017 | 1x |
+| lol_html | **0.001125** | 0.000056 | 1.93x |
+| tl | **0.229419** | 0.010185 | 393.45x |
+| lexbor | **0.784825** | 0.027321 | 1345.97x |
+| lxml | **1.687698** | 0.055160 | 2894.38x |
+| scraper | **2.527543** | 0.018424 | 4334.71x |
 
 ### Input Size: 10000 Elements
 
-| Library | Mean (ms) |
-| :--- | :--- |
-| scah | **3.636213** 
-| tl | **4.444398** 
-| lol_html | **4.743502** 
-| lexbor | **10.939556** 
-| lxml | **23.978326** 
-| scraper | **28.734239** 
-
----
-
-## Simple First Selection Comparison
-
-![Criterion Simple](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/criterion_simple.png)
-
-### Input Size: 100 Elements
-
-| Library | Mean (ms) |
-| :--- | :--- |
-| scah | **0.000607** 
-| lol_html | **0.001129** 
-| tl | **0.020985** 
-| lexbor | **0.092363** 
-| lxml | **0.176442** 
-| scraper | **0.254047** 
-
-### Input Size: 1000 Elements
-
-| Library | Mean (ms) |
-| :--- | :--- |
-| scah | **0.000583** 
-| lol_html | **0.001125** 
-| tl | **0.229419** 
-| lexbor | **0.784825** 
-| lxml | **1.687698** 
-| scraper | **2.527543** 
-
-### Input Size: 10000 Elements
-
-| Library | Mean (ms) |
-| :--- | :--- |
-| scah | **0.000604** 
-| lol_html | **0.001123** 
-| tl | **2.142480** 
-| lexbor | **8.239055** 
-| lxml | **18.304213** 
-| scraper | **25.146224** 
+| Library | Mean (ms) | stdev | multiplier |
+| :--- | :--- | :--- | :--- |
+| scah | **0.000604** | 0.000023 | 1x |
+| lol_html | **0.001123** | 0.000048 | 1.86x |
+| tl | **2.142480** | 0.021040 | 3548.08x |
+| lexbor | **8.239055** | 0.070792 | 13644.39x |
+| lxml | **18.304213** | 0.210422 | 30312.91x |
+| scraper | **25.146224** | 0.259092 | 41643.71x |
 
 ---
 
 ## WHATWG All Links
 
-| Library | Mean (ms) |
-| :--- | :--- |
-| scah | **46.233550** 
-| lol_html | **48.753165** 
-| tl | **62.236425** 
-| lexbor | **121.425865** 
-| scraper | **275.784674** 
-| lxml | **323.821592** 
+| Library | Mean (ms) | stdev | multiplier |
+| :--- | :--- | :--- | :--- |
+| scah | **46.233550** | 0.277389 | 1x |
+| lol_html | **48.753165** | 0.155517 | 1.05x |
+| tl | **62.236425** | 0.671279 | 1.35x |
+| lexbor | **121.425865** | 0.613510 | 2.63x |
+| scraper | **275.784674** | 0.723457 | 5.97x |
+| lxml | **323.821592** | 1.312858 | 7x |
 
 ---
-
