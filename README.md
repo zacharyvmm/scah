@@ -181,10 +181,10 @@ store = parse(html, [query])
 ![Nested Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/nested.png)
 
 ##### Structural Html BenchMark (select all `a` tags):
-![Structural Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/synthethic.png)
+![Structural Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/synthetic.png)
 
 ##### First Element Html BenchMark (select first `a`):
-![First Element Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/synthethic_first.png)
+![First Element Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/synthetic_first.png)
 
 ### Typescript / Javascript
 ```bash
