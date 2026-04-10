@@ -8,8 +8,8 @@ use napi_derive::napi;
 #[napi(object, js_name = "Save")]
 #[derive(Clone, Copy, Debug)]
 pub struct JsSave {
-    pub inner_html: bool,
-    pub text_content: bool,
+    pub inner_html: Option<bool>,
+    pub text_content: Option<bool>,
 }
 
 #[napi]
@@ -17,47 +17,47 @@ impl JsSave {
     #[napi]
     pub fn only_inner_html() -> Self {
         Self {
-            inner_html: true,
-            text_content: false,
+            inner_html: Some(true),
+            text_content: Some(false),
         }
     }
 
     #[napi]
     pub fn only_text_content() -> Self {
         Self {
-            inner_html: false,
-            text_content: true,
+            inner_html: Some(false),
+            text_content: Some(true),
         }
     }
 
     #[napi]
     pub fn all() -> Self {
         Self {
-            inner_html: true,
-            text_content: true,
+            inner_html: Some(true),
+            text_content: Some(true),
         }
     }
 
     #[napi]
     pub fn none() -> Self {
         Self {
-            inner_html: false,
-            text_content: false,
+            inner_html: Some(false),
+            text_content: Some(false),
         }
     }
 
     #[napi]
     pub fn new(inner_html: Option<bool>, text_content: Option<bool>) -> Self {
         Self {
-            inner_html: inner_html.unwrap_or(false),
-            text_content: text_content.unwrap_or(false),
+            inner_html,
+            text_content,
         }
     }
 
     fn to_save(self) -> Save {
         Save {
-            inner_html: self.inner_html,
-            text_content: self.text_content,
+            inner_html: self.inner_html.unwrap_or(false),
+            text_content: self.text_content.unwrap_or(false),
         }
     }
 }
@@ -70,16 +70,18 @@ pub struct JsQueryBuilder {
 #[napi]
 impl JsQueryBuilder {
     #[napi]
-    pub fn all(&mut self, selector: String, save: JsSave) -> JsQueryBuilder {
-        self.builder.all_mut(selector, save.to_save());
+    pub fn all(&mut self, selector: String, save: Option<JsSave>) -> JsQueryBuilder {
+        self.builder
+            .all_mut(selector, save.unwrap_or_else(JsSave::none).to_save());
 
         JsQueryBuilder {
             builder: self.builder.clone(),
         }
     }
     #[napi]
-    pub fn first(&mut self, selector: String, save: JsSave) -> JsQueryBuilder {
-        self.builder.first_mut(selector, save.to_save());
+    pub fn first(&mut self, selector: String, save: Option<JsSave>) -> JsQueryBuilder {
+        self.builder
+            .first_mut(selector, save.unwrap_or_else(JsSave::none).to_save());
 
         JsQueryBuilder {
             builder: self.builder.clone(),
@@ -122,16 +124,16 @@ pub struct JsQueryFactory {
 #[napi]
 impl JsQueryFactory {
     #[napi]
-    pub fn all(&self, selector: String, save: JsSave) -> JsQueryBuilder {
+    pub fn all(&self, selector: String, save: Option<JsSave>) -> JsQueryBuilder {
         JsQueryBuilder {
-            builder: LazyQuery::all(selector, save.to_save()),
+            builder: LazyQuery::all(selector, save.unwrap_or_else(JsSave::none).to_save()),
         }
     }
 
     #[napi]
-    pub fn first(&self, selector: String, save: JsSave) -> JsQueryBuilder {
+    pub fn first(&self, selector: String, save: Option<JsSave>) -> JsQueryBuilder {
         JsQueryBuilder {
-            builder: LazyQuery::first(selector, save.to_save()),
+            builder: LazyQuery::first(selector, save.unwrap_or_else(JsSave::none).to_save()),
         }
     }
 }
@@ -149,16 +151,16 @@ pub struct JsQueryStatic;
 #[napi]
 impl JsQueryStatic {
     #[napi]
-    pub fn all(selector: String, save: JsSave) -> JsQueryBuilder {
+    pub fn all(selector: String, save: Option<JsSave>) -> JsQueryBuilder {
         JsQueryBuilder {
-            builder: LazyQuery::all(selector, save.to_save()),
+            builder: LazyQuery::all(selector, save.unwrap_or_else(JsSave::none).to_save()),
         }
     }
 
     #[napi]
-    pub fn first(selector: String, save: JsSave) -> JsQueryBuilder {
+    pub fn first(selector: String, save: Option<JsSave>) -> JsQueryBuilder {
         JsQueryBuilder {
-            builder: LazyQuery::first(selector, save.to_save()),
+            builder: LazyQuery::first(selector, save.unwrap_or_else(JsSave::none).to_save()),
         }
     }
 }
