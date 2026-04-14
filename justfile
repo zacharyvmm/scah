@@ -102,3 +102,7 @@ bump-python new_version:
 trigger-release new_version:
     git tag -a v{{new_version}} -m "Version {{new_version}} release"
     git push origin v{{new_version}}
+
+code-cov:
+    # cargo llvm-cov --html
+    cargo llvm-cov
