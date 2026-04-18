@@ -1,15 +1,18 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyDict;
 use pyo3::{Bound, IntoPyObjectExt, prelude::*};
-use scah::{Attribute, ElementId, Store};
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use scah_core::{Attribute, ElementId, Store};
 use std::sync::Arc;
 
-#[pyclass(name = "Element")]
+#[gen_stub_pyclass]
+#[pyclass(module = "scah", name = "Element")]
 pub struct PyElement {
     pub(crate) store: Arc<Store<'static, 'static>>,
     pub(crate) id: ElementId,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyElement {
     #[getter]
@@ -114,12 +117,14 @@ impl PyElement {
     }
 }
 
-#[pyclass(name = "Store")]
+#[gen_stub_pyclass]
+#[pyclass(module = "scah", name = "Store")]
 pub(crate) struct PyStore {
     pub(crate) store: Arc<Store<'static, 'static>>,
     pub(crate) _html: Arc<String>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyStore {
     fn get(&self, query: String) -> Option<Vec<PyElement>> {

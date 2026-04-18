@@ -9,7 +9,7 @@ build-rust:
 build-node:
     cd crates/bindings/scah-node && bun run build
 build-python:
-    cd crates/bindings/scah-python && uvx maturin build --release
+    cd crates/bindings/scah-python && cargo run --bin stub_gen && uvx maturin build --release
 
 dev: dev-rust dev-node dev-python
 dev-rust:
@@ -17,7 +17,7 @@ dev-rust:
 dev-node:
     cd crates/bindings/scah-node && bun run build:debug
 dev-python:
-    cd crates/bindings/scah-python && uvx maturin build
+    cd crates/bindings/scah-python && cargo run --bin stub_gen && uvx maturin build
 
 test: test-rust test-node test-python
 test-rust:
