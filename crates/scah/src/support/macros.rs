@@ -17,3 +17,24 @@ macro_rules! dbg_print {
         }
     }
 }
+
+#[cfg(any(debug_assertions, test))]
+#[macro_export]
+macro_rules! scah_trace {
+    ($store:expr, $event:expr) => {{
+        let event = $event;
+        #[cfg(feature = "otel")]
+        {
+            $crate::otel::emit_trace_event(&event);
+        }
+        $store.trace_event(event);
+    }};
+}
+
+#[cfg(not(any(debug_assertions, test)))]
+#[macro_export]
+macro_rules! scah_trace {
+    ($store:expr, $event:expr) => {{
+        let _ = &$store;
+    }};
+}

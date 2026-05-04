@@ -4,6 +4,9 @@ use crate::QuerySpec;
 use crate::Reader;
 use crate::XHtmlElement;
 use crate::dbg_print;
+use crate::debug::ImpliedCloseReason;
+#[cfg(any(debug_assertions, test))]
+use crate::debug::TraceEvent;
 use crate::engine::multiplexer::{DocumentPosition, QueryMultiplexer};
 use crate::store::Store;
 
@@ -132,7 +135,12 @@ where
 
                 self.position.reader_position = tag_start_position;
                 let implied_closes = self.open_elements.prepare_for_open(self.element.name);
-                self.pop_open_elements(implied_closes, reader);
+                self.pop_open_elements(
+                    implied_closes,
+                    reader,
+                    Some(ImpliedCloseReason::OpenTagRule),
+                    None,
+                );
                 self.position.reader_position = reader.get_position();
 
                 let is_self_closing = self.element.is_self_closing();
@@ -147,6 +155,16 @@ where
                     "opening: `{}` ({})",
                     self.element.name,
                     self.position.element_depth
+                );
+
+                crate::scah_trace!(
+                    self.store,
+                    TraceEvent::OpenTag {
+                        tag: self.element.name,
+                        depth: self.position.element_depth,
+                        reader_position: self.position.reader_position,
+                        self_closing: is_self_closing,
+                    }
                 );
 
                 let save_hits = self
@@ -170,9 +188,22 @@ where
             }
             XHtmlTag::Close(closing_tag) => {
                 dbg_print!("closing: `{closing_tag}` ({})", self.position.element_depth);
+                crate::scah_trace!(
+                    self.store,
+                    TraceEvent::CloseTag {
+                        tag: closing_tag,
+                        depth: self.position.element_depth,
+                        reader_position: self.position.reader_position,
+                    }
+                );
 
                 let closing_elements = self.open_elements.close_by_end_tag(closing_tag);
-                early_exit = self.pop_open_elements(closing_elements, reader) || early_exit;
+                early_exit = self.pop_open_elements(
+                    closing_elements,
+                    reader,
+                    Some(ImpliedCloseReason::MismatchedEndTag),
+                    Some(closing_tag),
+                ) || early_exit;
             }
         }
 
@@ -180,6 +211,35 @@ where
     }
 
     pub fn matches(self) -> Store<'html, 'query> {
+        self.store
+    }
+
+    pub fn trace_parse_started(
+        &mut self,
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] html_len: usize,
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] query_count: usize,
+    ) {
+        crate::scah_trace!(
+            self.store,
+            TraceEvent::ParseStarted {
+                html_len,
+                query_count,
+            }
+        );
+    }
+
+    pub fn finish(
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_mut))] mut self,
+    ) -> Store<'html, 'query> {
+        crate::scah_trace!(
+            self.store,
+            TraceEvent::ParseFinished {
+                element_count: self.store.elements.len(),
+                query_node_count: self.store.queries.len(),
+                attribute_count: self.store.attributes.len(),
+                text_content_len: self.store.text_content.len(),
+            }
+        );
         self.store
     }
 
@@ -192,13 +252,15 @@ where
         self.finalize_open_element(&open_element, reader);
         self.position.element_depth = close_depth;
         self.selectors
-            .back(open_element.name, &self.position, reader)
+            .back(open_element.name, &self.position, reader, &mut self.store)
     }
 
     fn pop_open_elements(
         &mut self,
         open_elements: Vec<OpenElement<'html>>,
         reader: &Reader<'html>,
+        implied_close_reason: Option<ImpliedCloseReason>,
+        expected_tag: Option<&'html str>,
     ) -> bool {
         let base_depth = self.open_elements.depth();
         let total = open_elements.len();
@@ -207,6 +269,19 @@ where
         for (index, open_element) in open_elements.into_iter().enumerate() {
             let close_depth =
                 base_depth.saturating_add((total - index) as crate::engine::DepthSize);
+            if implied_close_reason.is_some_and(|_| {
+                expected_tag
+                    .is_none_or(|expected| !open_element.name.eq_ignore_ascii_case(expected))
+            }) {
+                crate::scah_trace!(
+                    self.store,
+                    TraceEvent::ImpliedClose {
+                        tag: open_element.name,
+                        depth: close_depth,
+                        reason: implied_close_reason.unwrap(),
+                    }
+                );
+            }
             early_exit = self.pop_open_element(open_element, close_depth, reader) || early_exit;
         }
 
@@ -251,7 +326,7 @@ where
         }
         self.position.reader_position = reader.get_position();
         let remaining = self.open_elements.close_all_at_eof();
-        self.pop_open_elements(remaining, reader);
+        self.pop_open_elements(remaining, reader, Some(ImpliedCloseReason::EofDrain), None);
         self.eof_drained = true;
     }
 }

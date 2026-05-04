@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use scah::{Attribute, Query, QuerySpec, Save, Store, parse, query};
+use scah::{Attribute, Query, QuerySpec, Save, Store, debug, parse, query};
 const HTML: &str = r#"
 <!DOCTYPE html>
 <html>
@@ -43,6 +43,68 @@ const HTML: &str = r#"
 </body>
 </html>
 "#;
+
+#[test]
+fn trace_records_open_and_save_events() {
+    let html = "<main><section><a href='/x'>x</a></section></main>";
+    let query = Query::all("main section a", Save::all()).unwrap().build();
+    let queries = [query];
+
+    let store = parse(html, &queries);
+
+    assert!(!store.trace.is_empty());
+    assert!(
+        store
+            .trace
+            .events()
+            .iter()
+            .any(|event| { matches!(event, debug::TraceEvent::OpenTag { tag: "main", .. }) })
+    );
+    assert!(
+        store
+            .trace
+            .events()
+            .iter()
+            .any(|event| { matches!(event, debug::TraceEvent::ElementSaved { element: "a", .. }) })
+    );
+}
+
+#[test]
+fn trace_records_implied_li_close() {
+    let html = "<ul><li>One<li>Two</ul>";
+    let query = Query::all("li", Save::all()).unwrap().build();
+    let queries = [query];
+
+    let store = parse(html, &queries);
+
+    assert!(store.trace.events().iter().any(|event| {
+        matches!(
+            event,
+            debug::TraceEvent::ImpliedClose {
+                tag: "li",
+                reason: debug::ImpliedCloseReason::OpenTagRule,
+                ..
+            }
+        )
+    }));
+}
+
+#[test]
+fn trace_records_first_query_early_exit() {
+    let html = "<div><a>one</a><a>two</a></div>";
+    let query = Query::first("a", Save::all()).unwrap().build();
+    let queries = [query];
+
+    let store = parse(html, &queries);
+
+    assert!(
+        store
+            .trace
+            .events()
+            .iter()
+            .any(|event| matches!(event, debug::TraceEvent::EarlyExit { .. }))
+    );
+}
 
 #[test]
 fn test_html_page() {
