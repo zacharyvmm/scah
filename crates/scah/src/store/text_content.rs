@@ -26,6 +26,10 @@ impl TextContent {
         self.content.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.content.len()
+    }
+
     pub fn set_start(&mut self, start: usize) {
         self.text_start = Some(start);
     }

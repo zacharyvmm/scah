@@ -13,25 +13,27 @@ export declare class Element {
 }
 export type JsElement = Element
 
-export declare class JsQuery {}
+export declare class JsQuery {
+
+}
 
 export declare class Query {
-  static all(selector: string, save: Save): QueryBuilder
-  static first(selector: string, save: Save): QueryBuilder
+  static all(selector: string, save?: Save | undefined | null): QueryBuilder
+  static first(selector: string, save?: Save | undefined | null): QueryBuilder
 }
 export type JsQueryStatic = Query
 
 export declare class QueryBuilder {
-  all(selector: string, save: Save): QueryBuilder
-  first(selector: string, save: Save): QueryBuilder
+  all(selector: string, save?: Save | undefined | null): QueryBuilder
+  first(selector: string, save?: Save | undefined | null): QueryBuilder
   then(callback: (arg: JsQueryFactory) => Array<QueryBuilder>): QueryBuilder
   build(): JsQuery
 }
 export type JsQueryBuilder = QueryBuilder
 
 export declare class QueryFactory {
-  all(selector: string, save: Save): QueryBuilder
-  first(selector: string, save: Save): QueryBuilder
+  all(selector: string, save?: Save | undefined | null): QueryBuilder
+  first(selector: string, save?: Save | undefined | null): QueryBuilder
 }
 export type JsQueryFactory = QueryFactory
 
@@ -53,6 +55,6 @@ export interface JsonElement {
 export declare function parse(html: string, queries: Array<JsQuery>): Store
 
 export interface Save {
-  innerHtml: boolean
-  textContent: boolean
+  innerHtml?: boolean
+  textContent?: boolean
 }

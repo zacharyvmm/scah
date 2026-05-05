@@ -100,10 +100,14 @@
 //! | **Adjacent sibling** | `h1 + p` | Coming soon |
 //! | **General sibling** | `h1 ~ p` | Coming soon |
 
+pub mod debug;
 mod engine;
 mod html;
 mod store;
 mod support;
+
+#[cfg(all(any(debug_assertions, test), feature = "otel"))]
+mod otel;
 
 pub use engine::multiplexer::QueryMultiplexer;
 pub use html::element::builder::XHtmlElement;
@@ -169,7 +173,8 @@ where
     };
 
     let mut reader = Reader::new(html);
+    parser.trace_parse_started(html.len(), queries.len());
     while parser.next(&mut reader) {}
 
-    parser.matches()
+    parser.finish()
 }

@@ -1,13 +1,16 @@
 use crate::save::PySave;
-use ::scah::lazy::{LazyQuery, LazyQueryBuilder};
 use pyo3::prelude::*;
-use scah::{Query, QuerySectionId};
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use scah_core::lazy::{LazyQuery, LazyQueryBuilder};
+use scah_core::{Query, QuerySectionId};
 
+#[gen_stub_pyclass]
 #[pyclass]
 pub struct PyQueryBuilder {
     builder: LazyQueryBuilder<String>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyQueryBuilder {
     fn all(mut slf: PyRefMut<'_, Self>, selector: String, save: PySave) -> PyRefMut<'_, Self> {
@@ -47,10 +50,12 @@ impl PyQueryBuilder {
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
 pub struct PyQueryFactory {}
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyQueryFactory {
     fn all(&self, selector: String, save: PySave) -> PyQueryBuilder {
@@ -66,6 +71,7 @@ impl PyQueryFactory {
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone)]
 pub struct PyQuery {
@@ -73,6 +79,7 @@ pub struct PyQuery {
     pub(super) query: Query<'static>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyQuery {
     fn __repr__(&self) -> String {
@@ -80,9 +87,11 @@ impl PyQuery {
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "Query")]
 pub struct PyQueryStatic;
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyQueryStatic {
     #[staticmethod]

@@ -1,5 +1,6 @@
-use ::scah::{Query, QueryMultiplexer, Reader, XHtmlParser};
 use pyo3::prelude::*;
+use pyo3_stub_gen::{define_stub_info_gatherer, derive::gen_stub_pyfunction};
+use scah_core::{Query, QueryMultiplexer, Reader, XHtmlParser};
 
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use crate::query::{PyQuery, PyQueryBuilder, PyQueryFactory, PyQueryStatic};
 use crate::save::PySave;
 use element::{PyElement, PyStore};
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 fn parse(html: String, queries: Vec<PyRef<PyQuery>>) -> PyResult<PyStore> {
     let html = Arc::new(html);
@@ -48,3 +50,5 @@ fn scah(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyStore>()?;
     Ok(())
 }
+
+define_stub_info_gatherer!(stub_info);

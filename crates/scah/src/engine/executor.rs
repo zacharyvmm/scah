@@ -1,8 +1,10 @@
 use super::cursor::CursorOps;
 use super::cursor::{Cursor, ScopedCursor};
 use super::multiplexer::{DocumentPosition, SaveHit};
+#[cfg(any(debug_assertions, test))]
+use crate::debug::{CursorTraceKind, ScopedCursorReason, TraceEvent, TransitionRejectReason};
 use crate::store::Store;
-use crate::{QuerySpec, SelectionKind, XHtmlElement, dbg_print};
+use crate::{QuerySpec, SelectionKind, XHtmlElement};
 
 /*
  * A Selection works runs the fsm's using 2 types of tasks:
@@ -48,10 +50,15 @@ where
     }
 
     fn next_position(
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner_index: usize,
         tree: &Q,
         list: &mut ScopedCursorVec,
         depth: super::DepthSize,
         fsm: &mut impl CursorOps<'query, 'html>,
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut Store<
+            'html,
+            'query,
+        >,
     ) {
         // 1) child, then 2) sibling, then 2) leaf of tree
         fsm.add_depth(depth);
@@ -69,7 +76,22 @@ where
                     fsm.get_parent(),
                     *fsm.get_position(),
                 ));
-                dbg_print!("Created Scoped FSM {:#?}", list.last().unwrap());
+                #[cfg(any(debug_assertions, test))]
+                {
+                    let created = list.last().unwrap();
+                    crate::scah_trace!(
+                        store,
+                        TraceEvent::ScopedCursorCreated {
+                            runner_index,
+                            depth,
+                            scope_depth: created.scope_depth,
+                            parent: created.parent,
+                            selection: created.position.selection,
+                            state: created.position.state,
+                            reason: ScopedCursorReason::BranchSibling,
+                        }
+                    );
+                }
 
                 fsm.set_position(sibling);
                 has_sibling = sibling.next_sibling(tree);
@@ -80,6 +102,7 @@ where
     }
 
     pub fn save_element(
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner_index: usize,
         tree: &Q,
         store: &mut Store<'html, 'query>,
         element: XHtmlElement<'html>,
@@ -91,6 +114,18 @@ where
         let section = tree.get_selection(fsm.get_position().selection);
 
         let element_pointer = store.push(fsm.get_parent(), section, element);
+        crate::scah_trace!(
+            store,
+            TraceEvent::ElementSaved {
+                runner_index,
+                selector: section.source,
+                element: store.elements[element_pointer].name,
+                element_id: element_pointer,
+                parent_id: fsm.get_parent(),
+                save_inner_html: section.save.inner_html,
+                save_text_content: section.save.text_content,
+            }
+        );
         if !tree.is_last_save_point(fsm.get_position()) {
             fsm.set_parent(element_pointer);
         }
@@ -102,8 +137,26 @@ where
         }
     }
 
+    #[cfg(any(debug_assertions, test))]
+    fn transition_reject_reason(
+        tree: &Q,
+        position: &crate::Position,
+        depth: super::DepthSize,
+        last_depth: super::DepthSize,
+        element: &XHtmlElement<'html>,
+    ) -> TransitionRejectReason {
+        let transition = tree.get_transition(position.state);
+        if transition.predicate.matches_element(element) {
+            let _ = (depth, last_depth);
+            TransitionRejectReason::DepthGuardFailed
+        } else {
+            TransitionRejectReason::PredicateFailed
+        }
+    }
+
     pub fn next(
         &mut self,
+        runner_index: usize,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
         store: &mut Store<'html, 'query>,
@@ -111,10 +164,47 @@ where
     ) {
         for i in 0..self.scoped_fsms.len() {
             if !self.scoped_fsms[i].next(self.query, document_position.element_depth, element) {
+                #[cfg(any(debug_assertions, test))]
+                {
+                    let scoped = &self.scoped_fsms[i];
+                    crate::scah_trace!(
+                        store,
+                        TraceEvent::TransitionRejected {
+                            runner_index,
+                            cursor: CursorTraceKind::Scoped { index: i },
+                            selector: self.query.get_selection(scoped.position.selection).source,
+                            element: element.name,
+                            depth: document_position.element_depth,
+                            selection: scoped.position.selection,
+                            state: scoped.position.state,
+                            reason: Self::transition_reject_reason(
+                                self.query,
+                                &scoped.position,
+                                document_position.element_depth,
+                                scoped.scope_depth,
+                                element,
+                            ),
+                        }
+                    );
+                }
                 continue;
             }
 
-            dbg_print!("Scoped FSM ({i}) Match with `{:?}`", element);
+            crate::scah_trace!(
+                store,
+                TraceEvent::TransitionMatched {
+                    runner_index,
+                    cursor: CursorTraceKind::Scoped { index: i },
+                    selector: self
+                        .query
+                        .get_selection(self.scoped_fsms[i].get_position().selection)
+                        .source,
+                    element: element.name,
+                    depth: document_position.element_depth,
+                    selection: self.scoped_fsms[i].get_position().selection,
+                    state: self.scoped_fsms[i].get_position().state,
+                }
+            );
 
             if self
                 .query
@@ -126,40 +216,66 @@ where
                     self.scoped_fsms[i].parent,
                     self.scoped_fsms[i].position,
                 ));
+                #[cfg(any(debug_assertions, test))]
+                {
+                    let created = self.scoped_fsms.last().unwrap();
+                    crate::scah_trace!(
+                        store,
+                        TraceEvent::ScopedCursorCreated {
+                            runner_index,
+                            depth: document_position.element_depth,
+                            scope_depth: created.scope_depth,
+                            parent: created.parent,
+                            selection: created.position.selection,
+                            state: created.position.state,
+                            reason: ScopedCursorReason::DescendantFork,
+                        }
+                    );
+                }
             }
 
             let mut new_scoped_fsm = self.scoped_fsms[i].clone();
 
             if self.query.is_save_point(&new_scoped_fsm.position) {
                 save_hits.push(Self::save_element(
+                    runner_index,
                     self.query,
                     store,
                     element.clone(),
                     &mut new_scoped_fsm,
                 ));
-
-                dbg_print!("Scoped FSM ({i}) Saved `{:?}`", element);
             }
 
             if !element.is_self_closing() {
                 Self::next_position(
+                    runner_index,
                     self.query,
                     &mut self.scoped_fsms,
                     document_position.element_depth,
                     &mut new_scoped_fsm,
+                    store,
                 );
             }
 
             self.scoped_fsms.push(new_scoped_fsm);
-
-            dbg_print!(">> Scoped FSM's: {:#?}", self.scoped_fsms)
         }
 
         // STEP 2: check tasks
         let fsm = &mut self.fsm;
 
         if fsm.next(self.query, document_position.element_depth, element) {
-            dbg_print!("FSM Match with `{:?}`", element);
+            crate::scah_trace!(
+                store,
+                TraceEvent::TransitionMatched {
+                    runner_index,
+                    cursor: CursorTraceKind::Main,
+                    selector: self.query.get_selection(fsm.position.selection).source,
+                    element: element.name,
+                    depth: document_position.element_depth,
+                    selection: fsm.position.selection,
+                    state: fsm.position.state,
+                }
+            );
 
             let is_descendant_combinator = self.query.is_descendant(fsm.position.state);
             let last_save_point = self.query.is_last_save_point(&fsm.position);
@@ -174,25 +290,68 @@ where
                     fsm.parent,
                     fsm.position,
                 ));
-                dbg_print!("Created Scoped FSM {:#?}", self.scoped_fsms.last().unwrap());
+                #[cfg(any(debug_assertions, test))]
+                {
+                    let created = self.scoped_fsms.last().unwrap();
+                    crate::scah_trace!(
+                        store,
+                        TraceEvent::ScopedCursorCreated {
+                            runner_index,
+                            depth: document_position.element_depth,
+                            scope_depth: created.scope_depth,
+                            parent: created.parent,
+                            selection: created.position.selection,
+                            state: created.position.state,
+                            reason: ScopedCursorReason::DescendantFork,
+                        }
+                    );
+                }
             }
 
             if self.query.is_save_point(&fsm.position) {
-                save_hits.push(Self::save_element(self.query, store, element.clone(), fsm));
-
-                dbg_print!("FSM Saved `{:?}`", element);
+                save_hits.push(Self::save_element(
+                    runner_index,
+                    self.query,
+                    store,
+                    element.clone(),
+                    fsm,
+                ));
             }
 
             if !element.is_self_closing() {
                 Self::next_position(
+                    runner_index,
                     self.query,
                     &mut self.scoped_fsms,
                     document_position.element_depth,
                     fsm,
+                    store,
                 );
-                dbg_print!("New FSM {:#?}", fsm);
             }
-            dbg_print!("Scoped FSM's: {:#?}", self.scoped_fsms)
+        } else {
+            #[cfg(any(debug_assertions, test))]
+            {
+                let last_depth = *fsm.match_stack.last().unwrap_or(&0);
+                crate::scah_trace!(
+                    store,
+                    TraceEvent::TransitionRejected {
+                        runner_index,
+                        cursor: CursorTraceKind::Main,
+                        selector: self.query.get_selection(fsm.position.selection).source,
+                        element: element.name,
+                        depth: document_position.element_depth,
+                        selection: fsm.position.selection,
+                        state: fsm.position.state,
+                        reason: Self::transition_reject_reason(
+                            self.query,
+                            &fsm.position,
+                            document_position.element_depth,
+                            last_depth,
+                            element,
+                        ),
+                    }
+                );
+            }
         }
     }
 
@@ -204,30 +363,53 @@ where
         false
     }
 
-    pub fn back(&mut self, element: &'html str, document_position: &DocumentPosition) -> bool {
-        let mut remove_last_x_fsms = 0;
-        for scoped_fsm in self.scoped_fsms.iter().rev() {
-            if scoped_fsm.scope_depth < document_position.element_depth {
-                break;
+    pub fn back(
+        &mut self,
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner_index: usize,
+        element: &'html str,
+        document_position: &DocumentPosition,
+        store: &mut Store<'html, 'query>,
+    ) -> bool {
+        // Walk backwards so swap_remove only moves already-visited retained cursors.
+        for index in (0..self.scoped_fsms.len()).rev() {
+            if self.scoped_fsms[index].scope_depth < document_position.element_depth {
+                continue;
             }
+
+            let scoped_fsm = self.scoped_fsms.swap_remove(index);
             self.fsm.parent = scoped_fsm.parent;
-            dbg_print!("Removed Scoped FSM ({:#?})", scoped_fsm);
-            remove_last_x_fsms += 1;
+            crate::scah_trace!(
+                store,
+                TraceEvent::ScopedCursorPruned {
+                    runner_index,
+                    cursor_index: index,
+                    scope_depth: scoped_fsm.scope_depth,
+                    close_depth: document_position.element_depth,
+                    selection: scoped_fsm.position.selection,
+                    state: scoped_fsm.position.state,
+                }
+            );
         }
-        self.scoped_fsms
-            .truncate(self.scoped_fsms.len() - remove_last_x_fsms);
 
         let fsm = &mut self.fsm;
         if fsm.back(self.query, document_position.element_depth, element) {
             if fsm.end {
                 fsm.end = false;
                 fsm.match_stack.pop();
+                #[cfg(any(debug_assertions, test))]
+                if let Some(section) = self.query.exit_at_section_end() {
+                    crate::scah_trace!(
+                        store,
+                        TraceEvent::EarlyExit {
+                            runner_index,
+                            selector: self.query.get_selection(section).source,
+                            section,
+                        }
+                    );
+                }
                 return true;
             }
-            dbg_print!("FSM Before back: {:#?}", fsm);
             fsm.step_backward(self.query);
-            dbg_print!("FSM out of `{}`", element);
-            dbg_print!("FSM After back: {:#?}", fsm);
             return true;
         }
 
@@ -255,6 +437,7 @@ mod tests {
         let mut selection = QueryExecutor::new(query);
 
         selection.next(
+            0,
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -298,6 +481,7 @@ mod tests {
         );
 
         selection.next(
+            0,
             &XHtmlElement {
                 name: "a",
                 id: None,
@@ -355,6 +539,7 @@ mod tests {
         let mut selection = QueryExecutor::new(query);
 
         selection.next(
+            0,
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -399,6 +584,7 @@ mod tests {
         );
 
         selection.next(
+            0,
             &XHtmlElement {
                 name: "p",
                 id: None,
@@ -469,6 +655,73 @@ mod tests {
     }
 
     #[test]
+    fn test_scoped_fsm_pruning_removes_interleaved_expired_cursors() {
+        let query = Query::first("article", Save::none()).unwrap().build();
+        let mut store = Store::default();
+        let mut selection = QueryExecutor::new(&query);
+        let position = Position {
+            selection: QuerySectionId(0),
+            state: TransitionId(0),
+        };
+
+        selection.scoped_fsms = vec![
+            ScopedCursor {
+                scope_depth: 1,
+                parent: ElementId(10),
+                position,
+            },
+            ScopedCursor {
+                scope_depth: 3,
+                parent: ElementId(20),
+                position,
+            },
+            ScopedCursor {
+                scope_depth: 1,
+                parent: ElementId(30),
+                position,
+            },
+            ScopedCursor {
+                scope_depth: 2,
+                parent: ElementId(40),
+                position,
+            },
+            ScopedCursor {
+                scope_depth: 0,
+                parent: ElementId(50),
+                position,
+            },
+        ];
+
+        let _ = selection.back(
+            0,
+            "section",
+            &DocumentPosition {
+                reader_position: 0,
+                text_content_position: 0,
+                element_depth: 2,
+            },
+            &mut store,
+        );
+
+        assert_eq!(selection.scoped_fsms.len(), 3);
+        assert!(
+            selection
+                .scoped_fsms
+                .iter()
+                .all(|scoped_fsm| scoped_fsm.scope_depth < 2)
+        );
+
+        let mut retained_parents = selection
+            .scoped_fsms
+            .iter()
+            .map(|scoped_fsm| scoped_fsm.parent.index())
+            .collect::<Vec<_>>();
+        retained_parents.sort_unstable();
+        assert_eq!(retained_parents, vec![10, 30, 50]);
+        assert_eq!(selection.fsm.parent, ElementId(20));
+    }
+
+    #[test]
     fn test_simple_open_close() {
         let query = Query::first("div", Save::none()).unwrap().build();
 
@@ -478,6 +731,7 @@ mod tests {
         let reader = Reader::new("<div></div>");
 
         selection.next(
+            0,
             &XHtmlElement {
                 name: "div",
                 id: None,
@@ -513,12 +767,14 @@ mod tests {
 
         store.text_content.push(&reader, 4);
         let _ = selection.back(
+            0,
             "div",
             &DocumentPosition {
                 reader_position: 0,
                 text_content_position: 0,
                 element_depth: 0,
             },
+            &mut store,
         );
 
         assert!(selection.scoped_fsms.is_empty());

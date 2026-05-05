@@ -1,12 +1,15 @@
-use ::scah::Save;
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use scah_core::Save;
 
-#[pyclass(name = "Save")]
+#[gen_stub_pyclass]
+#[pyclass(module = "scah", name = "Save")]
 #[derive(Clone, Copy, Debug)]
 pub struct PySave {
     pub save: Save,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PySave {
     #[staticmethod]

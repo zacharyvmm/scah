@@ -152,3 +152,31 @@ test('find 5_000 anchor tags', () => {
 
   expect(links).toEqual(generated_links)
 })
+
+test('Save defaults missing keys to false', () => {
+  const html = `<div><span>Hello</span></div>`
+  const query = Query.all('div', { textContent: true }).all('span', { innerHtml: true }).build()
+  const store = parse(html, [query])
+
+  const div = store.get('div')?.at(0)
+  expect(div?.innerHtml).toBeNull()
+  expect(div?.textContent).toBe('Hello')
+
+  const span = div?.get('span').at(0)
+  expect(span?.innerHtml).toBe('Hello')
+  expect(span?.textContent).toBeNull()
+})
+
+test('Save defaults omitted object to false', () => {
+  const html = `<div><span>Hello</span></div>`
+  const query = Query.all('div').all('span').build()
+  const store = parse(html, [query])
+
+  const div = store.get('div')?.at(0)
+  expect(div?.innerHtml).toBeNull()
+  expect(div?.textContent).toBeNull()
+
+  const span = div?.get('span').at(0)
+  expect(span?.innerHtml).toBeNull()
+  expect(span?.textContent).toBeNull()
+})

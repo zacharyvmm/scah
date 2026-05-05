@@ -46,8 +46,8 @@ where
     ) -> Vec<SaveHit> {
         let len = store.elements.len();
         let mut save_hits = Vec::new();
-        for session in self.runners.iter_mut() {
-            session.next(xhtml_element, position, store, &mut save_hits);
+        for (runner_index, session) in self.runners.iter_mut().enumerate() {
+            session.next(runner_index, xhtml_element, position, store, &mut save_hits);
         }
         if len == store.elements.len() {
             // Element was not saved
@@ -61,18 +61,21 @@ where
         &mut self,
         xhtml_element: &'html str,
         position: &DocumentPosition,
-        _reader: &Reader<'html>,
+        reader: &Reader<'html>,
+        store: &mut Store<'html, 'query>,
     ) -> bool {
         let mut remove_indices = vec![];
         for (index, session) in self.runners.iter_mut().enumerate() {
-            let early_exit = session.early_exit();
-            let back = session.back(xhtml_element, position);
+            let early_exit_previous = session.early_exit();
+            let back = session.back(index, xhtml_element, position, store);
+            let early_exit_current = session.early_exit();
 
-            if early_exit && back {
+            if back && (early_exit_previous || early_exit_current) {
                 remove_indices.push(index);
             }
         }
-        for idx in remove_indices {
+        let _ = reader;
+        for idx in remove_indices.into_iter().rev() {
             self.runners.remove(idx);
         }
 

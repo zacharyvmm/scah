@@ -1,5 +1,7 @@
 use std::ops::Deref;
 
+#[cfg(debug_assertions)]
+use scah::debug;
 use scah::{Attribute, Query, QuerySpec, Save, Store, parse, query};
 const HTML: &str = r#"
 <!DOCTYPE html>
@@ -43,6 +45,92 @@ const HTML: &str = r#"
 </body>
 </html>
 "#;
+
+#[test]
+#[cfg(debug_assertions)]
+fn trace_records_open_and_save_events() {
+    let html = "<main><section><a href='/x'>x</a></section></main>";
+    let query = Query::all("main section a", Save::all()).unwrap().build();
+    let queries = [query];
+
+    let store = parse(html, &queries);
+
+    assert!(!store.trace.is_empty());
+    assert!(
+        store
+            .trace
+            .events()
+            .iter()
+            .any(|event| { matches!(event, debug::TraceEvent::OpenTag { tag: "main", .. }) })
+    );
+    assert!(
+        store
+            .trace
+            .events()
+            .iter()
+            .any(|event| { matches!(event, debug::TraceEvent::ElementSaved { element: "a", .. }) })
+    );
+}
+
+#[test]
+#[cfg(debug_assertions)]
+fn trace_records_implied_li_close() {
+    let html = "<ul><li>One<li>Two</ul>";
+    let query = Query::all("li", Save::all()).unwrap().build();
+    let queries = [query];
+
+    let store = parse(html, &queries);
+
+    assert!(store.trace.events().iter().any(|event| {
+        matches!(
+            event,
+            debug::TraceEvent::ImpliedClose {
+                tag: "li",
+                reason: debug::ImpliedCloseReason::OpenTagRule,
+                ..
+            }
+        )
+    }));
+}
+
+#[test]
+#[cfg(debug_assertions)]
+fn trace_records_first_query_early_exit() {
+    let html = "<div><a>one</a><a>two</a></div>";
+    let query = Query::first("a", Save::all()).unwrap().build();
+    let queries = [query];
+
+    let store = parse(html, &queries);
+
+    assert!(
+        store
+            .trace
+            .events()
+            .iter()
+            .any(|event| matches!(event, debug::TraceEvent::EarlyExit { .. }))
+    );
+}
+
+#[test]
+#[cfg(debug_assertions)]
+fn trace_records_transition_rejections() {
+    let html = "<main><span>no</span><a>yes</a></main>";
+    let query = Query::all("main > a", Save::all()).unwrap().build();
+    let queries = [query];
+
+    let store = parse(html, &queries);
+
+    assert!(store.trace.events().iter().any(|event| {
+        matches!(
+            event,
+            debug::TraceEvent::TransitionRejected {
+                element: "span",
+                reason: debug::TransitionRejectReason::PredicateFailed,
+                ..
+            }
+        )
+    }));
+}
 
 #[test]
 fn test_html_page() {

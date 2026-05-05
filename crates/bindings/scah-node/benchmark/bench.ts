@@ -139,9 +139,9 @@ const CASES: Record<string, BenchmarkCase> = {
       const element = window.document.getElementsByTagName(query).item(0)
       const snapshot = element
         ? {
-          innerHtml: element.innerHTML,
-          textContent: element.textContent,
-        }
+            innerHtml: element.innerHTML,
+            textContent: element.textContent,
+          }
         : null
       window.close()
       return snapshot

@@ -1,6 +1,6 @@
 [package]
 name = "scah-benches"
-version = "0.0.16"
+version = "0.0.17"
 edition = "2024"
 publish = false
 
@@ -8,7 +8,7 @@ publish = false
 scah = { path = "../crates/scah" }
 
 # Benchmarking Tools
-gungraun = "0.17"
+gungraun = { version = "0.17", features = ["cachegrind"] }
 criterion = { version = "0.8.1", features = ["html_reports"] }
 
 # Competitor libraries

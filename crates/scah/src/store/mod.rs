@@ -53,6 +53,8 @@ pub struct Store<'html, 'query> {
     pub queries: Arena<QueryNode<'query>, QueryId>,
     /// Accumulated text-content buffer shared by all elements.
     pub text_content: TextContent,
+    #[cfg(any(debug_assertions, test))]
+    pub trace: crate::debug::TraceStore<'html, 'query>,
 }
 
 impl<'html, 'query: 'html> Default for Store<'html, 'query> {
@@ -62,6 +64,8 @@ impl<'html, 'query: 'html> Default for Store<'html, 'query> {
             queries: Arena::new(),
             text_content: TextContent::new(),
             attributes: Arena::new(),
+            #[cfg(any(debug_assertions, test))]
+            trace: crate::debug::TraceStore::new(),
         }
     }
 }
@@ -73,6 +77,20 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             queries: Arena::new(),
             text_content: TextContent::with_capacity(capacity / 3),
             attributes: Arena::with_capacity(capacity / 3),
+            #[cfg(any(debug_assertions, test))]
+            trace: crate::debug::TraceStore::with_capacity(capacity.min(4096)),
+        }
+    }
+
+    #[inline(always)]
+    #[cfg_attr(not(any(debug_assertions, test)), allow(dead_code))]
+    pub(crate) fn trace_event(
+        &mut self,
+        #[cfg(any(debug_assertions, test))] event: crate::debug::TraceEvent<'html, 'query>,
+    ) {
+        #[cfg(any(debug_assertions, test))]
+        {
+            self.trace.push(event);
         }
     }
 
@@ -231,9 +249,26 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         assert!(!self.elements.is_empty());
         assert!(element_id.index() < self.elements.len());
 
+        #[cfg(any(debug_assertions, test))]
+        let tag = self.elements[element_id].name;
+        #[cfg(any(debug_assertions, test))]
+        let has_inner_html = inner_html.is_some();
+        #[cfg(any(debug_assertions, test))]
+        let has_text_content = text_content.is_some();
+
         let element = &mut self.elements[element_id];
         element.inner_html = inner_html;
         element.text_content = text_content;
+
+        crate::scah_trace!(
+            self,
+            crate::debug::TraceEvent::ContentFinalized {
+                element_id,
+                tag,
+                has_inner_html,
+                has_text_content,
+            }
+        );
     }
 }
 

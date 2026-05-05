@@ -9,11 +9,23 @@ macro_rules! mut_prt_unchecked {
     }};
 }
 
+#[cfg(any(debug_assertions, test))]
 #[macro_export]
-macro_rules! dbg_print {
-    ($($arg:tt)*) => {
-        if cfg!(debug_assertions) {
-            println!($($arg)*);
+macro_rules! scah_trace {
+    ($store:expr, $event:expr) => {{
+        let event = $event;
+        #[cfg(feature = "otel")]
+        {
+            $crate::otel::emit_trace_event(&event);
         }
-    }
+        $store.trace_event(event);
+    }};
+}
+
+#[cfg(not(any(debug_assertions, test)))]
+#[macro_export]
+macro_rules! scah_trace {
+    ($store:expr, $event:expr) => {{
+        let _ = &$store;
+    }};
 }
