@@ -2,6 +2,9 @@
 requires = ["maturin>=1.9.4,<2.0"]
 build-backend = "maturin"
 
+[tool.maturin]
+features = ["extension-module"]
+
 [project]
 name = "scah"
 version = "0.0.16"

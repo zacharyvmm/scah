@@ -7,6 +7,9 @@ edition = "2024"
 name = "scah"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+extension-module = ["pyo3/extension-module"]
+
 [dependencies]
 scah-core = { package = "scah", path = "../../scah" }
 pyo3 = { version = "0.27.2", features = ["abi3-py310"] }
