@@ -86,7 +86,7 @@ impl<'html> XHtmlElement<'html> {
             return true;
         }
         if let Some(last_attribute) = self.attributes.last() {
-            return last_attribute.key == "\\";
+            return last_attribute.key == "/";
         }
 
         false
@@ -227,6 +227,8 @@ impl<'a> XHtmlTag<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::html::element;
+
     use super::*;
 
     #[test]
@@ -533,11 +535,11 @@ mod tests {
     fn test_xhtml_tag_open() {
         let mut reader = Reader::new("p key=\"value\"");
         let tag = XHtmlTag::from(&mut reader);
+        assert_eq!(tag, Some(XHtmlTag::Open));
+
         let mut element = XHtmlElement::default();
         let mut attributes = vec![];
         element.from(&mut reader, &mut attributes);
-
-        assert_eq!(tag, Some(XHtmlTag::Open));
 
         assert_eq!(
             element,
@@ -559,6 +561,81 @@ mod tests {
         let tag = XHtmlTag::from(&mut reader);
 
         assert_eq!(tag, Some(XHtmlTag::Close("p")));
+    }
+
+    #[test]
+    fn test_self_closing_xhtml_tag() {
+        for tag_string in [
+            "<hr/>",
+            "<hr />",
+            "<div/>after",
+            "<div />after",
+            "<input disabled/>",
+        ] {
+            let mut reader = Reader::new(tag_string);
+            let tag = XHtmlTag::from(&mut reader);
+            assert_eq!(tag, Some(XHtmlTag::Open));
+
+            let mut element = XHtmlElement::default();
+            let mut attributes = vec![];
+            element.from(&mut reader, &mut attributes);
+
+            assert!(element.is_self_closing(), "{tag_string}: {element:?}");
+        }
+    }
+
+    #[test]
+    fn test_html_whitespace_inside_opening_tags() {
+        let mut reader = Reader::new("a\nhref=x>");
+
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+
+        element.from(&mut reader, &mut attributes);
+        assert_eq!(
+            element,
+            XHtmlElement {
+                name: "a",
+                attributes: &[Attribute {
+                    key: "href",
+                    value: Some("x")
+                }],
+                ..Default::default()
+            }
+        );
+        element.clear();
+
+        let mut reader = Reader::new("a\thref=y>");
+
+        element.from(&mut reader, &mut attributes);
+        assert_eq!(
+            element,
+            XHtmlElement {
+                name: "a",
+                attributes: &[Attribute {
+                    key: "href",
+                    value: Some("y")
+                }],
+                ..Default::default()
+            }
+        );
+        element.clear();
+
+        let mut reader = Reader::new("a \r\nhref=z>");
+
+        element.from(&mut reader, &mut attributes);
+        assert_eq!(
+            element,
+            XHtmlElement {
+                name: "a",
+                attributes: &[Attribute {
+                    key: "href",
+                    value: Some("z")
+                }],
+                ..Default::default()
+            }
+        );
+        element.clear();
     }
 
     #[test]

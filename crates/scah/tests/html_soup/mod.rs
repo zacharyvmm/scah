@@ -1,3 +1,4 @@
+mod edge_cases_test;
 mod eof_recovery_test;
 mod helpers;
 mod implied_close_test;
