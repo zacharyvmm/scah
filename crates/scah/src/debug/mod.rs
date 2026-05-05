@@ -76,6 +76,16 @@ pub enum TraceEvent<'html, 'query> {
         selection: QuerySectionId,
         state: TransitionId,
     },
+    TransitionRejected {
+        runner_index: usize,
+        cursor: CursorTraceKind,
+        selector: &'query str,
+        element: &'html str,
+        depth: u16,
+        selection: QuerySectionId,
+        state: TransitionId,
+        reason: TransitionRejectReason,
+    },
     ScopedCursorCreated {
         runner_index: usize,
         depth: u16,
@@ -133,4 +143,10 @@ pub enum ImpliedCloseReason {
     OpenTagRule,
     MismatchedEndTag,
     EofDrain,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransitionRejectReason {
+    DepthGuardFailed,
+    PredicateFailed,
 }

@@ -3,7 +3,6 @@ use super::open_elements::{OpenElement, OpenElementStack};
 use crate::QuerySpec;
 use crate::Reader;
 use crate::XHtmlElement;
-use crate::dbg_print;
 use crate::debug::ImpliedCloseReason;
 #[cfg(any(debug_assertions, test))]
 use crate::debug::TraceEvent;
@@ -151,12 +150,6 @@ where
                     self.position.element_depth = self.open_elements.depth();
                 }
 
-                dbg_print!(
-                    "opening: `{}` ({})",
-                    self.element.name,
-                    self.position.element_depth
-                );
-
                 crate::scah_trace!(
                     self.store,
                     TraceEvent::OpenTag {
@@ -187,7 +180,6 @@ where
                 self.element.clear();
             }
             XHtmlTag::Close(closing_tag) => {
-                dbg_print!("closing: `{closing_tag}` ({})", self.position.element_depth);
                 crate::scah_trace!(
                     self.store,
                     TraceEvent::CloseTag {

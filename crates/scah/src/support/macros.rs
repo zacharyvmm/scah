@@ -9,15 +9,6 @@ macro_rules! mut_prt_unchecked {
     }};
 }
 
-#[macro_export]
-macro_rules! dbg_print {
-    ($($arg:tt)*) => {
-        if cfg!(debug_assertions) {
-            println!($($arg)*);
-        }
-    }
-}
-
 #[cfg(any(debug_assertions, test))]
 #[macro_export]
 macro_rules! scah_trace {
