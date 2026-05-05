@@ -69,7 +69,7 @@ where
             let early_exit_previous = session.early_exit();
             let back = session.back(index, xhtml_element, position, store);
             let early_exit_current = session.early_exit();
-            
+
             if back && (early_exit_previous || early_exit_current) {
                 remove_indices.push(index);
             }
