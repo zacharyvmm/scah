@@ -87,6 +87,7 @@ pub enum TraceEvent<'html, 'query> {
     },
     ScopedCursorPruned {
         runner_index: usize,
+        cursor_index: usize,
         scope_depth: u16,
         close_depth: u16,
         selection: QuerySectionId,

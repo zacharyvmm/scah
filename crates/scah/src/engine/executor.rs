@@ -293,27 +293,27 @@ where
         document_position: &DocumentPosition,
         store: &mut Store<'html, 'query>,
     ) -> bool {
-        let mut remove_last_x_fsms = 0;
-        for scoped_fsm in self.scoped_fsms.iter().rev() {
-            if scoped_fsm.scope_depth < document_position.element_depth {
-                break;
+        // Walk backwards so swap_remove only moves already-visited retained cursors.
+        for index in (0..self.scoped_fsms.len()).rev() {
+            if self.scoped_fsms[index].scope_depth < document_position.element_depth {
+                continue;
             }
+
+            let scoped_fsm = self.scoped_fsms.swap_remove(index);
             self.fsm.parent = scoped_fsm.parent;
             dbg_print!("Removed Scoped FSM ({:#?})", scoped_fsm);
             crate::scah_trace!(
                 store,
                 TraceEvent::ScopedCursorPruned {
                     runner_index,
+                    cursor_index: index,
                     scope_depth: scoped_fsm.scope_depth,
                     close_depth: document_position.element_depth,
                     selection: scoped_fsm.position.selection,
                     state: scoped_fsm.position.state,
                 }
             );
-            remove_last_x_fsms += 1;
         }
-        self.scoped_fsms
-            .truncate(self.scoped_fsms.len() - remove_last_x_fsms);
 
         let fsm = &mut self.fsm;
         if fsm.back(self.query, document_position.element_depth, element) {
@@ -579,6 +579,73 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn test_scoped_fsm_pruning_removes_interleaved_expired_cursors() {
+        let query = Query::first("article", Save::none()).unwrap().build();
+        let mut store = Store::default();
+        let mut selection = QueryExecutor::new(&query);
+        let position = Position {
+            selection: QuerySectionId(0),
+            state: TransitionId(0),
+        };
+
+        selection.scoped_fsms = vec![
+            ScopedCursor {
+                scope_depth: 1,
+                parent: ElementId(10),
+                position,
+            },
+            ScopedCursor {
+                scope_depth: 3,
+                parent: ElementId(20),
+                position,
+            },
+            ScopedCursor {
+                scope_depth: 1,
+                parent: ElementId(30),
+                position,
+            },
+            ScopedCursor {
+                scope_depth: 2,
+                parent: ElementId(40),
+                position,
+            },
+            ScopedCursor {
+                scope_depth: 0,
+                parent: ElementId(50),
+                position,
+            },
+        ];
+
+        let _ = selection.back(
+            0,
+            "section",
+            &DocumentPosition {
+                reader_position: 0,
+                text_content_position: 0,
+                element_depth: 2,
+            },
+            &mut store,
+        );
+
+        assert_eq!(selection.scoped_fsms.len(), 3);
+        assert!(
+            selection
+                .scoped_fsms
+                .iter()
+                .all(|scoped_fsm| scoped_fsm.scope_depth < 2)
+        );
+
+        let mut retained_parents = selection
+            .scoped_fsms
+            .iter()
+            .map(|scoped_fsm| scoped_fsm.parent.index())
+            .collect::<Vec<_>>();
+        retained_parents.sort_unstable();
+        assert_eq!(retained_parents, vec![10, 30, 50]);
+        assert_eq!(selection.fsm.parent, ElementId(20));
     }
 
     #[test]
