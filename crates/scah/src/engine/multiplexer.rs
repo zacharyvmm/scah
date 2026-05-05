@@ -66,10 +66,11 @@ where
     ) -> bool {
         let mut remove_indices = vec![];
         for (index, session) in self.runners.iter_mut().enumerate() {
-            let early_exit = session.early_exit();
+            let early_exit_previous = session.early_exit();
             let back = session.back(index, xhtml_element, position, store);
-
-            if early_exit && back {
+            let early_exit_current = session.early_exit();
+            
+            if back && (early_exit_previous || early_exit_current) {
                 remove_indices.push(index);
             }
         }

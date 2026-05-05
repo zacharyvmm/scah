@@ -1,4 +1,4 @@
-use scah::{Query, Save, parse};
+use scah::{Query, Save, parse, query};
 
 // TDD
 
@@ -55,4 +55,85 @@ fn html_scope_problem_intro_example() {
     assert_eq!(existing_bindings.len(), 2);
     assert_eq!(existing_bindings[0].text_content(&store), Some("Python"));
     assert_eq!(existing_bindings[1].text_content(&store), Some("Node.js"));
+}
+
+const FIRST_SELECTION_AS_ROOT_EARLY_EXIT: &str = r#"
+    <div class="product"><h1>Product 0</h1><span class="rating">3/5</span><p class="description">Description</p></div>
+    <div class="product"><h1>Product 1</h1><span class="rating">3/5</span><p class="description">Description</p></div>
+"#;
+
+#[test]
+fn first_selection_as_root_early_exit() {
+    const PRODUCT_SELECTOR: &str = "div.product";
+    const PRODUCT_TITLE_SELECTOR: &str = "> h1";
+    const PRODUCT_RATING_SELECTOR: &str = "> span.rating";
+    const PRODUCT_DESCRIPTION_SELECTOR: &str = "> p.description";
+
+    let queries = &[query! {
+        first("div.product", Save::all()) => {
+            first("> h1", Save::all()),
+            first("> span.rating", Save::all()),
+            first("> p.description", Save::all()),
+        }
+    }];
+    let store = parse(FIRST_SELECTION_AS_ROOT_EARLY_EXIT, queries);
+
+    assert_eq!(store.get(PRODUCT_SELECTOR).unwrap().count(), 1);
+
+    let product = store.get(PRODUCT_SELECTOR).unwrap().next().unwrap();
+    product.attribute(&store, "class");
+    product.inner_html;
+    product.text_content(&store);
+
+    let title = product
+        .get(&store, PRODUCT_TITLE_SELECTOR)
+        .unwrap()
+        .next()
+        .unwrap();
+    title.inner_html;
+    title.text_content(&store);
+
+    let rating = product
+        .get(&store, PRODUCT_RATING_SELECTOR)
+        .unwrap()
+        .next()
+        .unwrap();
+    rating.inner_html;
+    rating.text_content(&store);
+
+    let description = product
+        .get(&store, PRODUCT_DESCRIPTION_SELECTOR)
+        .unwrap()
+        .next()
+        .unwrap();
+    description.inner_html;
+    description.text_content(&store);
+}
+
+const FIRST_CONTEXT_WITH_REQUIRED_CHILD: &str = r#"
+    <div class="product"><h1>Product 1</h1></div>
+    <div class="product"><span>not a title</span></div>
+"#;
+
+#[test]
+fn first_context_waits_for_required_child_before_early_exit() {
+    let queries = &[query! {
+        first("div.product", Save::none()) => {
+            first("> h1", Save::all()),
+        }
+    }];
+    assert_eq!(queries[0].exit_at_section_end.unwrap().index(), 1);
+    let store = parse(FIRST_CONTEXT_WITH_REQUIRED_CHILD, queries);
+
+    let products = store
+        .get("div.product")
+        .map(|products| products.collect::<Vec<_>>())
+        .unwrap_or_default();
+    let titles = products
+        .iter()
+        .filter_map(|product| product.get(&store, "> h1"))
+        .flatten()
+        .collect::<Vec<_>>();
+    assert_eq!(titles.len(), 1);
+    assert_eq!(titles[0].text_content(&store), Some("Product 1"));
 }
