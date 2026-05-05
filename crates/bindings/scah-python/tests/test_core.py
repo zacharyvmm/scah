@@ -85,7 +85,7 @@ def test_intro():
     
     p_tags = intro.get("article.overview p")
     assert len(p_tags) == 2
-    assert p_tags[0].text_content == "scah (scan HTML) bridges the gap between SAX/StAX streaming efficiency and DOM convenience."
+    assert p_tags[0].text_content == "scah ( scan HTML ) bridges the gap between SAX/StAX streaming efficiency and DOM convenience."
     assert p_tags[1].text_content == "Instead of manually tracking parser state or loading massive documents into memory, you declare your extraction targets using standard CSS selectors."
 
     li_tags = intro.get("aside.ecosystem li.existing")
