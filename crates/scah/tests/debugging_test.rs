@@ -81,33 +81,48 @@ fn first_selection_as_root_early_exit() {
     assert_eq!(store.get(PRODUCT_SELECTOR).unwrap().count(), 1);
 
     let product = store.get(PRODUCT_SELECTOR).unwrap().next().unwrap();
-    product.attribute(&store, "class");
-    product.inner_html;
-    product.text_content(&store);
+    assert_eq!(product.name, "div");
+    assert_eq!(product.class, Some("product"));
+    assert_eq!(product.attribute(&store, "class"), None);
+    assert_eq!(
+        product.inner_html,
+        Some(
+            r#"<h1>Product 0</h1><span class="rating">3/5</span><p class="description">Description</p>"#
+        )
+    );
+    assert_eq!(
+        product.text_content(&store),
+        Some("Product 0 3/5 Description")
+    );
 
     let title = product
         .get(&store, PRODUCT_TITLE_SELECTOR)
         .unwrap()
         .next()
         .unwrap();
-    title.inner_html;
-    title.text_content(&store);
+    assert_eq!(title.name, "h1");
+    assert_eq!(title.inner_html, Some("Product 0"));
+    assert_eq!(title.text_content(&store), Some("Product 0"));
 
     let rating = product
         .get(&store, PRODUCT_RATING_SELECTOR)
         .unwrap()
         .next()
         .unwrap();
-    rating.inner_html;
-    rating.text_content(&store);
+    assert_eq!(rating.name, "span");
+    assert_eq!(rating.class, Some("rating"));
+    assert_eq!(rating.inner_html, Some("3/5"));
+    assert_eq!(rating.text_content(&store), Some("3/5"));
 
     let description = product
         .get(&store, PRODUCT_DESCRIPTION_SELECTOR)
         .unwrap()
         .next()
         .unwrap();
-    description.inner_html;
-    description.text_content(&store);
+    assert_eq!(description.name, "p");
+    assert_eq!(description.class, Some("description"));
+    assert_eq!(description.inner_html, Some("Description"));
+    assert_eq!(description.text_content(&store), Some("Description"));
 }
 
 const FIRST_CONTEXT_WITH_REQUIRED_CHILD: &str = r#"
