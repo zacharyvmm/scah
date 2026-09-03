@@ -20,6 +20,7 @@ use crate::engine::multiplexer::{
 };
 use crate::store::{Store, trim_collapsed_range};
 use crate::{LocalSelectorList, QuerySpec};
+use smallvec::SmallVec;
 
 #[derive(Default)]
 struct ParserTempState<'html, 'query> {
@@ -49,7 +50,7 @@ impl<'html> StructuralParserState<'html> {
         persistent: bool,
         element: &XHtmlElement<'html>,
     ) -> StructuralMatchContext {
-        let is_root = !self.root_seen;
+        let is_document_root = !self.root_seen;
         self.root_seen = true;
         let child_index = if let Some(count) = self.child_counts.last_mut() {
             *count = count.saturating_add(1);
@@ -71,10 +72,9 @@ impl<'html> StructuralParserState<'html> {
         } else {
             1
         };
-        let mut filtered_child_indices = [0; 8];
-        let mut filtered_child_keys = [0; 8];
-        for (slot, (filter, counts)) in self.filters.iter_mut().enumerate().take(8) {
-            filtered_child_keys[slot] = *filter as usize;
+        let mut filtered_child_indices = SmallVec::with_capacity(self.filters.len());
+        for (filter, counts) in &mut self.filters {
+            let mut filtered_child_index = 0;
             // The pointers originate in the query slice and outlive this parser.
             if unsafe { (&*(*filter as *const LocalSelectorList<'static>)).as_slice() }
                 .iter()
@@ -82,8 +82,9 @@ impl<'html> StructuralParserState<'html> {
             {
                 let parent_count = counts.last_mut().expect("filter parent count");
                 *parent_count = parent_count.saturating_add(1);
-                filtered_child_indices[slot] = *parent_count;
+                filtered_child_index = *parent_count;
             }
+            filtered_child_indices.push((*filter as usize, filtered_child_index));
         }
         if persistent {
             self.child_counts.push(0);
@@ -96,8 +97,8 @@ impl<'html> StructuralParserState<'html> {
             child_index,
             type_index,
             filtered_child_indices,
-            filtered_child_keys,
-            is_root,
+            is_document_root,
+            is_scope_root: is_document_root,
         }
     }
 
@@ -678,7 +679,7 @@ where
                         save_hits,
                         preflight,
                         &mut sibling.pending,
-                        structural,
+                        structural.as_ref(),
                     );
                 } else {
                     self.selectors.next_plain_into_with_context(
@@ -687,7 +688,7 @@ where
                         &mut self.store,
                         &mut self.temp_state.save_hits,
                         &self.temp_state.preflight,
-                        structural,
+                        structural.as_ref(),
                     );
                 }
                 if self.persist_attributes {
@@ -2403,6 +2404,28 @@ mod tests {
         let anchor = store.get("main a").unwrap().next().unwrap();
         assert_eq!(anchor.attribute(&store, "href"), Some("/kept"));
         assert_eq!(anchor.attribute(&store, "rel"), Some("next"));
+    }
+
+    #[test]
+    fn structural_queries_preserve_selective_attribute_parsing() {
+        let html = concat!(
+            "<main data-unused='root'>",
+            "<ul data-unused='list'><li data-unused='item'></li></ul>",
+            "<a href='/kept' data-unused='link'></a>",
+            "</main>"
+        );
+        let queries = [
+            Query::all("li:first-child", Save::none()).unwrap().build(),
+            Query::all("a[href]", Save::none()).unwrap().build(),
+        ];
+        let mut reader = Reader::new(html);
+        let mut parser = XHtmlParser::new(QueryMultiplexer::new(&queries));
+
+        while parser.next(&mut reader) {}
+
+        // The structural candidate and the href candidate need attributes.
+        // Unrelated ancestors remain on the name-only path.
+        assert_eq!(parser.attribute_parse_count, 2);
     }
 
     #[test]
