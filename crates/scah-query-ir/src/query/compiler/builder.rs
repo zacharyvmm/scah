@@ -178,6 +178,7 @@ pub struct QueryBuilder<'query> {
     pub states: Vec<Transition<'query>>,
     /// Internal ordered list of query sections.
     pub selection: Vec<QuerySection<'query>>,
+    pub alternatives: Vec<Vec<std::ops::Range<TransitionId>>>,
 }
 
 impl<'query> QueryBuilder<'query> {
@@ -185,10 +186,17 @@ impl<'query> QueryBuilder<'query> {
         assert!(!self.selection.is_empty());
 
         let current_state_len = self.states.len();
-        let mut states = Transition::generate_transitions_from_string(query)?;
+        let paths = Transition::generate_transition_paths_from_string(query)?;
+        let mut states = Vec::new();
+        let mut alternatives = Vec::new();
+        for path in paths {
+            let start = TransitionId(current_state_len + states.len());
+            states.extend(path);
+            alternatives.push(start..TransitionId(current_state_len + states.len()));
+        }
 
         let parent_index = QuerySectionId(self.selection.len() - 1);
-        let range = TransitionId(current_state_len)..TransitionId(current_state_len + states.len());
+        let range = alternatives.first().unwrap().start..alternatives.last().unwrap().end;
         self.selection.push(QuerySection::new(
             query,
             save,
@@ -198,6 +206,7 @@ impl<'query> QueryBuilder<'query> {
         ));
 
         self.states.append(&mut states);
+        self.alternatives.push(alternatives);
 
         Ok(self)
     }
@@ -211,10 +220,17 @@ impl<'query> QueryBuilder<'query> {
         assert!(!self.selection.is_empty());
 
         let current_state_len = self.states.len();
-        let mut states = Transition::generate_transitions_from_string(query)?;
+        let paths = Transition::generate_transition_paths_from_string(query)?;
+        let mut states = Vec::new();
+        let mut alternatives = Vec::new();
+        for path in paths {
+            let start = TransitionId(current_state_len + states.len());
+            states.extend(path);
+            alternatives.push(start..TransitionId(current_state_len + states.len()));
+        }
 
         let parent_index = QuerySectionId(self.selection.len() - 1);
-        let range = TransitionId(current_state_len)..TransitionId(current_state_len + states.len());
+        let range = alternatives.first().unwrap().start..alternatives.last().unwrap().end;
         self.selection.push(QuerySection::new(
             query,
             save,
@@ -224,6 +240,7 @@ impl<'query> QueryBuilder<'query> {
         ));
 
         self.states.append(&mut states);
+        self.alternatives.push(alternatives);
 
         Ok(self)
     }
@@ -248,6 +265,12 @@ impl<'query> QueryBuilder<'query> {
                 Some(sibling_index)
             }
         };
+        for alternatives in &mut other.alternatives {
+            for range in alternatives {
+                range.start = TransitionId(range.start.index() + state_length);
+                range.end = TransitionId(range.end.index() + state_length);
+            }
+        }
         for index in 0..other.selection.len() {
             let query = &mut other.selection[index];
             query.range.start = TransitionId(query.range.start.index() + state_length);
@@ -278,6 +301,7 @@ impl<'query> QueryBuilder<'query> {
         }
         self.states.append(&mut other.states);
         self.selection.append(&mut other.selection);
+        self.alternatives.append(&mut other.alternatives);
     }
 
     /// Branch into multiple child queries using a closure.
@@ -399,6 +423,12 @@ impl<'query> QueryBuilder<'query> {
             states: states_box,
             queries: query_box,
             exit_at_section_end,
+            alternatives: self
+                .alternatives
+                .into_iter()
+                .map(Vec::into_boxed_slice)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
         }
     }
 }
@@ -500,7 +530,6 @@ mod tests {
             "a ++ b",
             "a ~~ b",
             "a[]",
-            "*",
             "a[123=\"321\"]",
             r#"[data-x="unterminated]"#,
             "[=value]",
