@@ -15,6 +15,7 @@ use crate::debug::ImpliedCloseReason;
 #[cfg(any(debug_assertions, test))]
 use crate::debug::TraceEvent;
 use crate::engine::MAX_ELEMENT_DEPTH;
+use crate::engine::attribute_interest::AttributeInterest;
 use crate::engine::multiplexer::{
     DocumentPosition, ElementPreflight, QueryMultiplexer, SaveHit, SiblingCallback,
 };
@@ -33,17 +34,18 @@ struct ParserTempState<'html, 'query> {
     preflight: ElementPreflight<'query>,
 
     sibling: Option<Box<SiblingParserState>>,
-    structural: Option<Box<StructuralParserState<'html>>>,
+    structural: Option<Box<StructuralParserState<'html, 'query>>>,
 }
 
-struct StructuralParserState<'html> {
+struct StructuralParserState<'html, 'query> {
     child_counts: Vec<u32>,
     type_counts: Vec<Vec<(&'html str, u32)>>,
     filters: Vec<(*const (), Vec<u32>)>,
+    attribute_interest: AttributeInterest<'query>,
     root_seen: bool,
 }
 
-impl<'html> StructuralParserState<'html> {
+impl<'html, 'query> StructuralParserState<'html, 'query> {
     fn open(
         &mut self,
         name: &'html str,
@@ -228,6 +230,7 @@ where
         let features = selectors.features();
         let has_sibling_queries = features.has_sibling_queries;
         let structural_filters = selectors.structural_filters();
+        let structural_attribute_interest = selectors.structural_attribute_interest();
         let store = capacity.map_or_else(Store::default, |capacity| {
             Store::with_capacity_requirements(
                 capacity,
@@ -262,6 +265,7 @@ where
                             .into_iter()
                             .map(|filter| (filter, vec![0]))
                             .collect(),
+                        attribute_interest: structural_attribute_interest.unwrap_or_default(),
                         root_seen: false,
                     })
                 }),
@@ -542,11 +546,19 @@ where
                         }
                     }
 
-                    self.selectors
-                        .prepare_element::<SIBLINGS, RETIREMENT, EXTENDED>(
+                    if EXTENDED && let Some(structural) = self.temp_state.structural.as_ref() {
+                        self.selectors
+                            .prepare_element_with_structural_interest::<SIBLINGS, RETIREMENT>(
+                                name,
+                                &mut self.temp_state.preflight,
+                                &structural.attribute_interest,
+                            );
+                    } else {
+                        self.selectors.prepare_element::<SIBLINGS, RETIREMENT>(
                             name,
                             &mut self.temp_state.preflight,
                         );
+                    }
                     if CAPTURE && self.capture_mode.captures_text() {
                         self.temp_state
                             .preflight
