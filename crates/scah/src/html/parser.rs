@@ -542,10 +542,11 @@ where
                         }
                     }
 
-                    self.selectors.prepare_element::<SIBLINGS, RETIREMENT>(
-                        name,
-                        &mut self.temp_state.preflight,
-                    );
+                    self.selectors
+                        .prepare_element::<SIBLINGS, RETIREMENT, EXTENDED>(
+                            name,
+                            &mut self.temp_state.preflight,
+                        );
                     if CAPTURE && self.capture_mode.captures_text() {
                         self.temp_state
                             .preflight
