@@ -333,19 +333,29 @@ where
         }
         self.indexer.prepare(reader.source());
         let features = self.selectors.features();
+        let extended = features.has_structural_queries || features.has_selector_lists;
         match (
             self.capture_mode.captures_any(),
             features.has_sibling_queries,
             features.has_retiring_runners,
+            extended,
         ) {
-            (false, false, false) => self.next_mode::<false, false, false>(reader),
-            (false, false, true) => self.next_without_capture_retiring(reader),
-            (false, true, false) => self.next_without_capture_with_siblings(reader),
-            (false, true, true) => self.next_without_capture_with_siblings_retiring(reader),
-            (true, false, false) => self.next_with_capture::<false, false>(reader),
-            (true, false, true) => self.next_with_capture::<false, true>(reader),
-            (true, true, false) => self.next_with_capture::<true, false>(reader),
-            (true, true, true) => self.next_with_capture::<true, true>(reader),
+            (false, false, false, false) => self.next_mode::<false, false, false, false>(reader),
+            (false, false, false, true) => self.next_mode::<false, false, false, true>(reader),
+            (false, false, true, false) => self.next_mode::<false, false, true, false>(reader),
+            (false, false, true, true) => self.next_mode::<false, false, true, true>(reader),
+            (false, true, false, false) => self.next_mode::<false, true, false, false>(reader),
+            (false, true, false, true) => self.next_mode::<false, true, false, true>(reader),
+            (false, true, true, false) => self.next_mode::<false, true, true, false>(reader),
+            (false, true, true, true) => self.next_mode::<false, true, true, true>(reader),
+            (true, false, false, false) => self.next_mode::<true, false, false, false>(reader),
+            (true, false, false, true) => self.next_mode::<true, false, false, true>(reader),
+            (true, false, true, false) => self.next_mode::<true, false, true, false>(reader),
+            (true, false, true, true) => self.next_mode::<true, false, true, true>(reader),
+            (true, true, false, false) => self.next_mode::<true, true, false, false>(reader),
+            (true, true, false, true) => self.next_mode::<true, true, false, true>(reader),
+            (true, true, true, false) => self.next_mode::<true, true, true, false>(reader),
+            (true, true, true, true) => self.next_mode::<true, true, true, true>(reader),
         }
     }
 
@@ -358,19 +368,51 @@ where
         // the Reader and may step a different source between calls.
         self.indexer.prepare(reader.source());
         let features = self.selectors.features();
+        let extended = features.has_structural_queries || features.has_selector_lists;
         match (
             self.capture_mode.captures_any(),
             features.has_sibling_queries,
             features.has_retiring_runners,
+            extended,
         ) {
-            (false, false, false) => while self.next_mode::<false, false, false>(reader) {},
-            (false, false, true) => self.run_without_capture_retiring(reader),
-            (false, true, false) => self.run_without_capture_with_siblings(reader),
-            (false, true, true) => self.run_without_capture_with_siblings_retiring(reader),
-            (true, false, false) => self.run_with_capture::<false, false>(reader),
-            (true, false, true) => self.run_with_capture::<false, true>(reader),
-            (true, true, false) => self.run_with_capture::<true, false>(reader),
-            (true, true, true) => self.run_with_capture::<true, true>(reader),
+            (false, false, false, false) => {
+                while self.next_mode::<false, false, false, false>(reader) {}
+            }
+            (false, false, false, true) => {
+                while self.next_mode::<false, false, false, true>(reader) {}
+            }
+            (false, false, true, false) => {
+                while self.next_mode::<false, false, true, false>(reader) {}
+            }
+            (false, false, true, true) => {
+                while self.next_mode::<false, false, true, true>(reader) {}
+            }
+            (false, true, false, false) => {
+                while self.next_mode::<false, true, false, false>(reader) {}
+            }
+            (false, true, false, true) => {
+                while self.next_mode::<false, true, false, true>(reader) {}
+            }
+            (false, true, true, false) => {
+                while self.next_mode::<false, true, true, false>(reader) {}
+            }
+            (false, true, true, true) => while self.next_mode::<false, true, true, true>(reader) {},
+            (true, false, false, false) => {
+                while self.next_mode::<true, false, false, false>(reader) {}
+            }
+            (true, false, false, true) => {
+                while self.next_mode::<true, false, false, true>(reader) {}
+            }
+            (true, false, true, false) => {
+                while self.next_mode::<true, false, true, false>(reader) {}
+            }
+            (true, false, true, true) => while self.next_mode::<true, false, true, true>(reader) {},
+            (true, true, false, false) => {
+                while self.next_mode::<true, true, false, false>(reader) {}
+            }
+            (true, true, false, true) => while self.next_mode::<true, true, false, true>(reader) {},
+            (true, true, true, false) => while self.next_mode::<true, true, true, false>(reader) {},
+            (true, true, true, true) => while self.next_mode::<true, true, true, true>(reader) {},
         }
     }
 
@@ -381,66 +423,30 @@ where
         }
         self.indexer.prepare(reader.source());
         let features = self.selectors.features();
-        match (features.has_sibling_queries, features.has_retiring_runners) {
-            (false, false) => while self.next_mode::<false, false, false>(reader) {},
-            (false, true) => self.run_without_capture_retiring(reader),
-            (true, false) => self.run_without_capture_with_siblings(reader),
-            (true, true) => self.run_without_capture_with_siblings_retiring(reader),
+        let extended = features.has_structural_queries || features.has_selector_lists;
+        match (
+            features.has_sibling_queries,
+            features.has_retiring_runners,
+            extended,
+        ) {
+            (false, false, false) => while self.next_mode::<false, false, false, false>(reader) {},
+            (false, false, true) => while self.next_mode::<false, false, false, true>(reader) {},
+            (false, true, false) => while self.next_mode::<false, false, true, false>(reader) {},
+            (false, true, true) => while self.next_mode::<false, false, true, true>(reader) {},
+            (true, false, false) => while self.next_mode::<false, true, false, false>(reader) {},
+            (true, false, true) => while self.next_mode::<false, true, false, true>(reader) {},
+            (true, true, false) => while self.next_mode::<false, true, true, false>(reader) {},
+            (true, true, true) => while self.next_mode::<false, true, true, true>(reader) {},
         }
     }
 
-    #[inline(never)]
-    fn next_without_capture_retiring(&mut self, reader: &mut Reader<'html>) -> bool {
-        self.next_mode::<false, false, true>(reader)
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn next_without_capture_with_siblings(&mut self, reader: &mut Reader<'html>) -> bool {
-        self.next_mode::<false, true, false>(reader)
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn next_without_capture_with_siblings_retiring(&mut self, reader: &mut Reader<'html>) -> bool {
-        self.next_mode::<false, true, true>(reader)
-    }
-
-    #[inline(never)]
-    fn next_with_capture<const SIBLINGS: bool, const RETIREMENT: bool>(
-        &mut self,
-        reader: &mut Reader<'html>,
-    ) -> bool {
-        self.next_mode::<true, SIBLINGS, RETIREMENT>(reader)
-    }
-
-    #[inline(never)]
-    fn run_without_capture_retiring(&mut self, reader: &mut Reader<'html>) {
-        while self.next_mode::<false, false, true>(reader) {}
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn run_without_capture_with_siblings(&mut self, reader: &mut Reader<'html>) {
-        while self.next_mode::<false, true, false>(reader) {}
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn run_without_capture_with_siblings_retiring(&mut self, reader: &mut Reader<'html>) {
-        while self.next_mode::<false, true, true>(reader) {}
-    }
-
-    #[inline(never)]
-    fn run_with_capture<const SIBLINGS: bool, const RETIREMENT: bool>(
-        &mut self,
-        reader: &mut Reader<'html>,
-    ) {
-        while self.next_mode::<true, SIBLINGS, RETIREMENT>(reader) {}
-    }
-
     #[inline(always)]
-    fn next_mode<const CAPTURE: bool, const SIBLINGS: bool, const RETIREMENT: bool>(
+    fn next_mode<
+        const CAPTURE: bool,
+        const SIBLINGS: bool,
+        const RETIREMENT: bool,
+        const EXTENDED: bool,
+    >(
         &mut self,
         reader: &mut Reader<'html>,
     ) -> bool {
@@ -647,10 +653,14 @@ where
                     }
                     self.position.element_depth = self.open_elements.depth();
                 }
-                let structural =
-                    self.temp_state.structural.as_deref_mut().map(|state| {
-                        state.open(self.element.name, !is_self_closing, &self.element)
-                    });
+                let structural = if EXTENDED {
+                    self.temp_state
+                        .structural
+                        .as_deref_mut()
+                        .map(|state| state.open(self.element.name, !is_self_closing, &self.element))
+                } else {
+                    None
+                };
 
                 crate::scah_trace!(
                     self.store,
@@ -672,24 +682,45 @@ where
                     let sibling = sibling
                         .as_deref_mut()
                         .expect("sibling parser state requires sibling queries");
-                    self.selectors.next_with_siblings_into_with_context(
-                        &self.element,
-                        &self.position,
-                        &mut self.store,
-                        save_hits,
-                        preflight,
-                        &mut sibling.pending,
-                        structural.as_ref(),
-                    );
+                    if EXTENDED {
+                        self.selectors.next_with_siblings_into_with_context(
+                            &self.element,
+                            &self.position,
+                            &mut self.store,
+                            save_hits,
+                            preflight,
+                            &mut sibling.pending,
+                            structural.as_ref(),
+                        );
+                    } else {
+                        self.selectors.next_with_siblings_into(
+                            &self.element,
+                            &self.position,
+                            &mut self.store,
+                            save_hits,
+                            preflight,
+                            &mut sibling.pending,
+                        );
+                    }
                 } else {
-                    self.selectors.next_plain_into_with_context(
-                        &self.element,
-                        &self.position,
-                        &mut self.store,
-                        &mut self.temp_state.save_hits,
-                        &self.temp_state.preflight,
-                        structural.as_ref(),
-                    );
+                    if EXTENDED {
+                        self.selectors.next_plain_into_with_context(
+                            &self.element,
+                            &self.position,
+                            &mut self.store,
+                            &mut self.temp_state.save_hits,
+                            &self.temp_state.preflight,
+                            structural.as_ref(),
+                        );
+                    } else {
+                        self.selectors.next_plain_into(
+                            &self.element,
+                            &self.position,
+                            &mut self.store,
+                            &mut self.temp_state.save_hits,
+                            &self.temp_state.preflight,
+                        );
+                    }
                 }
                 if self.persist_attributes {
                     let attributes_saved = match self.temp_state.save_hits.as_slice() {
@@ -1201,7 +1232,7 @@ mod tests {
         let mut forced_sibling = XHtmlParser::new(QueryMultiplexer::new(&queries));
         forced_sibling.temp_state.sibling = Some(Box::default());
         let mut sibling_reader = Reader::new(html);
-        while forced_sibling.next_mode::<true, true, false>(&mut sibling_reader) {}
+        while forced_sibling.next_mode::<true, true, false, false>(&mut sibling_reader) {}
 
         assert_eq!(forced_sibling.finish(), plain.finish());
     }
