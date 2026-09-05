@@ -38,18 +38,6 @@ impl From<usize> for QuerySectionId {
     }
 }
 
-struct PositionIterator<'query, Q: QuerySpec<'query>> {
-    arena: &'query Q,
-    current: Option<Position>,
-}
-impl<'query, Q: QuerySpec<'query>> Iterator for PositionIterator<'query, Q> {
-    type Item = Position;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.current
-            .inspect(|position| self.current = position.next_sibling(self.arena))
-    }
-}
-
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TextRequirements {
     pub raw_text: bool,
@@ -103,6 +91,12 @@ pub trait QuerySpec<'query> {
         positions
     }
 
+    fn has_child_positions(&self, position: &Position) -> bool {
+        let Some(child) = self.queries().get(position.selection.index() + 1) else {
+            return false;
+        };
+        child.parent == Some(position.selection)
+    }
     fn previous_positions(&self, position: &Position) -> Vec<Position> {
         let Some(range) = self
             .selection_ranges(position.selection)
@@ -209,7 +203,7 @@ pub trait QuerySpec<'query> {
         if self.is_save_point(&position) {
             let kind = self.get_section_selection_kind(position.selection);
             // Each All match with child sections creates a distinct output scope.
-            return matches!(kind, SelectionKind::All) && position.next_child(self).is_some();
+            return matches!(kind, SelectionKind::All) && self.has_child_positions(&position);
         }
 
         let next = position
@@ -242,10 +236,8 @@ pub trait QuerySpec<'query> {
     where
         Self: Sized,
     {
-        position.next_child(self).map(|child| PositionIterator {
-            arena: self,
-            current: Some(child),
-        })
+        let positions = self.child_positions(position);
+        (!positions.is_empty()).then(|| positions.into_iter())
     }
 }
 
@@ -272,6 +264,11 @@ impl Position {
         }
     }
 
+    /// Returns the first selector alternative in the first child query section.
+    ///
+    /// Use [`QuerySpec::child_positions`] to traverse every child section and
+    /// selector-list alternative.
+    #[deprecated(note = "use QuerySpec::child_positions")]
     pub fn next_child<'query, Q: QuerySpec<'query> + ?Sized>(&self, query: &Q) -> Option<Self> {
         debug_assert!(self.selection.index() < query.queries().len());
         debug_assert!(
@@ -288,15 +285,21 @@ impl Position {
         let next_selection_index = QuerySectionId(self.selection.index() + 1);
         let next_selection = query.get_selection(next_selection_index);
         if next_selection.parent.is_some_and(|p| p == self.selection) {
+            let first_alternative = query.selection_ranges(next_selection_index).first()?;
             return Some(Self {
                 selection: next_selection_index,
-                state: next_selection.range.start,
+                state: first_alternative.start,
             });
         }
 
         None
     }
 
+    /// Returns the first selector alternative in the next sibling query section.
+    ///
+    /// This method does not traverse selector-list alternatives. Prefer
+    /// [`QuerySpec::child_positions`] when enumerating a section's children.
+    #[deprecated(note = "use QuerySpec::child_positions")]
     pub fn next_sibling<'query, Q: QuerySpec<'query> + ?Sized>(&self, query: &Q) -> Option<Self> {
         debug_assert!(self.selection.index() < query.queries().len());
         debug_assert!(
@@ -306,16 +309,20 @@ impl Position {
                 .any(|range| range.contains(&self.state))
         );
 
-        query
-            .get_selection(self.selection)
-            .next_sibling
-            .map(|sibling| Self {
-                selection: sibling,
-                state: query.get_selection(sibling).range.start,
-            })
+        let sibling = query.get_selection(self.selection).next_sibling?;
+        let first_alternative = query.selection_ranges(sibling).first()?;
+        Some(Self {
+            selection: sibling,
+            state: first_alternative.start,
+        })
     }
 
-    #[deprecated(note = "use QuerySpec::previous_positions for selector alternatives")]
+    /// Moves to one predecessor, choosing the first parent alternative at a
+    /// query-section boundary.
+    ///
+    /// Use [`QuerySpec::previous_positions`] when every valid predecessor is
+    /// required.
+    #[deprecated(note = "use QuerySpec::previous_positions")]
     pub fn back<'query, Q: QuerySpec<'query> + ?Sized>(&mut self, query: &Q) {
         debug_assert!(self.selection.index() < query.queries().len());
         debug_assert!(
@@ -649,48 +656,15 @@ mod tests {
 
     #[test]
     fn previous_positions_include_every_parent_selector_alternative() {
-        let paths = Transition::generate_transition_paths_from_string("article > p, section > div")
-            .unwrap();
-        let mut states = Vec::new();
-        let mut alternatives = Vec::new();
-        for path in paths {
-            let start = TransitionId(states.len());
-            states.extend(path);
-            alternatives.push(start..TransitionId(states.len()));
-        }
-        let child_start = TransitionId(states.len());
-        states.extend(Transition::generate_transitions_from_string("span").unwrap());
-        let state_end = TransitionId(states.len());
-        let query = Query {
-            states: states.into_boxed_slice(),
-            queries: vec![
-                QuerySection::new(
-                    "article > p, section > div",
-                    Save::none(),
-                    SelectionKind::All,
-                    TransitionId(0)..child_start,
-                    None,
-                ),
-                QuerySection::new(
-                    "span",
-                    Save::none(),
-                    SelectionKind::All,
-                    child_start..state_end,
-                    Some(QuerySectionId(0)),
-                ),
-            ]
-            .into_boxed_slice(),
-            exit_at_section_end: None,
-            alternatives: vec![
-                alternatives.into_boxed_slice(),
-                vec![child_start..state_end].into_boxed_slice(),
-            ]
-            .into_boxed_slice(),
-        };
-        let position = Position {
-            selection: QuerySectionId(1),
-            state: child_start,
-        };
+        let query = Query::all("article > p, section > div", Save::none())
+            .unwrap()
+            .all("span", Save::none())
+            .unwrap()
+            .build();
+        let position = query.child_positions(&Position {
+            selection: QuerySectionId(0),
+            state: TransitionId(1),
+        })[0];
 
         assert_eq!(
             query.previous_positions(&position),
@@ -702,6 +676,46 @@ mod tests {
                 Position {
                     selection: QuerySectionId(0),
                     state: TransitionId(3),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn position_traversal_visits_every_child_selector_alternative() {
+        let query = Query::all("main", Save::none())
+            .unwrap()
+            .then(|main| {
+                Ok([
+                    main.all("h1, h2", Save::none())?,
+                    main.all("p, aside", Save::none())?,
+                ])
+            })
+            .unwrap()
+            .build();
+        let root = query.root_positions()[0];
+        let expected = query.child_positions(&root);
+        let traversed: Vec<_> = query.children(&root).unwrap().collect();
+
+        assert_eq!(traversed, expected.as_slice());
+        assert_eq!(
+            traversed,
+            vec![
+                Position {
+                    selection: QuerySectionId(1),
+                    state: TransitionId(1),
+                },
+                Position {
+                    selection: QuerySectionId(1),
+                    state: TransitionId(2),
+                },
+                Position {
+                    selection: QuerySectionId(2),
+                    state: TransitionId(3),
+                },
+                Position {
+                    selection: QuerySectionId(2),
+                    state: TransitionId(4),
                 },
             ]
         );
