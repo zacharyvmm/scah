@@ -186,7 +186,7 @@ impl<'query> QueryBuilder<'query> {
         assert!(!self.selection.is_empty());
 
         let current_state_len = self.states.len();
-        let paths = Transition::generate_transition_paths_from_string(query)?;
+        let paths = Transition::generate_scoped_transition_paths_from_string(query)?;
         Query::require_legacy_engine_compatible_paths(&paths)?;
         let mut states = Vec::new();
         let mut alternatives = Vec::new();
@@ -221,7 +221,7 @@ impl<'query> QueryBuilder<'query> {
         assert!(!self.selection.is_empty());
 
         let current_state_len = self.states.len();
-        let paths = Transition::generate_transition_paths_from_string(query)?;
+        let paths = Transition::generate_scoped_transition_paths_from_string(query)?;
         Query::require_legacy_engine_compatible_paths(&paths)?;
         let mut states = Vec::new();
         let mut alternatives = Vec::new();
@@ -448,7 +448,7 @@ impl<'query> QueryFactory {
         query: &'query str,
         save: Save,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        Query::all(query, save)
+        Query::all_scoped(query, save)
     }
 
     /// Create a child query that matches only the **first** occurrence.
@@ -457,7 +457,7 @@ impl<'query> QueryFactory {
         query: &'query str,
         save: Save,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        Query::first(query, save)
+        Query::first_scoped(query, save)
     }
 }
 
