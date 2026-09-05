@@ -762,7 +762,7 @@ where
             let terminal_first = is_save_point && is_first;
             let terminal_all = is_save_point
                 && matches!(section_kind, SelectionKind::All)
-                && position.next_child(self.query).is_none();
+                && !self.query.has_child_positions(&position);
 
             if terminal_all
                 && matches!(
@@ -1022,7 +1022,7 @@ where
             let terminal_first = is_save_point && is_first;
             let terminal_all = is_save_point
                 && matches!(section_kind, SelectionKind::All)
-                && position.next_child(self.query).is_none();
+                && !self.query.has_child_positions(&position);
 
             let spawned_positions;
 
@@ -1257,7 +1257,7 @@ where
             let terminal_first = is_save_point && is_first;
             let terminal_all = is_save_point
                 && matches!(section_kind, SelectionKind::All)
-                && position.next_child(self.query).is_none();
+                && !self.query.has_child_positions(&position);
 
             match &self.cursors[i].mode {
                 super::cursor::CursorMode::Moving { .. } => {
