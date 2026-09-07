@@ -232,6 +232,33 @@ fn scope_selector_anchors_nested_child_queries() {
 }
 
 #[test]
+fn nested_scope_requires_a_following_relative_selector() {
+    for selector in [":scope", ":scope.foo", ":scope, a"] {
+        let chained = Query::all("section", Save::none())
+            .unwrap()
+            .all(selector, Save::none());
+        assert!(chained.is_err(), "chained {selector:?} must be rejected");
+
+        let factory = Query::all("section", Save::none())
+            .unwrap()
+            .then(|scope| Ok([scope.all(selector, Save::none())?]));
+        assert!(factory.is_err(), "factory {selector:?} must be rejected");
+    }
+
+    for selector in [":scope > a", ":scope a"] {
+        let chained = Query::all("section", Save::none())
+            .unwrap()
+            .all(selector, Save::none());
+        assert!(chained.is_ok(), "chained {selector:?} must be accepted");
+
+        let factory = Query::all("section", Save::none())
+            .unwrap()
+            .then(|scope| Ok([scope.all(selector, Save::none())?]));
+        assert!(factory.is_ok(), "factory {selector:?} must be accepted");
+    }
+}
+
+#[test]
 fn scope_anchor_is_normalized_once_across_builder_forms() {
     let selector = ":scope > :scope > a";
     let chained = Query::all("main", Save::all())
