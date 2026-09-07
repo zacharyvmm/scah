@@ -134,7 +134,7 @@ impl<'a> ElementPredicate<'a> {
     pub fn matches_element_with_context<'b, E: IElement<'b>>(
         &self,
         other: &E,
-        structural: Option<super::builder::StructuralMatchContext>,
+        structural: Option<&super::builder::StructuralMatchContext<'_>>,
     ) -> bool {
         if !self.matches_name(other.name()) {
             return false;
@@ -182,18 +182,18 @@ impl<'a> ElementPredicate<'a> {
             super::builder::LocalLogicalPredicate::Not(list) => !list
                 .as_slice()
                 .iter()
-                .any(|predicate| predicate.matches_element(other)),
+                .any(|predicate| predicate.matches_element_with_context(other, structural)),
             super::builder::LocalLogicalPredicate::Any(list) => list
                 .as_slice()
                 .iter()
-                .any(|predicate| predicate.matches_element(other)),
+                .any(|predicate| predicate.matches_element_with_context(other, structural)),
         }) && self.structural.as_slice().iter().all(|predicate| {
             let Some(context) = structural else {
                 return false;
             };
             match predicate {
-                super::builder::StructuralPredicate::Root => context.is_root,
-                super::builder::StructuralPredicate::Scope => context.is_root,
+                super::builder::StructuralPredicate::Root => context.is_document_root,
+                super::builder::StructuralPredicate::Scope => context.is_scope_root,
                 super::builder::StructuralPredicate::FirstChild => context.child_index == 1,
                 super::builder::StructuralPredicate::NthChild(formula) => {
                     formula.matches(context.child_index)
@@ -202,13 +202,12 @@ impl<'a> ElementPredicate<'a> {
                 super::builder::StructuralPredicate::NthOfType(formula) => {
                     formula.matches(context.type_index)
                 }
-                super::builder::StructuralPredicate::NthChildOf(formula, filter) => {
-                    let key = filter as *const _ as usize;
-                    let matched_slot =
-                        (0..8).find(|&slot| context.filtered_child_keys[slot] == key);
-                    matched_slot
-                        .is_some_and(|slot| formula.matches(context.filtered_child_indices[slot]))
-                }
+                super::builder::StructuralPredicate::NthChildOf(formula, filter) => context
+                    .filtered_child_indices
+                    .iter()
+                    .any(|&(context_filter, index)| {
+                        std::ptr::eq(context_filter, filter) && formula.matches(index)
+                    }),
             }
         })
     }
@@ -433,5 +432,54 @@ mod tests {
         assert!(selector_one.matches_element(&element_two));
         assert!(selector_two.matches_element(&element_one));
         assert!(selector_two.matches_element(&element_two));
+    }
+
+    #[test]
+    fn root_and_scope_use_independent_context_flags() {
+        let element = FakeElement {
+            name: "div",
+            id: None,
+            class: None,
+            attributes: &[],
+        };
+        let make_predicate = |structural| ElementPredicate {
+            name: Some("div"),
+            id: None,
+            classes: ClassSelections::from_static(&[]),
+            attributes: AttributeSelections::from_static(&[]),
+            logical: crate::LogicalPredicates::from_static(&[]),
+            structural: crate::StructuralPredicates::from(vec![structural]),
+        };
+        let document_root = crate::StructuralMatchContext {
+            child_index: 1,
+            type_index: 1,
+            filtered_child_indices: smallvec::SmallVec::new(),
+            is_document_root: true,
+            is_scope_root: false,
+        };
+        let scope_root = crate::StructuralMatchContext {
+            child_index: 2,
+            type_index: 1,
+            filtered_child_indices: smallvec::SmallVec::new(),
+            is_document_root: false,
+            is_scope_root: true,
+        };
+
+        assert!(
+            make_predicate(crate::StructuralPredicate::Root)
+                .matches_element_with_context(&element, Some(&document_root))
+        );
+        assert!(
+            !make_predicate(crate::StructuralPredicate::Scope)
+                .matches_element_with_context(&element, Some(&document_root))
+        );
+        assert!(
+            make_predicate(crate::StructuralPredicate::Scope)
+                .matches_element_with_context(&element, Some(&scope_root))
+        );
+        assert!(
+            !make_predicate(crate::StructuralPredicate::Root)
+                .matches_element_with_context(&element, Some(&scope_root))
+        );
     }
 }

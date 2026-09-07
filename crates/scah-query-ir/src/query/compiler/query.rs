@@ -102,6 +102,36 @@ pub trait QuerySpec<'query> {
         positions
     }
 
+    fn previous_positions(&self, position: &Position) -> Vec<Position> {
+        let Some(range) = self
+            .selection_ranges(position.selection)
+            .iter()
+            .find(|range| range.contains(&position.state))
+        else {
+            return Vec::new();
+        };
+
+        if position.state.index() > range.start.index() {
+            return vec![Position {
+                selection: position.selection,
+                state: TransitionId(position.state.index() - 1),
+            }];
+        }
+
+        let Some(parent) = self.get_selection(position.selection).parent else {
+            return Vec::new();
+        };
+        self.selection_ranges(parent)
+            .iter()
+            .filter_map(|range| {
+                range.end.index().checked_sub(1).map(|state| Position {
+                    selection: parent,
+                    state: TransitionId(state),
+                })
+            })
+            .collect()
+    }
+
     /// Whether any compiled transition uses `+` or `~`.
     fn has_sibling_combinator(&self) -> bool {
         self.states().iter().any(|transition| {
@@ -284,6 +314,7 @@ impl Position {
             })
     }
 
+    #[deprecated(note = "use QuerySpec::previous_positions for selector alternatives")]
     pub fn back<'query, Q: QuerySpec<'query> + ?Sized>(&mut self, query: &Q) {
         debug_assert!(self.selection.index() < query.queries().len());
         debug_assert!(
@@ -293,25 +324,8 @@ impl Position {
                 .any(|range| range.contains(&self.state))
         );
 
-        let selection = query.get_selection(self.selection);
-        let range = query
-            .selection_ranges(self.selection)
-            .iter()
-            .find(|range| range.contains(&self.state))
-            .expect("position state must belong to a selector alternative");
-        if self.state.index() > range.start.index() {
-            self.state = TransitionId(self.state.index() - 1);
-        } else if let Some(parent) = selection.parent {
-            self.selection = parent;
-            self.state = query
-                .selection_ranges(self.selection)
-                .first()
-                .expect("parent section must have a selector alternative")
-                .end
-                .index()
-                .checked_sub(1)
-                .expect("parent selector alternative must not be empty")
-                .into();
+        if let Some(previous) = query.previous_positions(self).first() {
+            *self = *previous;
         }
     }
 }
@@ -467,15 +481,28 @@ impl<'query> Query<'query> {
         query: &'query str,
         save: Save,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        Self::build_initial(query, save, SelectionKind::First)
+        Self::build_initial(query, save, SelectionKind::First, false)
+    }
+
+    pub(crate) fn scoped(
+        query: &'query str,
+        save: Save,
+        kind: SelectionKind,
+    ) -> Result<QueryBuilder<'query>, SelectorParseError> {
+        Self::build_initial(query, save, kind, true)
     }
 
     fn build_initial(
         query: &'query str,
         save: Save,
         kind: SelectionKind,
+        scoped: bool,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        let paths = Transition::generate_transition_paths_from_string(query)?;
+        let paths = if scoped {
+            Transition::generate_scoped_transition_paths_from_string(query)?
+        } else {
+            Transition::generate_transition_paths_from_string(query)?
+        };
         Self::require_legacy_engine_compatible_paths(&paths)?;
         let mut states = Vec::new();
         let mut alternatives = Vec::new();
@@ -495,7 +522,7 @@ impl<'query> Query<'query> {
     }
 
     pub fn all(query: &'query str, save: Save) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        Self::build_initial(query, save, SelectionKind::All)
+        Self::build_initial(query, save, SelectionKind::All, false)
     }
 }
 
@@ -638,21 +665,63 @@ mod tests {
     }
 
     #[test]
-    fn position_back_uses_the_last_state_in_the_parent_alternative() {
-        let query = Query::all("article > p", Save::none())
-            .unwrap()
-            .all("span", Save::none())
-            .unwrap()
-            .build();
-        let mut position = query.child_positions(&Position {
-            selection: QuerySectionId(0),
-            state: TransitionId(1),
-        })[0];
+    fn previous_positions_include_every_parent_selector_alternative() {
+        let paths = Transition::generate_transition_paths_from_string("article > p, section > div")
+            .unwrap();
+        let mut states = Vec::new();
+        let mut alternatives = Vec::new();
+        for path in paths {
+            let start = TransitionId(states.len());
+            states.extend(path);
+            alternatives.push(start..TransitionId(states.len()));
+        }
+        let child_start = TransitionId(states.len());
+        states.extend(Transition::generate_transitions_from_string("span").unwrap());
+        let state_end = TransitionId(states.len());
+        let query = Query {
+            states: states.into_boxed_slice(),
+            queries: vec![
+                QuerySection::new(
+                    "article > p, section > div",
+                    Save::none(),
+                    SelectionKind::All,
+                    TransitionId(0)..child_start,
+                    None,
+                ),
+                QuerySection::new(
+                    "span",
+                    Save::none(),
+                    SelectionKind::All,
+                    child_start..state_end,
+                    Some(QuerySectionId(0)),
+                ),
+            ]
+            .into_boxed_slice(),
+            exit_at_section_end: None,
+            alternatives: vec![
+                alternatives.into_boxed_slice(),
+                vec![child_start..state_end].into_boxed_slice(),
+            ]
+            .into_boxed_slice(),
+        };
+        let position = Position {
+            selection: QuerySectionId(1),
+            state: child_start,
+        };
 
-        position.back(&query);
-
-        assert_eq!(position.selection, QuerySectionId(0));
-        assert_eq!(position.state, TransitionId(1));
+        assert_eq!(
+            query.previous_positions(&position),
+            vec![
+                Position {
+                    selection: QuerySectionId(0),
+                    state: TransitionId(1),
+                },
+                Position {
+                    selection: QuerySectionId(0),
+                    state: TransitionId(3),
+                },
+            ]
+        );
     }
 
     #[test]

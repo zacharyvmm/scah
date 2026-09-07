@@ -198,7 +198,9 @@ impl<'query> QueryBuilder<'query> {
                 let has_scope = structural
                     .iter()
                     .any(|predicate| matches!(predicate, crate::StructuralPredicate::Scope));
-                if !has_scope {
+                let is_root_anchor =
+                    self.states[range.start.index()].guard == crate::Combinator::Descendant;
+                if !has_scope || !is_root_anchor {
                     return Ok(None);
                 }
                 if !pure_scope_anchor {
@@ -517,7 +519,7 @@ impl<'query> QueryFactory {
         query: &'query str,
         save: Save,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        Query::all(query, save)
+        Query::scoped(query, save, SelectionKind::All)
     }
 
     /// Create a child query that matches only the **first** occurrence.
@@ -526,7 +528,7 @@ impl<'query> QueryFactory {
         query: &'query str,
         save: Save,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        Query::first(query, save)
+        Query::scoped(query, save, SelectionKind::First)
     }
 }
 
@@ -583,6 +585,18 @@ mod tests {
             .first("a", Save::none())
             .unwrap();
         assert_eq!(query.exit_at_section(), Some(QuerySectionId(1)));
+    }
+
+    #[test]
+    fn factory_builds_scope_anchored_children_before_compatibility_checks() {
+        let query = Query::all("main", Save::none())
+            .unwrap()
+            .then(|factory| Ok([factory.all(":scope > a", Save::none())?]))
+            .unwrap()
+            .build();
+
+        assert_eq!(query.queries.len(), 2);
+        assert_eq!(query.states.len(), 2);
     }
 
     #[test]

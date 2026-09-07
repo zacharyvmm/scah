@@ -534,7 +534,7 @@ impl<'query> Transition<'query> {
         element: &E,
         current_depth: u16,
         last_depth: u16,
-        structural: Option<StructuralMatchContext>,
+        structural: Option<&StructuralMatchContext<'_>>,
     ) -> bool {
         assert!(
             current_depth >= last_depth,

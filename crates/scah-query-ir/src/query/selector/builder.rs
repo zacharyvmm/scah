@@ -102,14 +102,35 @@ pub enum StructuralPredicate<'query> {
     NthChildOf(AnPlusB, LocalSelectorList<'query>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StructuralMatchContext {
+#[derive(Debug, Clone)]
+pub struct StructuralMatchContext<'query> {
     pub child_index: u32,
     pub type_index: u32,
-    pub filtered_child_indices: [u32; 8],
-    pub filtered_child_keys: [usize; 8],
-    pub is_root: bool,
+    pub filtered_child_indices: smallvec::SmallVec<[(&'query LocalSelectorList<'query>, u32); 8]>,
+    pub is_document_root: bool,
+    pub is_scope_root: bool,
 }
+
+impl PartialEq for StructuralMatchContext<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.child_index == other.child_index
+            && self.type_index == other.type_index
+            && self.is_document_root == other.is_document_root
+            && self.is_scope_root == other.is_scope_root
+            && self.filtered_child_indices.len() == other.filtered_child_indices.len()
+            && self
+                .filtered_child_indices
+                .iter()
+                .zip(&other.filtered_child_indices)
+                .all(
+                    |(&(left_filter, left_index), &(right_filter, right_index))| {
+                        std::ptr::eq(left_filter, right_filter) && left_index == right_index
+                    },
+                )
+    }
+}
+
+impl Eq for StructuralMatchContext<'_> {}
 
 #[derive(Debug, Clone)]
 pub enum StructuralPredicates<'query> {
@@ -655,11 +676,13 @@ impl<'a> ElementPredicate<'a> {
                             reader.get_position(),
                         ));
                     }
-                    if matches!(*name, "nth-child" | "nth-of-type") {
+                    let is_nth_child = name.eq_ignore_ascii_case("nth-child");
+                    let is_nth_of_type = name.eq_ignore_ascii_case("nth-of-type");
+                    if is_nth_child || is_nth_of_type {
                         let argument = read_balanced_function_argument(reader)?;
                         let (formula_source, filter_source) = split_nth_filter(argument)?;
                         let formula = parse_an_plus_b(formula_source)?;
-                        structural.push(if *name == "nth-child" {
+                        structural.push(if is_nth_child {
                             if let Some(filter_source) = filter_source {
                                 StructuralPredicate::NthChildOf(
                                     formula,
@@ -679,19 +702,19 @@ impl<'a> ElementPredicate<'a> {
                         });
                     } else {
                         let argument = read_balanced_function_argument(reader)?;
-                        let predicate = match *name {
-                            "not" => {
-                                LocalLogicalPredicate::Not(parse_local_selector_list(argument)?)
-                            }
-                            "is" | "where" => LocalLogicalPredicate::Any(
-                                parse_forgiving_local_selector_list(argument),
-                            ),
-                            _ => {
-                                return Err(SelectorParseError::new(
-                                    "unsupported pseudo-class",
-                                    reader.get_position().saturating_sub(name.len() + 2),
-                                ));
-                            }
+                        let predicate = if name.eq_ignore_ascii_case("not") {
+                            LocalLogicalPredicate::Not(parse_local_selector_list(argument)?)
+                        } else if name.eq_ignore_ascii_case("is")
+                            || name.eq_ignore_ascii_case("where")
+                        {
+                            LocalLogicalPredicate::Any(parse_forgiving_local_selector_list(
+                                argument,
+                            ))
+                        } else {
+                            return Err(SelectorParseError::new(
+                                "unsupported pseudo-class",
+                                reader.get_position().saturating_sub(name.len() + 2),
+                            ));
                         };
                         logical.push(predicate);
                     }
@@ -703,17 +726,19 @@ impl<'a> ElementPredicate<'a> {
                             reader.get_position(),
                         ));
                     }
-                    structural.push(match *name {
-                        "first-child" => StructuralPredicate::FirstChild,
-                        "first-of-type" => StructuralPredicate::FirstOfType,
-                        "root" => StructuralPredicate::Root,
-                        "scope" => StructuralPredicate::Scope,
-                        _ => {
-                            return Err(SelectorParseError::new(
-                                "unsupported pseudo-class",
-                                reader.get_position().saturating_sub(name.len() + 1),
-                            ));
-                        }
+                    structural.push(if name.eq_ignore_ascii_case("first-child") {
+                        StructuralPredicate::FirstChild
+                    } else if name.eq_ignore_ascii_case("first-of-type") {
+                        StructuralPredicate::FirstOfType
+                    } else if name.eq_ignore_ascii_case("root") {
+                        StructuralPredicate::Root
+                    } else if name.eq_ignore_ascii_case("scope") {
+                        StructuralPredicate::Scope
+                    } else {
+                        return Err(SelectorParseError::new(
+                            "unsupported pseudo-class",
+                            reader.get_position().saturating_sub(name.len() + 1),
+                        ));
                     });
                 }
                 (Some(SelectionKeyWords::ID), SelectionKeyWords::String(id_name)) => {
@@ -1367,6 +1392,25 @@ mod tests {
         for selector in ["li:nth-child(2 中)", "li:nth-of-type(2 中)"] {
             let mut reader = Reader::new(selector);
             assert!(ElementPredicate::try_from(&mut reader).is_err());
+        }
+    }
+
+    #[test]
+    fn pseudo_class_names_are_ascii_case_insensitive() {
+        for selector in [
+            "li:FIRST-CHILD",
+            "li:First-Of-Type",
+            "li:NTH-CHILD(2n+1)",
+            "li:nth-OF-type(2)",
+            "div:NOT(.ad)",
+            "div:Is(.card)",
+            "div:WHERE(.card)",
+            ":ROOT",
+            ":SCOPE",
+        ] {
+            let mut reader = Reader::new(selector);
+            ElementPredicate::try_from(&mut reader)
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
         }
     }
 }

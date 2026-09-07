@@ -3,7 +3,7 @@ use proc_macro2::Span;
 use quote::quote;
 use scah_query_ir::{
     AttributeCaseSensitivity, AttributeSelectionKind, Combinator, ElementPredicate,
-    LocalLogicalPredicate, Query, QueryBuilder, QuerySection, Save, SelectionKind,
+    LocalLogicalPredicate, Query, QueryBuilder, QueryFactory, QuerySection, Save, SelectionKind,
     StructuralPredicate, Transition,
 };
 use syn::parse::{Parse, ParseStream};
@@ -352,17 +352,20 @@ fn parse_save_expr(expr: &Expr) -> Result<Save> {
     }
 }
 
-fn compile_node<'a>(node: &'a QueryNode) -> Result<QueryBuilder<'a>> {
+fn compile_node<'a>(node: &'a QueryNode, scoped: bool) -> Result<QueryBuilder<'a>> {
     let selector = Box::leak(node.selector.value().into_boxed_str());
-    let mut builder = match node.kind {
-        SelectionKind::All => Query::all(selector, node.save),
-        SelectionKind::First => Query::first(selector, node.save),
+    let factory = QueryFactory {};
+    let mut builder = match (scoped, node.kind) {
+        (false, SelectionKind::All) => Query::all(selector, node.save),
+        (false, SelectionKind::First) => Query::first(selector, node.save),
+        (true, SelectionKind::All) => factory.all(selector, node.save),
+        (true, SelectionKind::First) => factory.first(selector, node.save),
     }
     .map_err(|err| syn::Error::new(node.selector.span(), err.to_string()))?;
 
     let current_index = scah_query_ir::QuerySectionId(builder.selection.len() - 1);
     for child in &node.children {
-        let child_builder = compile_node(child)?;
+        let child_builder = compile_node(child, true)?;
         builder
             .append(current_index, child_builder)
             .map_err(|err| syn::Error::new(child.selector.span(), err.to_string()))?;
@@ -372,7 +375,7 @@ fn compile_node<'a>(node: &'a QueryNode) -> Result<QueryBuilder<'a>> {
 }
 
 fn expand_query(node: &QueryNode) -> Result<proc_macro2::TokenStream> {
-    let compiled = compile_node(node)
+    let compiled = compile_node(node, false)
         .map(QueryBuilder::build)
         .map_err(|err| syn::Error::new(node.selector.span(), err.to_string()))?;
 
