@@ -8,6 +8,7 @@ fi
 
 repo_root="$(git rev-parse --show-toplevel)"
 base_ref="${1:-origin/main}"
+base_label="$(git rev-parse --short "$base_ref")"
 gate_root="$(mktemp -d -t scah-text-performance.XXXXXX)"
 base_tree="$gate_root/base"
 rounds="${SCAH_PERF_GATE_ROUNDS:-3}"
@@ -71,14 +72,18 @@ run_round() {
 for ((round = 1; round <= rounds; round++)); do
   if ((round % 2 == 0)); then
     run_round "$gate_root/candidate-benchmark" "text-candidate-$round"
-    run_round "$gate_root/base-benchmark" "text-main-$round"
+    run_round "$gate_root/base-benchmark" "text-base-$round"
   else
-    run_round "$gate_root/base-benchmark" "text-main-$round"
+    run_round "$gate_root/base-benchmark" "text-base-$round"
     run_round "$gate_root/candidate-benchmark" "text-candidate-$round"
   fi
 done
 
-python3 - "$repo_root/target/criterion/text_extraction_gate" "$rounds" "$legacy_base" <<'PY'
+python3 - \
+  "$repo_root/target/criterion/text_extraction_gate" \
+  "$rounds" \
+  "$legacy_base" \
+  "$base_label" <<'PY'
 import json
 import pathlib
 import statistics
@@ -87,6 +92,7 @@ import sys
 root = pathlib.Path(sys.argv[1])
 rounds = int(sys.argv[2])
 legacy_base = bool(int(sys.argv[3]))
+base_label = sys.argv[4]
 failed = False
 workloads = (
     "no_content",
@@ -107,16 +113,16 @@ for workload in workloads:
 
     ratios = [
         estimate("text-candidate", round_number)
-        / estimate("text-main", round_number)
+        / estimate("text-base", round_number)
         for round_number in range(1, rounds + 1)
     ]
     ratio = statistics.median(ratios)
     # No-text workloads protect the specialization directly, so they use a
-    # tighter limit than text-producing workloads. Legacy main performs simple
-    # text accumulation and has no raw-text API. The wider limits below are
-    # compatibility smoke checks for non-equivalent text behavior, not strict
-    # regression limits. Once main has the raw-text API, text workloads use the
-    # standard limit.
+    # tighter limit than text-producing workloads. A legacy baseline performs
+    # simple text accumulation and has no raw-text API. The wider limits below
+    # are compatibility smoke checks for non-equivalent text behavior, not
+    # strict regression limits. Once the baseline has the raw-text API, text
+    # workloads use the standard limit.
     structural_limits = {
         "no_content": 1.05,
         "inner_html_only": 1.05,
@@ -131,7 +137,10 @@ for workload in workloads:
     if limit is None:
         limit = legacy_limits.get(workload, 1.10) if legacy_base else 1.10
     delta = (ratio - 1.0) * 100.0
-    print(f"{workload}: {delta:+.2f}% vs main (limit {(limit - 1.0) * 100:.0f}%)")
+    print(
+        f"{workload}: {delta:+.2f}% vs {base_label} "
+        f"(limit {(limit - 1.0) * 100:.0f}%)"
+    )
     if ratio > limit:
         print(f"{workload} exceeds its performance limit", file=sys.stderr)
         failed = True

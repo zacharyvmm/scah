@@ -88,7 +88,9 @@ jobs:
         run: cargo bench -p scah-benches --bench memory_bench_text_extraction
       - name: Enforce text-extraction performance gate
         if: github.event_name == 'pull_request'
-        run: ./scripts/check-text-performance.sh origin/main
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: ./scripts/check-text-performance.sh "$BASE_SHA"
       - name: Run cursor stats report
         run: cargo run -p scah-cursor-benches --release --bin cursor_stats_report
 
