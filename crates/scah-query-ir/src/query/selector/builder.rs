@@ -1385,7 +1385,7 @@ mod tests {
     }
 
     #[test]
-    fn pseudo_class_names_are_ascii_case_insensitive() {
+    fn pseudo_class_paths_are_ascii_case_insensitive() {
         for selector in [
             "li:FIRST-CHILD",
             "li:First-Of-Type",
