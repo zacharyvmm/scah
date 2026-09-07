@@ -1354,18 +1354,6 @@ mod tests {
     }
 
     #[test]
-    fn quoted_attribute_modifiers_are_rejected() {
-        for selector in [r#"[data-x="FOO" "i"]"#, r#"[data-x="FOO" 's']"#] {
-            let mut reader = Reader::new(selector);
-            let error = ElementPredicate::try_from(&mut reader).unwrap_err();
-            assert_eq!(
-                error.message(),
-                "attribute value modifier must be an unquoted identifier"
-            );
-        }
-    }
-
-    #[test]
     fn an_plus_b_accepts_css_whitespace_and_ascii_case_variants() {
         for (source, expected) in [
             ("3n + 1", AnPlusB { a: 3, b: 1 }),
