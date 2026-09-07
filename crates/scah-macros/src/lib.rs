@@ -363,7 +363,9 @@ fn compile_node<'a>(node: &'a QueryNode) -> Result<QueryBuilder<'a>> {
     let current_index = scah_query_ir::QuerySectionId(builder.selection.len() - 1);
     for child in &node.children {
         let child_builder = compile_node(child)?;
-        builder.append(current_index, child_builder);
+        builder
+            .append(current_index, child_builder)
+            .map_err(|err| syn::Error::new(child.selector.span(), err.to_string()))?;
     }
 
     Ok(builder)

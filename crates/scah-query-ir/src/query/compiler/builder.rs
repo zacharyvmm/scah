@@ -182,27 +182,45 @@ pub struct QueryBuilder<'query> {
 }
 
 impl<'query> QueryBuilder<'query> {
-    fn scope_root(&mut self) {
+    fn scope_root(&mut self) -> Result<(), SelectorParseError> {
         let removed = self.alternatives[0]
             .iter()
-            .filter_map(|range| {
-                if range.end.index() - range.start.index() <= 1 {
-                    return None;
-                }
+            .map(|range| {
                 let predicate = self.states[range.start.index()].predicate();
                 let structural = predicate.structural.as_slice();
-                (structural.len() == 1
+                let pure_scope_anchor = structural.len() == 1
                     && matches!(structural[0], crate::StructuralPredicate::Scope)
                     && predicate.name.is_none()
                     && predicate.id.is_none()
                     && predicate.classes.as_slice().is_empty()
                     && predicate.attributes.as_slice().is_empty()
-                    && predicate.logical.as_slice().is_empty())
-                .then_some(range.start.index())
+                    && predicate.logical.as_slice().is_empty();
+                let has_scope = structural
+                    .iter()
+                    .any(|predicate| matches!(predicate, crate::StructuralPredicate::Scope));
+                if !has_scope {
+                    return Ok(None);
+                }
+                if !pure_scope_anchor {
+                    return Err(SelectorParseError::new(
+                        "compound :scope anchors are not supported",
+                        0,
+                    ));
+                }
+                if range.end.index() - range.start.index() == 1 {
+                    return Err(SelectorParseError::new(
+                        "terminal :scope selectors are not supported",
+                        0,
+                    ));
+                }
+                Ok(Some(range.start.index()))
             })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
             .collect::<Vec<_>>();
         if removed.is_empty() {
-            return;
+            return Ok(());
         }
 
         let shift = |index: usize| removed.partition_point(|removed| *removed < index);
@@ -224,6 +242,7 @@ impl<'query> QueryBuilder<'query> {
             section.range.end =
                 TransitionId(section.range.end.index() - shift(section.range.end.index()));
         }
+        Ok(())
     }
 
     pub fn all(mut self, query: &'query str, save: Save) -> Result<Self, SelectorParseError> {
@@ -295,8 +314,12 @@ impl<'query> QueryBuilder<'query> {
     ///
     /// Enables early-exit optimisation for this branch of the query tree.
     ///
-    pub fn append(&mut self, parent: QuerySectionId, mut other: Self) {
-        other.scope_root();
+    pub fn append(
+        &mut self,
+        parent: QuerySectionId,
+        mut other: Self,
+    ) -> Result<(), SelectorParseError> {
+        other.scope_root()?;
         let state_length = self.states.len();
         let selection_length = self.selection.len();
 
@@ -349,6 +372,7 @@ impl<'query> QueryBuilder<'query> {
         self.states.append(&mut other.states);
         self.selection.append(&mut other.selection);
         self.alternatives.append(&mut other.alternatives);
+        Ok(())
     }
 
     /// Branch into multiple child queries using a closure.
@@ -383,7 +407,7 @@ impl<'query> QueryBuilder<'query> {
 
         let current_index = QuerySectionId(self.selection.len() - 1);
         for child in children {
-            self.append(current_index, child);
+            self.append(current_index, child)?;
         }
         Ok(self)
     }

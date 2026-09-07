@@ -491,12 +491,21 @@ impl<'query> Transition<'query> {
         let has_scope = first_structural
             .iter()
             .any(|predicate| matches!(predicate, crate::StructuralPredicate::Scope));
-        if states.len() > 1 && pure_scope_anchor && scoped {
-            states.remove(0);
-        } else if states.len() > 1 && has_scope {
-            if pure_scope_anchor {
-                return Ok(states);
+        if scoped && has_scope {
+            if !pure_scope_anchor {
+                return Err(SelectorParseError::new(
+                    "compound :scope anchors are not supported",
+                    0,
+                ));
             }
+            if states.len() == 1 {
+                return Err(SelectorParseError::new(
+                    "terminal :scope selectors are not supported",
+                    0,
+                ));
+            }
+            states.remove(0);
+        } else if states.len() > 1 && has_scope && !pure_scope_anchor {
             return Err(SelectorParseError::new(
                 "compound :scope anchors are not supported",
                 0,
@@ -920,6 +929,28 @@ mod tests {
 
         let error = Transition::generate_transitions_from_string(":scope.foo > a").unwrap_err();
         assert_eq!(error.message(), "compound :scope anchors are not supported");
+    }
+
+    #[test]
+    fn nested_scope_requires_a_following_relative_selector() {
+        for selector in [":scope", ":scope, a"] {
+            let error =
+                Transition::generate_scoped_transition_paths_from_string(selector).unwrap_err();
+            assert_eq!(
+                error.message(),
+                "terminal :scope selectors are not supported"
+            );
+        }
+
+        let error =
+            Transition::generate_scoped_transition_paths_from_string(":scope.foo").unwrap_err();
+        assert_eq!(error.message(), "compound :scope anchors are not supported");
+
+        for selector in [":scope > a", ":scope a"] {
+            let paths = Transition::generate_scoped_transition_paths_from_string(selector).unwrap();
+            assert_eq!(paths[0].len(), 1);
+            assert_eq!(paths[0][0].predicate().name, Some("a"));
+        }
     }
 
     #[test]
