@@ -350,8 +350,7 @@ impl<'query> AttributeSelection<'query> {
             }
 
             match token {
-                SelectionAttributeToken::String(string_value)
-                | SelectionAttributeToken::QuotedString(string_value) => {
+                SelectionAttributeToken::String(string_value) => {
                     if kv.value.is_none()
                         && kv.name.is_some()
                         && !equal
@@ -382,6 +381,16 @@ impl<'query> AttributeSelection<'query> {
                     } else {
                         kv.push(string_value, reader.get_position())?;
                     }
+                }
+
+                SelectionAttributeToken::QuotedString(string_value) => {
+                    if kv.value.is_some() {
+                        return Err(SelectorParseError::new(
+                            "attribute value modifier must be an unquoted identifier",
+                            reader.get_position(),
+                        ));
+                    }
+                    kv.push(string_value, reader.get_position())?;
                 }
 
                 SelectionAttributeToken::StringMatchSelector(equal_selector) => {
@@ -764,6 +773,12 @@ impl<'a> ElementPredicate<'a> {
                         ));
                     }
                     element.push_class(class_name);
+                }
+                (_, SelectionKeyWords::String(name)) => {
+                    return Err(SelectorParseError::new(
+                        "type selector must start a compound selector",
+                        reader.get_position().saturating_sub(name.len()),
+                    ));
                 }
                 (_, SelectionKeyWords::OpenAttribute) => element.try_parse_attribute(reader)?,
 
@@ -1411,6 +1426,34 @@ mod tests {
             let mut reader = Reader::new(selector);
             ElementPredicate::try_from(&mut reader)
                 .unwrap_or_else(|error| panic!("{selector}: {error}"));
+        }
+    }
+
+    #[test]
+    fn quoted_attribute_modifiers_are_rejected() {
+        for selector in [r#"[data-x="FOO" "i"]"#, r#"[data-x="FOO" 's']"#] {
+            let mut reader = Reader::new(selector);
+            let error = ElementPredicate::try_from(&mut reader).unwrap_err();
+            assert_eq!(
+                error.message(),
+                "attribute value modifier must be an unquoted identifier"
+            );
+        }
+    }
+
+    #[test]
+    fn type_selectors_after_functional_pseudos_are_rejected() {
+        for selector in [
+            "div:is(.card)span",
+            "div:not(.disabled)a",
+            "li:nth-child(2)strong",
+        ] {
+            let mut reader = Reader::new(selector);
+            let error = ElementPredicate::try_from(&mut reader).unwrap_err();
+            assert_eq!(
+                error.message(),
+                "type selector must start a compound selector"
+            );
         }
     }
 }
