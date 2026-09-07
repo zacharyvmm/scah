@@ -71,7 +71,7 @@ The final implementation passed these checks on ARM64 macOS with Rust 1.95.0:
 
 The allocation checks passed. Unmatched normalized queries retain zero extra allocation over equivalent no-content queries at 1,000 and 10,000 paragraphs.
 
-These are native Acer timings, not a confirmed GitHub-hosted CI result for the new commit. The earlier table-separator and moved-element review findings remain separate work.
+These are native Acer timings, not a confirmed GitHub-hosted CI result for the new commit.
 
 To repeat the repository gates on x86-64 from this branch:
 

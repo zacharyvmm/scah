@@ -64,4 +64,4 @@ taskset -c 2 bash scripts/check-text-performance.sh 7847d18684d647916506d29328fa
 taskset -c 2 bash scripts/check-sibling-performance.sh 7847d18684d647916506d29328fa47414f2a978a
 ```
 
-This experiment retains the current parser and shared text storage. The earlier review findings concerning table separators and moved elements still need separate fixes.
+This experiment retains the current parser and shared text storage.
