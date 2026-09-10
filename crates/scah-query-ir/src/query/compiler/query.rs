@@ -144,11 +144,13 @@ pub trait QuerySpec<'query> {
     }
 
     fn structural_filters(&'query self) -> Vec<&'query LocalSelectorList<'query>> {
-        let mut filters: Vec<&'query LocalSelectorList<'query>> = Vec::new();
-        for transition in self.states() {
-            for predicate in transition.predicate().structural.as_slice() {
+        fn collect<'query>(
+            predicate: &'query crate::query::selector::ElementPredicate<'query>,
+            filters: &mut Vec<&'query LocalSelectorList<'query>>,
+        ) {
+            for structural in predicate.structural.as_slice() {
                 if let crate::query::selector::StructuralPredicate::NthChildOf(_, filter) =
-                    predicate
+                    structural
                     && !filters
                         .iter()
                         .any(|existing| std::ptr::eq(*existing, filter))
@@ -156,6 +158,20 @@ pub trait QuerySpec<'query> {
                     filters.push(filter);
                 }
             }
+            for logical in predicate.logical.as_slice() {
+                let list = match logical {
+                    crate::query::selector::LocalLogicalPredicate::Not(list)
+                    | crate::query::selector::LocalLogicalPredicate::Any(list) => list,
+                };
+                for nested in list.as_slice() {
+                    collect(nested, filters);
+                }
+            }
+        }
+
+        let mut filters: Vec<&'query LocalSelectorList<'query>> = Vec::new();
+        for transition in self.states() {
+            collect(transition.predicate(), &mut filters);
         }
         filters
     }
