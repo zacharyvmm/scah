@@ -5,7 +5,11 @@ use crate::query::compiler::SelectorParseError;
 
 #[inline]
 fn is_element_selector_boundary(byte: u8) -> bool {
-    is_css_whitespace(byte) || matches!(byte, b'#' | b'.' | b'[' | b':' | b'>' | b'+' | b'~' | b'|')
+    is_css_whitespace(byte)
+        || matches!(
+            byte,
+            b'#' | b'.' | b'[' | b']' | b':' | b'>' | b'+' | b'~' | b'|'
+        )
 }
 
 #[inline]
@@ -795,6 +799,13 @@ impl<'a> ElementPredicate<'a> {
                     ));
                 }
 
+                (_, SelectionKeyWords::CloseAttribute) => {
+                    return Err(SelectorParseError::new(
+                        "illegal selector token",
+                        reader.get_position().saturating_sub(1),
+                    ));
+                }
+
                 (_, _) => (),
             }
 
@@ -1400,6 +1411,27 @@ mod tests {
             panic!("selector did not compile to an any predicate");
         };
         assert!(alternatives.as_slice().is_empty());
+    }
+
+    #[test]
+    fn malformed_local_selector_alternatives_are_rejected_or_discarded() {
+        let mut reader = Reader::new("div:not(.card])");
+        let error = ElementPredicate::try_from(&mut reader).unwrap_err();
+        assert_eq!(error.message(), "illegal selector token");
+
+        for selector in ["div:is(.card], .safe)", "div:where(.card], .safe)"] {
+            let mut reader = Reader::new(selector);
+            let element = ElementPredicate::try_from(&mut reader).unwrap();
+            let LocalLogicalPredicate::Any(alternatives) = &element.logical.as_slice()[0] else {
+                panic!("{selector} did not compile to an any predicate");
+            };
+            assert_eq!(alternatives.as_slice().len(), 1, "{selector}");
+            assert_eq!(
+                alternatives.as_slice()[0].classes.as_slice(),
+                &["safe"],
+                "{selector}"
+            );
+        }
     }
 
     #[test]
