@@ -82,6 +82,15 @@ jobs:
       - name: Enforce ordinary parser performance gate
         if: github.event_name == 'pull_request'
         run: ./scripts/check-sibling-performance.sh origin/main
+      - name: Check text-extraction benchmark
+        run: cargo bench -p scah-benches --bench speed_bench_text_extraction -- --test
+      - name: Check text-extraction memory benchmark
+        run: cargo bench -p scah-benches --bench memory_bench_text_extraction
+      - name: Enforce text-extraction performance gate
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: ./scripts/check-text-performance.sh "$BASE_SHA"
       - name: Run cursor stats report
         run: cargo run -p scah-cursor-benches --release --bin cursor_stats_report
 
