@@ -5,7 +5,8 @@ use crate::StructuralMatchContext;
 use crate::XHtmlElement;
 use crate::store::ElementId;
 use crate::store::Store;
-use crate::{LocalSelectorList, Position, QuerySectionId, StructuralPredicate};
+use crate::{ElementPredicate, LocalLogicalPredicate, LocalSelectorList};
+use crate::{Position, QuerySectionId, StructuralPredicate};
 use crate::{QuerySpec, Reader, TextRequirements};
 use smallvec::SmallVec;
 
@@ -77,6 +78,26 @@ pub(crate) struct SiblingCallback {
 
 type Runners<'query, Q> = Vec<QueryExecutor<'query, 'query, Q>>;
 
+fn visit_structural_predicates<'predicate, 'query>(
+    predicate: &'predicate ElementPredicate<'query>,
+    visitor: &mut impl FnMut(
+        &'predicate ElementPredicate<'query>,
+        &'predicate StructuralPredicate<'query>,
+    ),
+) {
+    for structural in predicate.structural.as_slice() {
+        visitor(predicate, structural);
+    }
+    for logical in predicate.logical.as_slice() {
+        let list = match logical {
+            LocalLogicalPredicate::Not(list) | LocalLogicalPredicate::Any(list) => list,
+        };
+        for nested in list.as_slice() {
+            visit_structural_predicates(nested, visitor);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct MultiplexerFeatures {
     pub(crate) has_sibling_queries: bool,
@@ -138,7 +159,7 @@ where
                     .any(|(index, _)| query.selection_ranges(QuerySectionId(index)).len() > 1);
                 aggregate.has_structural_queries |= query.has_structural_queries();
                 for transition in query.states() {
-                    for predicate in transition.predicate().structural.as_slice() {
+                    visit_structural_predicates(transition.predicate(), &mut |_, predicate| {
                         match predicate {
                             StructuralPredicate::FirstChild | StructuralPredicate::NthChild(_) => {
                                 aggregate.needs_child_ordinals = true;
@@ -152,7 +173,7 @@ where
                             }
                             StructuralPredicate::Root | StructuralPredicate::Scope => {}
                         }
-                    }
+                    });
                 }
                 aggregate.has_retiring_runners |= query.exit_at_section_end().is_some();
                 aggregate
@@ -162,13 +183,9 @@ where
     pub(crate) fn structural_attribute_interest(&self) -> Option<AttributeInterest<'query>> {
         let mut interest = AttributeInterest::default();
         for runner in &self.runners {
-            for transition in runner.query().states() {
-                for structural in transition.predicate().structural.as_slice() {
-                    if let StructuralPredicate::NthChildOf(_, filter) = structural {
-                        for predicate in filter.as_slice() {
-                            interest.add_predicate(predicate);
-                        }
-                    }
+            for filter in runner.query.structural_filters() {
+                for predicate in filter.as_slice() {
+                    interest.add_predicate(predicate);
                 }
             }
         }
@@ -344,34 +361,33 @@ where
 
     pub(crate) fn type_ordinal_names(&self) -> Option<SmallVec<[&'query str; 4]>> {
         let mut names: SmallVec<[&'query str; 4]> = SmallVec::new();
+        let mut needs_all_names = false;
         for runner in &self.runners {
             for transition in runner.query.states() {
-                let needs_type_ordinal =
-                    transition
-                        .predicate()
-                        .structural
-                        .as_slice()
-                        .iter()
-                        .any(|predicate| {
-                            matches!(
-                                predicate,
-                                StructuralPredicate::FirstOfType
-                                    | StructuralPredicate::NthOfType(_)
-                            )
-                        });
-                if !needs_type_ordinal {
-                    continue;
-                }
-                let name = transition.predicate().name?;
-                if !names
-                    .iter()
-                    .any(|existing| name.eq_ignore_ascii_case(existing))
-                {
-                    names.push(name);
-                }
+                visit_structural_predicates(
+                    transition.predicate(),
+                    &mut |predicate, structural| {
+                        if !matches!(
+                            structural,
+                            StructuralPredicate::FirstOfType | StructuralPredicate::NthOfType(_)
+                        ) {
+                            return;
+                        }
+                        let Some(name) = predicate.name else {
+                            needs_all_names = true;
+                            return;
+                        };
+                        if !names
+                            .iter()
+                            .any(|existing| name.eq_ignore_ascii_case(existing))
+                        {
+                            names.push(name);
+                        }
+                    },
+                );
             }
         }
-        Some(names)
+        (!needs_all_names).then_some(names)
     }
 
     // Preserve the ordinary executor's inlining across this thin dispatch

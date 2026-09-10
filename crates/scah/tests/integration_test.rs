@@ -2,7 +2,11 @@ use std::ops::Deref;
 
 #[cfg(debug_assertions)]
 use scah::debug;
-use scah::{Attribute, Query, QuerySpec, Save, Store, parse, query};
+use scah::{
+    AnPlusB, Attribute, ClassSelections, ElementPredicate, LocalLogicalPredicate,
+    LocalSelectorList, LogicalPredicates, Query, QuerySpec, Save, Store, StructuralPredicate,
+    StructuralPredicates, parse, query,
+};
 const HTML: &str = r#"
 <!DOCTYPE html>
 <html>
@@ -616,6 +620,78 @@ fn replacing_transition_predicate_refreshes_parser_preflight() {
 }
 
 #[test]
+fn replacing_transition_predicate_collects_nested_structural_requirements() {
+    fn nested_predicate(structural: StructuralPredicate<'static>) -> ElementPredicate<'static> {
+        ElementPredicate {
+            name: Some("li"),
+            id: None,
+            classes: Default::default(),
+            attributes: Default::default(),
+            logical: Default::default(),
+            structural: StructuralPredicates::from(vec![structural]),
+        }
+    }
+
+    fn count_nested(logical: LocalLogicalPredicate<'static>) -> usize {
+        let mut query = Query::all("li", Save::all()).unwrap().build();
+        query.states[0].set_predicate(ElementPredicate {
+            name: Some("li"),
+            id: None,
+            classes: Default::default(),
+            attributes: Default::default(),
+            logical: LogicalPredicates::from(vec![logical]),
+            structural: Default::default(),
+        });
+        let queries = [query];
+        let store = parse(
+            "<ul><li class='hit'></li><li></li><li class='hit'></li></ul>",
+            &queries,
+        )
+        .unwrap();
+        store.get("li").unwrap().count()
+    }
+
+    let first_child = LocalLogicalPredicate::Any(LocalSelectorList::Owned(
+        vec![nested_predicate(StructuralPredicate::FirstChild)].into_boxed_slice(),
+    ));
+    assert_eq!(count_nested(first_child), 1);
+
+    let not_first_child = LocalLogicalPredicate::Not(LocalSelectorList::Owned(
+        vec![nested_predicate(StructuralPredicate::FirstChild)].into_boxed_slice(),
+    ));
+    assert_eq!(count_nested(not_first_child), 2);
+
+    let second_of_type = LocalLogicalPredicate::Any(LocalSelectorList::Owned(
+        vec![nested_predicate(StructuralPredicate::NthOfType(AnPlusB {
+            a: 0,
+            b: 2,
+        }))]
+        .into_boxed_slice(),
+    ));
+    assert_eq!(count_nested(second_of_type), 1);
+
+    let filter = LocalSelectorList::Owned(
+        vec![ElementPredicate {
+            name: None,
+            id: None,
+            classes: ClassSelections::from(vec!["hit"]),
+            attributes: Default::default(),
+            logical: Default::default(),
+            structural: Default::default(),
+        }]
+        .into_boxed_slice(),
+    );
+    let filtered_child = LocalLogicalPredicate::Any(LocalSelectorList::Owned(
+        vec![nested_predicate(StructuralPredicate::NthChildOf(
+            AnPlusB { a: 0, b: 2 },
+            filter,
+        ))]
+        .into_boxed_slice(),
+    ));
+    assert_eq!(count_nested(filtered_child), 1);
+}
+
+#[test]
 fn escaped_quote_in_attribute_matches() {
     let html = r#"<a title="hello \"world\"">x</a>"#;
     let query = Query::all(r#"a[title="hello \"world\""]"#, Save::all())
@@ -719,9 +795,7 @@ fn selector_lists_match_in_document_order_and_deduplicate() {
     let html =
         r#"<main><h2>two</h2><h1>one</h1><div class="hit"></div><h1 class="hit">last</h1></main>"#;
     let selector = "h1, h2";
-    let query = Query::all(selector, Save::only_text_content())
-        .unwrap()
-        .build();
+    let query = Query::all(selector, Save::only_text()).unwrap().build();
     let queries = [query];
     let store = parse(html, &queries).unwrap();
     let names: Vec<_> = store
@@ -732,9 +806,7 @@ fn selector_lists_match_in_document_order_and_deduplicate() {
     assert_eq!(names, vec!["h2", "h1", "h1"]);
 
     let complex = "main > h1, main > h2";
-    let query = Query::first(complex, Save::only_text_content())
-        .unwrap()
-        .build();
+    let query = Query::first(complex, Save::only_text()).unwrap().build();
     let queries = [query];
     let store = parse(html, &queries).unwrap();
     assert_eq!(store.get(complex).unwrap().next().unwrap().name, "h2");
