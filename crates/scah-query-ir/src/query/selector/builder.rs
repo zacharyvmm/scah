@@ -1080,6 +1080,7 @@ fn is_valid_attribute_name(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Transition;
 
     #[test]
     fn test_basic_element_selection() {
@@ -1368,6 +1369,24 @@ mod tests {
     fn an_plus_b_rejects_whitespace_that_changes_tokens() {
         for source in ["3 n", "+ 2n", "+ 2", "n 2"] {
             assert!(parse_an_plus_b(source).is_err(), "{source}");
+        }
+    }
+
+    #[test]
+    fn pseudo_class_paths_are_ascii_case_insensitive() {
+        for selector in [
+            "li:FIRST-CHILD",
+            "li:First-Of-Type",
+            "li:NTH-CHILD(2n+1)",
+            "li:nth-OF-type(2)",
+            "div:NOT(.ad)",
+            "div:Is(.card)",
+            "div:WHERE(.card)",
+            ":ROOT",
+            ":SCOPE > a",
+        ] {
+            Transition::generate_transition_paths_from_string(selector)
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
         }
     }
 
