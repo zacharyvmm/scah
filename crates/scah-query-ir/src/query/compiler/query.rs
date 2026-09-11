@@ -66,6 +66,72 @@ pub trait QuerySpec<'query> {
     fn queries(&self) -> &[QuerySection<'query>];
     fn exit_at_section_end(&self) -> Option<QuerySectionId>;
 
+    fn selection_ranges(&self, section: QuerySectionId) -> &[Range<TransitionId>];
+
+    fn root_positions(&self) -> Vec<Position> {
+        self.selection_ranges(QuerySectionId(0))
+            .iter()
+            .map(|range| Position {
+                selection: QuerySectionId(0),
+                state: range.start,
+            })
+            .collect()
+    }
+
+    fn child_positions(&self, position: &Position) -> Vec<Position> {
+        let mut positions = Vec::new();
+        if position.selection.index() + 1 >= self.queries().len() {
+            return positions;
+        }
+        let mut child = QuerySectionId(position.selection.index() + 1);
+        loop {
+            if self.get_selection(child).parent != Some(position.selection) {
+                break;
+            }
+            for range in self.selection_ranges(child) {
+                positions.push(Position {
+                    selection: child,
+                    state: range.start,
+                });
+            }
+            let Some(next) = self.get_selection(child).next_sibling else {
+                break;
+            };
+            child = next;
+        }
+        positions
+    }
+
+    fn previous_positions(&self, position: &Position) -> Vec<Position> {
+        let Some(range) = self
+            .selection_ranges(position.selection)
+            .iter()
+            .find(|range| range.contains(&position.state))
+        else {
+            return Vec::new();
+        };
+
+        if position.state.index() > range.start.index() {
+            return vec![Position {
+                selection: position.selection,
+                state: TransitionId(position.state.index() - 1),
+            }];
+        }
+
+        let Some(parent) = self.get_selection(position.selection).parent else {
+            return Vec::new();
+        };
+        self.selection_ranges(parent)
+            .iter()
+            .filter_map(|range| {
+                range.end.index().checked_sub(1).map(|state| Position {
+                    selection: parent,
+                    state: TransitionId(state),
+                })
+            })
+            .collect()
+    }
+
     /// Whether any compiled transition uses `+` or `~`.
     fn has_sibling_combinator(&self) -> bool {
         self.states().iter().any(|transition| {
@@ -74,6 +140,27 @@ pub trait QuerySpec<'query> {
                 Combinator::NextSibling | Combinator::SubsequentSibling
             )
         })
+    }
+
+    fn has_structural_queries(&self) -> bool {
+        self.states()
+            .iter()
+            .any(|transition| transition.predicate().requires_structural())
+    }
+
+    fn structural_filters(&self) -> Vec<*const ()> {
+        let mut filters = Vec::new();
+        for transition in self.states() {
+            for predicate in transition.predicate().structural.as_slice() {
+                if let crate::query::selector::StructuralPredicate::NthChildOf(_, filter) =
+                    predicate
+                    && !filters.contains(&(filter as *const _ as *const ()))
+                {
+                    filters.push(filter as *const _ as *const ());
+                }
+            }
+        }
+        filters
     }
 
     fn text_requirements(&self) -> TextRequirements {
@@ -138,14 +225,15 @@ pub trait QuerySpec<'query> {
                 .range
                 .contains(&position.state)
         );
-        self.get_selection(position.selection).range.end.index() - 1 == position.state.index()
+        self.selection_ranges(position.selection)
+            .iter()
+            .any(|range| range.end.index() - 1 == position.state.index())
     }
 
     fn is_last_save_point(&self, position: &Position) -> bool {
         debug_assert!(position.selection.index() < self.queries().len());
         let is_last_query = self.queries().len() - 1 == position.selection.index();
-        let is_last_state =
-            self.get_selection(position.selection).range.end.index() - 1 == position.state.index();
+        let is_last_state = self.is_save_point(position);
         is_last_query && is_last_state
     }
 
@@ -172,14 +260,10 @@ impl Position {
         query: &Q,
     ) -> Option<TransitionId> {
         debug_assert!(self.selection.index() < query.queries().len());
-        debug_assert!(
-            query
-                .get_selection(self.selection)
-                .range
-                .contains(&self.state)
-        );
-
-        let selection_range = &query.get_selection(self.selection).range;
+        let selection_range = query
+            .selection_ranges(self.selection)
+            .iter()
+            .find(|range| range.contains(&self.state))?;
         if self.state.index() + 1 < selection_range.end.index() {
             Some(TransitionId(self.state.index() + 1))
         } else {
@@ -191,9 +275,9 @@ impl Position {
         debug_assert!(self.selection.index() < query.queries().len());
         debug_assert!(
             query
-                .get_selection(self.selection)
-                .range
-                .contains(&self.state)
+                .selection_ranges(self.selection)
+                .iter()
+                .any(|range| range.contains(&self.state))
         );
 
         if self.selection.index() == query.queries().len() - 1 {
@@ -216,9 +300,9 @@ impl Position {
         debug_assert!(self.selection.index() < query.queries().len());
         debug_assert!(
             query
-                .get_selection(self.selection)
-                .range
-                .contains(&self.state)
+                .selection_ranges(self.selection)
+                .iter()
+                .any(|range| range.contains(&self.state))
         );
 
         query
@@ -230,16 +314,18 @@ impl Position {
             })
     }
 
+    #[deprecated(note = "use QuerySpec::previous_positions for selector alternatives")]
     pub fn back<'query, Q: QuerySpec<'query> + ?Sized>(&mut self, query: &Q) {
         debug_assert!(self.selection.index() < query.queries().len());
-        debug_assert!(self.state < query.get_selection(self.selection).range.end);
+        debug_assert!(
+            query
+                .selection_ranges(self.selection)
+                .iter()
+                .any(|range| range.contains(&self.state))
+        );
 
-        let selection = query.get_selection(self.selection);
-        if self.state.index() > selection.range.start.index() {
-            self.state = TransitionId(self.state.index() - 1);
-        } else if let Some(parent) = selection.parent {
-            self.selection = parent;
-            self.state = TransitionId(query.get_selection(self.selection).range.end.index() - 1);
+        if let Some(previous) = query.previous_positions(self).first() {
+            *self = *previous;
         }
     }
 }
@@ -296,6 +382,7 @@ pub struct Query<'query> {
     pub states: Box<[Transition<'query>]>,
     pub queries: Box<[QuerySection<'query>]>,
     pub exit_at_section_end: Option<QuerySectionId>,
+    pub alternatives: Box<[Box<[Range<TransitionId>]>]>,
 }
 
 impl<'query> QuerySpec<'query> for Query<'query> {
@@ -310,6 +397,20 @@ impl<'query> QuerySpec<'query> for Query<'query> {
     fn exit_at_section_end(&self) -> Option<QuerySectionId> {
         self.exit_at_section_end
     }
+
+    fn selection_ranges(&self, section: QuerySectionId) -> &[Range<TransitionId>] {
+        &self.alternatives[section.index()]
+    }
+
+    fn root_positions(&self) -> Vec<Position> {
+        self.selection_ranges(QuerySectionId(0))
+            .iter()
+            .map(|range| Position {
+                selection: QuerySectionId(0),
+                state: range.start,
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -317,6 +418,7 @@ pub struct StaticQuery<'query, const N_STATES: usize, const N_SECTIONS: usize> {
     pub states: [Transition<'query>; N_STATES],
     pub queries: [QuerySection<'query>; N_SECTIONS],
     pub exit_at_section_end: Option<QuerySectionId>,
+    pub alternatives: &'query [&'query [Range<TransitionId>]],
 }
 
 impl<'query, const N_STATES: usize, const N_SECTIONS: usize>
@@ -326,11 +428,13 @@ impl<'query, const N_STATES: usize, const N_SECTIONS: usize>
         states: [Transition<'query>; N_STATES],
         queries: [QuerySection<'query>; N_SECTIONS],
         exit_at_section_end: Option<QuerySectionId>,
+        alternatives: &'query [&'query [Range<TransitionId>]],
     ) -> Self {
         Self {
             states,
             queries,
             exit_at_section_end,
+            alternatives,
         }
     }
 }
@@ -349,42 +453,76 @@ impl<'query, const N_STATES: usize, const N_SECTIONS: usize> QuerySpec<'query>
     fn exit_at_section_end(&self) -> Option<QuerySectionId> {
         self.exit_at_section_end
     }
+
+    fn selection_ranges(&self, section: QuerySectionId) -> &[Range<TransitionId>] {
+        self.alternatives[section.index()]
+    }
 }
 
 impl<'query> Query<'query> {
+    pub(crate) fn require_legacy_engine_compatible_paths(
+        paths: &[Vec<Transition<'query>>],
+    ) -> Result<(), SelectorParseError> {
+        if paths.len() > 1
+            || paths
+                .iter()
+                .flatten()
+                .any(|transition| transition.predicate().requires_structural())
+        {
+            return Err(SelectorParseError::new(
+                "selector requires streaming engine support",
+                0,
+            ));
+        }
+        Ok(())
+    }
+
     pub fn first(
         query: &'query str,
         save: Save,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        let states = Transition::generate_transitions_from_string(query)?;
-        let queries = vec![QuerySection::new(
-            query,
-            save,
-            SelectionKind::First,
-            TransitionId(0)..TransitionId(states.len()),
-            None,
-        )];
+        Self::build_initial(query, save, SelectionKind::First, false)
+    }
+
+    pub(crate) fn scoped(
+        query: &'query str,
+        save: Save,
+        kind: SelectionKind,
+    ) -> Result<QueryBuilder<'query>, SelectorParseError> {
+        Self::build_initial(query, save, kind, true)
+    }
+
+    fn build_initial(
+        query: &'query str,
+        save: Save,
+        kind: SelectionKind,
+        scoped: bool,
+    ) -> Result<QueryBuilder<'query>, SelectorParseError> {
+        let paths = if scoped {
+            Transition::generate_scoped_transition_paths_from_string(query)?
+        } else {
+            Transition::generate_transition_paths_from_string(query)?
+        };
+        Self::require_legacy_engine_compatible_paths(&paths)?;
+        let mut states = Vec::new();
+        let mut alternatives = Vec::new();
+        for path in paths {
+            let start = TransitionId(states.len());
+            states.extend(path);
+            alternatives.push(start..TransitionId(states.len()));
+        }
+        let range = alternatives.first().unwrap().start..alternatives.last().unwrap().end;
+        let queries = vec![QuerySection::new(query, save, kind, range, None)];
 
         Ok(QueryBuilder {
             states,
             selection: queries,
+            alternatives: vec![alternatives],
         })
     }
 
     pub fn all(query: &'query str, save: Save) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        let states = Transition::generate_transitions_from_string(query)?;
-        let queries = vec![QuerySection::new(
-            query,
-            save,
-            SelectionKind::All,
-            TransitionId(0)..TransitionId(states.len()),
-            None,
-        )];
-
-        Ok(QueryBuilder {
-            states,
-            selection: queries,
-        })
+        Self::build_initial(query, save, SelectionKind::All, false)
     }
 }
 
@@ -398,7 +536,7 @@ mod tests {
     use crate::query::selector::Combinator;
     use crate::query::selector::ElementPredicate;
     use crate::{
-        Query, QuerySection, QuerySectionId, QuerySpec, Save, SelectionKind, TransitionId,
+        Position, Query, QuerySection, QuerySectionId, QuerySpec, Save, SelectionKind, TransitionId,
     };
 
     #[test]
@@ -423,7 +561,9 @@ mod tests {
                     name: Some("a"),
                     id: None,
                     classes: ClassSelections::from_static(&[]),
-                    attributes: AttributeSelections::from_static(&[])
+                    attributes: AttributeSelections::from_static(&[]),
+                    logical: crate::LogicalPredicates::from_static(&[]),
+                    structural: crate::StructuralPredicates::from_static(&[]),
                 }
             )]
         );
@@ -458,7 +598,9 @@ mod tests {
                         name: Some("span"),
                         id: None,
                         classes: ClassSelections::from_static(&[]),
-                        attributes: AttributeSelections::from_static(&[])
+                        attributes: AttributeSelections::from_static(&[]),
+                        logical: crate::LogicalPredicates::from_static(&[]),
+                        structural: crate::StructuralPredicates::from_static(&[]),
                     }
                 ),
                 Transition::new(
@@ -467,7 +609,9 @@ mod tests {
                         name: Some("a"),
                         id: None,
                         classes: ClassSelections::from_static(&[]),
-                        attributes: AttributeSelections::from_static(&[])
+                        attributes: AttributeSelections::from_static(&[]),
+                        logical: crate::LogicalPredicates::from_static(&[]),
+                        structural: crate::StructuralPredicates::from_static(&[]),
                     }
                 )
             ]
@@ -494,7 +638,10 @@ mod tests {
                     name: "href",
                     value: Some("https"),
                     kind: AttributeSelectionKind::Prefix,
+                    case_sensitivity: crate::AttributeCaseSensitivity::Default,
                 }]),
+                logical: crate::LogicalPredicates::from_static(&[]),
+                structural: crate::StructuralPredicates::from_static(&[]),
             }
         );
     }
@@ -515,5 +662,104 @@ mod tests {
         assert_eq!(query.queries.len(), 3);
         assert_eq!(query.queries[1].next_sibling, Some(QuerySectionId(2)));
         assert_eq!(query.queries[2].next_sibling, None);
+    }
+
+    #[test]
+    fn previous_positions_include_every_parent_selector_alternative() {
+        let paths = Transition::generate_transition_paths_from_string("article > p, section > div")
+            .unwrap();
+        let mut states = Vec::new();
+        let mut alternatives = Vec::new();
+        for path in paths {
+            let start = TransitionId(states.len());
+            states.extend(path);
+            alternatives.push(start..TransitionId(states.len()));
+        }
+        let child_start = TransitionId(states.len());
+        states.extend(Transition::generate_transitions_from_string("span").unwrap());
+        let state_end = TransitionId(states.len());
+        let query = Query {
+            states: states.into_boxed_slice(),
+            queries: vec![
+                QuerySection::new(
+                    "article > p, section > div",
+                    Save::none(),
+                    SelectionKind::All,
+                    TransitionId(0)..child_start,
+                    None,
+                ),
+                QuerySection::new(
+                    "span",
+                    Save::none(),
+                    SelectionKind::All,
+                    child_start..state_end,
+                    Some(QuerySectionId(0)),
+                ),
+            ]
+            .into_boxed_slice(),
+            exit_at_section_end: None,
+            alternatives: vec![
+                alternatives.into_boxed_slice(),
+                vec![child_start..state_end].into_boxed_slice(),
+            ]
+            .into_boxed_slice(),
+        };
+        let position = Position {
+            selection: QuerySectionId(1),
+            state: child_start,
+        };
+
+        assert_eq!(
+            query.previous_positions(&position),
+            vec![
+                Position {
+                    selection: QuerySectionId(0),
+                    state: TransitionId(1),
+                },
+                Position {
+                    selection: QuerySectionId(0),
+                    state: TransitionId(3),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn public_query_builder_gates_selectors_until_engine_support_lands() {
+        for selector in ["h1, h2", "li:first-child", "li:nth-child(2 of .hit)"] {
+            let error = Query::all(selector, Save::none()).unwrap_err();
+            assert_eq!(
+                error.message(),
+                "selector requires streaming engine support"
+            );
+        }
+
+        assert!(
+            Transition::generate_transition_paths_from_string("h1, h2").is_ok(),
+            "the IR remains available to the engine implementation layer"
+        );
+    }
+
+    #[test]
+    fn chained_query_builder_gates_selectors_until_engine_support_lands() {
+        for selector in ["h1, h2", "li:first-child", "li:nth-child(2 of .hit)"] {
+            let all_error = Query::all("main", Save::none())
+                .unwrap()
+                .all(selector, Save::none())
+                .unwrap_err();
+            assert_eq!(
+                all_error.message(),
+                "selector requires streaming engine support"
+            );
+
+            let first_error = Query::all("main", Save::none())
+                .unwrap()
+                .first(selector, Save::none())
+                .unwrap_err();
+            assert_eq!(
+                first_error.message(),
+                "selector requires streaming engine support"
+            );
+        }
     }
 }

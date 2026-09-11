@@ -16,7 +16,12 @@ impl<'a> AttributeSelection<'a> {
             return false;
         }
 
-        self.kind.find(self.value.unwrap(), other.value.unwrap())
+        match self.case_sensitivity {
+            super::string_search::AttributeCaseSensitivity::AsciiInsensitive => self
+                .kind
+                .find_ascii_insensitive(self.value.unwrap(), other.value.unwrap()),
+            _ => self.kind.find(self.value.unwrap(), other.value.unwrap()),
+        }
     }
 
     /// Match this selector against a value routed through one of the
@@ -31,7 +36,12 @@ impl<'a> AttributeSelection<'a> {
             return true;
         }
 
-        self.kind.find(self.value.unwrap(), value)
+        match self.case_sensitivity {
+            super::string_search::AttributeCaseSensitivity::AsciiInsensitive => {
+                self.kind.find_ascii_insensitive(self.value.unwrap(), value)
+            }
+            _ => self.kind.find(self.value.unwrap(), value),
+        }
     }
 }
 
@@ -50,6 +60,35 @@ impl<'a> ElementPredicate<'a> {
         self.id.is_some()
             || !self.classes.as_slice().is_empty()
             || !self.attributes.as_slice().is_empty()
+            || self.logical.as_slice().iter().any(|logical| match logical {
+                super::builder::LocalLogicalPredicate::Not(list)
+                | super::builder::LocalLogicalPredicate::Any(list) => list
+                    .as_slice()
+                    .iter()
+                    .any(ElementPredicate::requires_attributes),
+            })
+            || self
+                .structural
+                .as_slice()
+                .iter()
+                .any(|structural| match structural {
+                    super::builder::StructuralPredicate::NthChildOf(_, filter) => filter
+                        .as_slice()
+                        .iter()
+                        .any(ElementPredicate::requires_attributes),
+                    _ => false,
+                })
+    }
+
+    pub fn requires_structural(&self) -> bool {
+        !self.structural.as_slice().is_empty()
+            || self.logical.as_slice().iter().any(|logical| {
+                let list = match logical {
+                    super::builder::LocalLogicalPredicate::Not(list)
+                    | super::builder::LocalLogicalPredicate::Any(list) => list.as_slice(),
+                };
+                list.iter().any(ElementPredicate::requires_structural)
+            })
     }
 
     fn matches_classes(&self, element_classes: &str) -> bool {
@@ -89,6 +128,14 @@ impl<'a> ElementPredicate<'a> {
     }
 
     pub fn matches_element<'b, E: IElement<'b>>(&self, other: &E) -> bool {
+        self.matches_element_with_context(other, None)
+    }
+
+    pub fn matches_element_with_context<'b, E: IElement<'b>>(
+        &self,
+        other: &E,
+        structural: Option<&super::builder::StructuralMatchContext<'_>>,
+    ) -> bool {
         if !self.matches_name(other.name()) {
             return false;
         }
@@ -130,6 +177,37 @@ impl<'a> ElementPredicate<'a> {
                     .attributes()
                     .iter()
                     .any(|xhtml_attribute| selector_attribute.matches_attribute(xhtml_attribute))
+            }
+        }) && self.logical.as_slice().iter().all(|logical| match logical {
+            super::builder::LocalLogicalPredicate::Not(list) => !list
+                .as_slice()
+                .iter()
+                .any(|predicate| predicate.matches_element_with_context(other, structural)),
+            super::builder::LocalLogicalPredicate::Any(list) => list
+                .as_slice()
+                .iter()
+                .any(|predicate| predicate.matches_element_with_context(other, structural)),
+        }) && self.structural.as_slice().iter().all(|predicate| {
+            let Some(context) = structural else {
+                return false;
+            };
+            match predicate {
+                super::builder::StructuralPredicate::Root => context.is_document_root,
+                super::builder::StructuralPredicate::Scope => context.is_scope_root,
+                super::builder::StructuralPredicate::FirstChild => context.child_index == 1,
+                super::builder::StructuralPredicate::NthChild(formula) => {
+                    formula.matches(context.child_index)
+                }
+                super::builder::StructuralPredicate::FirstOfType => context.type_index == 1,
+                super::builder::StructuralPredicate::NthOfType(formula) => {
+                    formula.matches(context.type_index)
+                }
+                super::builder::StructuralPredicate::NthChildOf(formula, filter) => context
+                    .filtered_child_indices
+                    .iter()
+                    .any(|&(context_filter, index)| {
+                        std::ptr::eq(context_filter, filter) && formula.matches(index)
+                    }),
             }
         })
     }
@@ -173,6 +251,7 @@ mod tests {
                 name: "hello",
                 value: Some("World"),
                 kind: AttributeSelectionKind::Exact,
+                case_sensitivity: crate::AttributeCaseSensitivity::Default,
             }
             .matches_attribute(&Attribute {
                 key: "hello",
@@ -191,8 +270,11 @@ mod tests {
                 attributes: AttributeSelections::from(vec![AttributeSelection {
                     name: "selected",
                     value: Some("true"),
-                    kind: AttributeSelectionKind::Exact
-                }])
+                    kind: AttributeSelectionKind::Exact,
+                    case_sensitivity: crate::AttributeCaseSensitivity::Default
+                }]),
+                logical: crate::LogicalPredicates::from_static(&[]),
+                structural: crate::StructuralPredicates::from_static(&[]),
             }
             .matches_element(&FakeElement {
                 name: "hello",
@@ -227,7 +309,10 @@ mod tests {
                     name: "href",
                     value: None,
                     kind: AttributeSelectionKind::Presence,
-                }])
+                    case_sensitivity: crate::AttributeCaseSensitivity::Default
+                }]),
+                logical: crate::LogicalPredicates::from_static(&[]),
+                structural: crate::StructuralPredicates::from_static(&[]),
             }
             .matches_element(&FakeElement {
                 name: "a",
@@ -258,7 +343,9 @@ mod tests {
                 name: Some("a"),
                 id: None,
                 classes: ClassSelections::from_static(&["blue", "exit"]),
-                attributes: AttributeSelections::from_static(&[])
+                attributes: AttributeSelections::from_static(&[]),
+                logical: crate::LogicalPredicates::from_static(&[]),
+                structural: crate::StructuralPredicates::from_static(&[])
             }
             .matches_element(&FakeElement {
                 name: "a",
@@ -276,7 +363,9 @@ mod tests {
                 name: Some("a"),
                 id: None,
                 classes: ClassSelections::from_static(&["exit", "blue"]),
-                attributes: AttributeSelections::from_static(&[])
+                attributes: AttributeSelections::from_static(&[]),
+                logical: crate::LogicalPredicates::from_static(&[]),
+                structural: crate::StructuralPredicates::from_static(&[])
             }
             .matches_element(&FakeElement {
                 name: "a",
@@ -294,7 +383,9 @@ mod tests {
                 name: Some("a"),
                 id: None,
                 classes: ClassSelections::from_static(&["blue", "exit", "missing"]),
-                attributes: AttributeSelections::from_static(&[])
+                attributes: AttributeSelections::from_static(&[]),
+                logical: crate::LogicalPredicates::from_static(&[]),
+                structural: crate::StructuralPredicates::from_static(&[])
             }
             .matches_element(&FakeElement {
                 name: "a",
@@ -312,12 +403,16 @@ mod tests {
             id: None,
             classes: ClassSelections::from_static(&["blue", "exit"]),
             attributes: AttributeSelections::from_static(&[]),
+            logical: crate::LogicalPredicates::from_static(&[]),
+            structural: crate::StructuralPredicates::from_static(&[]),
         };
         let selector_two = ElementPredicate {
             name: Some("a"),
             id: None,
             classes: ClassSelections::from_static(&["exit", "blue"]),
             attributes: AttributeSelections::from_static(&[]),
+            logical: crate::LogicalPredicates::from_static(&[]),
+            structural: crate::StructuralPredicates::from_static(&[]),
         };
 
         let element_one = FakeElement {
@@ -337,5 +432,54 @@ mod tests {
         assert!(selector_one.matches_element(&element_two));
         assert!(selector_two.matches_element(&element_one));
         assert!(selector_two.matches_element(&element_two));
+    }
+
+    #[test]
+    fn root_and_scope_use_independent_context_flags() {
+        let element = FakeElement {
+            name: "div",
+            id: None,
+            class: None,
+            attributes: &[],
+        };
+        let make_predicate = |structural| ElementPredicate {
+            name: Some("div"),
+            id: None,
+            classes: ClassSelections::from_static(&[]),
+            attributes: AttributeSelections::from_static(&[]),
+            logical: crate::LogicalPredicates::from_static(&[]),
+            structural: crate::StructuralPredicates::from(vec![structural]),
+        };
+        let document_root = crate::StructuralMatchContext {
+            child_index: 1,
+            type_index: 1,
+            filtered_child_indices: smallvec::SmallVec::new(),
+            is_document_root: true,
+            is_scope_root: false,
+        };
+        let scope_root = crate::StructuralMatchContext {
+            child_index: 2,
+            type_index: 1,
+            filtered_child_indices: smallvec::SmallVec::new(),
+            is_document_root: false,
+            is_scope_root: true,
+        };
+
+        assert!(
+            make_predicate(crate::StructuralPredicate::Root)
+                .matches_element_with_context(&element, Some(&document_root))
+        );
+        assert!(
+            !make_predicate(crate::StructuralPredicate::Scope)
+                .matches_element_with_context(&element, Some(&document_root))
+        );
+        assert!(
+            make_predicate(crate::StructuralPredicate::Scope)
+                .matches_element_with_context(&element, Some(&scope_root))
+        );
+        assert!(
+            !make_predicate(crate::StructuralPredicate::Root)
+                .matches_element_with_context(&element, Some(&scope_root))
+        );
     }
 }

@@ -178,17 +178,91 @@ pub struct QueryBuilder<'query> {
     pub states: Vec<Transition<'query>>,
     /// Internal ordered list of query sections.
     pub selection: Vec<QuerySection<'query>>,
+    pub alternatives: Vec<Vec<std::ops::Range<TransitionId>>>,
 }
 
 impl<'query> QueryBuilder<'query> {
+    fn scope_root(&mut self) -> Result<(), SelectorParseError> {
+        let removed = self.alternatives[0]
+            .iter()
+            .map(|range| {
+                let predicate = self.states[range.start.index()].predicate();
+                let structural = predicate.structural.as_slice();
+                let pure_scope_anchor = structural.len() == 1
+                    && matches!(structural[0], crate::StructuralPredicate::Scope)
+                    && predicate.name.is_none()
+                    && predicate.id.is_none()
+                    && predicate.classes.as_slice().is_empty()
+                    && predicate.attributes.as_slice().is_empty()
+                    && predicate.logical.as_slice().is_empty();
+                let has_scope = structural
+                    .iter()
+                    .any(|predicate| matches!(predicate, crate::StructuralPredicate::Scope));
+                let is_root_anchor =
+                    self.states[range.start.index()].guard == crate::Combinator::Descendant;
+                if !has_scope || !is_root_anchor {
+                    return Ok(None);
+                }
+                if !pure_scope_anchor {
+                    return Err(SelectorParseError::new(
+                        "compound :scope anchors are not supported",
+                        0,
+                    ));
+                }
+                if range.end.index() - range.start.index() == 1 {
+                    return Err(SelectorParseError::new(
+                        "terminal :scope selectors are not supported",
+                        0,
+                    ));
+                }
+                Ok(Some(range.start.index()))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        if removed.is_empty() {
+            return Ok(());
+        }
+
+        let shift = |index: usize| removed.partition_point(|removed| *removed < index);
+        self.states = self
+            .states
+            .drain(..)
+            .enumerate()
+            .filter_map(|(index, state)| (!removed.contains(&index)).then_some(state))
+            .collect();
+        for ranges in &mut self.alternatives {
+            for range in ranges {
+                range.start = TransitionId(range.start.index() - shift(range.start.index()));
+                range.end = TransitionId(range.end.index() - shift(range.end.index()));
+            }
+        }
+        for section in &mut self.selection {
+            section.range.start =
+                TransitionId(section.range.start.index() - shift(section.range.start.index()));
+            section.range.end =
+                TransitionId(section.range.end.index() - shift(section.range.end.index()));
+        }
+        Ok(())
+    }
+
     pub fn all(mut self, query: &'query str, save: Save) -> Result<Self, SelectorParseError> {
         assert!(!self.selection.is_empty());
 
         let current_state_len = self.states.len();
-        let mut states = Transition::generate_transitions_from_string(query)?;
+        let paths = Transition::generate_scoped_transition_paths_from_string(query)?;
+        Query::require_legacy_engine_compatible_paths(&paths)?;
+        let mut states = Vec::new();
+        let mut alternatives = Vec::new();
+        for path in paths {
+            let start = TransitionId(current_state_len + states.len());
+            states.extend(path);
+            alternatives.push(start..TransitionId(current_state_len + states.len()));
+        }
 
         let parent_index = QuerySectionId(self.selection.len() - 1);
-        let range = TransitionId(current_state_len)..TransitionId(current_state_len + states.len());
+        let range = alternatives.first().unwrap().start..alternatives.last().unwrap().end;
         self.selection.push(QuerySection::new(
             query,
             save,
@@ -198,6 +272,7 @@ impl<'query> QueryBuilder<'query> {
         ));
 
         self.states.append(&mut states);
+        self.alternatives.push(alternatives);
 
         Ok(self)
     }
@@ -211,10 +286,18 @@ impl<'query> QueryBuilder<'query> {
         assert!(!self.selection.is_empty());
 
         let current_state_len = self.states.len();
-        let mut states = Transition::generate_transitions_from_string(query)?;
+        let paths = Transition::generate_scoped_transition_paths_from_string(query)?;
+        Query::require_legacy_engine_compatible_paths(&paths)?;
+        let mut states = Vec::new();
+        let mut alternatives = Vec::new();
+        for path in paths {
+            let start = TransitionId(current_state_len + states.len());
+            states.extend(path);
+            alternatives.push(start..TransitionId(current_state_len + states.len()));
+        }
 
         let parent_index = QuerySectionId(self.selection.len() - 1);
-        let range = TransitionId(current_state_len)..TransitionId(current_state_len + states.len());
+        let range = alternatives.first().unwrap().start..alternatives.last().unwrap().end;
         self.selection.push(QuerySection::new(
             query,
             save,
@@ -224,6 +307,7 @@ impl<'query> QueryBuilder<'query> {
         ));
 
         self.states.append(&mut states);
+        self.alternatives.push(alternatives);
 
         Ok(self)
     }
@@ -232,7 +316,12 @@ impl<'query> QueryBuilder<'query> {
     ///
     /// Enables early-exit optimisation for this branch of the query tree.
     ///
-    pub fn append(&mut self, parent: QuerySectionId, mut other: Self) {
+    pub fn append(
+        &mut self,
+        parent: QuerySectionId,
+        mut other: Self,
+    ) -> Result<(), SelectorParseError> {
+        other.scope_root()?;
         let state_length = self.states.len();
         let selection_length = self.selection.len();
 
@@ -248,6 +337,12 @@ impl<'query> QueryBuilder<'query> {
                 Some(sibling_index)
             }
         };
+        for alternatives in &mut other.alternatives {
+            for range in alternatives {
+                range.start = TransitionId(range.start.index() + state_length);
+                range.end = TransitionId(range.end.index() + state_length);
+            }
+        }
         for index in 0..other.selection.len() {
             let query = &mut other.selection[index];
             query.range.start = TransitionId(query.range.start.index() + state_length);
@@ -278,6 +373,8 @@ impl<'query> QueryBuilder<'query> {
         }
         self.states.append(&mut other.states);
         self.selection.append(&mut other.selection);
+        self.alternatives.append(&mut other.alternatives);
+        Ok(())
     }
 
     /// Branch into multiple child queries using a closure.
@@ -312,7 +409,7 @@ impl<'query> QueryBuilder<'query> {
 
         let current_index = QuerySectionId(self.selection.len() - 1);
         for child in children {
-            self.append(current_index, child);
+            self.append(current_index, child)?;
         }
         Ok(self)
     }
@@ -399,6 +496,12 @@ impl<'query> QueryBuilder<'query> {
             states: states_box,
             queries: query_box,
             exit_at_section_end,
+            alternatives: self
+                .alternatives
+                .into_iter()
+                .map(Vec::into_boxed_slice)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
         }
     }
 }
@@ -416,7 +519,7 @@ impl<'query> QueryFactory {
         query: &'query str,
         save: Save,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        Query::all(query, save)
+        Query::scoped(query, save, SelectionKind::All)
     }
 
     /// Create a child query that matches only the **first** occurrence.
@@ -425,7 +528,7 @@ impl<'query> QueryFactory {
         query: &'query str,
         save: Save,
     ) -> Result<QueryBuilder<'query>, SelectorParseError> {
-        Query::first(query, save)
+        Query::scoped(query, save, SelectionKind::First)
     }
 }
 
@@ -485,6 +588,18 @@ mod tests {
     }
 
     #[test]
+    fn factory_builds_scope_anchored_children_before_compatibility_checks() {
+        let query = Query::all("main", Save::none())
+            .unwrap()
+            .then(|factory| Ok([factory.all(":scope > a", Save::none())?]))
+            .unwrap()
+            .build();
+
+        assert_eq!(query.queries.len(), 2);
+        assert_eq!(query.states.len(), 2);
+    }
+
+    #[test]
     fn test_invalid_selectors_fail_to_build() {
         let invalid = [
             "",
@@ -500,7 +615,6 @@ mod tests {
             "a ++ b",
             "a ~~ b",
             "a[]",
-            "*",
             "a[123=\"321\"]",
             r#"[data-x="unterminated]"#,
             "[=value]",

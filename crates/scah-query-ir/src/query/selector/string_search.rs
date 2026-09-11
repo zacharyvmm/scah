@@ -9,6 +9,13 @@ pub enum AttributeSelectionKind {
     Substring,           // [attribute*=value]
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum AttributeCaseSensitivity {
+    Default,
+    AsciiInsensitive,
+    Sensitive,
+}
+
 impl AttributeSelectionKind {
     pub fn find(&self, query: &str, source: &str) -> bool {
         match self {
@@ -21,11 +28,61 @@ impl AttributeSelectionKind {
                         .strip_prefix(query)
                         .is_some_and(|rest| rest.starts_with('-'))
             }
-            Self::Prefix => source.starts_with(query),
-            Self::Suffix => source.ends_with(query),
-            Self::Substring => source.contains(query),
+            Self::Prefix => !query.is_empty() && source.starts_with(query),
+            Self::Suffix => !query.is_empty() && source.ends_with(query),
+            Self::Substring => !query.is_empty() && source.contains(query),
         }
     }
+
+    pub fn find_ascii_insensitive(&self, query: &str, source: &str) -> bool {
+        match self {
+            Self::Exact => ascii_eq(query, source),
+            Self::Presence => true,
+            Self::WhitespaceSeparated => {
+                source.split_whitespace().any(|word| ascii_eq(query, word))
+            }
+            Self::HyphenSeparated => {
+                ascii_eq(query, source)
+                    || source
+                        .get(..query.len())
+                        .is_some_and(|prefix| ascii_eq(query, prefix))
+                        && source.as_bytes().get(query.len()) == Some(&b'-')
+            }
+            Self::Prefix => {
+                !query.is_empty()
+                    && source
+                        .get(..query.len())
+                        .is_some_and(|prefix| ascii_eq(query, prefix))
+            }
+            Self::Suffix => {
+                !query.is_empty()
+                    && source
+                        .get(source.len().saturating_sub(query.len())..)
+                        .is_some_and(|suffix| ascii_eq(query, suffix))
+            }
+            Self::Substring => {
+                !query.is_empty()
+                    && source
+                        .as_bytes()
+                        .windows(query.len())
+                        .any(|w| ascii_eq_bytes(query.as_bytes(), w))
+            }
+        }
+    }
+}
+
+#[inline]
+fn ascii_eq(left: &str, right: &str) -> bool {
+    ascii_eq_bytes(left.as_bytes(), right.as_bytes())
+}
+
+#[inline]
+fn ascii_eq_bytes(left: &[u8], right: &[u8]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(a, b)| a.eq_ignore_ascii_case(b))
 }
 
 #[cfg(test)]
@@ -101,5 +158,17 @@ mod tests {
     fn test_hyphen_separated_unicode_no_panic() {
         let kind = AttributeSelectionKind::HyphenSeparated;
         assert!(!kind.find("e", "é-fr"));
+    }
+
+    #[test]
+    fn empty_substring_operator_values_match_nothing() {
+        for kind in [
+            AttributeSelectionKind::Prefix,
+            AttributeSelectionKind::Suffix,
+            AttributeSelectionKind::Substring,
+        ] {
+            assert!(!kind.find("", "value"));
+            assert!(!kind.find_ascii_insensitive("", "value"));
+        }
     }
 }
