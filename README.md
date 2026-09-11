@@ -133,6 +133,7 @@ Control what data is captured per selector:
 | Tag name | `a`, `div` | Working |
 | ID | `#my-id` | Working |
 | Class | `.my-class` | Working |
+| Universal | `*`, `*.card` | Working |
 | Descendant | `main section a` | Working |
 | Child | `main > section` | Working |
 | Attribute presence | `a[href]` | Working |
@@ -140,8 +141,25 @@ Control what data is captured per selector:
 | Attribute prefix | `a[href^="https"]` | Working |
 | Attribute suffix | `a[href$=".com"]` | Working |
 | Attribute substring | `a[href*="example"]` | Working |
+| Attribute value flags | `[data-kind="FOO" i]`, `[data-kind="FOO" S]` | ASCII-insensitive or sensitive; flags are case-insensitive |
 | Adjacent sibling | `h1 + p` | Working |
 | General sibling | `h1 ~ p` | Working |
+| Selector lists | `h1, h2`, `main > h1, main > h2` | Working |
+| Logical pseudos | `:not(...)`, `:is(...)`, `:where(...)` | Local/current-element compounds |
+| Child ordinals | `:first-child`, `:nth-child(2n+1)` | Working |
+| Type ordinals | `:first-of-type`, `:nth-of-type(2)` | Working |
+| Filtered ordinals | `:nth-child(2 of .card, [data-card])` | Streaming-safe local filters |
+| Root/scope | `:root`, `:scope > a` | scah document/nested-query scope |
+
+Filtered `of S` arguments are intentionally limited to local compound selectors
+that can be evaluated at an opening tag. Future-dependent selectors such as
+`:has()`, `:empty`, `:last-child`, and `:nth-last-child()` are rejected.
+Unsupported alternatives inside `:is()` and `:where()` are discarded using
+forgiving selector-list semantics. `:not()` and filtered `of S` lists remain
+strict and reject unsupported structural pseudo-classes. In nested query
+sections, `:scope` is supported as a standalone leading anchor for a following
+relative selector, as in `:scope > a`. Terminal `:scope` and compound anchors
+such as `:scope.card` are not supported.
 
 > Full API documentation: [docs.rs/scah](https://docs.rs/scah)
 

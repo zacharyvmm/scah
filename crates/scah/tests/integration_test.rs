@@ -795,7 +795,9 @@ fn selector_lists_match_in_document_order_and_deduplicate() {
     let html =
         r#"<main><h2>two</h2><h1>one</h1><div class="hit"></div><h1 class="hit">last</h1></main>"#;
     let selector = "h1, h2";
-    let query = Query::all(selector, Save::only_text()).unwrap().build();
+    let query = Query::all(selector, Save::only_text_content())
+        .unwrap()
+        .build();
     let queries = [query];
     let store = parse(html, &queries).unwrap();
     let names: Vec<_> = store
@@ -806,7 +808,9 @@ fn selector_lists_match_in_document_order_and_deduplicate() {
     assert_eq!(names, vec!["h2", "h1", "h1"]);
 
     let complex = "main > h1, main > h2";
-    let query = Query::first(complex, Save::only_text()).unwrap().build();
+    let query = Query::first(complex, Save::only_text_content())
+        .unwrap()
+        .build();
     let queries = [query];
     let store = parse(html, &queries).unwrap();
     assert_eq!(store.get(complex).unwrap().next().unwrap().name, "h2");
