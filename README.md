@@ -159,7 +159,9 @@ forgiving selector-list semantics. `:not()` and filtered `of S` lists remain
 strict and reject unsupported structural pseudo-classes. In nested query
 sections, `:scope` is supported as a standalone leading anchor for a following
 relative selector, as in `:scope > a`. Terminal `:scope` and compound anchors
-such as `:scope.card` are not supported.
+such as `:scope.card` are not supported. Selector lists nested inside
+functional pseudo-classes are limited to `MAX_SELECTOR_NESTING_DEPTH` (32)
+levels; deeper selectors are rejected when the query is built.
 
 > Full API documentation: [docs.rs/scah](https://docs.rs/scah)
 
