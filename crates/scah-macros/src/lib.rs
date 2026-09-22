@@ -698,7 +698,7 @@ fn option_query_section_id_tokens(
 
 #[cfg(test)]
 mod tests {
-    use super::{QueryNode, parse_save_expr};
+    use super::{QueryNode, expand_query, parse_save_expr};
     use syn::Expr;
 
     #[test]
@@ -740,5 +740,27 @@ mod tests {
             parse_save_expr(&expression).unwrap(),
             scah_query_ir::Save::only_text().without_attributes()
         );
+    }
+
+    fn nested_is_query(depth: usize) -> QueryNode {
+        let selector = format!("{}div{}", ":is(".repeat(depth), ")".repeat(depth));
+        syn::parse_str::<QueryNode>(&format!("all({selector:?}, Save::none())")).unwrap()
+    }
+
+    #[test]
+    fn macro_construction_enforces_the_selector_nesting_budget() {
+        let nesting_error = "selector nesting exceeds the maximum depth";
+        let at_limit = nested_is_query(scah_query_ir::MAX_SELECTOR_NESTING_DEPTH);
+        if let Err(error) = expand_query(&at_limit) {
+            assert!(!error.to_string().contains(nesting_error), "{error}");
+        }
+
+        for depth in [scah_query_ir::MAX_SELECTOR_NESTING_DEPTH + 1, 10_000] {
+            let error = expand_query(&nested_is_query(depth)).unwrap_err();
+            assert!(
+                error.to_string().contains(nesting_error),
+                "depth {depth}: {error}"
+            );
+        }
     }
 }

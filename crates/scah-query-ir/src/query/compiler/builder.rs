@@ -811,4 +811,38 @@ mod tests {
             "combinator '+' requires a preceding selector"
         );
     }
+
+    const NESTING_ERROR: &str = "selector nesting exceeds the maximum depth";
+
+    fn nested_is(depth: usize) -> String {
+        format!("{}div{}", ":is(".repeat(depth), ")".repeat(depth))
+    }
+
+    #[test]
+    fn runtime_construction_enforces_the_selector_nesting_budget() {
+        let at_limit = nested_is(crate::MAX_SELECTOR_NESTING_DEPTH);
+        for result in [
+            Query::all(&at_limit, Save::none()).map(|_| ()),
+            Query::all("main", Save::none())
+                .and_then(|query| query.all(&at_limit, Save::none()))
+                .map(|_| ()),
+        ] {
+            if let Err(error) = result {
+                assert_ne!(error.message(), NESTING_ERROR);
+            }
+        }
+
+        for depth in [crate::MAX_SELECTOR_NESTING_DEPTH + 1, 10_000] {
+            let selector = nested_is(depth);
+            let error = Query::all(&selector, Save::none()).err().unwrap();
+            assert_eq!(error.message(), NESTING_ERROR, "depth {depth}");
+
+            let error = Query::all("main", Save::none())
+                .unwrap()
+                .all(&selector, Save::none())
+                .err()
+                .unwrap();
+            assert_eq!(error.message(), NESTING_ERROR, "nested depth {depth}");
+        }
+    }
 }

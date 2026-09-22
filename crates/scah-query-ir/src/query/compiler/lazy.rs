@@ -525,4 +525,37 @@ mod tests {
         };
         assert_eq!(query.exit_at_section_end, Some(QuerySectionId(1)));
     }
+
+    const NESTING_ERROR: &str = "selector nesting exceeds the maximum depth";
+
+    fn nested_is(depth: usize) -> String {
+        format!("{}div{}", ":is(".repeat(depth), ")".repeat(depth))
+    }
+
+    #[test]
+    fn lazy_construction_enforces_the_selector_nesting_budget() {
+        let at_limit = nested_is(crate::MAX_SELECTOR_NESTING_DEPTH);
+        if let Err(error) =
+            unsafe { LazyQuery::all(at_limit.as_str(), Save::none()).try_to_query() }
+        {
+            assert_ne!(error.message(), NESTING_ERROR);
+        }
+
+        for depth in [crate::MAX_SELECTOR_NESTING_DEPTH + 1, 10_000] {
+            let selector = nested_is(depth);
+            let error = unsafe { LazyQuery::all(selector.as_str(), Save::none()).try_to_query() }
+                .err()
+                .unwrap();
+            assert_eq!(error.message(), NESTING_ERROR, "depth {depth}");
+
+            let error = unsafe {
+                LazyQuery::all("main", Save::none())
+                    .all(selector.as_str(), Save::none())
+                    .try_to_query()
+            }
+            .err()
+            .unwrap();
+            assert_eq!(error.message(), NESTING_ERROR, "nested depth {depth}");
+        }
+    }
 }

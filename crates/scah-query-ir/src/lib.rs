@@ -9,7 +9,7 @@ pub use query::compiler::{
 pub use query::selector::{
     AnPlusB, Attribute, AttributeCaseSensitivity, AttributeSelection, AttributeSelectionKind,
     AttributeSelections, ClassSelections, Combinator, ElementPredicate, IElement,
-    LocalLogicalPredicate, LocalSelectorList, LogicalPredicates, StructuralMatchContext,
-    StructuralPredicate, StructuralPredicates,
+    LocalLogicalPredicate, LocalSelectorList, LogicalPredicates, MAX_SELECTOR_NESTING_DEPTH,
+    StructuralMatchContext, StructuralPredicate, StructuralPredicates,
 };
 pub use scah_reader::Reader;

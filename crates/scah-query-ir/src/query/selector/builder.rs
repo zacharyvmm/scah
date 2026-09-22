@@ -1,7 +1,13 @@
-use super::is_css_whitespace;
 use super::string_search::{AttributeCaseSensitivity, AttributeSelectionKind};
+use super::{is_css_whitespace, is_css_whitespace_char};
 use crate::Reader;
 use crate::query::compiler::SelectorParseError;
+
+/// Maximum number of selector lists that may be nested inside functional
+/// pseudo-classes such as `:is()`, `:not()` and `:nth-child(An+B of S)`.
+/// Nested lists are parsed recursively, so the budget keeps hostile selectors
+/// from exhausting the stack.
+pub const MAX_SELECTOR_NESTING_DEPTH: usize = 32;
 
 #[inline]
 fn is_element_selector_boundary(byte: u8) -> bool {
@@ -382,6 +388,11 @@ impl<'query> AttributeSelection<'query> {
                             "attribute selector has multiple value modifiers",
                             reader.get_position(),
                         ));
+                    } else if kv.name.is_some() && !equal {
+                        return Err(SelectorParseError::new(
+                            "attribute value requires a comparison operator",
+                            reader.get_position(),
+                        ));
                     } else {
                         kv.push(string_value, reader.get_position())?;
                     }
@@ -391,6 +402,12 @@ impl<'query> AttributeSelection<'query> {
                     if kv.value.is_some() {
                         return Err(SelectorParseError::new(
                             "attribute value modifier must be an unquoted identifier",
+                            reader.get_position(),
+                        ));
+                    }
+                    if kv.name.is_some() && !equal {
+                        return Err(SelectorParseError::new(
+                            "attribute value requires a comparison operator",
                             reader.get_position(),
                         ));
                     }
@@ -638,6 +655,14 @@ impl<'a> ElementPredicate<'a> {
     }
 
     pub fn try_from(reader: &mut Reader<'a>) -> Result<Self, SelectorParseError> {
+        Self::try_from_nested(reader, 0)
+    }
+
+    /// Parses a compound selector enclosed by `nesting` selector lists.
+    fn try_from_nested(
+        reader: &mut Reader<'a>,
+        nesting: usize,
+    ) -> Result<Self, SelectorParseError> {
         let mut element = Self {
             name: None,
             id: None,
@@ -676,6 +701,44 @@ impl<'a> ElementPredicate<'a> {
                         reader.get_position(),
                     ));
                 }
+                (Some(SelectionKeyWords::ID), SelectionKeyWords::String(id_name)) => {
+                    if !is_valid_selector_name(id_name) {
+                        return Err(SelectorParseError::new(
+                            "missing id string",
+                            reader.get_position().saturating_sub(id_name.len()),
+                        ));
+                    }
+                    if element.id.is_some() {
+                        return Err(SelectorParseError::new(
+                            "selector has multiple IDs",
+                            reader.get_position().saturating_sub(id_name.len()),
+                        ));
+                    }
+                    element.id = Some(*id_name);
+                }
+                (Some(SelectionKeyWords::Class), SelectionKeyWords::String(class_name)) => {
+                    if !is_valid_selector_name(class_name) {
+                        return Err(SelectorParseError::new(
+                            "missing class string",
+                            reader.get_position().saturating_sub(class_name.len()),
+                        ));
+                    }
+                    element.push_class(class_name);
+                }
+                // A `#` or `.` must be followed by its name; reject it before
+                // any other token (pseudo-class, attribute, ...) can claim it.
+                (Some(SelectionKeyWords::ID), _) => {
+                    return Err(SelectorParseError::new(
+                        "missing id string",
+                        reader.get_position(),
+                    ));
+                }
+                (Some(SelectionKeyWords::Class), _) => {
+                    return Err(SelectorParseError::new(
+                        "missing class string",
+                        reader.get_position(),
+                    ));
+                }
                 (_, SelectionKeyWords::Universal) => {
                     return Err(SelectorParseError::new(
                         "universal selector must start a compound selector",
@@ -699,7 +762,11 @@ impl<'a> ElementPredicate<'a> {
                             if let Some(filter_source) = filter_source {
                                 StructuralPredicate::NthChildOf(
                                     formula,
-                                    parse_local_selector_list(filter_source)?,
+                                    parse_local_selector_list(
+                                        filter_source,
+                                        nesting + 1,
+                                        reader.get_position(),
+                                    )?,
                                 )
                             } else {
                                 StructuralPredicate::NthChild(formula)
@@ -716,13 +783,19 @@ impl<'a> ElementPredicate<'a> {
                     } else {
                         let argument = read_balanced_function_argument(reader)?;
                         let predicate = if name.eq_ignore_ascii_case("not") {
-                            LocalLogicalPredicate::Not(parse_local_selector_list(argument)?)
+                            LocalLogicalPredicate::Not(parse_local_selector_list(
+                                argument,
+                                nesting + 1,
+                                reader.get_position(),
+                            )?)
                         } else if name.eq_ignore_ascii_case("is")
                             || name.eq_ignore_ascii_case("where")
                         {
                             LocalLogicalPredicate::Any(parse_forgiving_local_selector_list(
                                 argument,
-                            ))
+                                nesting + 1,
+                                reader.get_position(),
+                            )?)
                         } else {
                             return Err(SelectorParseError::new(
                                 "unsupported pseudo-class",
@@ -754,30 +827,6 @@ impl<'a> ElementPredicate<'a> {
                         ));
                     });
                 }
-                (Some(SelectionKeyWords::ID), SelectionKeyWords::String(id_name)) => {
-                    if !is_valid_selector_name(id_name) {
-                        return Err(SelectorParseError::new(
-                            "missing id string",
-                            reader.get_position().saturating_sub(id_name.len()),
-                        ));
-                    }
-                    if element.id.is_some() {
-                        return Err(SelectorParseError::new(
-                            "selector has multiple IDs",
-                            reader.get_position().saturating_sub(id_name.len()),
-                        ));
-                    }
-                    element.id = Some(*id_name);
-                }
-                (Some(SelectionKeyWords::Class), SelectionKeyWords::String(class_name)) => {
-                    if !is_valid_selector_name(class_name) {
-                        return Err(SelectorParseError::new(
-                            "missing class string",
-                            reader.get_position().saturating_sub(class_name.len()),
-                        ));
-                    }
-                    element.push_class(class_name);
-                }
                 (_, SelectionKeyWords::String(name)) => {
                     return Err(SelectorParseError::new(
                         "type selector must start a compound selector",
@@ -785,19 +834,6 @@ impl<'a> ElementPredicate<'a> {
                     ));
                 }
                 (_, SelectionKeyWords::OpenAttribute) => element.try_parse_attribute(reader)?,
-
-                (Some(SelectionKeyWords::ID), _) => {
-                    return Err(SelectorParseError::new(
-                        "missing id string",
-                        reader.get_position(),
-                    ));
-                }
-                (Some(SelectionKeyWords::Class), _) => {
-                    return Err(SelectorParseError::new(
-                        "missing class string",
-                        reader.get_position(),
-                    ));
-                }
 
                 (_, SelectionKeyWords::CloseAttribute) => {
                     return Err(SelectorParseError::new(
@@ -880,19 +916,31 @@ fn read_balanced_function_argument<'query>(
 
 fn parse_local_selector_list<'query>(
     source: &'query str,
+    nesting: usize,
+    position: usize,
 ) -> Result<LocalSelectorList<'query>, SelectorParseError> {
-    parse_local_selector_list_parts(source, false)
+    parse_local_selector_list_parts(source, false, nesting, position)
 }
 
-fn parse_forgiving_local_selector_list<'query>(source: &'query str) -> LocalSelectorList<'query> {
-    parse_local_selector_list_parts(source, true)
-        .expect("forgiving selector-list parsing cannot fail")
+/// Parses an `:is()` / `:where()` list, discarding invalid alternatives.
+/// Only fatal errors such as an exhausted nesting budget are returned.
+fn parse_forgiving_local_selector_list<'query>(
+    source: &'query str,
+    nesting: usize,
+    position: usize,
+) -> Result<LocalSelectorList<'query>, SelectorParseError> {
+    parse_local_selector_list_parts(source, true, nesting, position)
 }
 
 fn parse_local_selector_list_parts<'query>(
     source: &'query str,
     forgiving: bool,
+    nesting: usize,
+    position: usize,
 ) -> Result<LocalSelectorList<'query>, SelectorParseError> {
+    if nesting > MAX_SELECTOR_NESTING_DEPTH {
+        return Err(SelectorParseError::nesting_limit(position));
+    }
     let bytes = source.as_bytes();
     let mut parts = Vec::new();
     let mut start = 0;
@@ -924,17 +972,20 @@ fn parse_local_selector_list_parts<'query>(
     parts.push(&source[start..]);
     let mut selectors = Vec::with_capacity(parts.len());
     for part in parts {
-        match parse_local_selector(part) {
+        match parse_local_selector(part, nesting) {
             Ok(selector) => selectors.push(selector),
-            Err(_) if forgiving => {}
+            Err(error) if forgiving && !error.is_fatal() => {}
             Err(error) => return Err(error),
         }
     }
     Ok(LocalSelectorList::Owned(selectors.into_boxed_slice()))
 }
 
-fn parse_local_selector(source: &str) -> Result<ElementPredicate<'_>, SelectorParseError> {
-    let source = source.trim();
+fn parse_local_selector(
+    source: &str,
+    nesting: usize,
+) -> Result<ElementPredicate<'_>, SelectorParseError> {
+    let source = source.trim_matches(is_css_whitespace_char);
     if source.is_empty() {
         return Err(SelectorParseError::new(
             "pseudo-class selector list has an empty alternative",
@@ -943,7 +994,7 @@ fn parse_local_selector(source: &str) -> Result<ElementPredicate<'_>, SelectorPa
     }
 
     let mut reader = Reader::new(source);
-    let selector = ElementPredicate::try_from(&mut reader)?;
+    let selector = ElementPredicate::try_from_nested(&mut reader, nesting)?;
     if !reader.eof() {
         return Err(SelectorParseError::new(
             "combinators are not supported inside local pseudo-classes",
@@ -957,10 +1008,6 @@ fn parse_local_selector(source: &str) -> Result<ElementPredicate<'_>, SelectorPa
         ));
     }
     Ok(selector)
-}
-
-fn is_css_whitespace_char(character: char) -> bool {
-    character.is_ascii() && is_css_whitespace(character as u8)
 }
 
 fn parse_an_plus_b(source: &str) -> Result<AnPlusB, SelectorParseError> {
@@ -1031,15 +1078,15 @@ fn split_nth_filter(source: &str) -> Result<(&str, Option<&str>), SelectorParseE
         } else if byte == b')' || byte == b']' {
             depth = depth.saturating_sub(1);
         } else if depth == 0 && byte.is_ascii_whitespace() {
-            let rest = source[index..].trim_start();
+            let rest = source[index..].trim_start_matches(is_css_whitespace_char);
             let rest_bytes = rest.as_bytes();
             if rest_bytes
                 .get(..2)
                 .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"of"))
                 && rest_bytes.get(2).is_some_and(u8::is_ascii_whitespace)
             {
-                let formula = source[..index].trim();
-                let filter = rest[2..].trim();
+                let formula = source[..index].trim_matches(is_css_whitespace_char);
+                let filter = rest[2..].trim_matches(is_css_whitespace_char);
                 if formula.is_empty() || filter.is_empty() {
                     return Err(SelectorParseError::new(
                         "invalid filtered An+B formula",
@@ -1051,7 +1098,7 @@ fn split_nth_filter(source: &str) -> Result<(&str, Option<&str>), SelectorParseE
         }
         index += 1;
     }
-    Ok((source.trim(), None))
+    Ok((source.trim_matches(is_css_whitespace_char), None))
 }
 
 impl<'a> From<&mut Reader<'a>> for ElementPredicate<'a> {
@@ -1487,5 +1534,92 @@ mod tests {
                 "type selector must start a compound selector"
             );
         }
+    }
+
+    fn nested_is(depth: usize) -> String {
+        format!("{}div{}", ":is(".repeat(depth), ")".repeat(depth))
+    }
+
+    #[test]
+    fn selector_nesting_is_limited_at_the_budget_boundary() {
+        let selector = nested_is(MAX_SELECTOR_NESTING_DEPTH);
+        let mut reader = Reader::new(&selector);
+        ElementPredicate::try_from(&mut reader).unwrap();
+
+        for depth in [MAX_SELECTOR_NESTING_DEPTH + 1, 10_000] {
+            let selector = nested_is(depth);
+            let mut reader = Reader::new(&selector);
+            let error = ElementPredicate::try_from(&mut reader).unwrap_err();
+            assert_eq!(
+                error.message(),
+                "selector nesting exceeds the maximum depth",
+                "depth {depth}"
+            );
+        }
+    }
+
+    #[test]
+    fn selector_nesting_budget_is_shared_by_all_nested_lists() {
+        let inner = nested_is(MAX_SELECTOR_NESTING_DEPTH);
+        for selector in [
+            format!(":not({inner})"),
+            format!(":where({inner})"),
+            format!("li:nth-child(2n of {inner})"),
+            format!(":is(.card, {inner})"),
+        ] {
+            let mut reader = Reader::new(&selector);
+            let error = ElementPredicate::try_from(&mut reader).unwrap_err();
+            assert_eq!(
+                error.message(),
+                "selector nesting exceeds the maximum depth",
+                "{selector}"
+            );
+        }
+    }
+
+    #[test]
+    fn dangling_id_and_class_markers_are_rejected_before_other_tokens() {
+        for (selector, message) in [
+            ("div#:not(.hidden)", "missing id string"),
+            ("div#:first-child", "missing id string"),
+            ("div#[data-x]", "missing id string"),
+            ("div.:is(.card)", "missing class string"),
+            ("div.:first-child", "missing class string"),
+            ("div.[data-x]", "missing class string"),
+        ] {
+            let mut reader = Reader::new(selector);
+            let error = ElementPredicate::try_from(&mut reader).unwrap_err();
+            assert_eq!(error.message(), message, "{selector}");
+        }
+    }
+
+    #[test]
+    fn attribute_values_require_a_comparison_operator() {
+        for selector in ["[data-x foo i]", "[data-x foo]", r#"[data-x "foo"]"#] {
+            let mut reader = Reader::new(selector);
+            let error = ElementPredicate::try_from(&mut reader).unwrap_err();
+            assert_eq!(
+                error.message(),
+                "attribute value requires a comparison operator",
+                "{selector}"
+            );
+        }
+    }
+
+    #[test]
+    fn local_selector_lists_only_trim_css_whitespace() {
+        let mut reader = Reader::new("div:not(\u{00a0}span)");
+        assert!(ElementPredicate::try_from(&mut reader).is_err());
+
+        let mut reader = Reader::new("div:is(\u{00a0}span, \t.card\n)");
+        let element = ElementPredicate::try_from(&mut reader).unwrap();
+        let LocalLogicalPredicate::Any(alternatives) = &element.logical.as_slice()[0] else {
+            panic!("selector did not compile to an any predicate");
+        };
+        assert_eq!(alternatives.as_slice().len(), 1);
+        assert_eq!(alternatives.as_slice()[0].classes.as_slice(), &["card"]);
+
+        let mut reader = Reader::new("li:nth-child(2n\u{00a0}of .card)");
+        assert!(ElementPredicate::try_from(&mut reader).is_err());
     }
 }

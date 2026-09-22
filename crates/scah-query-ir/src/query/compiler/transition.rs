@@ -1,7 +1,7 @@
 use crate::Reader;
 use crate::query::compiler::SelectorParseError;
 use crate::query::selector::{
-    Combinator, ElementPredicate, IElement, Lexer, StructuralMatchContext,
+    Combinator, ElementPredicate, IElement, Lexer, StructuralMatchContext, is_css_whitespace_char,
 };
 
 #[inline]
@@ -491,7 +491,11 @@ impl<'query> Transition<'query> {
         let has_scope = first_structural
             .iter()
             .any(|predicate| matches!(predicate, crate::StructuralPredicate::Scope));
-        if scoped && has_scope {
+        // Only an implicit leading anchor (`:scope > a`) stands for the scope
+        // element itself. `> :scope > a` requires a scope *child*, so it keeps
+        // its transition, matching `QueryBuilder::scope_root`.
+        let is_root_anchor = states[0].guard == Combinator::Descendant;
+        if scoped && has_scope && is_root_anchor {
             if !pure_scope_anchor {
                 return Err(SelectorParseError::new(
                     "compound :scope anchors are not supported",
@@ -505,7 +509,7 @@ impl<'query> Transition<'query> {
                 ));
             }
             states.remove(0);
-        } else if states.len() > 1 && has_scope && !pure_scope_anchor {
+        } else if (scoped || states.len() > 1) && has_scope && !pure_scope_anchor {
             return Err(SelectorParseError::new(
                 "compound :scope anchors are not supported",
                 0,
@@ -575,13 +579,13 @@ fn split_selector_list(source: &str) -> Result<Vec<&str>, SelectorParseError> {
             b'[' | b'(' => depth += 1,
             b']' | b')' => depth = depth.saturating_sub(1),
             b',' if depth == 0 => {
-                parts.push(source[start..index].trim());
+                parts.push(source[start..index].trim_matches(is_css_whitespace_char));
                 start = index + 1;
             }
             _ => {}
         }
     }
-    parts.push(source[start..].trim());
+    parts.push(source[start..].trim_matches(is_css_whitespace_char));
     if parts.iter().any(|part| part.is_empty()) {
         return Err(SelectorParseError::new(
             "selector list has an empty alternative",
@@ -929,6 +933,37 @@ mod tests {
 
         let error = Transition::generate_transitions_from_string(":scope.foo > a").unwrap_err();
         assert_eq!(error.message(), "compound :scope anchors are not supported");
+    }
+
+    #[test]
+    fn explicit_child_scope_is_not_normalized_as_the_parent_anchor() {
+        let paths =
+            Transition::generate_scoped_transition_paths_from_string("> :scope > a").unwrap();
+        assert_eq!(paths[0].len(), 2);
+        assert_eq!(paths[0][0].guard, Combinator::Child);
+        assert!(matches!(
+            paths[0][0].predicate().structural.as_slice(),
+            [crate::StructuralPredicate::Scope]
+        ));
+
+        let error =
+            Transition::generate_scoped_transition_paths_from_string("> :scope.foo").unwrap_err();
+        assert_eq!(error.message(), "compound :scope anchors are not supported");
+    }
+
+    #[test]
+    fn selector_lists_only_trim_css_whitespace() {
+        for selector in ["\u{00a0}div", "div\u{00a0}", "a, \u{2003}div"] {
+            assert!(
+                Transition::generate_transition_paths_from_string(selector).is_err(),
+                "{selector:?}"
+            );
+        }
+
+        let paths = Transition::generate_transition_paths_from_string("\t\ndiv ,\x0C a\r").unwrap();
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0][0].predicate().name, Some("div"));
+        assert_eq!(paths[1][0].predicate().name, Some("a"));
     }
 
     #[test]
