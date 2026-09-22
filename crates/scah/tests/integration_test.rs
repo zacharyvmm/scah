@@ -298,6 +298,92 @@ fn scope_anchor_is_normalized_once_across_builder_forms() {
 }
 
 #[test]
+fn explicit_child_scope_is_not_the_parent_anchor() {
+    let selector = "> :scope > a";
+    let chained = Query::all("main", Save::all())
+        .unwrap()
+        .all(selector, Save::all())
+        .unwrap()
+        .build();
+    let factory = Query::all("main", Save::all())
+        .unwrap()
+        .then(|context| Ok([context.all(selector, Save::all())?]))
+        .unwrap()
+        .build();
+    let static_query = query! {
+        all("main", Save::all()) => {
+            all("> :scope > a", Save::all())
+        }
+    };
+
+    for query in [chained, factory] {
+        let queries = [query];
+        let store = parse("<main><a>unexpected</a></main>", &queries).unwrap();
+        let main = store.get("main").unwrap().next().unwrap();
+        assert_eq!(main.get(&store, selector).into_iter().flatten().count(), 0);
+    }
+    let store = parse(
+        "<main><a>unexpected</a></main>",
+        std::slice::from_ref(&static_query),
+    )
+    .unwrap();
+    let main = store.get("main").unwrap().next().unwrap();
+    assert_eq!(main.get(&store, selector).into_iter().flatten().count(), 0);
+}
+
+#[test]
+fn non_css_whitespace_is_not_trimmed_from_selectors() {
+    for selector in ["\u{00a0}div", "div\u{00a0}", "a, \u{2003}div"] {
+        assert!(
+            Query::all(selector, Save::none()).is_err(),
+            "{selector:?} must be rejected"
+        );
+    }
+
+    // The U+00A0 alternative is discarded, not trimmed into `div`.
+    let selector = ":is(\u{00a0}div, .card)";
+    let queries = [Query::all(selector, Save::name_only()).unwrap().build()];
+    let store = parse("<div></div><p class=\"card\"></p>", &queries).unwrap();
+    let names = store
+        .get(selector)
+        .unwrap()
+        .map(|element| element.name)
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["p"]);
+}
+
+#[test]
+fn selector_nesting_budget_boundary_is_accepted_by_every_builder() {
+    let depth = scah::MAX_SELECTOR_NESTING_DEPTH;
+    let selector = format!("{}div{}", ":is(".repeat(depth), ")".repeat(depth));
+    let html = "<main><div>hit</div></main>";
+
+    let runtime = Query::all(&selector, Save::none()).unwrap().build();
+    let (_tape, lazy) = unsafe {
+        scah::lazy::LazyQuery::all(selector.as_str(), Save::none())
+            .try_to_query()
+            .unwrap()
+    };
+    let static_query = query! { all(":is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(:is(div))))))))))))))))))))))))))))))))", Save::none()) };
+    assert_eq!(static_query.queries[0].source, selector);
+
+    for query in [runtime, lazy] {
+        let queries = [query];
+        let store = parse(html, &queries).unwrap();
+        assert_eq!(store.get(&selector).unwrap().count(), 1);
+    }
+    let store = parse(html, std::slice::from_ref(&static_query)).unwrap();
+    assert_eq!(store.get(&selector).unwrap().count(), 1);
+
+    let too_deep = format!(":is({selector})");
+    let error = Query::all(&too_deep, Save::none()).err().unwrap();
+    assert_eq!(
+        error.message(),
+        "selector nesting exceeds the maximum depth"
+    );
+}
+
+#[test]
 fn test_html_page() {
     let selection_tree = Query::all("main > section#id", Save::all()).unwrap();
 
