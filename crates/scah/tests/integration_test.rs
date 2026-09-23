@@ -340,16 +340,10 @@ fn non_css_whitespace_is_not_trimmed_from_selectors() {
         );
     }
 
-    // The U+00A0 alternative is discarded, not trimmed into `div`.
-    let selector = ":is(\u{00a0}div, .card)";
-    let queries = [Query::all(selector, Save::name_only()).unwrap().build()];
-    let store = parse("<div></div><p class=\"card\"></p>", &queries).unwrap();
-    let names = store
-        .get(selector)
-        .unwrap()
-        .map(|element| element.name)
-        .collect::<Vec<_>>();
-    assert_eq!(names, ["p"]);
+    // U+00A0 is an identifier code point, so the alternative is neither
+    // trimmed into `div` nor discarded. scah does not support non-ASCII
+    // identifiers, so the whole selector is rejected.
+    assert!(Query::all(":is(\u{00a0}div, .card)", Save::name_only()).is_err());
 }
 
 #[test]
@@ -778,6 +772,40 @@ fn replacing_transition_predicate_collects_nested_structural_requirements() {
 }
 
 #[test]
+fn filtered_ordinals_with_structural_filters_fail_closed() {
+    fn li(structural: Vec<StructuralPredicate<'static>>) -> ElementPredicate<'static> {
+        ElementPredicate {
+            name: Some("li"),
+            id: None,
+            classes: Default::default(),
+            attributes: Default::default(),
+            logical: Default::default(),
+            structural: StructuralPredicates::from(structural),
+        }
+    }
+
+    fn count(position: i32) -> usize {
+        // Equivalent to `li:nth-child(<position> of li:first-child)`, which
+        // the selector parser rejects.
+        let filter = LocalSelectorList::Owned(
+            vec![li(vec![StructuralPredicate::FirstChild])].into_boxed_slice(),
+        );
+        let mut query = Query::all("li", Save::all()).unwrap().build();
+        query.states[0].set_predicate(li(vec![StructuralPredicate::NthChildOf(
+            AnPlusB { a: 0, b: position },
+            filter,
+        )]));
+        let queries = [query];
+        let store = parse("<ul><li></li><li></li><li></li></ul>", &queries).unwrap();
+        store.get("li").map_or(0, |elements| elements.count())
+    }
+
+    // Counting every sibling would wrongly match the second <li>.
+    assert_eq!(count(2), 0);
+    assert_eq!(count(1), 0);
+}
+
+#[test]
 fn escaped_quote_in_attribute_matches() {
     let html = r#"<a title="hello \"world\"">x</a>"#;
     let query = Query::all(r#"a[title="hello \"world\""]"#, Save::all())
@@ -1172,17 +1200,12 @@ fn unsupported_structural_compositions_fail_at_query_build_time() {
         "li:not(:first-child)",
         "li:nth-child(2 of :first-child)",
         ":scope.foo > a",
+        // Forgiving lists must not silently discard a valid alternative.
+        "li:is(:first-child)",
+        "li:where(.a, :nth-child(2))",
     ] {
         assert!(Query::all(selector, Save::none()).is_err(), "{selector}");
     }
-
-    let selector = "li:is(:first-child)";
-    let queries = [Query::all(selector, Save::all()).unwrap().build()];
-    let store = parse("<ul><li></li></ul>", &queries).unwrap();
-    assert_eq!(
-        store.get(selector).map_or(0, |elements| elements.count()),
-        0
-    );
 }
 
 #[test]
@@ -1207,4 +1230,45 @@ fn form_feed_descendant_combinator_matches() {
     let store = parse(html, &queries).unwrap();
 
     assert_eq!(store.get(selector).unwrap().count(), 1);
+}
+
+#[test]
+fn logical_pseudos_reject_unsupported_alternatives_instead_of_narrowing_results() {
+    // A browser matches these selectors, so silently discarding an
+    // alternative would return fewer elements than expected.
+    for selector in [
+        "a:is(div > a)",
+        "a:not(:is(div > a))",
+        "div:is(div > a, .x)",
+        "a:is(:first-child)",
+        "a:where(.q, :has(b))",
+        "div:is(.caf\u{e9})",
+    ] {
+        assert!(
+            Query::all(selector, Save::all()).is_err(),
+            "{selector} should be rejected"
+        );
+    }
+
+    let html = "<div class=x>X</div><div class=y>Y</div>";
+    let queries = [Query::all("div:is(.x, .bad])", Save::all())
+        .unwrap()
+        .build()];
+    let store = parse(html, &queries).unwrap();
+    let texts: Vec<_> = store
+        .get("div:is(.x, .bad])")
+        .unwrap()
+        .map(|element| element.text(&store))
+        .collect();
+    assert_eq!(texts, vec![Some("X")]);
+}
+
+#[test]
+fn stray_quotes_after_selectors_are_rejected() {
+    for selector in ["b[a]\"", "div:not(.a)\"", "div[class]''"] {
+        assert!(
+            Query::all(selector, Save::all()).is_err(),
+            "{selector} should be rejected"
+        );
+    }
 }

@@ -287,8 +287,20 @@ where
                         child_counts: features.needs_child_ordinals.then(|| vec![0]),
                         type_counts: features.needs_type_ordinals.then(|| vec![SmallVec::new()]),
                         tracked_type_names,
+                        // Filter lists are evaluated without a structural
+                        // context. The selector parser rejects structural
+                        // pseudo-classes inside `of S`, but hand-built
+                        // predicates can still contain them. Leaving such a
+                        // filter uncounted makes its ordinal fail closed
+                        // instead of counting siblings that do not match.
                         filters: structural_filters
                             .into_iter()
+                            .filter(|filter| {
+                                !filter
+                                    .as_slice()
+                                    .iter()
+                                    .any(|predicate| predicate.requires_structural())
+                            })
                             .map(|filter| (filter, vec![0]))
                             .collect(),
                         attribute_interest: structural_attribute_interest.unwrap_or_default(),
