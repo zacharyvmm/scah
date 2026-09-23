@@ -128,6 +128,15 @@ Control what data is captured per selector:
 
 #### Supported CSS selector syntax
 
+This table describes the `main` branch. Universal selectors, attribute value
+flags, selector lists, logical pseudos, ordinals, and root/scope selectors are
+not in the 0.0.21 release on crates.io. Until the next release, use them
+through a git dependency:
+
+```toml
+scah = { git = "https://github.com/zacharyvmm/scah" }
+```
+
 | Syntax | Example | Status |
 |--------|---------|--------|
 | Tag name | `a`, `div` | Working |
@@ -154,9 +163,12 @@ Control what data is captured per selector:
 Filtered `of S` arguments are intentionally limited to local compound selectors
 that can be evaluated at an opening tag. Future-dependent selectors such as
 `:has()`, `:empty`, `:last-child`, and `:nth-last-child()` are rejected.
-Unsupported alternatives inside `:is()` and `:where()` are discarded using
-forgiving selector-list semantics. `:not()` and filtered `of S` lists remain
-strict and reject unsupported structural pseudo-classes. In nested query
+Inside `:is()` and `:where()`, alternatives that are invalid CSS are discarded
+using forgiving selector-list semantics. Valid alternatives that scah cannot
+evaluate reject the whole selector, so results are never silently narrowed.
+These include combinators, structural or unrecognized pseudo-classes, and
+escaped or non-ASCII identifiers. `:not()` and filtered `of S` lists are strict
+and reject any invalid or unsupported alternative. In nested query
 sections, `:scope` is supported as a standalone leading anchor for a following
 relative selector, as in `:scope > a`. Terminal `:scope` and compound anchors
 such as `:scope.card` are not supported. Selector lists nested inside
