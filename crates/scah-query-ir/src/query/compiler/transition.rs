@@ -425,6 +425,10 @@ impl<'query> Transition<'query> {
     }
 
     /// Replace the predicate and atomically refresh its compiled metadata.
+    ///
+    /// The predicate is not validated. Structural pseudo-classes inside a
+    /// `:nth-child(An+B of S)` filter list cannot be evaluated while
+    /// streaming, so such a filtered ordinal never matches.
     pub fn set_predicate(&mut self, predicate: ElementPredicate<'query>) {
         let metadata = PredicateMetadata::compile(&predicate);
         self.predicate = predicate;

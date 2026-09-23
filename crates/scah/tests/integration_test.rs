@@ -340,16 +340,10 @@ fn non_css_whitespace_is_not_trimmed_from_selectors() {
         );
     }
 
-    // The U+00A0 alternative is discarded, not trimmed into `div`.
-    let selector = ":is(\u{00a0}div, .card)";
-    let queries = [Query::all(selector, Save::name_only()).unwrap().build()];
-    let store = parse("<div></div><p class=\"card\"></p>", &queries).unwrap();
-    let names = store
-        .get(selector)
-        .unwrap()
-        .map(|element| element.name)
-        .collect::<Vec<_>>();
-    assert_eq!(names, ["p"]);
+    // U+00A0 is an identifier code point, so the alternative is neither
+    // trimmed into `div` nor discarded. scah does not support non-ASCII
+    // identifiers, so the whole selector is rejected.
+    assert!(Query::all(":is(\u{00a0}div, .card)", Save::name_only()).is_err());
 }
 
 #[test]
@@ -778,6 +772,40 @@ fn replacing_transition_predicate_collects_nested_structural_requirements() {
 }
 
 #[test]
+fn filtered_ordinals_with_structural_filters_fail_closed() {
+    fn li(structural: Vec<StructuralPredicate<'static>>) -> ElementPredicate<'static> {
+        ElementPredicate {
+            name: Some("li"),
+            id: None,
+            classes: Default::default(),
+            attributes: Default::default(),
+            logical: Default::default(),
+            structural: StructuralPredicates::from(structural),
+        }
+    }
+
+    fn count(position: i32) -> usize {
+        // Equivalent to `li:nth-child(<position> of li:first-child)`, which
+        // the selector parser rejects.
+        let filter = LocalSelectorList::Owned(
+            vec![li(vec![StructuralPredicate::FirstChild])].into_boxed_slice(),
+        );
+        let mut query = Query::all("li", Save::all()).unwrap().build();
+        query.states[0].set_predicate(li(vec![StructuralPredicate::NthChildOf(
+            AnPlusB { a: 0, b: position },
+            filter,
+        )]));
+        let queries = [query];
+        let store = parse("<ul><li></li><li></li><li></li></ul>", &queries).unwrap();
+        store.get("li").map_or(0, |elements| elements.count())
+    }
+
+    // Counting every sibling would wrongly match the second <li>.
+    assert_eq!(count(2), 0);
+    assert_eq!(count(1), 0);
+}
+
+#[test]
 fn escaped_quote_in_attribute_matches() {
     let html = r#"<a title="hello \"world\"">x</a>"#;
     let query = Query::all(r#"a[title="hello \"world\""]"#, Save::all())
@@ -1172,17 +1200,12 @@ fn unsupported_structural_compositions_fail_at_query_build_time() {
         "li:not(:first-child)",
         "li:nth-child(2 of :first-child)",
         ":scope.foo > a",
+        // Forgiving lists must not silently discard a valid alternative.
+        "li:is(:first-child)",
+        "li:where(.a, :nth-child(2))",
     ] {
         assert!(Query::all(selector, Save::none()).is_err(), "{selector}");
     }
-
-    let selector = "li:is(:first-child)";
-    let queries = [Query::all(selector, Save::all()).unwrap().build()];
-    let store = parse("<ul><li></li></ul>", &queries).unwrap();
-    assert_eq!(
-        store.get(selector).map_or(0, |elements| elements.count()),
-        0
-    );
 }
 
 #[test]
