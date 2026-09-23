@@ -21,7 +21,7 @@ impl AttributeSelectionKind {
         match self {
             Self::Exact => query == source,
             Self::Presence => true,
-            Self::WhitespaceSeparated => source.split_whitespace().any(|word| word == query),
+            Self::WhitespaceSeparated => css_words(source).any(|word| word == query),
             Self::HyphenSeparated => {
                 source == query
                     || source
@@ -38,9 +38,7 @@ impl AttributeSelectionKind {
         match self {
             Self::Exact => ascii_eq(query, source),
             Self::Presence => true,
-            Self::WhitespaceSeparated => {
-                source.split_whitespace().any(|word| ascii_eq(query, word))
-            }
+            Self::WhitespaceSeparated => css_words(source).any(|word| ascii_eq(query, word)),
             Self::HyphenSeparated => {
                 ascii_eq(query, source)
                     || source
@@ -69,6 +67,15 @@ impl AttributeSelectionKind {
             }
         }
     }
+}
+
+/// Splits a whitespace-separated attribute value into its non-empty words.
+///
+/// CSS and HTML only treat space, tab, line feed, form feed, and carriage
+/// return as separators, so Unicode spaces such as U+00A0 stay inside a word.
+#[inline]
+pub(crate) fn css_words(source: &str) -> impl Iterator<Item = &str> {
+    source.split_ascii_whitespace()
 }
 
 #[inline]
@@ -105,6 +112,49 @@ mod tests {
     fn test_whitespace() {
         let kind = AttributeSelectionKind::WhitespaceSeparated;
         assert!(kind.find("world", "hello world in test"));
+    }
+
+    #[test]
+    fn whitespace_separated_splits_on_every_css_whitespace_character() {
+        let kind = AttributeSelectionKind::WhitespaceSeparated;
+        for source in [
+            "bar foo",
+            "bar\tfoo",
+            "bar\nfoo",
+            "bar\u{000C}foo",
+            "bar\rfoo",
+            " \t\r\n\u{000C}foo\u{000C}\n\r\t ",
+        ] {
+            assert!(kind.find("foo", source), "{source:?}");
+            assert!(kind.find_ascii_insensitive("FOO", source), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn whitespace_separated_keeps_unicode_separators_inside_words() {
+        let kind = AttributeSelectionKind::WhitespaceSeparated;
+        for source in [
+            "bar\u{00A0}foo",
+            "bar\u{000B}foo",
+            "bar\u{0085}foo",
+            "bar\u{1680}foo",
+            "bar\u{2003}foo",
+            "bar\u{2028}foo",
+            "bar\u{3000}foo",
+        ] {
+            assert!(!kind.find("foo", source), "{source:?}");
+            assert!(!kind.find_ascii_insensitive("FOO", source), "{source:?}");
+        }
+        assert!(kind.find("bar\u{00A0}foo", "baz bar\u{00A0}foo"));
+    }
+
+    #[test]
+    fn whitespace_separated_ignores_empty_words() {
+        let kind = AttributeSelectionKind::WhitespaceSeparated;
+        for source in ["", "   ", "foo  bar", " foo bar "] {
+            assert!(!kind.find("", source), "{source:?}");
+            assert!(!kind.find_ascii_insensitive("", source), "{source:?}");
+        }
     }
 
     #[test]

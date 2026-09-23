@@ -1,5 +1,5 @@
 use super::builder::{Attribute, AttributeSelection, ElementPredicate, IElement};
-use super::string_search::AttributeSelectionKind;
+use super::string_search::{AttributeSelectionKind, css_words};
 
 impl<'a> AttributeSelection<'a> {
     pub fn matches_attribute(&self, other: &Attribute<'_>) -> bool {
@@ -95,13 +95,11 @@ impl<'a> ElementPredicate<'a> {
         let selector_classes = self.classes.as_slice();
         match selector_classes.len() {
             0 => true,
-            1 => element_classes
-                .split_whitespace()
-                .any(|word| word == selector_classes[0]),
+            1 => css_words(element_classes).any(|word| word == selector_classes[0]),
             len if len <= u64::BITS as usize => {
                 let mut matched = 0_u64;
 
-                for word in element_classes.split_whitespace() {
+                for word in css_words(element_classes) {
                     for (index, selector_class) in selector_classes.iter().enumerate() {
                         if word == *selector_class {
                             matched |= 1 << index;
@@ -114,7 +112,7 @@ impl<'a> ElementPredicate<'a> {
             _ => {
                 let mut matched = vec![false; selector_classes.len()];
 
-                for word in element_classes.split_whitespace() {
+                for word in css_words(element_classes) {
                     for (index, selector_class) in selector_classes.iter().enumerate() {
                         if !matched[index] && word == *selector_class {
                             matched[index] = true;
@@ -432,6 +430,37 @@ mod tests {
         assert!(selector_one.matches_element(&element_two));
         assert!(selector_two.matches_element(&element_one));
         assert!(selector_two.matches_element(&element_two));
+    }
+
+    #[test]
+    fn class_matching_splits_only_on_css_whitespace() {
+        let single = ElementPredicate {
+            name: None,
+            id: None,
+            classes: ClassSelections::from_static(&["foo"]),
+            attributes: AttributeSelections::from_static(&[]),
+            logical: crate::LogicalPredicates::from_static(&[]),
+            structural: crate::StructuralPredicates::from_static(&[]),
+        };
+        let multiple = ElementPredicate {
+            classes: ClassSelections::from_static(&["bar", "foo"]),
+            ..single.clone()
+        };
+        let element = |class| FakeElement {
+            name: "div",
+            id: None,
+            class: Some(class),
+            attributes: &[],
+        };
+
+        for class in ["bar foo", "bar\tfoo", "bar\u{000C}foo", "\r\nbar\n\rfoo\t"] {
+            assert!(single.matches_element(&element(class)), "{class:?}");
+            assert!(multiple.matches_element(&element(class)), "{class:?}");
+        }
+        for class in ["bar\u{00A0}foo", "bar\u{000B}foo", "bar\u{2003}foo"] {
+            assert!(!single.matches_element(&element(class)), "{class:?}");
+            assert!(!multiple.matches_element(&element(class)), "{class:?}");
+        }
     }
 
     #[test]
