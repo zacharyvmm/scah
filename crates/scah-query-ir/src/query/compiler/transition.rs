@@ -525,11 +525,6 @@ impl<'query> Transition<'query> {
         current_depth: u16,
         last_depth: u16,
     ) -> bool {
-        assert!(
-            current_depth >= last_depth,
-            "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
-        );
-
         self.next_with_context(element, current_depth, last_depth, None)
     }
 

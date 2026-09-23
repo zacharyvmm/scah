@@ -219,22 +219,37 @@ pub trait QuerySpec<'query> {
         !self.is_descendant(next)
     }
 
+    #[inline]
     fn is_save_point(&self, position: &Position) -> bool {
+        let section_end = self.get_selection(position.selection).range.end;
         debug_assert!(
             self.get_selection(position.selection)
                 .range
                 .contains(&position.state)
         );
-        self.selection_ranges(position.selection)
-            .iter()
-            .any(|range| range.end.index() - 1 == position.state.index())
+        debug_assert_eq!(
+            self.selection_ranges(position.selection)
+                .last()
+                .map(|range| range.end),
+            Some(section_end),
+            "the last selector alternative must end its query section"
+        );
+        // The last alternative always ends the section, so only selector lists
+        // need to look up the ends of their earlier alternatives.
+        if position.state.index() + 1 == section_end.index() {
+            return true;
+        }
+        let ranges = self.selection_ranges(position.selection);
+        ranges.len() > 1
+            && ranges[..ranges.len() - 1]
+                .iter()
+                .any(|range| range.end.index() - 1 == position.state.index())
     }
 
     fn is_last_save_point(&self, position: &Position) -> bool {
         debug_assert!(position.selection.index() < self.queries().len());
         let is_last_query = self.queries().len() - 1 == position.selection.index();
-        let is_last_state = self.is_save_point(position);
-        is_last_query && is_last_state
+        is_last_query && self.is_save_point(position)
     }
 
     fn children(&'query self, position: &Position) -> Option<impl Iterator<Item = Position>>
@@ -260,15 +275,15 @@ impl Position {
         query: &Q,
     ) -> Option<TransitionId> {
         debug_assert!(self.selection.index() < query.queries().len());
-        let selection_range = query
-            .selection_ranges(self.selection)
-            .iter()
-            .find(|range| range.contains(&self.state))?;
-        if self.state.index() + 1 < selection_range.end.index() {
-            Some(TransitionId(self.state.index() + 1))
-        } else {
-            None
-        }
+        debug_assert!(
+            query
+                .selection_ranges(self.selection)
+                .iter()
+                .any(|range| range.contains(&self.state))
+        );
+        // Alternatives are disjoint and non-empty, so a state ends its own
+        // alternative exactly when it is a save point.
+        (!query.is_save_point(self)).then(|| TransitionId(self.state.index() + 1))
     }
 
     pub fn next_child<'query, Q: QuerySpec<'query> + ?Sized>(&self, query: &Q) -> Option<Self> {
@@ -722,6 +737,56 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn save_points_and_next_transitions_follow_each_selector_alternative() {
+        let paths =
+            Transition::generate_transition_paths_from_string("article > p, div, section > ul li")
+                .unwrap();
+        let mut states = Vec::new();
+        let mut alternatives = Vec::new();
+        for path in paths {
+            let start = TransitionId(states.len());
+            states.extend(path);
+            alternatives.push(start..TransitionId(states.len()));
+        }
+        let state_end = TransitionId(states.len());
+        let query = Query {
+            states: states.into_boxed_slice(),
+            queries: vec![QuerySection::new(
+                "article > p, div, section > ul li",
+                Save::none(),
+                SelectionKind::All,
+                TransitionId(0)..state_end,
+                None,
+            )]
+            .into_boxed_slice(),
+            exit_at_section_end: None,
+            alternatives: vec![alternatives.into_boxed_slice()].into_boxed_slice(),
+        };
+
+        let expected = [
+            (false, Some(TransitionId(1))),
+            (true, None),
+            (true, None),
+            (false, Some(TransitionId(4))),
+            (false, Some(TransitionId(5))),
+            (true, None),
+        ];
+        for (state, (save_point, next)) in expected.into_iter().enumerate() {
+            let position = Position {
+                selection: QuerySectionId(0),
+                state: TransitionId(state),
+            };
+            assert_eq!(query.is_save_point(&position), save_point, "state {state}");
+            assert_eq!(
+                query.is_last_save_point(&position),
+                save_point,
+                "state {state}"
+            );
+            assert_eq!(position.next_transition(&query), next, "state {state}");
+        }
     }
 
     #[test]
