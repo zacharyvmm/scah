@@ -488,3 +488,44 @@ fn form_feed_descendant_combinator_matches() {
 
     assert_eq!(store.get(selector).unwrap().count(), 1);
 }
+
+#[test]
+fn logical_pseudos_reject_unsupported_alternatives_instead_of_narrowing_results() {
+    // A browser matches these selectors, so silently discarding an
+    // alternative would return fewer elements than expected.
+    for selector in [
+        "a:is(div > a)",
+        "a:not(:is(div > a))",
+        "div:is(div > a, .x)",
+        "a:is(:first-child)",
+        "a:where(.q, :has(b))",
+        "div:is(.caf\u{e9})",
+    ] {
+        assert!(
+            Query::all(selector, Save::all()).is_err(),
+            "{selector} should be rejected"
+        );
+    }
+
+    let html = "<div class=x>X</div><div class=y>Y</div>";
+    let queries = [Query::all("div:is(.x, .bad])", Save::all())
+        .unwrap()
+        .build()];
+    let store = parse(html, &queries).unwrap();
+    let texts: Vec<_> = store
+        .get("div:is(.x, .bad])")
+        .unwrap()
+        .map(|element| element.text(&store))
+        .collect();
+    assert_eq!(texts, vec![Some("X")]);
+}
+
+#[test]
+fn stray_quotes_after_selectors_are_rejected() {
+    for selector in ["b[a]\"", "div:not(.a)\"", "div[class]''"] {
+        assert!(
+            Query::all(selector, Save::all()).is_err(),
+            "{selector} should be rejected"
+        );
+    }
+}
