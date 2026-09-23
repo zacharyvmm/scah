@@ -162,13 +162,17 @@ mod tests {
                     name: "href",
                     value: None,
                     kind: AttributeSelectionKind::Presence,
+                    case_sensitivity: crate::AttributeCaseSensitivity::Default,
                 },
                 AttributeSelection {
                     name: "HREF",
                     value: None,
                     kind: AttributeSelectionKind::Presence,
+                    case_sensitivity: crate::AttributeCaseSensitivity::Default,
                 },
             ]),
+            logical: Default::default(),
+            structural: Default::default(),
         });
 
         assert!(interest.includes_id());
@@ -189,7 +193,10 @@ mod tests {
                 name: "href",
                 value: None,
                 kind: AttributeSelectionKind::Presence,
+                case_sensitivity: crate::AttributeCaseSensitivity::Default,
             }]),
+            logical: Default::default(),
+            structural: Default::default(),
         });
         interest.require_all();
 
@@ -226,9 +233,12 @@ mod tests {
                         name,
                         value: None,
                         kind: AttributeSelectionKind::Presence,
+                        case_sensitivity: crate::AttributeCaseSensitivity::Default,
                     })
                     .collect::<Vec<_>>(),
             ),
+            logical: Default::default(),
+            structural: Default::default(),
         };
         let metadata = PredicateMetadata::compile(&predicate);
         interest.add_metadata(&metadata);
@@ -249,7 +259,10 @@ mod tests {
                 name: "href",
                 value: None,
                 kind: AttributeSelectionKind::Presence,
+                case_sensitivity: crate::AttributeCaseSensitivity::Default,
             }]),
+            logical: Default::default(),
+            structural: Default::default(),
         });
         let mut right = AttributeInterest::default();
         right.add_predicate(&ElementPredicate {
@@ -260,7 +273,10 @@ mod tests {
                 name: "HREF",
                 value: None,
                 kind: AttributeSelectionKind::Presence,
+                case_sensitivity: crate::AttributeCaseSensitivity::Default,
             }]),
+            logical: Default::default(),
+            structural: Default::default(),
         });
 
         left.merge(&right);

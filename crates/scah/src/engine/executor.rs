@@ -222,6 +222,7 @@ where
         }
     }
 
+    #[inline(always)]
     pub fn save_element(
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
         tree: &Q,

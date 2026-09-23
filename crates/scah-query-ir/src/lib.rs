@@ -7,7 +7,9 @@ pub use query::compiler::{
     TextRequirements, Transition, TransitionId, ascii_case_insensitive_hash,
 };
 pub use query::selector::{
-    Attribute, AttributeSelection, AttributeSelectionKind, AttributeSelections, ClassSelections,
-    Combinator, ElementPredicate, IElement,
+    AnPlusB, Attribute, AttributeCaseSensitivity, AttributeSelection, AttributeSelectionKind,
+    AttributeSelections, ClassSelections, Combinator, ElementPredicate, IElement,
+    LocalLogicalPredicate, LocalSelectorList, LogicalPredicates, MAX_SELECTOR_NESTING_DEPTH,
+    StructuralMatchContext, StructuralPredicate, StructuralPredicates,
 };
 pub use scah_reader::Reader;
