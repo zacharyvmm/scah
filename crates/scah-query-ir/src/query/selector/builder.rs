@@ -41,10 +41,17 @@ pub struct AttributeSelection<'query> {
     pub case_sensitivity: AttributeCaseSensitivity,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum LocalSelectorList<'query> {
     Static(&'query [ElementPredicate<'query>]),
     Owned(Box<[ElementPredicate<'query>]>),
+}
+
+/// Compares contents so `query!` output equals the runtime-built query.
+impl<'query> PartialEq for LocalSelectorList<'query> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
 }
 
 impl<'query> LocalSelectorList<'query> {
@@ -220,7 +227,7 @@ impl<'query> AttributeSelection<'query> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum AttributeSelections<'query> {
     Static(&'query [AttributeSelection<'query>]),
     Owned(Box<[AttributeSelection<'query>]>),
@@ -242,6 +249,13 @@ impl<'query> AttributeSelections<'query> {
 impl<'query> Default for AttributeSelections<'query> {
     fn default() -> Self {
         Self::Static(&[])
+    }
+}
+
+/// Compares contents so `query!` output equals the runtime-built query.
+impl<'query> PartialEq for AttributeSelections<'query> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
     }
 }
 
@@ -681,8 +695,9 @@ impl<'a> ElementPredicate<'a> {
             match (previous, &word) {
                 (Option::None, SelectionKeyWords::String(name)) => {
                     if !is_valid_selector_name(name) {
-                        return Err(SelectorParseError::new(
+                        return Err(invalid_name_error(
                             "illegal selector token",
+                            name,
                             reader.get_position().saturating_sub(name.len()),
                         ));
                     }
@@ -703,8 +718,9 @@ impl<'a> ElementPredicate<'a> {
                 }
                 (Some(SelectionKeyWords::ID), SelectionKeyWords::String(id_name)) => {
                     if !is_valid_selector_name(id_name) {
-                        return Err(SelectorParseError::new(
+                        return Err(invalid_name_error(
                             "missing id string",
+                            id_name,
                             reader.get_position().saturating_sub(id_name.len()),
                         ));
                     }
@@ -718,8 +734,9 @@ impl<'a> ElementPredicate<'a> {
                 }
                 (Some(SelectionKeyWords::Class), SelectionKeyWords::String(class_name)) => {
                     if !is_valid_selector_name(class_name) {
-                        return Err(SelectorParseError::new(
+                        return Err(invalid_name_error(
                             "missing class string",
+                            class_name,
                             reader.get_position().saturating_sub(class_name.len()),
                         ));
                     }
@@ -797,7 +814,7 @@ impl<'a> ElementPredicate<'a> {
                                 reader.get_position(),
                             )?)
                         } else {
-                            return Err(SelectorParseError::new(
+                            return Err(SelectorParseError::unsupported(
                                 "unsupported pseudo-class",
                                 reader.get_position().saturating_sub(name.len() + 2),
                             ));
@@ -821,7 +838,7 @@ impl<'a> ElementPredicate<'a> {
                     } else if name.eq_ignore_ascii_case("scope") {
                         StructuralPredicate::Scope
                     } else {
-                        return Err(SelectorParseError::new(
+                        return Err(SelectorParseError::unsupported(
                             "unsupported pseudo-class",
                             reader.get_position().saturating_sub(name.len() + 1),
                         ));
@@ -835,14 +852,15 @@ impl<'a> ElementPredicate<'a> {
                 }
                 (_, SelectionKeyWords::OpenAttribute) => element.try_parse_attribute(reader)?,
 
-                (_, SelectionKeyWords::CloseAttribute) => {
+                (_, SelectionKeyWords::CloseAttribute | SelectionKeyWords::Quote) => {
                     return Err(SelectorParseError::new(
                         "illegal selector token",
                         reader.get_position().saturating_sub(1),
                     ));
                 }
 
-                (_, _) => (),
+                // `#` and `.` are validated together with the following name.
+                (_, SelectionKeyWords::ID | SelectionKeyWords::Class) => (),
             }
 
             previous = Some(word);
@@ -922,8 +940,10 @@ fn parse_local_selector_list<'query>(
     parse_local_selector_list_parts(source, false, nesting, position)
 }
 
-/// Parses an `:is()` / `:where()` list, discarding invalid alternatives.
-/// Only fatal errors such as an exhausted nesting budget are returned.
+/// Parses an `:is()` / `:where()` list, discarding alternatives that are
+/// invalid CSS. Valid alternatives that scah cannot evaluate (combinators,
+/// structural or unknown pseudo-classes, escaped identifiers) and an exhausted
+/// nesting budget reject the whole selector rather than silently narrowing it.
 fn parse_forgiving_local_selector_list<'query>(
     source: &'query str,
     nesting: usize,
@@ -996,13 +1016,13 @@ fn parse_local_selector(
     let mut reader = Reader::new(source);
     let selector = ElementPredicate::try_from_nested(&mut reader, nesting)?;
     if !reader.eof() {
-        return Err(SelectorParseError::new(
+        return Err(SelectorParseError::unsupported(
             "combinators are not supported inside local pseudo-classes",
             reader.get_position(),
         ));
     }
     if selector.requires_structural() {
-        return Err(SelectorParseError::new(
+        return Err(SelectorParseError::unsupported(
             "structural pseudo-classes are not supported inside local selector lists",
             0,
         ));
@@ -1083,7 +1103,11 @@ fn split_nth_filter(source: &str) -> Result<(&str, Option<&str>), SelectorParseE
             if rest_bytes
                 .get(..2)
                 .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"of"))
-                && rest_bytes.get(2).is_some_and(u8::is_ascii_whitespace)
+                && rest_bytes.get(2).is_some_and(|&next| {
+                    // `of` ends at whitespace or at a token that cannot
+                    // continue the identifier, as in `2 of.card`.
+                    next.is_ascii_whitespace() || matches!(next, b'.' | b'#' | b'[' | b':' | b'*')
+                })
             {
                 let formula = source[..index].trim_matches(is_css_whitespace_char);
                 let filter = rest[2..].trim_matches(is_css_whitespace_char);
@@ -1104,6 +1128,16 @@ fn split_nth_filter(source: &str) -> Result<(&str, Option<&str>), SelectorParseE
 impl<'a> From<&mut Reader<'a>> for ElementPredicate<'a> {
     fn from(reader: &mut Reader<'a>) -> Self {
         Self::try_from(reader).unwrap()
+    }
+}
+
+/// Escaped and non-ASCII identifiers are valid CSS that scah does not decode
+/// yet, so they are unsupported rather than invalid.
+fn invalid_name_error(message: &'static str, name: &str, position: usize) -> SelectorParseError {
+    if name.bytes().any(|byte| byte == b'\\' || !byte.is_ascii()) {
+        SelectorParseError::unsupported(message, position)
+    } else {
+        SelectorParseError::new(message, position)
     }
 }
 
@@ -1449,34 +1483,174 @@ mod tests {
         }
     }
 
+    fn any_alternatives<'a>(element: &'a ElementPredicate<'a>) -> &'a [ElementPredicate<'a>] {
+        let LocalLogicalPredicate::Any(alternatives) = &element.logical.as_slice()[0] else {
+            panic!("selector did not compile to an any predicate");
+        };
+        alternatives.as_slice()
+    }
+
     #[test]
-    fn is_and_where_discard_unsupported_alternatives() {
-        for selector in [
-            "div:is(.card, :has(a), :first-child)",
-            "div:where(.card, :has(a), :nth-child(2))",
+    fn is_and_where_reject_valid_but_unsupported_alternatives() {
+        // Discarding these would silently narrow the result set compared with
+        // a browser, so the whole selector must be rejected instead.
+        for (selector, message) in [
+            ("div:is(.card, :has(a))", "unsupported pseudo-class"),
+            ("div:where(.card, :hover)", "unsupported pseudo-class"),
+            (
+                "a:is(div > a)",
+                "combinators are not supported inside local pseudo-classes",
+            ),
+            (
+                "div:is(.a .b, .c)",
+                "combinators are not supported inside local pseudo-classes",
+            ),
+            (
+                "a:is(:first-child)",
+                "structural pseudo-classes are not supported inside local selector lists",
+            ),
+            (
+                "div:where(.card, :nth-child(2))",
+                "structural pseudo-classes are not supported inside local selector lists",
+            ),
+            (
+                "div:where(:root)",
+                "structural pseudo-classes are not supported inside local selector lists",
+            ),
+            (
+                "a:not(:is(div > a))",
+                "combinators are not supported inside local pseudo-classes",
+            ),
+            (
+                "a:is(:is(div > a), .x)",
+                "combinators are not supported inside local pseudo-classes",
+            ),
+            (
+                "a:is(:not(:first-child), .x)",
+                "structural pseudo-classes are not supported inside local selector lists",
+            ),
+            ("div:is(.caf\u{e9}, .x)", "missing class string"),
+            (r"div:is(.a\:b, .x)", "missing class string"),
+            ("div:is(#caf\u{e9})", "missing id string"),
+            ("div:is(\u{00a0}span, .x)", "illegal selector token"),
         ] {
             let mut reader = Reader::new(selector);
-            let element = ElementPredicate::try_from(&mut reader).unwrap();
-            let LocalLogicalPredicate::Any(alternatives) = &element.logical.as_slice()[0] else {
-                panic!("{selector} did not compile to an any predicate");
+            let error = ElementPredicate::try_from(&mut reader)
+                .expect_err(&format!("{selector} should be rejected"));
+            assert_eq!(error.message(), message, "{selector}");
+        }
+    }
+
+    #[test]
+    fn is_and_where_discard_invalid_alternatives() {
+        for selector in [
+            "div:is(.card, .bad])",
+            "div:where(.card, ::before)",
+            "div:is(.card, :nth-of-type(2 of .x))",
+            "div:is(.card, #)",
+            "div:is(.card, [)",
+            "div:is(.card, 1:)",
+        ] {
+            let mut reader = Reader::new(selector);
+            let element = ElementPredicate::try_from(&mut reader)
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
+            let alternatives = any_alternatives(&element);
+            assert_eq!(alternatives.len(), 1, "{selector}");
+            assert_eq!(alternatives[0].classes.as_slice(), &["card"], "{selector}");
+        }
+
+        let mut reader = Reader::new("div:is(::before, .bad])");
+        let element = ElementPredicate::try_from(&mut reader).unwrap();
+        assert!(any_alternatives(&element).is_empty());
+    }
+
+    #[test]
+    fn stray_quotes_after_attributes_and_functions_are_rejected() {
+        for selector in [
+            "div[a]\"",
+            "[a=b]\"",
+            "div:not(.a)\"",
+            "div[a]\"\"",
+            "div[a]'",
+            "li:nth-child(2)\"",
+        ] {
+            let mut reader = Reader::new(selector);
+            let error = ElementPredicate::try_from(&mut reader)
+                .expect_err(&format!("{selector} should be rejected"));
+            assert_eq!(error.message(), "illegal selector token", "{selector}");
+        }
+    }
+
+    #[test]
+    fn nth_child_filters_may_follow_of_without_whitespace() {
+        for (selector, class, id, attribute) in [
+            ("li:nth-child(2 of.foo)", Some("foo"), None, None),
+            ("li:nth-child(2 OF.foo)", Some("foo"), None, None),
+            ("li:nth-child(2 of#featured)", None, Some("featured"), None),
+            ("li:nth-child(2 of[hidden])", None, None, Some("hidden")),
+            ("li:nth-child(2n+1 of*.foo)", Some("foo"), None, None),
+        ] {
+            let mut reader = Reader::new(selector);
+            let element = ElementPredicate::try_from(&mut reader)
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
+            let StructuralPredicate::NthChildOf(_, filter) = &element.structural.as_slice()[0]
+            else {
+                panic!("{selector} did not compile to a filtered ordinal");
             };
-            assert_eq!(alternatives.as_slice().len(), 1, "{selector}");
+            let filter = &filter.as_slice()[0];
             assert_eq!(
-                alternatives.as_slice()[0].classes.as_slice(),
-                &["card"],
+                filter.classes.as_slice().first().copied(),
+                class,
+                "{selector}"
+            );
+            assert_eq!(filter.id, id, "{selector}");
+            assert_eq!(
+                filter.attributes.as_slice().first().map(|a| a.name),
+                attribute,
+                "{selector}"
+            );
+        }
+
+        let mut reader = Reader::new("li:nth-child(2 of:not([hidden]))");
+        let element = ElementPredicate::try_from(&mut reader).unwrap();
+        let StructuralPredicate::NthChildOf(formula, filter) = &element.structural.as_slice()[0]
+        else {
+            panic!("selector did not compile to a filtered ordinal");
+        };
+        assert_eq!(*formula, AnPlusB { a: 0, b: 2 });
+        assert!(matches!(
+            filter.as_slice()[0].logical.as_slice()[0],
+            LocalLogicalPredicate::Not(_)
+        ));
+
+        // `of` must still end at an identifier boundary.
+        for selector in ["li:nth-child(2 ofdiv)", "li:nth-child(2 of-x)"] {
+            let mut reader = Reader::new(selector);
+            assert!(
+                ElementPredicate::try_from(&mut reader).is_err(),
                 "{selector}"
             );
         }
     }
 
     #[test]
-    fn is_with_only_unsupported_alternatives_matches_nothing() {
-        let mut reader = Reader::new("div:is(:has(a), :first-child)");
-        let element = ElementPredicate::try_from(&mut reader).unwrap();
-        let LocalLogicalPredicate::Any(alternatives) = &element.logical.as_slice()[0] else {
-            panic!("selector did not compile to an any predicate");
+    fn static_and_owned_selector_lists_compare_by_contents() {
+        let mut reader = Reader::new("div[a=b]:not(.x):nth-child(2 of .y)");
+        let owned = ElementPredicate::try_from(&mut reader).unwrap();
+        let LocalLogicalPredicate::Not(not_list) = &owned.logical.as_slice()[0] else {
+            panic!("expected :not");
         };
-        assert!(alternatives.as_slice().is_empty());
+        let StructuralPredicate::NthChildOf(_, filter) = &owned.structural.as_slice()[0] else {
+            panic!("expected filtered ordinal");
+        };
+
+        let not_static = LocalSelectorList::from_static(not_list.as_slice());
+        let filter_static = LocalSelectorList::from_static(filter.as_slice());
+        let attributes_static = AttributeSelections::from_static(owned.attributes.as_slice());
+        assert_eq!(&not_static, not_list);
+        assert_eq!(&filter_static, filter);
+        assert_eq!(&attributes_static, &owned.attributes);
+        assert_ne!(&not_static, filter);
     }
 
     #[test]
@@ -1630,13 +1804,18 @@ mod tests {
         let mut reader = Reader::new("div:not(\u{00a0}span)");
         assert!(ElementPredicate::try_from(&mut reader).is_err());
 
+        // U+00A0 is an identifier code point in CSS, not whitespace. scah does
+        // not support non-ASCII identifiers, so the selector is rejected
+        // instead of being forgiven as an invalid alternative.
         let mut reader = Reader::new("div:is(\u{00a0}span, \t.card\n)");
+        assert!(ElementPredicate::try_from(&mut reader).is_err());
+
+        let mut reader = Reader::new("div:is(\t.card\n, \u{000c}.safe )");
         let element = ElementPredicate::try_from(&mut reader).unwrap();
-        let LocalLogicalPredicate::Any(alternatives) = &element.logical.as_slice()[0] else {
-            panic!("selector did not compile to an any predicate");
-        };
-        assert_eq!(alternatives.as_slice().len(), 1);
-        assert_eq!(alternatives.as_slice()[0].classes.as_slice(), &["card"]);
+        let alternatives = any_alternatives(&element);
+        assert_eq!(alternatives.len(), 2);
+        assert_eq!(alternatives[0].classes.as_slice(), &["card"]);
+        assert_eq!(alternatives[1].classes.as_slice(), &["safe"]);
 
         let mut reader = Reader::new("li:nth-child(2n\u{00a0}of .card)");
         assert!(ElementPredicate::try_from(&mut reader).is_err());
