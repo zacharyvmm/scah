@@ -843,4 +843,26 @@ mod tests {
             assert_eq!(error.message(), NESTING_ERROR, "nested depth {depth}");
         }
     }
+
+    #[test]
+    fn unsupported_attribute_alternatives_reject_the_whole_query() {
+        // Discarding these alternatives would leave only `.x`, silently
+        // narrowing the result set.
+        for selector in [
+            "div:is([d\u{e1}t\u{e1}], .x)",
+            "div:where([d\u{e1}t\u{e1}], .x)",
+            r"div:is([a\:b], .x)",
+            "div:is([ns|a], .x)",
+        ] {
+            let error = Query::all(selector, Save::none())
+                .err()
+                .unwrap_or_else(|| panic!("{selector} should be rejected"));
+            assert_ne!(error.message(), NESTING_ERROR, "{selector}");
+
+            let nested = Query::all("main", Save::none())
+                .unwrap()
+                .all(selector, Save::none());
+            assert!(nested.is_err(), "nested {selector} should be rejected");
+        }
+    }
 }

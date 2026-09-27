@@ -803,6 +803,24 @@ fn filtered_ordinals_with_structural_filters_fail_closed() {
     // Counting every sibling would wrongly match the second <li>.
     assert_eq!(count(2), 0);
     assert_eq!(count(1), 0);
+
+    // The checked setter rejects the same predicate up front.
+    let filter = LocalSelectorList::Owned(
+        vec![li(vec![StructuralPredicate::FirstChild])].into_boxed_slice(),
+    );
+    let mut query = Query::all("li", Save::all()).unwrap().build();
+    let original = query.states[0].predicate().clone();
+    let error = query.states[0]
+        .try_set_predicate(li(vec![StructuralPredicate::NthChildOf(
+            AnPlusB { a: 0, b: 2 },
+            filter,
+        )]))
+        .unwrap_err();
+    assert_eq!(
+        error.message(),
+        "structural pseudo-classes are not supported inside local selector lists"
+    );
+    assert_eq!(query.states[0].predicate(), &original);
 }
 
 #[test]
