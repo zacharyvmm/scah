@@ -367,6 +367,26 @@ impl<'query> AttributeSelection<'query> {
             // followed by `=`. Anything else (`[class~]`, `[id^]`, ...) is a
             // malformed selector.
             if operator_requires_equal && !matches!(token, SelectionAttributeToken::Equal) {
+                // `[ns|attr]`, `[|attr]` and `[*|attr]` are valid namespaced
+                // attribute selectors rather than a malformed `|=`.
+                if !equal
+                    && kv.value.is_none()
+                    && (kv.selection_kind == AttributeSelectionKind::HyphenSeparated
+                        && matches!(token, SelectionAttributeToken::String(_))
+                        || kv.name.is_none()
+                            && kv.selection_kind == AttributeSelectionKind::Substring
+                            && matches!(
+                                token,
+                                SelectionAttributeToken::StringMatchSelector(
+                                    AttributeSelectionKind::HyphenSeparated
+                                )
+                            ))
+                {
+                    return Err(SelectorParseError::unsupported(
+                        "attribute namespaces are not supported",
+                        reader.get_position(),
+                    ));
+                }
                 return Err(SelectorParseError::new(
                     "attribute match operator requires '='",
                     reader.get_position(),
@@ -471,9 +491,11 @@ impl<'query> AttributeSelection<'query> {
                 reader.get_position(),
             ));
         }
-        if !is_valid_attribute_name(kv.name.unwrap()) {
-            return Err(SelectorParseError::new(
+        let name = kv.name.unwrap();
+        if !is_valid_attribute_name(name) {
+            return Err(invalid_name_error(
                 "attribute selector key is invalid",
+                name,
                 reader.get_position(),
             ));
         }
@@ -1148,14 +1170,22 @@ fn is_valid_selector_name(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
+/// Accepts ASCII CSS identifiers: `--x`, `-x` and `x` forms, where the first
+/// non-hyphen character is a letter or `_`.
 fn is_valid_attribute_name(value: &str) -> bool {
-    let mut bytes = value.bytes();
-    match bytes.next() {
-        Some(first) if first.is_ascii_alphabetic() || first == b'_' => (),
+    let bytes = value.as_bytes();
+    let rest = match bytes {
+        [b'-', b'-', rest @ ..] => rest,
+        [b'-', first, rest @ ..] | [first, rest @ ..]
+            if first.is_ascii_alphabetic() || *first == b'_' =>
+        {
+            rest
+        }
         _ => return false,
-    }
+    };
 
-    bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    rest.iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 #[cfg(test)]
@@ -1533,6 +1563,40 @@ mod tests {
             (r"div:is(.a\:b, .x)", "missing class string"),
             ("div:is(#caf\u{e9})", "missing id string"),
             ("div:is(\u{00a0}span, .x)", "illegal selector token"),
+            (
+                "div:is([d\u{e1}t\u{e1}], .x)",
+                "attribute selector key is invalid",
+            ),
+            (
+                "div:where([d\u{e1}t\u{e1}], .x)",
+                "attribute selector key is invalid",
+            ),
+            (
+                "div:is([d\u{e1}t\u{e1}=\"x\"], .x)",
+                "attribute selector key is invalid",
+            ),
+            (r"div:is([a\:b], .x)", "attribute selector key is invalid"),
+            (
+                r"div:where([a\:b], .x)",
+                "attribute selector key is invalid",
+            ),
+            (
+                "div:is([ns|a], .x)",
+                "attribute namespaces are not supported",
+            ),
+            ("div:is([|a], .x)", "attribute namespaces are not supported"),
+            (
+                "div:where([*|a], .x)",
+                "attribute namespaces are not supported",
+            ),
+            (
+                "div:where([a|b=c], .x)",
+                "attribute namespaces are not supported",
+            ),
+            (
+                "div:is(ns|a, .x)",
+                "combinators are not supported inside local pseudo-classes",
+            ),
         ] {
             let mut reader = Reader::new(selector);
             let error = ElementPredicate::try_from(&mut reader)
@@ -1550,6 +1614,9 @@ mod tests {
             "div:is(.card, #)",
             "div:is(.card, [)",
             "div:is(.card, 1:)",
+            "div:is(.card, [1a])",
+            "div:is(.card, [-1a])",
+            "div:is(.card, [a|])",
         ] {
             let mut reader = Reader::new(selector);
             let element = ElementPredicate::try_from(&mut reader)
@@ -1562,6 +1629,22 @@ mod tests {
         let mut reader = Reader::new("div:is(::before, .bad])");
         let element = ElementPredicate::try_from(&mut reader).unwrap();
         assert!(any_alternatives(&element).is_empty());
+    }
+
+    #[test]
+    fn attribute_names_follow_css_identifier_grammar() {
+        for name in ["a", "_a", "data-x", "-a", "-_a", "--", "--1", "a1-"] {
+            assert!(is_valid_attribute_name(name), "{name}");
+        }
+        for name in ["", "-", "1a", "-1", "a.b", "a:b"] {
+            assert!(!is_valid_attribute_name(name), "{name}");
+        }
+
+        let mut reader = Reader::new("div:is([-x], .y)");
+        let element = ElementPredicate::try_from(&mut reader).unwrap();
+        let alternatives = any_alternatives(&element);
+        assert_eq!(alternatives.len(), 2);
+        assert_eq!(alternatives[0].attributes.as_slice()[0].name, "-x");
     }
 
     #[test]
