@@ -1,7 +1,9 @@
 use crate::Reader;
 use crate::query::compiler::SelectorParseError;
 use crate::query::selector::{
-    Combinator, ElementPredicate, IElement, Lexer, StructuralMatchContext, is_css_whitespace_char,
+    Combinator, ElementPredicate, IElement, Lexer, LocalLogicalPredicate,
+    MAX_SELECTOR_NESTING_DEPTH, StructuralMatchContext, StructuralPredicate,
+    is_css_whitespace_char,
 };
 
 #[inline]
@@ -382,7 +384,46 @@ pub struct Transition<'query> {
     metadata: PredicateMetadata<'query>,
 }
 
+/// Rejects predicate graphs the selector parser never produces because the
+/// streaming engine cannot evaluate them.
+fn validate_predicate(
+    predicate: &ElementPredicate<'_>,
+    nesting: usize,
+) -> Result<(), SelectorParseError> {
+    if nesting > MAX_SELECTOR_NESTING_DEPTH {
+        return Err(SelectorParseError::nesting_limit(0));
+    }
+    for structural in predicate.structural.as_slice() {
+        if let StructuralPredicate::NthChildOf(_, filter) = structural {
+            for alternative in filter.as_slice() {
+                // Filters are evaluated at the opening tag, before any
+                // structural context for the filtered sibling exists.
+                if alternative.requires_structural() {
+                    return Err(SelectorParseError::unsupported(
+                        "structural pseudo-classes are not supported inside local selector lists",
+                        0,
+                    ));
+                }
+                validate_predicate(alternative, nesting + 1)?;
+            }
+        }
+    }
+    for logical in predicate.logical.as_slice() {
+        let (LocalLogicalPredicate::Not(list) | LocalLogicalPredicate::Any(list)) = logical;
+        for alternative in list.as_slice() {
+            validate_predicate(alternative, nesting + 1)?;
+        }
+    }
+    Ok(())
+}
+
 impl<'query> Transition<'query> {
+    /// Constructs a transition without validating it.
+    ///
+    /// Prefer [`Transition::try_new`]. A predicate the selector parser would
+    /// reject, such as a structural pseudo-class inside a
+    /// `:nth-child(An+B of S)` filter, never matches while streaming, and a
+    /// [`Combinator::Namespace`] guard panics during evaluation.
     pub fn new(guard: Combinator, predicate: ElementPredicate<'query>) -> Self {
         let metadata = PredicateMetadata::compile(&predicate);
         Self {
@@ -424,11 +465,38 @@ impl<'query> Transition<'query> {
         &self.metadata
     }
 
-    /// Replace the predicate and atomically refresh its compiled metadata.
+    /// Constructs a transition, rejecting guards and predicates that the
+    /// streaming engine cannot evaluate.
+    pub fn try_new(
+        guard: Combinator,
+        predicate: ElementPredicate<'query>,
+    ) -> Result<Self, SelectorParseError> {
+        if guard == Combinator::Namespace {
+            return Err(SelectorParseError::new("unsupported combinator '|'", 0));
+        }
+        validate_predicate(&predicate, 0)?;
+        Ok(Self::new(guard, predicate))
+    }
+
+    /// Replaces the predicate after checking that the streaming engine can
+    /// evaluate it, and atomically refreshes its compiled metadata.
     ///
-    /// The predicate is not validated. Structural pseudo-classes inside a
-    /// `:nth-child(An+B of S)` filter list cannot be evaluated while
-    /// streaming, so such a filtered ordinal never matches.
+    /// On error the transition is left unchanged.
+    pub fn try_set_predicate(
+        &mut self,
+        predicate: ElementPredicate<'query>,
+    ) -> Result<(), SelectorParseError> {
+        validate_predicate(&predicate, 0)?;
+        self.set_predicate(predicate);
+        Ok(())
+    }
+
+    /// Replaces the predicate without validating it and atomically refreshes
+    /// its compiled metadata.
+    ///
+    /// Prefer [`Transition::try_set_predicate`]. A predicate the selector
+    /// parser would reject, such as a structural pseudo-class inside a
+    /// `:nth-child(An+B of S)` filter, fails closed and never matches.
     pub fn set_predicate(&mut self, predicate: ElementPredicate<'query>) {
         let metadata = PredicateMetadata::compile(&predicate);
         self.predicate = predicate;
@@ -823,6 +891,89 @@ mod tests {
                 .matches_name("a", ascii_case_insensitive_hash("a"))
         );
         assert!(transition.metadata().needs_id());
+    }
+
+    fn li(structural: Vec<StructuralPredicate<'static>>) -> ElementPredicate<'static> {
+        ElementPredicate {
+            name: Some("li"),
+            id: None,
+            classes: ClassSelections::from_static(&[]),
+            attributes: AttributeSelections::from_static(&[]),
+            logical: crate::LogicalPredicates::from_static(&[]),
+            structural: crate::StructuralPredicates::from(structural),
+        }
+    }
+
+    fn any(alternatives: Vec<ElementPredicate<'static>>) -> ElementPredicate<'static> {
+        ElementPredicate {
+            logical: crate::LogicalPredicates::from(vec![LocalLogicalPredicate::Any(
+                crate::LocalSelectorList::Owned(alternatives.into_boxed_slice()),
+            )]),
+            ..li(Vec::new())
+        }
+    }
+
+    fn nth_child_of(filter: ElementPredicate<'static>) -> StructuralPredicate<'static> {
+        StructuralPredicate::NthChildOf(
+            crate::AnPlusB { a: 0, b: 2 },
+            crate::LocalSelectorList::Owned(vec![filter].into_boxed_slice()),
+        )
+    }
+
+    #[test]
+    fn checked_predicate_replacement_rejects_unevaluable_filters() {
+        const STRUCTURAL_FILTER: &str =
+            "structural pseudo-classes are not supported inside local selector lists";
+        let mut transition = Transition::try_new(Combinator::Descendant, li(Vec::new())).unwrap();
+
+        // `li:nth-child(2 of li:first-child)`, directly and nested under
+        // logical predicates.
+        let top_level = li(vec![nth_child_of(li(vec![
+            StructuralPredicate::FirstChild,
+        ]))]);
+        let nested = any(vec![top_level.clone()]);
+        let in_filter_logical = li(vec![nth_child_of(any(vec![li(vec![
+            StructuralPredicate::Root,
+        ])]))]);
+        for predicate in [top_level, nested, in_filter_logical] {
+            let error = transition
+                .try_set_predicate(predicate.clone())
+                .expect_err("structural filter should be rejected");
+            assert_eq!(error.message(), STRUCTURAL_FILTER);
+            assert!(error.is_fatal());
+            assert_eq!(transition.predicate(), &li(Vec::new()));
+
+            let error = Transition::try_new(Combinator::Child, predicate).unwrap_err();
+            assert_eq!(error.message(), STRUCTURAL_FILTER);
+        }
+
+        // Shapes the engine evaluates are accepted.
+        for predicate in [
+            li(vec![nth_child_of(li(Vec::new()))]),
+            any(vec![li(vec![StructuralPredicate::FirstChild])]),
+            any(vec![li(vec![nth_child_of(li(Vec::new()))])]),
+        ] {
+            transition.try_set_predicate(predicate.clone()).unwrap();
+            assert_eq!(transition.predicate(), &predicate);
+        }
+    }
+
+    #[test]
+    fn checked_construction_rejects_namespace_guards_and_deep_nesting() {
+        let error = Transition::try_new(Combinator::Namespace, li(Vec::new())).unwrap_err();
+        assert_eq!(error.message(), "unsupported combinator '|'");
+
+        let mut predicate = li(Vec::new());
+        for _ in 0..MAX_SELECTOR_NESTING_DEPTH {
+            predicate = any(vec![predicate]);
+        }
+        Transition::try_new(Combinator::Descendant, predicate.clone()).unwrap();
+
+        let error = Transition::try_new(Combinator::Descendant, any(vec![predicate])).unwrap_err();
+        assert_eq!(
+            error.message(),
+            "selector nesting exceeds the maximum depth"
+        );
     }
 
     #[test]
