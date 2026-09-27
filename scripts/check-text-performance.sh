@@ -11,7 +11,9 @@ base_ref="${1:-origin/main}"
 base_label="$(git rev-parse --short "$base_ref")"
 gate_root="$(mktemp -d -t scah-text-performance.XXXXXX)"
 base_tree="$gate_root/base"
-rounds="${SCAH_PERF_GATE_ROUNDS:-3}"
+# Use an even number of alternating rounds so each binary runs first equally
+# often, which keeps thermal or frequency drift from favoring either binary.
+rounds="${SCAH_PERF_GATE_ROUNDS:-4}"
 warm_up_time="${SCAH_PERF_GATE_WARM_UP_TIME:-1}"
 measurement_time="${SCAH_PERF_GATE_MEASUREMENT_TIME:-2}"
 
