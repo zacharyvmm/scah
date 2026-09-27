@@ -10,7 +10,7 @@
 **scah** is a high-performance parsing library that bridges the gap between SAX/StAX streaming efficiency and DOM convenience. Instead of loading an entire document into memory or manually tracking parser state, you declare what you want with **CSS selectors**; the library handles the streaming complexity and builds a targeted DOM containing only your selections.
 
 - **Streaming core**: Built on StAX; constant memory regardless of document size
-- **Familiar API**: CSS selectors (including combinators like `>`, ` `, `+` (coming soon), `~` (coming soon))
+- **Familiar API**: CSS selectors (including combinators like `>`, ` `, `+`, `~`)
 - **Multi-language**: Rust core with Python and TypeScript/JavaScript bindings
 - **Composable queries**: Chain selections and nest them with closures for **structured querying**; not only more efficient than flat filtering, but a fundamentally better pattern for extracting hierarchical data relationships
 
@@ -166,8 +166,9 @@ that can be evaluated at an opening tag. Future-dependent selectors such as
 Inside `:is()` and `:where()`, alternatives that are invalid CSS are discarded
 using forgiving selector-list semantics. Valid alternatives that scah cannot
 evaluate reject the whole selector, so results are never silently narrowed.
-These include combinators, structural or unrecognized pseudo-classes, and
-escaped or non-ASCII identifiers. `:not()` and filtered `of S` lists are strict
+These include combinators, structural or unrecognized pseudo-classes,
+escaped or non-ASCII identifiers (including attribute names), and namespaced
+attributes such as `[ns|attr]`. `:not()` and filtered `of S` lists are strict
 and reject any invalid or unsupported alternative. In nested query
 sections, `:scope` is supported as a standalone leading anchor for a following
 relative selector, as in `:scope > a`. Terminal `:scope` and compound anchors
