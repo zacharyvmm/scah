@@ -712,9 +712,9 @@ mod tests {
     fn test_branching_next_query() {
         let mut store = Store::default();
 
-        let q = Query::all("1", Save::all())
+        let q = Query::all("a", Save::all())
             .unwrap()
-            .then(|ctx| Ok([ctx.all("2", Save::all())?, ctx.all("3", Save::all())?]))
+            .then(|ctx| Ok([ctx.all("b", Save::all())?, ctx.all("c", Save::all())?]))
             .unwrap();
 
         // `1` MATCH
@@ -727,7 +727,7 @@ mod tests {
         assert_eq!(
             store.queries.inner,
             vec![QueryNode {
-                query: "1",
+                query: "a",
                 next_sibling: None,
                 elements: Span::new(ElementId(0))
             }]
@@ -746,12 +746,12 @@ mod tests {
             store.queries.inner,
             vec![
                 QueryNode {
-                    query: "1",
+                    query: "a",
                     next_sibling: None,
                     elements: Span::new(ElementId(0))
                 },
                 QueryNode {
-                    query: "2",
+                    query: "b",
                     next_sibling: None,
                     elements: Span::new(ElementId(1))
                 }
@@ -782,17 +782,17 @@ mod tests {
             store.queries.inner,
             vec![
                 QueryNode {
-                    query: "1",
+                    query: "a",
                     next_sibling: None,
                     elements: Span::new(ElementId(0))
                 },
                 QueryNode {
-                    query: "2",
+                    query: "b",
                     next_sibling: Some(QueryId(2)),
                     elements: Span::new(ElementId(1))
                 },
                 QueryNode {
-                    query: "3",
+                    query: "c",
                     next_sibling: None,
                     elements: Span::new(ElementId(2))
                 }

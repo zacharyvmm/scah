@@ -406,6 +406,12 @@ impl<'query> AttributeSelection<'query> {
                             reader.get_position(),
                         ));
                     } else if kv.value.is_some() && !saw_modifier {
+                        if string_value.contains('\\') {
+                            return Err(SelectorParseError::unsupported(
+                                "escaped attribute value modifiers are not supported",
+                                reader.get_position(),
+                            ));
+                        }
                         case_sensitivity = if string_value.eq_ignore_ascii_case("i") {
                             AttributeCaseSensitivity::AsciiInsensitive
                         } else if string_value.eq_ignore_ascii_case("s") {
@@ -428,6 +434,17 @@ impl<'query> AttributeSelection<'query> {
                             reader.get_position(),
                         ));
                     } else {
+                        // Escaped values are reported as unsupported below.
+                        // Non-ASCII values need no decoding and match as-is.
+                        if kv.name.is_some()
+                            && !string_value.contains('\\')
+                            && !is_valid_identifier_with(string_value, |byte| !byte.is_ascii())
+                        {
+                            return Err(SelectorParseError::new(
+                                "unquoted attribute value must be an identifier",
+                                reader.get_position(),
+                            ));
+                        }
                         kv.push(string_value, reader.get_position())?;
                     }
                 }
@@ -492,7 +509,7 @@ impl<'query> AttributeSelection<'query> {
             ));
         }
         let name = kv.name.unwrap();
-        if !is_valid_attribute_name(name) {
+        if !is_valid_identifier(name) {
             return Err(invalid_name_error(
                 "attribute selector key is invalid",
                 name,
@@ -503,6 +520,14 @@ impl<'query> AttributeSelection<'query> {
         if equal && kv.value.is_none() {
             return Err(SelectorParseError::new(
                 "attribute selector is missing a value",
+                reader.get_position(),
+            ));
+        }
+        // CSS escapes denote decoded code points, which scah does not decode
+        // yet. Matching the raw backslashes would silently change results.
+        if kv.value.is_some_and(|value| value.contains('\\')) {
+            return Err(SelectorParseError::unsupported(
+                "escaped attribute values are not supported",
                 reader.get_position(),
             ));
         }
@@ -635,7 +660,17 @@ impl<'a> SelectionAttributeToken<'a> {
             b'*' => Some(Self::StringMatchSelector(AttributeSelectionKind::Substring)),
             b']' => None,
             _ => {
+                // Keep CSS escapes inside the token so that, for example,
+                // `foo\ bar` stays one (unsupported) value.
+                if token == b'\\' {
+                    skip_escape_body(reader);
+                }
                 while let Some(byte) = reader.peek() {
+                    if byte == b'\\' {
+                        reader.skip();
+                        skip_escape_body(reader);
+                        continue;
+                    }
                     if is_attribute_selector_boundary(byte) {
                         break;
                     }
@@ -644,6 +679,23 @@ impl<'a> SelectionAttributeToken<'a> {
                 Some(Self::String(reader.slice(start_pos..reader.get_position())))
             }
         })
+    }
+}
+
+/// Skips the body of a CSS escape whose backslash was already consumed: up to
+/// six hex digits and one optional whitespace, or a single other character.
+fn skip_escape_body(reader: &mut Reader<'_>) {
+    let mut hex_digits = 0;
+    while hex_digits < 6 && reader.peek().is_some_and(|byte| byte.is_ascii_hexdigit()) {
+        reader.skip();
+        hex_digits += 1;
+    }
+    if hex_digits == 0 {
+        if reader.peek().is_some() {
+            reader.skip();
+        }
+    } else if reader.peek().is_some_and(is_css_whitespace) {
+        reader.skip();
     }
 }
 
@@ -716,7 +768,7 @@ impl<'a> ElementPredicate<'a> {
         while let Some(word) = SelectionKeyWords::next(reader) {
             match (previous, &word) {
                 (Option::None, SelectionKeyWords::String(name)) => {
-                    if !is_valid_selector_name(name) {
+                    if !is_valid_identifier(name) {
                         return Err(invalid_name_error(
                             "illegal selector token",
                             name,
@@ -739,7 +791,7 @@ impl<'a> ElementPredicate<'a> {
                     ));
                 }
                 (Some(SelectionKeyWords::ID), SelectionKeyWords::String(id_name)) => {
-                    if !is_valid_selector_name(id_name) {
+                    if !is_valid_identifier(id_name) {
                         return Err(invalid_name_error(
                             "missing id string",
                             id_name,
@@ -755,7 +807,7 @@ impl<'a> ElementPredicate<'a> {
                     element.id = Some(*id_name);
                 }
                 (Some(SelectionKeyWords::Class), SelectionKeyWords::String(class_name)) => {
-                    if !is_valid_selector_name(class_name) {
+                    if !is_valid_identifier(class_name) {
                         return Err(invalid_name_error(
                             "missing class string",
                             class_name,
@@ -964,8 +1016,9 @@ fn parse_local_selector_list<'query>(
 
 /// Parses an `:is()` / `:where()` list, discarding alternatives that are
 /// invalid CSS. Valid alternatives that scah cannot evaluate (combinators,
-/// structural or unknown pseudo-classes, escaped identifiers) and an exhausted
-/// nesting budget reject the whole selector rather than silently narrowing it.
+/// structural or unknown pseudo-classes, escaped identifiers or attribute
+/// values) and an exhausted nesting budget reject the whole selector rather
+/// than silently narrowing it.
 fn parse_forgiving_local_selector_list<'query>(
     source: &'query str,
     nesting: usize,
@@ -1163,29 +1216,24 @@ fn invalid_name_error(message: &'static str, name: &str, position: usize) -> Sel
     }
 }
 
-fn is_valid_selector_name(value: &str) -> bool {
-    !value.is_empty()
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+/// Accepts unescaped ASCII CSS identifiers: `--x`, `-x` and `x` forms, where
+/// the first non-hyphen character is a letter or `_`.
+fn is_valid_identifier(value: &str) -> bool {
+    is_valid_identifier_with(value, |_| false)
 }
 
-/// Accepts ASCII CSS identifiers: `--x`, `-x` and `x` forms, where the first
-/// non-hyphen character is a letter or `_`.
-fn is_valid_attribute_name(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    let rest = match bytes {
+/// Like [`is_valid_identifier`], additionally treating bytes accepted by
+/// `extra` as letters.
+fn is_valid_identifier_with(value: &str, extra: impl Fn(u8) -> bool) -> bool {
+    let is_start = |byte: u8| byte.is_ascii_alphabetic() || byte == b'_' || extra(byte);
+    let rest = match value.as_bytes() {
         [b'-', b'-', rest @ ..] => rest,
-        [b'-', first, rest @ ..] | [first, rest @ ..]
-            if first.is_ascii_alphabetic() || *first == b'_' =>
-        {
-            rest
-        }
+        [b'-', first, rest @ ..] | [first, rest @ ..] if is_start(*first) => rest,
         _ => return false,
     };
 
     rest.iter()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        .all(|&byte| is_start(byte) || byte.is_ascii_digit() || byte == b'-')
 }
 
 #[cfg(test)]
@@ -1294,16 +1342,62 @@ mod tests {
     }
 
     #[test]
-    fn selector_attribute_value_allows_escaped_double_quote() {
-        let mut reader = Reader::new(r#"a[title="hello \"world\""]"#);
-        let element = ElementPredicate::from(&mut reader);
+    fn escaped_attribute_values_are_unsupported() {
+        for selector in [
+            r#"a[title="hello \"world\""]"#,
+            r#"a[title='a\'b']"#,
+            r#"a[title="caf\e9"]"#,
+            r"a[title=foo\ bar]",
+            r"a[title=\31 x]",
+            r"a[title^=a\]b]",
+        ] {
+            let mut reader = Reader::new(selector);
+            let error = ElementPredicate::try_from(&mut reader)
+                .expect_err(&format!("{selector} should be rejected"));
+            assert_eq!(
+                error.message(),
+                "escaped attribute values are not supported",
+                "{selector}"
+            );
+            assert!(error.is_fatal(), "{selector}");
+        }
 
-        assert_eq!(element.attributes.as_slice().len(), 1);
-        assert_eq!(element.attributes.as_slice()[0].name, "title");
+        let mut reader = Reader::new(r#"a[title="x" \i]"#);
+        let error = ElementPredicate::try_from(&mut reader).unwrap_err();
         assert_eq!(
-            element.attributes.as_slice()[0].value,
-            Some(r#"hello \"world\""#)
+            error.message(),
+            "escaped attribute value modifiers are not supported"
         );
+        assert!(error.is_fatal());
+    }
+
+    #[test]
+    fn unquoted_attribute_values_must_be_identifiers() {
+        for selector in ["[a=1x]", "[a=-1]", "[a=-]"] {
+            let mut reader = Reader::new(selector);
+            let error = ElementPredicate::try_from(&mut reader)
+                .expect_err(&format!("{selector} should be rejected"));
+            assert_eq!(
+                error.message(),
+                "unquoted attribute value must be an identifier",
+                "{selector}"
+            );
+            assert!(!error.is_fatal(), "{selector}");
+        }
+
+        for selector in [
+            "[a=x]",
+            "[a=-x]",
+            "[a=--]",
+            "[a=_1]",
+            "[a=\"1x\"]",
+            "[a=caf\u{e9}]",
+            "[a=\u{e9}t\u{e9}]",
+        ] {
+            let mut reader = Reader::new(selector);
+            ElementPredicate::try_from(&mut reader)
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
+        }
     }
 
     #[test]
@@ -1597,6 +1691,14 @@ mod tests {
                 "div:is(ns|a, .x)",
                 "combinators are not supported inside local pseudo-classes",
             ),
+            (
+                r"div:is([data-x=foo\ bar], .card)",
+                "escaped attribute values are not supported",
+            ),
+            (
+                r#"div:where([data-x="a\"b"], .card)"#,
+                "escaped attribute values are not supported",
+            ),
         ] {
             let mut reader = Reader::new(selector);
             let error = ElementPredicate::try_from(&mut reader)
@@ -1616,6 +1718,12 @@ mod tests {
             "div:is(.card, 1:)",
             "div:is(.card, [1a])",
             "div:is(.card, [-1a])",
+            "div:is(.card, .1bad)",
+            "div:is(.card, #1bad)",
+            "div:is(.card, 1div)",
+            "div:is(.card, .-1bad)",
+            "div:where(.card, #-1bad)",
+            "div:is(.card, [data-x=1bad])",
             "div:is(.card, [a|])",
         ] {
             let mut reader = Reader::new(selector);
@@ -1632,12 +1740,12 @@ mod tests {
     }
 
     #[test]
-    fn attribute_names_follow_css_identifier_grammar() {
+    fn identifiers_follow_css_identifier_grammar() {
         for name in ["a", "_a", "data-x", "-a", "-_a", "--", "--1", "a1-"] {
-            assert!(is_valid_attribute_name(name), "{name}");
+            assert!(is_valid_identifier(name), "{name}");
         }
         for name in ["", "-", "1a", "-1", "a.b", "a:b"] {
-            assert!(!is_valid_attribute_name(name), "{name}");
+            assert!(!is_valid_identifier(name), "{name}");
         }
 
         let mut reader = Reader::new("div:is([-x], .y)");
