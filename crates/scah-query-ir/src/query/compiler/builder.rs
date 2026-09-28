@@ -855,6 +855,7 @@ mod tests {
             "div:where([d\u{e1}t\u{e1}], .x)",
             r"div:is([a\:b], .x)",
             "div:is([ns|a], .x)",
+            "div:is([data-x=\\31\r\nx], .x)",
         ] {
             let error = Query::all(selector, Save::none())
                 .err()
