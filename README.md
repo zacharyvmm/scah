@@ -128,9 +128,9 @@ Control what data is captured per selector:
 
 #### Supported CSS selector syntax
 
-This table describes the `main` branch. Universal selectors, attribute value
-flags, selector lists, logical pseudos, ordinals, and root/scope selectors are
-not in the 0.0.21 release on crates.io. Until the next release, use them
+This table describes the `main` branch. Universal selectors, sibling
+combinators (`+`, `~`), attribute value flags, selector lists, logical pseudos,
+ordinals, and root/scope selectors are not in the 0.0.21 release on crates.io. Until the next release, use them
 through a git dependency:
 
 ```toml
