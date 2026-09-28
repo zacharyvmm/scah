@@ -684,6 +684,8 @@ impl<'a> SelectionAttributeToken<'a> {
 
 /// Skips the body of a CSS escape whose backslash was already consumed: up to
 /// six hex digits and one optional whitespace, or a single other character.
+/// CSS preprocessing turns a CRLF pair into one newline, so a hex escape
+/// consumes both bytes.
 fn skip_escape_body(reader: &mut Reader<'_>) {
     let mut hex_digits = 0;
     while hex_digits < 6 && reader.peek().is_some_and(|byte| byte.is_ascii_hexdigit()) {
@@ -692,6 +694,11 @@ fn skip_escape_body(reader: &mut Reader<'_>) {
     }
     if hex_digits == 0 {
         if reader.peek().is_some() {
+            reader.skip();
+        }
+    } else if reader.peek() == Some(b'\r') {
+        reader.skip();
+        if reader.peek() == Some(b'\n') {
             reader.skip();
         }
     } else if reader.peek().is_some_and(is_css_whitespace) {
@@ -1349,6 +1356,9 @@ mod tests {
             r#"a[title="caf\e9"]"#,
             r"a[title=foo\ bar]",
             r"a[title=\31 x]",
+            "a[title=\\31\r\nx]",
+            "a[title=\\31\rx]",
+            "a[title=\\31\nx]",
             r"a[title^=a\]b]",
         ] {
             let mut reader = Reader::new(selector);
@@ -1693,6 +1703,10 @@ mod tests {
             ),
             (
                 r"div:is([data-x=foo\ bar], .card)",
+                "escaped attribute values are not supported",
+            ),
+            (
+                "div:is([data-x=\\31\r\nx], .card)",
                 "escaped attribute values are not supported",
             ),
             (
