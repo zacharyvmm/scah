@@ -440,17 +440,17 @@ fn replacing_transition_predicate_refreshes_parser_preflight() {
 }
 
 #[test]
-fn escaped_quote_in_attribute_matches() {
-    let html = r#"<a title="hello \"world\"">x</a>"#;
-    let query = Query::all(r#"a[title="hello \"world\""]"#, Save::all())
-        .unwrap()
-        .build();
-    let queries = [query];
-    let store = parse(html, &queries).unwrap();
-    assert_eq!(
-        store.get(r#"a[title="hello \"world\""]"#).unwrap().count(),
-        1
-    );
+fn escaped_attribute_values_are_rejected() {
+    // CSS decodes `\"` to `"`, so matching the raw backslash would differ from
+    // a browser. Escapes are unsupported until scah decodes them.
+    for selector in [r#"a[title="hello \"world\""]"#, r"a[title=hello\ world]"] {
+        let error = Query::all(selector, Save::all()).err().unwrap();
+        assert_eq!(
+            error.message(),
+            "escaped attribute values are not supported",
+            "{selector}"
+        );
+    }
 }
 
 #[test]
