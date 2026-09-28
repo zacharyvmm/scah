@@ -95,9 +95,13 @@ jobs:
           else
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           fi
+      # Both gates measure a pull request's incremental cost against its base,
+      # so each layer of a stack is gated before it merges.
       - name: Enforce ordinary parser performance gate
         if: github.event_name == 'pull_request' && steps.perf-changes.outputs.relevant == 'true'
-        run: ./scripts/check-sibling-performance.sh origin/main
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: ./scripts/check-sibling-performance.sh "$BASE_SHA"
       - name: Check text-extraction benchmark
         run: cargo bench -p scah-benches --bench speed_bench_text_extraction -- --test
       - name: Check text-extraction memory benchmark
