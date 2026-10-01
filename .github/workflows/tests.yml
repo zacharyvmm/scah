@@ -29,9 +29,9 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --exclude scah-benches --exclude scah-cursor-benches -- -D warnings
+        run: cargo clippy --workspace --all-targets --exclude scah-benches -- -D warnings
       - name: Test
-        run: cargo test --workspace --exclude scah-benches --exclude scah-cursor-benches
+        run: cargo test --workspace --exclude scah-benches
       - name: Test optimized parser semantics
         run: cargo test --release -p scah
       - name: Test cursor instrumentation
@@ -108,7 +108,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: ./benches/gates/check-text-performance.sh "$BASE_SHA"
       - name: Run cursor stats report
-        run: cargo run -p scah-cursor-benches --release --bin cursor_stats_report
+        run: cargo run -p scah --release --features bench-internals --example cursor_stats
 
   rust-aarch64:
     name: Rust AArch64 SIMD Checks
