@@ -525,7 +525,11 @@ impl<'query> Transition<'query> {
         current_depth: u16,
         last_depth: u16,
     ) -> bool {
-        self.next_with_context(element, current_depth, last_depth, None)
+        assert!(
+            current_depth >= last_depth,
+            "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
+        );
+        self.guard.evaluate(last_depth, current_depth) && self.predicate.matches_element(element)
     }
 
     pub fn next_with_context<'html, E: IElement<'html>>(

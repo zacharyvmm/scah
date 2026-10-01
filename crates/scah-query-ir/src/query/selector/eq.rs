@@ -125,15 +125,36 @@ impl<'a> ElementPredicate<'a> {
         }
     }
 
+    /// Match against an element without structural context.
+    ///
+    /// Ordinary compounds (no logical or structural predicates) are decided
+    /// entirely by the inline, non-recursive local checks; only compounds that
+    /// carry `:is()`/`:not()`/structural predicates fall through to the
+    /// out-of-line recursive evaluator.
+    #[inline]
     pub fn matches_element<'b, E: IElement<'b>>(&self, other: &E) -> bool {
-        self.matches_element_with_context(other, None)
+        self.matches_local(other) && (self.is_ordinary() || self.matches_extensions(other, None))
     }
 
+    #[inline]
     pub fn matches_element_with_context<'b, E: IElement<'b>>(
         &self,
         other: &E,
         structural: Option<&super::builder::StructuralMatchContext<'_>>,
     ) -> bool {
+        self.matches_local(other)
+            && (self.is_ordinary() || self.matches_extensions(other, structural))
+    }
+
+    /// Whether this compound has no logical or structural predicates.
+    #[inline(always)]
+    fn is_ordinary(&self) -> bool {
+        self.logical.as_slice().is_empty() && self.structural.as_slice().is_empty()
+    }
+
+    /// Name, id, class, and attribute checks. Never recurses.
+    #[inline(always)]
+    fn matches_local<'b, E: IElement<'b>>(&self, other: &E) -> bool {
         if !self.matches_name(other.name()) {
             return false;
         }
@@ -152,31 +173,43 @@ impl<'a> ElementPredicate<'a> {
             }
         }
 
-        self.attributes.as_slice().iter().all(|selector_attribute| {
-            // `id` and `class` live in dedicated element fields, not the
-            // generic attribute list, so route `[id]`/`[class]` selectors
-            // there. Attribute names are case-insensitive in HTML. A rare
-            // valueless `id`/`class` that landed in the attribute list is
-            // still matched via the fallback scan.
-            if selector_attribute.name.eq_ignore_ascii_case("id") {
-                selector_attribute.matches_field(other.id())
-                    || other
-                        .attributes()
-                        .iter()
-                        .any(|attribute| selector_attribute.matches_attribute(attribute))
-            } else if selector_attribute.name.eq_ignore_ascii_case("class") {
-                selector_attribute.matches_field(other.class())
-                    || other
-                        .attributes()
-                        .iter()
-                        .any(|attribute| selector_attribute.matches_attribute(attribute))
-            } else {
-                other
-                    .attributes()
-                    .iter()
-                    .any(|xhtml_attribute| selector_attribute.matches_attribute(xhtml_attribute))
-            }
-        }) && self.logical.as_slice().iter().all(|logical| match logical {
+        let attributes = self.attributes.as_slice();
+        attributes.is_empty()
+            || attributes.iter().all(|selector_attribute| {
+                // `id` and `class` live in dedicated element fields, not the
+                // generic attribute list, so route `[id]`/`[class]` selectors
+                // there. Attribute names are case-insensitive in HTML. A rare
+                // valueless `id`/`class` that landed in the attribute list is
+                // still matched via the fallback scan.
+                if selector_attribute.name.eq_ignore_ascii_case("id") {
+                    selector_attribute.matches_field(other.id())
+                        || other
+                            .attributes()
+                            .iter()
+                            .any(|attribute| selector_attribute.matches_attribute(attribute))
+                } else if selector_attribute.name.eq_ignore_ascii_case("class") {
+                    selector_attribute.matches_field(other.class())
+                        || other
+                            .attributes()
+                            .iter()
+                            .any(|attribute| selector_attribute.matches_attribute(attribute))
+                } else {
+                    other.attributes().iter().any(|xhtml_attribute| {
+                        selector_attribute.matches_attribute(xhtml_attribute)
+                    })
+                }
+            })
+    }
+
+    /// Recursive evaluation of logical and structural predicates, kept out
+    /// of line so it does not bloat the ordinary matching hot path.
+    #[inline(never)]
+    fn matches_extensions<'b, E: IElement<'b>>(
+        &self,
+        other: &E,
+        structural: Option<&super::builder::StructuralMatchContext<'_>>,
+    ) -> bool {
+        self.logical.as_slice().iter().all(|logical| match logical {
             super::builder::LocalLogicalPredicate::Not(list) => !list
                 .as_slice()
                 .iter()

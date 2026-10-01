@@ -208,6 +208,8 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
 
                 parent: query.parent,
                 next_sibling: query.next_sibling,
+                // Derived from `alternatives` when the builder builds.
+                has_selector_alternatives: false,
             });
         }
 
@@ -397,8 +399,8 @@ mod tests {
 
         assert_eq!(
             query,
-            Query {
-                states: vec![
+            Query::new(
+                vec![
                     Transition::new(
                         Combinator::Descendant,
                         ElementPredicate {
@@ -434,7 +436,7 @@ mod tests {
                     ),
                 ]
                 .into_boxed_slice(),
-                queries: vec![
+                vec![
                     QuerySection::new(
                         "div",
                         Save::all(),
@@ -458,14 +460,14 @@ mod tests {
                     ),
                 ]
                 .into_boxed_slice(),
-                exit_at_section_end: None,
-                alternatives: vec![
+                None,
+                vec![
                     vec![TransitionId(0)..TransitionId(1)].into_boxed_slice(),
                     vec![TransitionId(1)..TransitionId(2)].into_boxed_slice(),
                     vec![TransitionId(2)..TransitionId(3)].into_boxed_slice(),
                 ]
                 .into_boxed_slice(),
-            }
+            )
         );
     }
 
