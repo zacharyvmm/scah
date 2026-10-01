@@ -5,9 +5,11 @@ incorrect matching that could bypass filtering are all in scope.
 
 ## Reporting a vulnerability
 
-Please don't open a public issue. Email **contact@zacharymm.com** with a
-description, a minimal input that reproduces the problem, and the version or
-commit you tested.
+Please don't open a public issue. Report it privately through
+[GitHub security advisories](https://github.com/zacharyvmm/scah/security/advisories/new),
+with a description, a minimal input that reproduces the problem, and the
+version or commit you tested. If you can't use GitHub, email
+**contact@zacharymm.com** instead.
 
 ## Supported versions
 
