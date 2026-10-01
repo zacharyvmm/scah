@@ -1,6 +1,12 @@
-//! Report peak resident cursor slots and active obligations.
+//! Report peak resident cursor slots and active obligations for adversarial
+//! selector workloads, failing if any case exceeds its residency bound.
+//!
+//! Usage:
+//!   cargo run -p scah --release --features bench-internals --example cursor_stats
 
-use scah_cursor_benches::{DEPTHS, cursor_cases, measure_case};
+mod cases;
+
+use cases::{DEPTHS, cursor_cases, measure_case};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {

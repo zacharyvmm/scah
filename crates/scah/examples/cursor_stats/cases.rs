@@ -1,4 +1,4 @@
-//! Cursor-residency measurements for adversarial selector workloads.
+//! Cursor-residency cases for adversarial selector workloads.
 
 use scah::Query;
 use scah::Save;
