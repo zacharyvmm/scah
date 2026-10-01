@@ -310,6 +310,23 @@ fn test_macro_static_query() {
 }
 
 #[test]
+fn test_macro_static_query_with_nested_attributes() {
+    let not_query = query! {
+        all("div:not([hidden])", Save::none())
+    };
+    let alternatives_query = query! {
+        all("div:is([data-x=a], [data-x=b])", Save::none())
+    };
+
+    assert_eq!(not_query.states().len(), 1);
+    assert_eq!(alternatives_query.states().len(), 1);
+    assert_eq!(
+        alternatives_query.states()[0].metadata().attribute_names(),
+        &["data-x"]
+    );
+}
+
+#[test]
 fn test_macro_query_matches_runtime_query_structure() {
     let static_query = query! {
         all("main > section", Save::all()) => {
@@ -423,17 +440,17 @@ fn replacing_transition_predicate_refreshes_parser_preflight() {
 }
 
 #[test]
-fn escaped_quote_in_attribute_matches() {
-    let html = r#"<a title="hello \"world\"">x</a>"#;
-    let query = Query::all(r#"a[title="hello \"world\""]"#, Save::all())
-        .unwrap()
-        .build();
-    let queries = [query];
-    let store = parse(html, &queries).unwrap();
-    assert_eq!(
-        store.get(r#"a[title="hello \"world\""]"#).unwrap().count(),
-        1
-    );
+fn escaped_attribute_values_are_rejected() {
+    // CSS decodes `\"` to `"`, so matching the raw backslash would differ from
+    // a browser. Escapes are unsupported until scah decodes them.
+    for selector in [r#"a[title="hello \"world\""]"#, r"a[title=hello\ world]"] {
+        let error = Query::all(selector, Save::all()).err().unwrap();
+        assert_eq!(
+            error.message(),
+            "escaped attribute values are not supported",
+            "{selector}"
+        );
+    }
 }
 
 #[test]
@@ -470,4 +487,319 @@ fn form_feed_descendant_combinator_matches() {
     let store = parse(html, &queries).unwrap();
 
     assert_eq!(store.get(selector).unwrap().count(), 1);
+}
+
+#[test]
+fn logical_pseudos_reject_unsupported_alternatives_instead_of_narrowing_results() {
+    // A browser matches these selectors, so silently discarding an
+    // alternative would return fewer elements than expected.
+    for selector in [
+        "a:is(div > a)",
+        "a:not(:is(div > a))",
+        "div:is(div > a, .x)",
+        "a:is(:first-child)",
+        "a:where(.q, :has(b))",
+        "div:is(.caf\u{e9})",
+    ] {
+        assert!(
+            Query::all(selector, Save::all()).is_err(),
+            "{selector} should be rejected"
+        );
+    }
+
+    let html = "<div class=x>X</div><div class=y>Y</div>";
+    let queries = [Query::all("div:is(.x, .bad])", Save::all())
+        .unwrap()
+        .build()];
+    let store = parse(html, &queries).unwrap();
+    let texts: Vec<_> = store
+        .get("div:is(.x, .bad])")
+        .unwrap()
+        .map(|element| element.text(&store))
+        .collect();
+    assert_eq!(texts, vec![Some("X")]);
+}
+
+const REPEATED_ID_HTML: &str =
+    r#"<main><div id="hero">H</div><div id="other">O</div><div>N</div></main>"#;
+
+const REPEATED_ID_CASES: &[(&str, &[&str])] = &[
+    ("div#hero#hero", &["H"]),
+    ("div#hero#other", &[]),
+    ("div:is(#hero#hero)", &["H"]),
+    ("div:is(#hero#other)", &[]),
+    ("div:where(#hero#hero)", &["H"]),
+    ("div:where(#hero#other)", &[]),
+    ("div:not(#hero#hero)", &["O", "N"]),
+    ("div:not(#hero#other)", &["H", "O", "N"]),
+    ("div:not(:is(#hero#hero))", &["O", "N"]),
+    ("div:not(:where(#hero#other))", &["H", "O", "N"]),
+];
+
+fn repeated_id_texts<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> Vec<String> {
+    let store = parse(REPEATED_ID_HTML, queries).unwrap();
+    store
+        .get(selector)
+        .map(|elements| {
+            elements
+                .map(|element| element.text(&store).unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn repeated_id_selectors_match_as_a_conjunction() {
+    for &(selector, expected) in REPEATED_ID_CASES {
+        let queries = [Query::all(selector, Save::all()).unwrap().build()];
+        assert_eq!(
+            repeated_id_texts(&queries, selector),
+            expected,
+            "{selector}"
+        );
+    }
+}
+
+#[test]
+fn repeated_id_selectors_match_in_macro_queries() {
+    macro_rules! check {
+        ($index:literal, $selector:literal) => {{
+            let (selector, expected) = REPEATED_ID_CASES[$index];
+            assert_eq!(selector, $selector);
+            let static_queries = [query! { all($selector, Save::all()) }];
+            let runtime_query = Query::all(selector, Save::all()).unwrap().build();
+            let static_states = static_queries[0].states();
+            assert_eq!(static_states.len(), runtime_query.states().len());
+            for (static_state, runtime_state) in static_states.iter().zip(runtime_query.states()) {
+                assert_eq!(static_state.guard, runtime_state.guard, "{selector}");
+                assert_eq!(
+                    static_state.predicate(),
+                    runtime_state.predicate(),
+                    "{selector}: macro and runtime predicates differ"
+                );
+                assert_eq!(
+                    static_state.metadata().attribute_names(),
+                    runtime_state.metadata().attribute_names(),
+                    "{selector}"
+                );
+            }
+            assert_eq!(
+                repeated_id_texts(&static_queries, selector),
+                expected,
+                "{selector}"
+            );
+        }};
+    }
+
+    check!(0, "div#hero#hero");
+    check!(1, "div#hero#other");
+    check!(2, "div:is(#hero#hero)");
+    check!(3, "div:is(#hero#other)");
+    check!(4, "div:where(#hero#hero)");
+    check!(5, "div:where(#hero#other)");
+    check!(6, "div:not(#hero#hero)");
+    check!(7, "div:not(#hero#other)");
+    check!(8, "div:not(:is(#hero#hero))");
+    check!(9, "div:not(:where(#hero#other))");
+    assert_eq!(REPEATED_ID_CASES.len(), 10);
+}
+
+#[test]
+fn stray_quotes_after_selectors_are_rejected() {
+    for selector in ["b[a]\"", "div:not(.a)\"", "div[class]''"] {
+        assert!(
+            Query::all(selector, Save::all()).is_err(),
+            "{selector} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn forgiving_lists_reject_syntax_the_parser_does_not_model() {
+    // Each alternative is valid CSS that scah would misread. Forgiving it as
+    // invalid would make `:is()` / `:where()` miss elements a browser matches
+    // and the enclosing `:not()` return extra ones, so the query is rejected.
+    for inner in [
+        r":\6e ot(.missing)",
+        ".foo/**/.bar",
+        r"[data-x=a\,b]",
+        r"[data-x=a\)b]",
+        r"[data-x=a\]b]",
+        r".a\)b",
+    ] {
+        for selector in [
+            format!("div{inner}"),
+            format!("div:is({inner})"),
+            format!("div:where({inner})"),
+            format!("div:not(:is({inner}))"),
+            format!("div:not(:where({inner}))"),
+            format!("div:is(.x, {inner})"),
+        ] {
+            assert!(
+                Query::all(&selector, Save::all()).is_err(),
+                "{selector} should be rejected"
+            );
+        }
+    }
+}
+
+const FORGIVING_HTML: &str = r#"<main><div class="foo bar">F</div><div data-x="a,b">C</div><div data-x="a)b">P</div><div>N</div></main>"#;
+
+const FORGIVING_CASES: &[(&str, &[&str])] = &[
+    (r#"div:is([data-x="a,b"])"#, &["C"]),
+    (r#"div:where([data-x="a,b"], [data-x="a)b"])"#, &["C", "P"]),
+    (r#"div:not(:is([data-x="a,b"]))"#, &["F", "P", "N"]),
+    (r#"div:not(:where([data-x="a)b"], !!!))"#, &["F", "C", "N"]),
+    ("div:is(.foo, !!!)", &["F"]),
+    ("div:where(.bar, !!!)", &["F"]),
+    ("div:not(:is(.foo, !!!))", &["C", "P", "N"]),
+    ("div:not(:where(.foo, !!!))", &["C", "P", "N"]),
+];
+
+fn forgiving_texts<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> Vec<String> {
+    let store = parse(FORGIVING_HTML, queries).unwrap();
+    store
+        .get(selector)
+        .map(|elements| {
+            elements
+                .map(|element| element.text(&store).unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn forgiving_lists_keep_quoted_commas_and_forgive_invalid_branches() {
+    for &(selector, expected) in FORGIVING_CASES {
+        let queries = [Query::all(selector, Save::all()).unwrap().build()];
+        assert_eq!(forgiving_texts(&queries, selector), expected, "{selector}");
+    }
+}
+
+#[test]
+fn forgiving_lists_match_in_macro_queries() {
+    macro_rules! check {
+        ($index:literal, $selector:literal) => {{
+            let (selector, expected) = FORGIVING_CASES[$index];
+            assert_eq!(selector, $selector);
+            let static_queries = [query! { all($selector, Save::all()) }];
+            let runtime_query = Query::all(selector, Save::all()).unwrap().build();
+            let static_states = static_queries[0].states();
+            assert_eq!(static_states.len(), runtime_query.states().len());
+            for (static_state, runtime_state) in static_states.iter().zip(runtime_query.states()) {
+                assert_eq!(
+                    static_state.predicate(),
+                    runtime_state.predicate(),
+                    "{selector}: macro and runtime predicates differ"
+                );
+            }
+            assert_eq!(
+                forgiving_texts(&static_queries, selector),
+                expected,
+                "{selector}"
+            );
+        }};
+    }
+
+    check!(0, r#"div:is([data-x="a,b"])"#);
+    check!(1, r#"div:where([data-x="a,b"], [data-x="a)b"])"#);
+    check!(2, r#"div:not(:is([data-x="a,b"]))"#);
+    check!(3, r#"div:not(:where([data-x="a)b"], !!!))"#);
+    check!(4, "div:is(.foo, !!!)");
+    check!(5, "div:where(.bar, !!!)");
+    check!(6, "div:not(:is(.foo, !!!))");
+    check!(7, "div:not(:where(.foo, !!!))");
+    assert_eq!(FORGIVING_CASES.len(), 8);
+}
+
+#[test]
+fn forgiving_lists_reject_namespaces_inside_function_arguments() {
+    // `of|div` ends the `of` keyword, so the filter is the namespaced
+    // `|div`. Discarding the alternative as an invalid formula would make
+    // `div:not(:is(:nth-child(1 of|div)))` match the first div too.
+    for inner in [
+        ":nth-child(1 of|div)",
+        ":nth-child(1 of *|div)",
+        ":nth-last-child(1 of|div)",
+        ":nth-child(1 of|div, *)",
+        ":is(ns|div)",
+        ":not(*|div)",
+    ] {
+        for selector in [
+            format!("div:is({inner})"),
+            format!("div:where({inner})"),
+            format!("div:not(:is({inner}))"),
+            format!("div:not(:where({inner}))"),
+            format!("div:not(:is({inner}, .x))"),
+        ] {
+            let error = Query::all(&selector, Save::all())
+                .err()
+                .unwrap_or_else(|| panic!("{selector} should be rejected"));
+            assert!(
+                matches!(
+                    error.message(),
+                    "namespaces are not supported"
+                        | "combinators are not supported inside local pseudo-classes"
+                        | "unsupported pseudo-class"
+                ),
+                "{selector}: {error}"
+            );
+        }
+    }
+}
+
+const PIPE_HTML: &str =
+    r#"<main><div lang="en-US" data-x="a|b">A</div><div lang="fr" data-x="a">B</div></main>"#;
+
+const PIPE_CASES: &[(&str, &[&str])] = &[
+    ("div[lang|=en]", &["A"]),
+    ("div:is([lang|=en])", &["A"]),
+    ("div:not(:where([lang|=en]))", &["B"]),
+    (r#"div[data-x="a|b"]"#, &["A"]),
+    (r#"div:is([data-x="a|b"], !!!)"#, &["A"]),
+    (r#"div:not(:is([data-x="a|b"]))"#, &["B"]),
+];
+
+fn pipe_texts<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> Vec<String> {
+    let store = parse(PIPE_HTML, queries).unwrap();
+    store
+        .get(selector)
+        .map(|elements| {
+            elements
+                .map(|element| element.text(&store).unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn attribute_pipes_and_quoted_pipes_still_match() {
+    for &(selector, expected) in PIPE_CASES {
+        let queries = [Query::all(selector, Save::all()).unwrap().build()];
+        assert_eq!(pipe_texts(&queries, selector), expected, "{selector}");
+    }
+}
+
+#[test]
+fn attribute_pipes_and_quoted_pipes_match_in_macro_queries() {
+    macro_rules! check {
+        ($index:literal, $selector:literal) => {{
+            let (selector, expected) = PIPE_CASES[$index];
+            assert_eq!(selector, $selector);
+            let static_queries = [query! { all($selector, Save::all()) }];
+            assert_eq!(
+                pipe_texts(&static_queries, selector),
+                expected,
+                "{selector}"
+            );
+        }};
+    }
+
+    check!(0, "div[lang|=en]");
+    check!(1, "div:is([lang|=en])");
+    check!(2, "div:not(:where([lang|=en]))");
+    check!(3, r#"div[data-x="a|b"]"#);
+    check!(4, r#"div:is([data-x="a|b"], !!!)"#);
+    check!(5, r#"div:not(:is([data-x="a|b"]))"#);
+    assert_eq!(PIPE_CASES.len(), 6);
 }

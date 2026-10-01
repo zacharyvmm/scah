@@ -186,6 +186,24 @@ fn class_tilde_attribute_selector() {
 }
 
 #[test]
+fn whitespace_word_selectors_split_only_on_css_whitespace() {
+    let html = "<div data-x='bar\u{00A0}FOO' class='bar\u{00A0}foo'>nbsp</div>\
+                <div data-x='bar\t\r\n\u{000C} FOO' class='bar\t\r\n\u{000C} foo'>ascii</div>";
+    let selectors = [
+        r#"div[data-x~="foo" i]"#,
+        r#"div[data-x~="FOO" s]"#,
+        r#"div[data-x~="FOO"]"#,
+        "div.foo",
+        r#"div[class~="foo"]"#,
+    ];
+    let store = parse_all(html, &selectors);
+
+    for selector in selectors {
+        assert_eq!(texts(&store, selector), vec![Some("ascii")], "{selector}");
+    }
+}
+
+#[test]
 fn attribute_name_case_insensitive_routing() {
     let html = r#"<div id="a" data-x="v">A</div>"#;
     let store = parse_with_saves(
