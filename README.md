@@ -163,16 +163,20 @@ scah = { git = "https://github.com/zacharyvmm/scah" }
 Filtered `of S` arguments are intentionally limited to local compound selectors
 that can be evaluated at an opening tag. Future-dependent selectors such as
 `:has()`, `:empty`, `:last-child`, and `:nth-last-child()` are rejected.
-Inside `:is()` and `:where()`, alternatives that are invalid CSS are discarded
-using forgiving selector-list semantics. Valid alternatives that scah cannot
-evaluate reject the whole selector, so results are never silently narrowed.
-These include combinators, structural or unrecognized pseudo-classes,
-escaped or non-ASCII identifiers (including attribute names), escaped attribute
-values such as `[title="a\"b"]` or `[data-x=foo\ bar]`, and namespaced
-attributes such as `[ns|attr]`. scah does not decode CSS escapes yet, so it
-rejects escaped identifiers and attribute values everywhere rather than
-matching the raw backslashes. `:not()` and filtered `of S` lists are strict
-and reject any invalid or unsupported alternative. In nested query
+Inside `:is()` and `:where()`, only recoverable invalid alternatives are
+discarded, so `div:is(.card, .bad])` matches `div.card`. Valid alternatives
+that scah cannot evaluate reject the whole selector, so results are never
+silently narrowed. These include combinators, structural or unrecognized
+pseudo-classes, escaped pseudo-class names, out-of-range `An+B` numbers,
+escaped or non-ASCII identifiers (including attribute names), escaped
+attribute values such as `[title="a\"b"]`, and namespaced attributes such as
+`[ns|attr]`. Parsing also fails closed on syntax scah does not model: an
+alternative containing a CSS escape (`\`), a comment (`/* */`), the nesting
+selector `&`, a NUL character, or a namespace `|` outside attribute brackets
+rejects the whole selector, even if it is otherwise malformed and even inside
+nested `:not()`, `:is()`, or `:where()`. For example, `div:is(.card, .bad]/**/)`
+fails with "CSS comments are not supported". `:not()` and filtered `of S` lists
+are strict and reject any invalid or unsupported alternative. In nested query
 sections, `:scope` is supported as a standalone leading anchor for a following
 relative selector, as in `:scope > a`. Terminal `:scope` and compound anchors
 such as `:scope.card` are not supported. Selector lists nested inside
