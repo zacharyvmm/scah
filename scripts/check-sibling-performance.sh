@@ -8,6 +8,7 @@ fi
 
 repo_root="$(git rev-parse --show-toplevel)"
 base_ref="${1:-origin/main}"
+base_label="$(git rev-parse --short "$base_ref")"
 gate_root="$(mktemp -d -t scah-sibling-performance.XXXXXX)"
 base_tree="$gate_root/base"
 
@@ -58,23 +59,27 @@ run_round() {
     --save-baseline "$baseline_name"
 }
 
-for round in 1 2 3; do
+# Use an even number of alternating rounds so each binary runs first equally
+# often. This prevents thermal or frequency drift from systematically favoring
+# either the base or the candidate.
+for round in 1 2 3 4; do
   if ((round % 2 == 0)); then
     run_round "$gate_root/candidate-benchmark" "sibling-candidate-$round"
-    run_round "$gate_root/base-benchmark" "sibling-main-$round"
+    run_round "$gate_root/base-benchmark" "sibling-base-$round"
   else
-    run_round "$gate_root/base-benchmark" "sibling-main-$round"
+    run_round "$gate_root/base-benchmark" "sibling-base-$round"
     run_round "$gate_root/candidate-benchmark" "sibling-candidate-$round"
   fi
 done
 
-python3 - "$repo_root/target/criterion/ordinary_parser_gate" <<'PY'
+python3 - "$repo_root/target/criterion/ordinary_parser_gate" "$base_label" <<'PY'
 import json
 import pathlib
 import statistics
 import sys
 
 root = pathlib.Path(sys.argv[1])
+base_label = sys.argv[2]
 limit = 1.05
 failed = False
 
@@ -88,12 +93,12 @@ for workload in ("no_match", "match"):
 
     ratios = [
         estimate("sibling-candidate", round_number)
-        / estimate("sibling-main", round_number)
-        for round_number in (1, 2, 3)
+        / estimate("sibling-base", round_number)
+        for round_number in (1, 2, 3, 4)
     ]
     ratio = statistics.median(ratios)
     delta = (ratio - 1.0) * 100.0
-    print(f"{workload}: {delta:+.2f}% vs main")
+    print(f"{workload}: {delta:+.2f}% vs {base_label}")
     failed |= ratio > limit
 
 if failed:

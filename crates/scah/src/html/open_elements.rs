@@ -113,6 +113,7 @@ impl<'html> OpenElementStack<'html> {
         len >= MAX_ELEMENT_DEPTH as usize
     }
 
+    #[inline(always)]
     pub fn push_classified(
         &mut self,
         name: &'html str,

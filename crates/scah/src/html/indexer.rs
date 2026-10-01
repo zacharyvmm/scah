@@ -1340,6 +1340,7 @@ impl TagIndexer for AutoTagIndexer {
         }
     }
 
+    #[inline(always)]
     fn finish_open(&mut self, source: &[u8], open: &OpenTagStart) -> usize {
         if let Some(indexer) = &mut self.full {
             indexer.finish_open(source, open)
