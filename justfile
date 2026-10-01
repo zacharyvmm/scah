@@ -67,6 +67,11 @@ bench-python-whatwg:
     cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_spec.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/whatwg.json && python3 ./benches/utils/figure.py ./benches/whatwg.json -o ./benches/images/whatwg.png && rm ./benches/whatwg.json
 bench-python-nested:
     cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_structural.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/nested.json && python3 ./benches/utils/figure.py ./benches/nested.json -o ./benches/images/nested.png && rm ./benches/nested.json
+# Performance gates: compare this checkout against a base revision (x86-64 only)
+gate-sibling base="origin/main":
+    ./benches/gates/check-sibling-performance.sh {{base}}
+gate-text base="origin/main":
+    ./benches/gates/check-text-performance.sh {{base}}
 generate-graph-data:
     cargo criterion -p scah-benches --message-format=json >> criterion.json
 generate-graphs:
