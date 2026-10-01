@@ -76,8 +76,8 @@ These are native Acer timings, not a confirmed GitHub-hosted CI result for the n
 To repeat the repository gates on x86-64 from this branch:
 
 ```sh
-taskset -c 2 bash scripts/check-text-performance.sh 7847d18684d647916506d29328fa47414f2a978a
-taskset -c 2 bash scripts/check-sibling-performance.sh 7847d18684d647916506d29328fa47414f2a978a
+taskset -c 2 bash benches/gates/check-text-performance.sh 7847d18684d647916506d29328fa47414f2a978a
+taskset -c 2 bash benches/gates/check-sibling-performance.sh 7847d18684d647916506d29328fa47414f2a978a
 ```
 
 For broader comparisons, build the text-extraction speed benchmark separately at c4fff2a and at the candidate. Run the eight named workloads at size 1,000 with the Criterion settings above, alternating revision order between rounds. Use paired mean estimates consistently for those workloads.

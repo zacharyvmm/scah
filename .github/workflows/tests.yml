@@ -97,7 +97,7 @@ jobs:
         if: github.event_name == 'pull_request' && steps.perf-changes.outputs.relevant == 'true'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: ./scripts/check-sibling-performance.sh "$BASE_SHA"
+        run: ./benches/gates/check-sibling-performance.sh "$BASE_SHA"
       - name: Check text-extraction benchmark
         run: cargo bench -p scah-benches --bench speed_bench_text_extraction -- --test
       - name: Check text-extraction memory benchmark
@@ -106,7 +106,7 @@ jobs:
         if: github.event_name == 'pull_request' && steps.perf-changes.outputs.relevant == 'true'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: ./scripts/check-text-performance.sh "$BASE_SHA"
+        run: ./benches/gates/check-text-performance.sh "$BASE_SHA"
       - name: Run cursor stats report
         run: cargo run -p scah-cursor-benches --release --bin cursor_stats_report
 

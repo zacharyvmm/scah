@@ -60,8 +60,8 @@ Correctness, lint, and allocation checks ran on the local ARM64 Mac with Rust 1.
 To repeat the repository gates on x86-64:
 
 ```sh
-taskset -c 2 bash scripts/check-text-performance.sh 7847d18684d647916506d29328fa47414f2a978a
-taskset -c 2 bash scripts/check-sibling-performance.sh 7847d18684d647916506d29328fa47414f2a978a
+taskset -c 2 bash benches/gates/check-text-performance.sh 7847d18684d647916506d29328fa47414f2a978a
+taskset -c 2 bash benches/gates/check-sibling-performance.sh 7847d18684d647916506d29328fa47414f2a978a
 ```
 
 This experiment retains the current parser and shared text storage.
