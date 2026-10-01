@@ -1,163 +1,82 @@
-# Performance Benchmark Report
+# Benchmarks
 
-## Nested All
+## Layout
 
-### Input Size: 100 Elements
+| Path | Contents |
+| ---- | -------- |
+| `simple/`, `nested/`, `spec/` | Cross-library comparisons (scah vs `lol_html`, `tl`, lexbor, `scraper`, lxml) |
+| `macro/` | Runtime query builder vs the `query!` macro (currently disabled in `Cargo.toml`) |
+| `text_extraction/` | Text-mode throughput and memory, plus the text performance gate |
+| `cursor_dominance/`, `sibling/`, `structural/`, `ordinary_gate/` | Parser engine workloads; `ordinary_gate` backs the sibling performance gate |
+| `element_tape/`, `escape_scanner/`, `tag_classification/` | Microbenchmarks for internal design experiments |
+| `gates/` | Scripts that compare a pull request against its base revision in CI |
+| `results/` | Published comparison results, one JSON file per suite and scenario |
+| `report/` | Converts raw benchmark output into `results/` and renders the README tables |
 
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **0.044809** | 0.000236 | 1x |
-| lol_html | **0.086153** | 0.001005 | 1.92x |
-| tl | **0.093982** | 0.000506 | 2.1x |
-| lexbor | **0.105770** | 0.001424 | 2.36x |
-| scraper | **0.218102** | 0.000749 | 4.87x |
-| lxml | **0.620908** | 0.005739 | 13.86x |
+The Python and Node comparisons live with their bindings, in
+`crates/bindings/scah-python/benches/` and `crates/bindings/scah-node/benchmark/`.
 
-### Input Size: 1000 Elements
+## Running
 
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **0.435837** | 0.003017 | 1x |
-| lol_html | **0.843365** | 0.010431 | 1.94x |
-| tl | **0.937526** | 0.004154 | 2.15x |
-| lexbor | **0.990152** | 0.005089 | 2.27x |
-| scraper | **2.170644** | 0.011312 | 4.98x |
-| lxml | **5.996234** | 0.017434 | 13.76x |
+The WHATWG scenario parses a local copy of the HTML specification:
 
-### Input Size: 10000 Elements
+```bash
+just download-html-spec-bench
+```
 
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **4.344552** | 0.017371 | 1x |
-| lol_html | **8.393035** | 0.100077 | 1.93x |
-| lexbor | **10.163954** | 0.048582 | 2.34x |
-| tl | **10.726038** | 0.090288 | 2.47x |
-| scraper | **21.992745** | 0.136247 | 5.06x |
-| lxml | **59.605424** | 0.343690 | 13.72x |
+Run a single Rust comparison while iterating:
 
----
+```bash
+just bench-rust-simple-all   # or bench-rust-first, bench-rust-nested, bench-rust-whatwg
+```
 
-## Nested First
+Record published results and refresh the README tables:
 
-### Input Size: 100 Elements
+```bash
+just bench-rust     # needs cargo-criterion: cargo install cargo-criterion
+just bench-python
+just bench-node
+just bench-readme
+```
 
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **0.000979** | 0.000007 | 1x |
-| lol_html | **0.002785** | 0.000024 | 2.84x |
-| tl | **0.021984** | 0.000078 | 22.45x |
-| lexbor | **0.066835** | 0.000983 | 68.26x |
-| scraper | **0.117372** | 0.000923 | 119.87x |
-| lxml | **0.440914** | 0.001726 | 450.3x |
+Commit the updated `results/` files together with the README changes. Each
+file records the date, commit, OS, CPU, and runtime of its run; record results
+on an otherwise idle machine.
 
-### Input Size: 1000 Elements
+Memory benchmarks use gungraun (Valgrind) and run only on Linux:
 
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **0.000968** | 0.000010 | 1x |
-| lol_html | **0.002777** | 0.000024 | 2.87x |
-| tl | **0.203163** | 0.000522 | 209.78x |
-| lexbor | **0.563060** | 0.002095 | 581.41x |
-| scraper | **1.160855** | 0.012832 | 1198.69x |
-| lxml | **4.236389** | 0.012527 | 4374.44x |
+```bash
+cargo bench -p scah-benches --features linux-memory-benches --bench memory_bench_simple_all
+```
 
-### Input Size: 10000 Elements
+## Result format
 
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **0.000968** | 0.000007 | 1x |
-| lol_html | **0.002812** | 0.000021 | 2.9x |
-| tl | **2.436490** | 0.006697 | 2516.14x |
-| lexbor | **5.641176** | 0.035952 | 5825.59x |
-| scraper | **11.966726** | 0.047434 | 12357.93x |
-| lxml | **42.947091** | 0.224505 | 44351.08x |
+`results/<suite>/<scenario>.json`, where `suite` is `rust`, `python`, or
+`node`:
 
----
+```json
+{
+  "schema_version": 1,
+  "suite": "rust",
+  "scenario": "simple-all",
+  "title": "Every <a> in a flat list of <div><a> pairs",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-06-06",
+    "commit": "…",
+    "dirty": false,
+    "os": "Linux 7.0.0",
+    "arch": "x86_64",
+    "cpu": "…",
+    "runtime": "rustc 1.98.1"
+  },
+  "results": [
+    { "library": "scah", "size": 10000, "mean": 1.92, "stdev": 0.01 }
+  ]
+}
+```
 
-## Simple All
-
-### Input Size: 100 Elements
-
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **0.019732** | 0.000207 | 1x |
-| lol_html | **0.025187** | 0.000222 | 1.28x |
-| tl | **0.029108** | 0.000231 | 1.48x |
-| lexbor | **0.056394** | 0.000566 | 2.86x |
-| scraper | **0.132458** | 0.000565 | 6.71x |
-| lxml | **0.238904** | 0.000920 | 12.11x |
-
-### Input Size: 1000 Elements
-
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **0.193196** | 0.001253 | 1x |
-| lol_html | **0.243865** | 0.002561 | 1.26x |
-| tl | **0.285094** | 0.001338 | 1.48x |
-| lexbor | **0.492960** | 0.003316 | 2.55x |
-| scraper | **1.323338** | 0.003854 | 6.85x |
-| lxml | **2.350505** | 0.006333 | 12.17x |
-
-### Input Size: 10000 Elements
-
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **1.917392** | 0.008932 | 1x |
-| lol_html | **2.402751** | 0.018206 | 1.25x |
-| tl | **3.273427** | 0.012414 | 1.71x |
-| lexbor | **4.872407** | 0.019504 | 2.54x |
-| scraper | **13.612814** | 0.038746 | 7.1x |
-| lxml | **23.481411** | 0.101020 | 12.25x |
-
----
-
-## Simple First
-
-### Input Size: 100 Elements
-
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **0.000411** | 0.000003 | 1x |
-| lol_html | **0.000745** | 0.000022 | 1.81x |
-| tl | **0.013840** | 0.000059 | 33.67x |
-| lexbor | **0.043155** | 0.001218 | 105x |
-| scraper | **0.114599** | 0.000398 | 278.82x |
-| lxml | **0.184477** | 0.000814 | 448.83x |
-
-### Input Size: 1000 Elements
-
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **0.000413** | 0.000017 | 1x |
-| lol_html | **0.000700** | 0.000008 | 1.7x |
-| tl | **0.142669** | 0.004539 | 345.4x |
-| lexbor | **0.379352** | 0.010716 | 918.41x |
-| scraper | **1.172757** | 0.045032 | 2839.24x |
-| lxml | **1.783004** | 0.031148 | 4316.64x |
-
-### Input Size: 10000 Elements
-
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| scah | **0.000408** | 0.000005 | 1x |
-| lol_html | **0.000686** | 0.000009 | 1.68x |
-| tl | **1.687547** | 0.007043 | 4139.62x |
-| lexbor | **3.425065** | 0.013289 | 8401.83x |
-| scraper | **11.766839** | 0.104226 | 28864.55x |
-| lxml | **17.632672** | 0.157668 | 43253.69x |
-
----
-
-## WHATWG All Links
-
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| lol_html | **27.116180** | 0.148451 | 1x |
-| scah | **28.309529** | 0.208179 | 1.04x |
-| tl | **33.298921** | 0.508838 | 1.23x |
-| lexbor | **59.257338** | 0.542910 | 2.19x |
-| scraper | **138.763909** | 0.829808 | 5.12x |
-| lxml | **328.077321** | 1.014610 | 12.1x |
-
----
-
+`mean` and `stdev` are milliseconds per parse-and-query. `size` is the number of
+generated elements for synthetic inputs and `null` for real documents. Files
+imported from the earlier PNG reports carry an `environment.note` and no
+machine details.

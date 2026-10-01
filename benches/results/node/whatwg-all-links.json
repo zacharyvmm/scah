@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "suite": "node",
+  "scenario": "whatwg-all-links",
+  "title": "Every <a> in the WHATWG HTML specification",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-07-15",
+    "commit": null,
+    "dirty": null,
+    "os": null,
+    "arch": null,
+    "cpu": null,
+    "runtime": null,
+    "note": "Imported from the markdown report generated alongside the former PNG chart; the run did not record commit or machine details."
+  },
+  "results": [
+    {
+      "library": "scah",
+      "size": null,
+      "mean": 146.267183,
+      "stdev": 18.614416
+    },
+    {
+      "library": "cheerio",
+      "size": null,
+      "mean": 1441.005123,
+      "stdev": 77.146941
+    },
+    {
+      "library": "node-html-parser",
+      "size": null,
+      "mean": 1887.461627,
+      "stdev": 55.297171
+    },
+    {
+      "library": "linkedom",
+      "size": null,
+      "mean": 6571.230916,
+      "stdev": 6574.421441
+    }
+  ]
+}

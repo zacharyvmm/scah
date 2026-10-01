@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "suite": "python",
+  "scenario": "nested-all",
+  "title": "Every product card, with nested title, rating, and description queries",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-07-15",
+    "commit": null,
+    "dirty": null,
+    "os": null,
+    "arch": null,
+    "cpu": null,
+    "runtime": null,
+    "note": "Imported from the markdown report generated alongside the former PNG chart; the run did not record commit or machine details."
+  },
+  "results": [
+    {
+      "library": "Scah",
+      "size": 10000,
+      "mean": 25.236889,
+      "stdev": 1.258544
+    },
+    {
+      "library": "Selectolax",
+      "size": 10000,
+      "mean": 162.185541,
+      "stdev": 37.247064
+    },
+    {
+      "library": "Parsel",
+      "size": 10000,
+      "mean": 767.200611,
+      "stdev": 5.964915
+    },
+    {
+      "library": "lxml",
+      "size": 10000,
+      "mean": 969.567387,
+      "stdev": 1.206766
+    },
+    {
+      "library": "BS4 (lxml)",
+      "size": 10000,
+      "mean": 2151.445949,
+      "stdev": 21.29933
+    }
+  ]
+}

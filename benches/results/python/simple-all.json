@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "suite": "python",
+  "scenario": "simple-all",
+  "title": "Every <a> in a flat list of <div><a> pairs",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-07-15",
+    "commit": null,
+    "dirty": null,
+    "os": null,
+    "arch": null,
+    "cpu": null,
+    "runtime": null,
+    "note": "Imported from the markdown report generated alongside the former PNG chart; the run did not record commit or machine details."
+  },
+  "results": [
+    {
+      "library": "Scah",
+      "size": 10000,
+      "mean": 8.612478,
+      "stdev": 0.340198
+    },
+    {
+      "library": "Selectolax",
+      "size": 10000,
+      "mean": 21.186458,
+      "stdev": 0.444657
+    },
+    {
+      "library": "lxml",
+      "size": 10000,
+      "mean": 53.034731,
+      "stdev": 0.342591
+    },
+    {
+      "library": "Parsel",
+      "size": 10000,
+      "mean": 200.028617,
+      "stdev": 0.778658
+    },
+    {
+      "library": "BS4 (lxml)",
+      "size": 10000,
+      "mean": 248.261306,
+      "stdev": 0.816299
+    },
+    {
+      "library": "Gazpacho",
+      "size": 10000,
+      "mean": 556.049321,
+      "stdev": 1075.993797
+    }
+  ]
+}

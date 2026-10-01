@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
@@ -12,7 +11,6 @@ import { parse as nhpParse } from 'node-html-parser'
 import { Query, parse } from '../index.js'
 
 type CliOptions = {
-  imageOutput?: string
   jsonOutput?: string
   scenario?: ScenarioName
 }
@@ -51,7 +49,6 @@ type MitataBenchmark = {
 const QUERY = 'a'
 const BENCHMARK_NAME = 'node-parse-query'
 const DEFAULT_JSON_OUTPUT = './benchmark/results/synthetic.json'
-const DEFAULT_IMAGE_OUTPUT = './benchmark/images/synthetic.png'
 const SPEC_HTML_FILE = resolve('../../../benches/bench_data/html.spec.whatwg.org.html')
 const SIMPLE_HTML = generateHtml(10_000)
 const PRODUCT_HTML = generateProductCatalogHtml(10_000)
@@ -188,16 +185,6 @@ function parseCliArgs(argv: string[]): CliOptions {
       }
     }
 
-    if (arg === '--image') {
-      const next = argv[index + 1]
-      if (next && !next.startsWith('--')) {
-        options.imageOutput = next
-        index++
-      } else {
-        options.imageOutput = DEFAULT_IMAGE_OUTPUT
-      }
-    }
-
     if (arg === '--scenario') {
       const next = argv[index + 1] as ScenarioName | undefined
       if (next) {
@@ -257,51 +244,6 @@ function writeJsonOutput(outputPath: string, benchmarks: MitataBenchmark[]) {
   writeFileSync(absolutePath, JSON.stringify(toPytestBenchmarkJson(benchmarks), null, 2))
   console.log(`Benchmark JSON saved to ${absolutePath}`)
   return absolutePath
-}
-
-function renderImageFromJson(jsonPath: string, imagePath: string) {
-  const absoluteImagePath = resolve(imagePath)
-  mkdirSync(dirname(absoluteImagePath), { recursive: true })
-
-  const figureScript = resolve('../scah-python/benches/utils/figure.py')
-  const env = {
-    ...process.env,
-    MPLCONFIGDIR: process.env.MPLCONFIGDIR ?? '/tmp/matplotlib',
-    UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? '/tmp/uv-cache',
-  }
-  const pythonBindingRoot = resolve('../scah-python')
-
-  const commands: Array<[string, string[]]> = [
-    [
-      'uv',
-      [
-        'run',
-        '--directory',
-        pythonBindingRoot,
-        '--all-extras',
-        'python3',
-        './benches/utils/figure.py',
-        jsonPath,
-        '-o',
-        absoluteImagePath,
-      ],
-    ],
-    ['python3', [figureScript, jsonPath, '-o', absoluteImagePath]],
-  ]
-
-  for (const [command, args] of commands) {
-    const result = spawnSync(command, args, { env, stdio: 'inherit' })
-    if (result.status === 0) {
-      console.log(`Benchmark image saved to ${absoluteImagePath}`)
-      return
-    }
-
-    if (result.error && 'code' in result.error && result.error.code === 'ENOENT') {
-      continue
-    }
-  }
-
-  throw new Error(`Failed to render benchmark image via ${figureScript}`)
 }
 
 function consumeElements(elements: unknown[]) {
@@ -541,17 +483,12 @@ function registerBenchmarks(scenario?: ScenarioName) {
 const options = parseCliArgs(process.argv.slice(2))
 registerBenchmarks(options.scenario)
 
-if (!options.jsonOutput && !options.imageOutput) {
+if (!options.jsonOutput) {
   await run()
 } else {
   const result = await run({
     format: 'quiet',
   })
 
-  const benchmarks = result.benchmarks as MitataBenchmark[]
-  const jsonPath = writeJsonOutput(options.jsonOutput ?? DEFAULT_JSON_OUTPUT, benchmarks)
-
-  if (options.imageOutput) {
-    renderImageFromJson(jsonPath, options.imageOutput)
-  }
+  writeJsonOutput(options.jsonOutput, result.benchmarks as MitataBenchmark[])
 }

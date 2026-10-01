@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "suite": "node",
+  "scenario": "simple-all",
+  "title": "Every <a> in a flat list of <div><a> pairs",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-07-15",
+    "commit": null,
+    "dirty": null,
+    "os": null,
+    "arch": null,
+    "cpu": null,
+    "runtime": null,
+    "note": "Imported from the markdown report generated alongside the former PNG chart; the run did not record commit or machine details."
+  },
+  "results": [
+    {
+      "library": "scah",
+      "size": 10000,
+      "mean": 15.248387,
+      "stdev": 2.090496
+    },
+    {
+      "library": "cheerio",
+      "size": 10000,
+      "mean": 87.417827,
+      "stdev": 8.681444
+    },
+    {
+      "library": "linkedom",
+      "size": 10000,
+      "mean": 96.33957,
+      "stdev": 11.681953
+    },
+    {
+      "library": "happy-dom",
+      "size": 10000,
+      "mean": 319.813476,
+      "stdev": 68.26811
+    },
+    {
+      "library": "jsdom",
+      "size": 10000,
+      "mean": 403.596567,
+      "stdev": 61.265309
+    },
+    {
+      "library": "node-html-parser",
+      "size": 10000,
+      "mean": 462.31092,
+      "stdev": 45.308827
+    }
+  ]
+}

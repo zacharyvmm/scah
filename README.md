@@ -186,16 +186,21 @@ levels; deeper selectors are rejected when the query is built.
 > Full API documentation: [docs.rs/scah](https://docs.rs/scah)
 
 #### Benchmarks
-![Criterion Nested](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/nested_all_selection_10000.png)
 
-![Criterion Simple](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/simple_all_selection_10000.png)
+<!-- benchmarks:rust -->
+| Library | WHATWG spec | Nested (all) | Nested (first) | Flat (all) | Flat (first) |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| **scah** | **28.3 ms** | **4.34 ms** | **968 ns** | **1.92 ms** | **408 ns** |
+| lol_html | 27.1 ms (0.96×) | 8.39 ms (1.93×) | 2.81 µs (2.90×) | 2.40 ms (1.25×) | 686 ns (1.68×) |
+| tl | 33.3 ms (1.18×) | 10.7 ms (2.47×) | 2.44 ms (2,517×) | 3.27 ms (1.71×) | 1.69 ms (4,136×) |
+| lexbor | 59.3 ms (2.09×) | 10.2 ms (2.34×) | 5.64 ms (5,828×) | 4.87 ms (2.54×) | 3.43 ms (8,395×) |
+| scraper | 139 ms (4.90×) | 22.0 ms (5.06×) | 12.0 ms (12,362×) | 13.6 ms (7.10×) | 11.8 ms (28,840×) |
+| lxml | 328 ms (11.6×) | 59.6 ms (13.7×) | 42.9 ms (44,367×) | 23.5 ms (12.2×) | 17.6 ms (43,217×) |
 
-![Criterion WhatWg HTML Spec](https://raw.githubusercontent.com/zacharyvmm/scah/main/benches/images/whatwg_html_spec_all_links.png)
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-06-06; raw data and run details in [`benches/results/rust`](https://github.com/zacharyvmm/scah/tree/main/benches/results/rust).
+<!-- /benchmarks:rust -->
 
-The repository includes two Rust benchmark tracks:
-
-- Cross-library comparisons for simple `all` and `first` selectors.
-- Runtime-builder vs `query!` macro comparisons to measure query-construction overhead separately from execution.
+See [`benches/`](benches/README.md) for methodology and how to reproduce these numbers.
 
 ### Python
 ```bash
@@ -215,17 +220,19 @@ store = parse(html, [query])
 ```
 
 #### Benchmarks
-##### Real Html BenchMark ([html.spec.whatwg.org](https://html.spec.whatwg.org/)) (select all `a` tags):
-![WhatWg Html Spec BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/whatwg.png)
 
-##### Nested Html BenchMark (select all `Products`):
-![Nested Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/nested.png)
+<!-- benchmarks:python -->
+| Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
+| :--- | ---: | ---: | ---: | ---: |
+| **Scah** | **116 ms** | **25.2 ms** | **8.61 ms** | **47.0 µs** |
+| Selectolax | 340 ms (2.94×) | 162 ms (6.43×) | 21.2 ms (2.46×) | 9.23 ms (196×) |
+| lxml | 769 ms (6.65×) | 970 ms (38.4×) | 53.0 ms (6.16×) | 15.9 ms (337×) |
+| Parsel | 1.80 s (15.5×) | 767 ms (30.4×) | 200 ms (23.2×) | 25.8 ms (550×) |
+| Gazpacho | 3.81 s (33.0×) | — | 556 ms (64.6×) | 156 ms (3,325×) |
+| BS4 (lxml) | 5.45 s (47.1×) | 2.15 s (85.3×) | 248 ms (28.8×) | 246 ms (5,235×) |
 
-##### Structural Html BenchMark (select all `a` tags):
-![Structural Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/synthetic.png)
-
-##### First Element Html BenchMark (select first `a`):
-![First Element Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/synthetic_first.png)
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-04-08 to 2026-07-15; raw data and run details in [`benches/results/python`](https://github.com/zacharyvmm/scah/tree/main/benches/results/python).
+<!-- /benchmarks:python -->
 
 ### Typescript / Javascript
 ```bash
@@ -246,17 +253,19 @@ const store = parse(html, [query]);
 ```
 
 #### Benchmarks
-##### Real Html BenchMark ([html.spec.whatwg.org](https://html.spec.whatwg.org/)) (select all `a` tags):
-![Real Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-node/benchmark/images/whatwg.png)
 
-##### Nested Html BenchMark (select all `a` tags):
-![Nested Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-node/benchmark/images/nested.png)
+<!-- benchmarks:node -->
+| Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
+| :--- | ---: | ---: | ---: | ---: |
+| **scah** | **146 ms** | **72.7 ms** | **15.2 ms** | **247 µs** |
+| cheerio | 1.44 s (9.85×) | 253 ms (3.48×) | 87.4 ms (5.73×) | 68.2 ms (276×) |
+| node-html-parser | 1.89 s (12.9×) | 393 ms (5.41×) | 462 ms (30.3×) | 64.1 ms (259×) |
+| linkedom | 6.57 s (44.9×) | 218 ms (3.00×) | 96.3 ms (6.32×) | 147 ms (595×) |
+| jsdom | — | 1.01 s (13.9×) | 404 ms (26.5×) | 291 ms (1,180×) |
+| happy-dom | — | — | 320 ms (21.0×) | 252 ms (1,019×) |
 
-##### Synthetic Html BenchMark (select all `a` tags):
-![Synthetic Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-node/benchmark/images/synthetic.png)
-
-##### First Element Html BenchMark (select first `a`):
-![First Element Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-node/benchmark/images/synthetic_first.png)
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-04-08 to 2026-07-15; raw data and run details in [`benches/results/node`](https://github.com/zacharyvmm/scah/tree/main/benches/results/node).
+<!-- /benchmarks:node -->
 
 ## Text extraction
 

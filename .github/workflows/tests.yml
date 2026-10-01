@@ -54,6 +54,13 @@ jobs:
           python3 -m unittest crates/scah/scripts/test_generate_entities.py
           python3 crates/scah/scripts/generate_entities.py
           git diff --exit-code -- crates/scah/src/html/entities_table.rs
+      - name: Verify benchmark report tables
+        run: |
+          python3 -m unittest benches/report/test_report.py
+          python3 benches/report/report.py readme --check \
+            README.md \
+            crates/bindings/scah-python/README.md \
+            crates/bindings/scah-node/README.md
       - name: Verify third-party license notice
         run: |
           test -f crates/scah/THIRD_PARTY_LICENSES/WHATWG-HTML.txt
@@ -87,7 +94,7 @@ jobs:
         run: cargo bench -p scah-benches --bench speed_bench_structural -- --test
       - name: Check ordinary parser gate benchmark
         run: cargo bench -p scah-benches --bench speed_bench_ordinary_gate -- --test
-      # Documentation-only changes cannot affect parser performance, and noisy
+      # Documentation and benchmark-result changes cannot affect parser performance, and noisy
       # runners would otherwise let them fail the gates spuriously.
       - name: Detect performance-relevant changes
         id: perf-changes
@@ -95,8 +102,9 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          if git diff --quiet "$BASE_SHA" HEAD -- . ':(exclude)*.md' ':(exclude)docs/**'; then
-            echo "Only documentation changed; skipping performance gates."
+          if git diff --quiet "$BASE_SHA" HEAD -- . ':(exclude)*.md' ':(exclude)docs/**' \
+            ':(exclude)benches/results/**' ':(exclude)benches/report/**'; then
+            echo "Only documentation or benchmark results changed; skipping performance gates."
             echo "relevant=false" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=true" >> "$GITHUB_OUTPUT"

@@ -35,12 +35,15 @@ lint:
     cargo clippy --all-targets --all-features -- -D warnings
     cd crates/bindings/scah-node && bun run lint
 
-bench: bench-rust bench-node bench-python
-bench-simple-all: bench-rust-simple-all bench-node-simple-all bench-python-simple-all
-bench-first: bench-rust-first bench-node-first bench-python-first
-bench-whatwg: bench-rust-whatwg bench-node-whatwg bench-python-whatwg
-bench-nested: bench-rust-nested bench-node-nested bench-python-nested
-bench-rust: bench-rust-simple-all bench-rust-whatwg bench-rust-nested
+# Run every comparison benchmark into benches/results, then refresh README tables
+bench: bench-rust bench-node bench-python bench-readme
+bench-readme:
+    python3 benches/report/report.py readme README.md crates/bindings/scah-python/README.md crates/bindings/scah-node/README.md
+
+# Requires cargo-criterion: cargo install cargo-criterion
+bench-rust:
+    cargo criterion -p scah-benches --message-format=json --bench speed_bench_simple_all --bench speed_bench_simple_first --bench speed_bench_nested_queries --bench speed_bench_spec_all_links > criterion.json
+    python3 benches/report/report.py import-criterion criterion.json
 bench-rust-simple-all:
     cargo bench -p scah-benches --bench speed_bench_simple_all
 bench-rust-first:
@@ -49,33 +52,23 @@ bench-rust-whatwg:
     cargo bench -p scah-benches --bench speed_bench_spec_all_links
 bench-rust-nested:
     cargo bench -p scah-benches --bench speed_bench_nested_queries
-bench-node: bench-node-simple-all bench-node-whatwg bench-node-nested
-bench-node-simple-all:
-    cd crates/bindings/scah-node && bun run bench:image:simple
-bench-node-first:
-    cd crates/bindings/scah-node && bun run bench:image:first
-bench-node-whatwg:
-    cd crates/bindings/scah-node && bun run bench:image:whatwg
-bench-node-nested:
-    cd crates/bindings/scah-node && bun run bench:image:nested
-bench-python: bench-python-simple-all bench-python-whatwg bench-python-nested
-bench-python-simple-all:
-    cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_synthetic.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic.json && python3 ./benches/utils/figure.py ./benches/synthetic.json -o ./benches/images/synthetic.png && rm ./benches/synthetic.json
-bench-python-first:
-    cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_synthetic_first.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic_first.json && python3 ./benches/utils/figure.py ./benches/synthetic_first.json -o ./benches/images/synthetic_first.png && rm ./benches/synthetic_first.json
-bench-python-whatwg:
-    cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_spec.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/whatwg.json && python3 ./benches/utils/figure.py ./benches/whatwg.json -o ./benches/images/whatwg.png && rm ./benches/whatwg.json
-bench-python-nested:
-    cd crates/bindings/scah-python && source .venv/bin/activate && uv run --all-extras pytest benches/test_structural.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/nested.json && python3 ./benches/utils/figure.py ./benches/nested.json -o ./benches/images/nested.png && rm ./benches/nested.json
+
+bench-node: (bench-node-scenario "simple-all" "10000") (bench-node-scenario "simple-first" "10000") (bench-node-scenario "nested-all" "10000") (bench-node-scenario "whatwg-all-links")
+bench-node-scenario scenario size="":
+    cd crates/bindings/scah-node && bun benchmark/bench.ts --scenario {{scenario}} --json benchmark/results/{{scenario}}.json
+    python3 benches/report/report.py import-pytest crates/bindings/scah-node/benchmark/results/{{scenario}}.json --suite node --scenario {{scenario}} --runtime "bun $(bun --version)" {{ if size != "" { "--size " + size } else { "" } }}
+
+bench-python: (bench-python-scenario "test_synthetic.py" "simple-all" "10000") (bench-python-scenario "test_synthetic_first.py" "simple-first" "10000") (bench-python-scenario "test_structural.py" "nested-all" "10000") (bench-python-scenario "test_spec.py" "whatwg-all-links")
+bench-python-scenario test scenario size="":
+    cd crates/bindings/scah-python && uv run --all-extras pytest benches/{{test}} --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/{{scenario}}.json
+    python3 benches/report/report.py import-pytest crates/bindings/scah-python/benches/{{scenario}}.json --suite python --scenario {{scenario}} {{ if size != "" { "--size " + size } else { "" } }}
+    rm crates/bindings/scah-python/benches/{{scenario}}.json
+
 # Performance gates: compare this checkout against a base revision (x86-64 only)
 gate-sibling base="origin/main":
     ./benches/gates/check-sibling-performance.sh {{base}}
 gate-text base="origin/main":
     ./benches/gates/check-text-performance.sh {{base}}
-generate-graph-data:
-    cargo criterion -p scah-benches --message-format=json >> criterion.json
-generate-graphs:
-    source ./crates/bindings/scah-python/.venv/bin/activate && python3 ./crates/bindings/scah-python/benches/utils/criterion_figure.py ./criterion.json
 download-html-spec-bench:
     mkdir -p benches/bench_data
     curl -L "https://html.spec.whatwg.org/" -o benches/bench_data/html.spec.whatwg.org.html

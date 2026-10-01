@@ -32,7 +32,7 @@ Repository = "https://github.com/zacharyvmm/scah"
 Issues = "https://github.com/zacharyvmm/scah/issues"
 Changelog = "https://github.com/zacharyvmm/scah/blob/main/CHANGELOG.md"
 
-# uv sync --all-extras
+# Benchmark dependencies; run the suite with `just bench-python`.
 [project.optional-dependencies]
 bench = [
     "scah",
@@ -42,27 +42,7 @@ bench = [
     "parsel",
     "gazpacho",
     "pytest",
-    "pytest-benchmark[histogram]",
-    "seaborn",
-    "poethepoet",
-]
-
-# uv run --all-extras poe bench
-[tool.poe.tasks]
-stub = { cmd = "cargo run --bin stub_gen" }
-bench = [
-    { ref = "stub" },
-#    { cmd = "uvx maturin build --release" },
-    { cmd = "uv pip install -e . --reinstall --no-cache"},
-    { cmd = "pytest benches/test_synthetic.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic.json" },
-    { cmd = "pytest benches/test_synthetic_first.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/synthetic_first.json" },
-    { cmd = "pytest benches/test_spec.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/whatwg.json" },
-    { cmd = "pytest benches/test_structural.py --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/nested.json" },
-    { cmd = "python3 ./benches/utils/figure.py ./benches/synthetic.json -o ./benches/images/synthetic.png" },
-    { cmd = "python3 ./benches/utils/figure.py ./benches/synthetic_first.json -o ./benches/images/synthetic_first.png" },
-    { cmd = "python3 ./benches/utils/figure.py ./benches/whatwg.json -o ./benches/images/whatwg.png" },
-    { cmd = "python3 ./benches/utils/figure.py ./benches/nested.json -o ./benches/images/nested.png" },
-    { cmd = "rm ./benches/*.json" },
+    "pytest-benchmark",
 ]
 
 [tool.uv.workspace]

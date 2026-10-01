@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "suite": "rust",
+  "scenario": "whatwg-all-links",
+  "title": "Every <a> in the WHATWG HTML specification",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-06-06",
+    "commit": null,
+    "dirty": null,
+    "os": null,
+    "arch": null,
+    "cpu": null,
+    "runtime": null,
+    "note": "Imported from the markdown report generated alongside the former PNG chart; the run did not record commit or machine details."
+  },
+  "results": [
+    {
+      "library": "lol_html",
+      "size": null,
+      "mean": 27.11618,
+      "stdev": 0.148451
+    },
+    {
+      "library": "scah",
+      "size": null,
+      "mean": 28.309529,
+      "stdev": 0.208179
+    },
+    {
+      "library": "tl",
+      "size": null,
+      "mean": 33.298921,
+      "stdev": 0.508838
+    },
+    {
+      "library": "lexbor",
+      "size": null,
+      "mean": 59.257338,
+      "stdev": 0.54291
+    },
+    {
+      "library": "scraper",
+      "size": null,
+      "mean": 138.763909,
+      "stdev": 0.829808
+    },
+    {
+      "library": "lxml",
+      "size": null,
+      "mean": 328.077321,
+      "stdev": 1.01461
+    }
+  ]
+}
