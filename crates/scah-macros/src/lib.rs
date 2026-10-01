@@ -801,4 +801,40 @@ mod tests {
                 .unwrap_or_else(|error| panic!("{selector}: {error}"));
         }
     }
+
+    #[test]
+    fn macro_rejects_namespaces_inside_functional_pseudo_class_arguments() {
+        for inner in [
+            ":nth-child(1 of|div)",
+            ":nth-child(1 of *|div)",
+            ":nth-last-child(1 of|div)",
+            ":is(ns|div)",
+            ":not(*|div)",
+        ] {
+            for selector in [
+                format!("div:is({inner})"),
+                format!("div:where({inner})"),
+                format!("div:not(:is({inner}))"),
+                format!("div:not(:where({inner}))"),
+                format!("div:not(:is({inner}, .x))"),
+            ] {
+                assert!(
+                    expand_query(&query_node(&selector)).is_err(),
+                    "{selector} should be rejected"
+                );
+            }
+        }
+
+        for selector in [
+            "div[lang|=en]",
+            "div:is([lang|=en])",
+            "div:not(:where([lang|=en]))",
+            r#"div[data-x="a|b"]"#,
+            r#"div:is([data-x="a|b"])"#,
+            r#"div:not(:is([data-x="a|b"]))"#,
+        ] {
+            expand_query(&query_node(selector))
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
+        }
+    }
 }

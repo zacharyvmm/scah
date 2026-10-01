@@ -18,8 +18,10 @@ pub(crate) struct ScanSummary {
     pub nesting_selector: Option<usize>,
     /// Position of the first U+0000, which CSS replaces with U+FFFD.
     pub nul: Option<usize>,
-    /// Position of the first `|` outside any block: a namespace prefix or a
-    /// column combinator. Inside `[...]` it is an attribute operator.
+    /// Position of the first `|` outside attribute brackets, at any nesting
+    /// depth: a namespace prefix or a column combinator. Inside `[...]` it is
+    /// an attribute operator or attribute namespace, which the attribute
+    /// parser handles itself.
     pub namespace: Option<usize>,
     /// A quoted string runs to the end of the source.
     pub unclosed_quote: bool,
@@ -64,14 +66,11 @@ pub(crate) fn scan(
             summary.nul.get_or_insert(index);
         } else if byte == b'&' {
             summary.nesting_selector.get_or_insert(index);
+        } else if byte == b'|' && !blocks.contains(&b']') {
+            summary.namespace.get_or_insert(index);
         }
-        if blocks.is_empty() {
-            if byte == b'|' {
-                summary.namespace.get_or_insert(index);
-            }
-            if visit(index, byte) {
-                return (Some(index), summary);
-            }
+        if blocks.is_empty() && visit(index, byte) {
+            return (Some(index), summary);
         }
         match byte {
             b'(' => blocks.push(b')'),
@@ -248,6 +247,11 @@ mod tests {
             "|a",
             "ns|a",
             "col || td",
+            ":nth-child(1 of|div)",
+            ":nth-child(1 of *|div)",
+            ":is(ns|div)",
+            ":not(:is(*|div))",
+            ":is([x], a|b)",
         ] {
             let error = unmodeled_syntax_error(source).expect(source);
             assert!(error.is_fatal(), "{source}");
@@ -259,6 +263,11 @@ mod tests {
             "[x=a]",
             "[x|=a]",
             r#"[x="|"]"#,
+            ":is([x|=a])",
+            ":is([ns|a])",
+            r#":is([x="|"])"#,
+            r#":lang("a|b")"#,
+            ":is([x=(|)])",
         ] {
             assert!(unmodeled_syntax_error(source).is_none(), "{source}");
         }
