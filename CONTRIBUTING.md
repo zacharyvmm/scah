@@ -66,8 +66,9 @@ see [`crates/scah/scripts/README.md`](crates/scah/scripts/README.md).
 ## Releases
 
 Maintainers release by bumping every package version, moving the
-`[Unreleased]` changelog entries under the new version, committing, and pushing
-a tag:
+`[Unreleased]` changelog entries under the new version, removing the
+"install from git" notes in `README.md` if the release now matches `main`,
+committing, and pushing a tag:
 
 ```bash
 just bump 0.0.22

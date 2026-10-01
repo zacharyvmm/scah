@@ -15,7 +15,7 @@ dev: dev-rust dev-node dev-python
 dev-rust:
     cargo build
 dev-node:
-    cd crates/bindings/scah-node && bun run build:debug
+    cd crates/bindings/scah-node && bun install && bun run build:debug
 dev-python:
     cd crates/bindings/scah-python && cargo run --bin stub_gen && uvx maturin build
 
@@ -25,7 +25,7 @@ test-rust:
 test-node:
     cd crates/bindings/scah-node && bun test
 test-python:
-    source ./crates/bindings/scah-python/.venv/bin/activate && uv run pytest ./crates/bindings/scah-python/tests/
+    cd crates/bindings/scah-python && uv run --with pytest --reinstall-package scah pytest tests/
 
 format:
     cargo fmt --all
