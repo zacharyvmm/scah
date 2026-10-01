@@ -1,37 +1,16 @@
 # Python Bindings for scah
 
-## Benchmark
-### Real Html BenchMark ([html.spec.whatwg.org](https://html.spec.whatwg.org/)) (select all `a` tags):
-![WhatWg Html Spec BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/whatwg.png)
+## Benchmarks
 
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| Scah | **52.203939** | 3.757941 | 1x |
-| Selectolax | **143.023167** | 2.674209 | 2.74x |
-| lxml | **359.881425** | 5.821705 | 6.89x |
-| Parsel | **673.563508** | 5.502256 | 12.9x |
-| Gazpacho | **1,637.216892** | 6.151786 | 31.36x |
-| BS4 (lxml) | **2,516.724850** | 389.778034 | 48.21x |
+<!-- benchmarks:python -->
+| Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
+| :--- | ---: | ---: | ---: | ---: |
+| **Scah** | **116 ms** | **25.2 ms** | **8.61 ms** | **47.0 µs** |
+| Selectolax | 340 ms (2.94×) | 162 ms (6.43×) | 21.2 ms (2.46×) | 9.23 ms (196×) |
+| lxml | 769 ms (6.65×) | 970 ms (38.4×) | 53.0 ms (6.16×) | 15.9 ms (337×) |
+| Parsel | 1.80 s (15.5×) | 767 ms (30.4×) | 200 ms (23.2×) | 25.8 ms (550×) |
+| Gazpacho | 3.81 s (33.0×) | — | 556 ms (64.6×) | 156 ms (3,325×) |
+| BS4 (lxml) | 5.45 s (47.1×) | 2.15 s (85.3×) | 248 ms (28.8×) | 246 ms (5,235×) |
 
-### Synthetic Html BenchMark (select all `a` tags):
-![Synthetic Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/synthetic.png)
-
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| Scah | **3.728561** | 0.406445 | 1x |
-| Selectolax | **8.066475** | 0.512855 | 2.16x |
-| lxml | **24.794239** | 0.229981 | 6.65x |
-| Parsel | **76.960953** | 3.008175 | 20.64x |
-| BS4 (lxml) | **112.812908** | 2.160341 | 30.26x |
-| Gazpacho | **128.430065** | 0.549837 | 34.44x |
-
-### Nested Html BenchMark (select all `Products`):
-![Nested Html BenchMark](https://raw.githubusercontent.com/zacharyvmm/scah/main/crates/bindings/scah-python/benches/images/nested.png)
-
-| Library | Mean (ms) | stdev | multiplier |
-| :--- | :--- | :--- | :--- |
-| Scah | **12.470755** | 0.596550 | 1x |
-| Selectolax | **66.938622** | 0.498506 | 5.37x |
-| Parsel | **301.365925** | 24.076119 | 24.17x |
-| lxml | **316.272791** | 2.477959 | 25.36x |
-| BS4 (lxml) | **839.663017** | 63.421209 | 67.33x |
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-04-08 to 2026-07-15; raw data and run details in [`benches/results/python`](https://github.com/zacharyvmm/scah/tree/main/benches/results/python).
+<!-- /benchmarks:python -->

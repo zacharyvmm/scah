@@ -6,7 +6,6 @@
 /benches/bench_data/
 /.benchmarks/
 /criterion.json
-/criterion.md
 /diagnostics/
 
 # Python tooling

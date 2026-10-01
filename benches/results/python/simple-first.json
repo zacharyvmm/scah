@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "suite": "python",
+  "scenario": "simple-first",
+  "title": "The first <a> in a flat list of <div><a> pairs",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-04-08",
+    "commit": null,
+    "dirty": null,
+    "os": null,
+    "arch": null,
+    "cpu": null,
+    "runtime": null,
+    "note": "Read from the bar labels of the former PNG chart (3 decimal places); the run did not record stdev, commit, or machine details."
+  },
+  "results": [
+    {
+      "library": "Scah",
+      "size": 10000,
+      "mean": 0.047,
+      "stdev": null
+    },
+    {
+      "library": "Selectolax",
+      "size": 10000,
+      "mean": 9.233,
+      "stdev": null
+    },
+    {
+      "library": "lxml",
+      "size": 10000,
+      "mean": 15.86,
+      "stdev": null
+    },
+    {
+      "library": "Parsel",
+      "size": 10000,
+      "mean": 25.831,
+      "stdev": null
+    },
+    {
+      "library": "Gazpacho",
+      "size": 10000,
+      "mean": 156.288,
+      "stdev": null
+    },
+    {
+      "library": "BS4 (lxml)",
+      "size": 10000,
+      "mean": 246.032,
+      "stdev": null
+    }
+  ]
+}

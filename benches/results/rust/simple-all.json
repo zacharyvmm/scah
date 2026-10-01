@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "suite": "rust",
+  "scenario": "simple-all",
+  "title": "Every <a> in a flat list of <div><a> pairs",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-06-06",
+    "commit": null,
+    "dirty": null,
+    "os": null,
+    "arch": null,
+    "cpu": null,
+    "runtime": null,
+    "note": "Imported from the markdown report generated alongside the former PNG chart; the run did not record commit or machine details."
+  },
+  "results": [
+    {
+      "library": "scah",
+      "size": 100,
+      "mean": 0.019732,
+      "stdev": 0.000207
+    },
+    {
+      "library": "lol_html",
+      "size": 100,
+      "mean": 0.025187,
+      "stdev": 0.000222
+    },
+    {
+      "library": "tl",
+      "size": 100,
+      "mean": 0.029108,
+      "stdev": 0.000231
+    },
+    {
+      "library": "lexbor",
+      "size": 100,
+      "mean": 0.056394,
+      "stdev": 0.000566
+    },
+    {
+      "library": "scraper",
+      "size": 100,
+      "mean": 0.132458,
+      "stdev": 0.000565
+    },
+    {
+      "library": "lxml",
+      "size": 100,
+      "mean": 0.238904,
+      "stdev": 0.00092
+    },
+    {
+      "library": "scah",
+      "size": 1000,
+      "mean": 0.193196,
+      "stdev": 0.001253
+    },
+    {
+      "library": "lol_html",
+      "size": 1000,
+      "mean": 0.243865,
+      "stdev": 0.002561
+    },
+    {
+      "library": "tl",
+      "size": 1000,
+      "mean": 0.285094,
+      "stdev": 0.001338
+    },
+    {
+      "library": "lexbor",
+      "size": 1000,
+      "mean": 0.49296,
+      "stdev": 0.003316
+    },
+    {
+      "library": "scraper",
+      "size": 1000,
+      "mean": 1.323338,
+      "stdev": 0.003854
+    },
+    {
+      "library": "lxml",
+      "size": 1000,
+      "mean": 2.350505,
+      "stdev": 0.006333
+    },
+    {
+      "library": "scah",
+      "size": 10000,
+      "mean": 1.917392,
+      "stdev": 0.008932
+    },
+    {
+      "library": "lol_html",
+      "size": 10000,
+      "mean": 2.402751,
+      "stdev": 0.018206
+    },
+    {
+      "library": "tl",
+      "size": 10000,
+      "mean": 3.273427,
+      "stdev": 0.012414
+    },
+    {
+      "library": "lexbor",
+      "size": 10000,
+      "mean": 4.872407,
+      "stdev": 0.019504
+    },
+    {
+      "library": "scraper",
+      "size": 10000,
+      "mean": 13.612814,
+      "stdev": 0.038746
+    },
+    {
+      "library": "lxml",
+      "size": 10000,
+      "mean": 23.481411,
+      "stdev": 0.10102
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "suite": "node",
+  "scenario": "simple-first",
+  "title": "The first <a> in a flat list of <div><a> pairs",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-04-08",
+    "commit": null,
+    "dirty": null,
+    "os": null,
+    "arch": null,
+    "cpu": null,
+    "runtime": null,
+    "note": "Read from the bar labels of the former PNG chart (3 decimal places); the run did not record stdev, commit, or machine details."
+  },
+  "results": [
+    {
+      "library": "scah",
+      "size": 10000,
+      "mean": 0.247,
+      "stdev": null
+    },
+    {
+      "library": "node-html-parser",
+      "size": 10000,
+      "mean": 64.092,
+      "stdev": null
+    },
+    {
+      "library": "cheerio",
+      "size": 10000,
+      "mean": 68.178,
+      "stdev": null
+    },
+    {
+      "library": "linkedom",
+      "size": 10000,
+      "mean": 146.95,
+      "stdev": null
+    },
+    {
+      "library": "happy-dom",
+      "size": 10000,
+      "mean": 251.732,
+      "stdev": null
+    },
+    {
+      "library": "jsdom",
+      "size": 10000,
+      "mean": 291.487,
+      "stdev": null
+    }
+  ]
+}

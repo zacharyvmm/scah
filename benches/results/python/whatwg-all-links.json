@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "suite": "python",
+  "scenario": "whatwg-all-links",
+  "title": "Every <a> in the WHATWG HTML specification",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-07-15",
+    "commit": null,
+    "dirty": null,
+    "os": null,
+    "arch": null,
+    "cpu": null,
+    "runtime": null,
+    "note": "Imported from the markdown report generated alongside the former PNG chart; the run did not record commit or machine details."
+  },
+  "results": [
+    {
+      "library": "Scah",
+      "size": null,
+      "mean": 115.621425,
+      "stdev": 8.431628
+    },
+    {
+      "library": "Selectolax",
+      "size": null,
+      "mean": 340.430453,
+      "stdev": 9.725557
+    },
+    {
+      "library": "lxml",
+      "size": null,
+      "mean": 769.386151,
+      "stdev": 7.15806
+    },
+    {
+      "library": "Parsel",
+      "size": null,
+      "mean": 1797.527487,
+      "stdev": 15.829262
+    },
+    {
+      "library": "Gazpacho",
+      "size": null,
+      "mean": 3814.067066,
+      "stdev": 10.931782
+    },
+    {
+      "library": "BS4 (lxml)",
+      "size": null,
+      "mean": 5449.638127,
+      "stdev": 283.404282
+    }
+  ]
+}
