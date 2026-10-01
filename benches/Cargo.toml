@@ -14,17 +14,17 @@ memchr = "2.7.6"
 # Competitor libraries
 lexbor_css = { git = "https://github.com/zacharyvmm/lexbor_css.git", rev = "d6aa234648c6d1883c3563431b62688a109e3142", features = ["vendor"] }
 lxml = { package = "rlibxml", version="0.1.1", git = "https://github.com/zacharyvmm/rlibxml.git", features = ["vendored"] }
-scraper = "0.25.0"
+scraper = "0.27.0"
 tl = "0.7.8"
 # tl = { version = "0.7.8", features = ["simd"] }
-lol_html = "2.7.1"
+lol_html = "3.0.1"
 
 [features]
 default = []
 linux-memory-benches = ["dep:gungraun"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
-gungraun = { version = "0.17", features = ["cachegrind"], optional = true }
+gungraun = { version = "0.20", features = ["cachegrind"], optional = true }
 
 [[bench]]
 name = "speed_bench_ordinary_gate"
