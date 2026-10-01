@@ -520,6 +520,90 @@ fn logical_pseudos_reject_unsupported_alternatives_instead_of_narrowing_results(
     assert_eq!(texts, vec![Some("X")]);
 }
 
+const REPEATED_ID_HTML: &str =
+    r#"<main><div id="hero">H</div><div id="other">O</div><div>N</div></main>"#;
+
+const REPEATED_ID_CASES: &[(&str, &[&str])] = &[
+    ("div#hero#hero", &["H"]),
+    ("div#hero#other", &[]),
+    ("div:is(#hero#hero)", &["H"]),
+    ("div:is(#hero#other)", &[]),
+    ("div:where(#hero#hero)", &["H"]),
+    ("div:where(#hero#other)", &[]),
+    ("div:not(#hero#hero)", &["O", "N"]),
+    ("div:not(#hero#other)", &["H", "O", "N"]),
+    ("div:not(:is(#hero#hero))", &["O", "N"]),
+    ("div:not(:where(#hero#other))", &["H", "O", "N"]),
+];
+
+fn repeated_id_texts<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> Vec<String> {
+    let store = parse(REPEATED_ID_HTML, queries).unwrap();
+    store
+        .get(selector)
+        .map(|elements| {
+            elements
+                .map(|element| element.text(&store).unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn repeated_id_selectors_match_as_a_conjunction() {
+    for &(selector, expected) in REPEATED_ID_CASES {
+        let queries = [Query::all(selector, Save::all()).unwrap().build()];
+        assert_eq!(
+            repeated_id_texts(&queries, selector),
+            expected,
+            "{selector}"
+        );
+    }
+}
+
+#[test]
+fn repeated_id_selectors_match_in_macro_queries() {
+    macro_rules! check {
+        ($index:literal, $selector:literal) => {{
+            let (selector, expected) = REPEATED_ID_CASES[$index];
+            assert_eq!(selector, $selector);
+            let static_queries = [query! { all($selector, Save::all()) }];
+            let runtime_query = Query::all(selector, Save::all()).unwrap().build();
+            let static_states = static_queries[0].states();
+            assert_eq!(static_states.len(), runtime_query.states().len());
+            for (static_state, runtime_state) in static_states.iter().zip(runtime_query.states()) {
+                assert_eq!(static_state.guard, runtime_state.guard, "{selector}");
+                assert_eq!(
+                    static_state.predicate(),
+                    runtime_state.predicate(),
+                    "{selector}: macro and runtime predicates differ"
+                );
+                assert_eq!(
+                    static_state.metadata().attribute_names(),
+                    runtime_state.metadata().attribute_names(),
+                    "{selector}"
+                );
+            }
+            assert_eq!(
+                repeated_id_texts(&static_queries, selector),
+                expected,
+                "{selector}"
+            );
+        }};
+    }
+
+    check!(0, "div#hero#hero");
+    check!(1, "div#hero#other");
+    check!(2, "div:is(#hero#hero)");
+    check!(3, "div:is(#hero#other)");
+    check!(4, "div:where(#hero#hero)");
+    check!(5, "div:where(#hero#other)");
+    check!(6, "div:not(#hero#hero)");
+    check!(7, "div:not(#hero#other)");
+    check!(8, "div:not(:is(#hero#hero))");
+    check!(9, "div:not(:where(#hero#other))");
+    assert_eq!(REPEATED_ID_CASES.len(), 10);
+}
+
 #[test]
 fn stray_quotes_after_selectors_are_rejected() {
     for selector in ["b[a]\"", "div:not(.a)\"", "div[class]''"] {

@@ -805,13 +805,25 @@ impl<'a> ElementPredicate<'a> {
                             reader.get_position().saturating_sub(id_name.len()),
                         ));
                     }
-                    if element.id.is_some() {
-                        return Err(SelectorParseError::new(
-                            "selector has multiple IDs",
-                            reader.get_position().saturating_sub(id_name.len()),
-                        ));
+                    // Repeated ID selectors are a valid conjunction:
+                    // `#a#a` is `#a`, and `#a#b` can never match because an
+                    // element has one ID. Keep the first ID in the fast
+                    // field and require any differing one as an exact `[id]`
+                    // match, which no element can satisfy alongside it.
+                    match element.id {
+                        None => element.id = Some(*id_name),
+                        Some(existing) if existing == *id_name => {}
+                        Some(_) => {
+                            let mut attributes = element.attributes.as_slice().to_vec();
+                            attributes.push(AttributeSelection {
+                                name: "id",
+                                value: Some(id_name),
+                                kind: AttributeSelectionKind::Exact,
+                                case_sensitivity: AttributeCaseSensitivity::Default,
+                            });
+                            element.attributes = AttributeSelections::from(attributes);
+                        }
                     }
-                    element.id = Some(*id_name);
                 }
                 (Some(SelectionKeyWords::Class), SelectionKeyWords::String(class_name)) => {
                     if !is_valid_identifier(class_name) {
@@ -1322,11 +1334,24 @@ mod tests {
     }
 
     #[test]
-    fn test_duplicate_ids_are_rejected() {
+    fn test_repeated_ids_form_a_conjunction() {
+        let mut reader = Reader::new("element#id.class[selected=true]#id");
+        let same = ElementPredicate::try_from(&mut reader).unwrap();
+        assert_eq!(same.id, Some("id"));
+        assert_eq!(same.attributes.as_slice().len(), 1);
+
         let mut reader = Reader::new("element#id.class[selected=true]#id#notid");
-        let result = ElementPredicate::try_from(&mut reader);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().message(), "selector has multiple IDs");
+        let differing = ElementPredicate::try_from(&mut reader).unwrap();
+        assert_eq!(differing.id, Some("id"));
+        assert_eq!(
+            differing.attributes.as_slice()[1],
+            AttributeSelection {
+                name: "id",
+                value: Some("notid"),
+                kind: AttributeSelectionKind::Exact,
+                case_sensitivity: AttributeCaseSensitivity::Default,
+            }
+        );
     }
 
     #[test]

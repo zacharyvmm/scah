@@ -677,9 +677,13 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_ids_are_rejected() {
-        let result = Query::all("#a1#a2", Save::none());
-        assert!(result.is_err(), "duplicate IDs should be rejected");
+    fn repeated_ids_are_valid_selectors() {
+        for selector in ["#a1#a1", "#a1#a2", "div:is(#a1#a1)", "div:not(#a1#a2)"] {
+            assert!(
+                Query::all(selector, Save::none()).is_ok(),
+                "{selector} is valid CSS"
+            );
+        }
     }
 
     // Priority 4: combinator tokenization without spaces
