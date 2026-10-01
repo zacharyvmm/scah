@@ -8,9 +8,29 @@ features = ["extension-module"]
 [project]
 name = "scah"
 version = "0.0.21"
-description = "scah (scan HTML)"
+description = "CSS selectors meet streaming HTML parsing: extract exactly what you select without building a full DOM."
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Zachary McSween Manickchand", email = "contact@zacharymm.com" }]
+keywords = ["html", "parser", "css", "selector", "scraping", "streaming"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Text Processing :: Markup :: HTML",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/zacharyvmm/scah"
+Repository = "https://github.com/zacharyvmm/scah"
+Issues = "https://github.com/zacharyvmm/scah/issues"
+Changelog = "https://github.com/zacharyvmm/scah/blob/main/CHANGELOG.md"
 
 # uv sync --all-extras
 [project.optional-dependencies]
