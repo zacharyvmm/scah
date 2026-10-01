@@ -62,6 +62,10 @@ CRITERION_GROUPS = {
     "whatwg_html_spec_all_links": "whatwg-all-links",
 }
 
+# The comparison groups also hold internal scah measurements, such as
+# scah_query_build_only and scah_parse_prebuilt_*, that are not libraries.
+CRITERION_LIBRARIES = {"scah", "lol_html", "tl", "lexbor", "scraper", "lxml"}
+
 MARKER = re.compile(
     r"(<!-- benchmarks:(?P<suite>[a-z]+) -->\n).*?(<!-- /benchmarks:(?P=suite) -->)",
     re.DOTALL,
@@ -159,7 +163,7 @@ def import_criterion(path: Path) -> list[Path]:
     for bench_id, record in latest.items():
         group, library, *rest = bench_id.split("/")
         scenario = CRITERION_GROUPS.get(group)
-        if scenario is None:
+        if scenario is None or library not in CRITERION_LIBRARIES:
             continue
         per_iteration = [
             measured / count

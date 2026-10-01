@@ -41,7 +41,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report.format_ratio(15.55), "15.6×")
         self.assertEqual(report.format_ratio(4139.6), "4,140×")
 
-    def test_import_criterion_keeps_latest_record_and_known_groups(self):
+    def test_import_criterion_keeps_latest_record_and_comparison_libraries(self):
         source = Path(self.tmp.name) / "criterion.json"
         source.write_text(
             "\n".join(
@@ -49,6 +49,7 @@ class ReportTests(unittest.TestCase):
                     criterion_line("simple_all_selection_comparison/scah/100", 2_000_000),
                     criterion_line("simple_all_selection_comparison/scah/100", 1_000_000),
                     criterion_line("simple_all_selection_comparison/tl/100", 3_000_000),
+                    criterion_line("simple_all_selection_comparison/scah_query_build_only/100", 5),
                     criterion_line("cursor_domination/descendant/parse/8", 1),
                     "not json",
                 ]
