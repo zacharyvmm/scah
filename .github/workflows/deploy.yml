@@ -120,7 +120,7 @@ jobs:
     name: Publish Python wheels to PyPI
     needs: [python-build]
     runs-on: ubuntu-latest
-    environment: pypi
+    environment: release
     permissions:
       id-token: write
     steps:
