@@ -71,9 +71,9 @@ Maintainers release by bumping every package version, moving the
 committing, and pushing a tag:
 
 ```bash
-just bump 0.0.22
-git commit -am "Release 0.0.22"
-just trigger-release 0.0.22
+just bump 0.1.1
+git commit -am "Release 0.1.1"
+just trigger-release 0.1.1
 ```
 
 The tag publishes the crates to crates.io, wheels to PyPI, and the

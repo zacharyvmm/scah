@@ -79,9 +79,10 @@ jobs:
             exit 1
           fi
 
-          # --no-verify: package verification rebuilds against crates.io path-dep
-          # versions; sibling workspace crates on this branch are not published yet.
-          cargo package -p scah --no-verify
+          # Package the published crates together so their path dependencies
+          # resolve to each other. Packaging scah alone resolves them on
+          # crates.io, which fails whenever the version has just been bumped.
+          cargo package -p scah-reader -p scah-query-ir -p scah-macros -p scah
       - name: Check escape scanner benchmark
         run: cargo bench -p scah-benches --bench speed_bench_escape_scanner -- --test
       - name: Check cursor-dominance benchmark

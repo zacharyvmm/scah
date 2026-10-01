@@ -194,7 +194,7 @@ impl<'html> Element<'html> {
     ///
     /// This compatibility method has the new [`Element::text`] semantics. It
     /// does not reproduce the byte output of the former text-content extractor.
-    #[deprecated(since = "0.0.22", note = "use `Element::text()`")]
+    #[deprecated(since = "0.1.0", note = "use `Element::text()`")]
     pub fn text_content(&self, dom: &'html Store) -> Option<&'html str> {
         self.text(dom)
     }

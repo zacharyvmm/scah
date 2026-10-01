@@ -25,11 +25,11 @@
         "typescript": "^5.9.2",
       },
       "optionalDependencies": {
-        "@zacharymm/scah-darwin-arm64": "0.0.21",
-        "@zacharymm/scah-darwin-x64": "0.0.21",
-        "@zacharymm/scah-linux-arm64-gnu": "0.0.21",
-        "@zacharymm/scah-linux-x64-gnu": "0.0.21",
-        "@zacharymm/scah-win32-x64-msvc": "0.0.21",
+        "@zacharymm/scah-darwin-arm64": "0.1.0",
+        "@zacharymm/scah-darwin-x64": "0.1.0",
+        "@zacharymm/scah-linux-arm64-gnu": "0.1.0",
+        "@zacharymm/scah-linux-x64-gnu": "0.1.0",
+        "@zacharymm/scah-win32-x64-msvc": "0.1.0",
       },
     },
   },
@@ -275,16 +275,6 @@
     "@types/whatwg-mimetype": ["@types/whatwg-mimetype@3.0.2", "", {}, "sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA=="],
 
     "@types/ws": ["@types/ws@8.18.1", "", { "dependencies": { "@types/node": "*" } }, "sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg=="],
-
-    "@zacharymm/scah-darwin-arm64": ["@zacharymm/scah-darwin-arm64@0.0.21", "", { "os": "darwin", "cpu": "arm64" }, "sha512-HGU60abSSHo9Uff6hL8Txm1BksKrC3Qv53AGTSxQXWGC2bBiTcibfwvG9AK5AVBY6ec7polPQ5pmA2GR9iKrOw=="],
-
-    "@zacharymm/scah-darwin-x64": ["@zacharymm/scah-darwin-x64@0.0.21", "", { "os": "darwin", "cpu": "x64" }, "sha512-BbsnDvEz/Kk0sFHhkJGkVZwxWqGcNx4HRknBn1SP1Icyr9DTwe0rLkF/8Vx8EhQPDjJd7yOuUW2iuYFbBCevzw=="],
-
-    "@zacharymm/scah-linux-arm64-gnu": ["@zacharymm/scah-linux-arm64-gnu@0.0.21", "", { "os": "linux", "cpu": "arm64" }, "sha512-6N65xieTK3jEeMGftdzeh2Zdb02MAH5PQxMe3W9meUBPqxu9pqLT7LmGCv26+iLYG1IDD8FaFJCFMkuGE2iS8A=="],
-
-    "@zacharymm/scah-linux-x64-gnu": ["@zacharymm/scah-linux-x64-gnu@0.0.21", "", { "os": "linux", "cpu": "x64" }, "sha512-s+TaRPyVrV+ATPq2lKgQy/BoNcwhfDDfu3/VMleObM3Yyr+BXnIOGs7tDNAxLj3RXDDfFWi+fHvINehEJU3oIQ=="],
-
-    "@zacharymm/scah-win32-x64-msvc": ["@zacharymm/scah-win32-x64-msvc@0.0.21", "", { "os": "win32", "cpu": "x64" }, "sha512-Y3n5j1BCHfZ2O+Stq462CWY9RRBlkIXiyb7QQhlSElOUpXIoVPb6SDVB1vxWAmnF8x5qI1IMBSBJ3pe0s/M6jQ=="],
 
     "agent-base": ["agent-base@7.1.4", "", {}, "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="],
 
