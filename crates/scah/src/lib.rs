@@ -248,7 +248,8 @@ pub use engine::multiplexer::CursorStatsSnapshot;
 pub enum ParseError {
     /// The query slice passed to [`parse`] is empty.
     EmptyQueries,
-    /// The open-element stack exceeded [`engine::MAX_ELEMENT_DEPTH`].
+    /// The open-element stack exceeded the maximum supported nesting depth
+    /// (`u16::MAX - 1` elements).
     MaximumDepthExceeded,
     /// [`parse_without_text_capture`] received a query that requests text.
     TextCaptureRequired,

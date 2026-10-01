@@ -33,13 +33,13 @@ use super::transition::Transition;
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Save {
     /// When `true`, the raw HTML between the element's opening and closing
-    /// tags is stored as [`Element::inner_html`](crate::Element::inner_html).
+    /// tags is stored as [`Element::inner_html`](https://docs.rs/scah/latest/scah/struct.Element.html#structfield.inner_html).
     pub inner_html: bool,
     /// When `true`, source-preserving descendant text is stored and
-    /// retrievable via [`Element::raw_text()`](crate::Element::raw_text).
+    /// retrievable via [`Element::raw_text()`](https://docs.rs/scah/latest/scah/struct.Element.html#method.raw_text).
     pub raw_text: bool,
     /// When `true`, normalized human-readable descendant text is stored and
-    /// retrievable via [`Element::text()`](crate::Element::text).
+    /// retrievable via [`Element::text()`](https://docs.rs/scah/latest/scah/struct.Element.html#method.text).
     ///
     /// This is not layout-aware browser `innerText`.
     pub text: bool,
@@ -485,7 +485,7 @@ impl<'query> QueryBuilder<'query> {
     ///
     /// This computes early-exit optimisation metadata and converts the
     /// internal vectors into boxed slices. After calling `build`, pass
-    /// the resulting `Query` to [`parse`](crate::parse).
+    /// the resulting `Query` to [`parse`](https://docs.rs/scah/latest/scah/fn.parse.html).
     pub fn build(self) -> Query<'query> {
         let exit_at_section_end = self.exit_at_section();
         let states_box = self.states.into_boxed_slice();
