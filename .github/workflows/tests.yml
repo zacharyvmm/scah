@@ -7,6 +7,16 @@ on:
   pull_request:
   workflow_call:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   rust:
     name: Rust Workspace Checks
@@ -110,6 +120,26 @@ jobs:
       - name: Run cursor stats report
         run: cargo run -p scah --release --features bench-internals --example cursor_stats
 
+  docs:
+    name: Rust Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps -p scah -p scah-reader -p scah-query-ir -p scah-macros
+
+  msrv:
+    name: Rust MSRV (1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - name: Check published crates
+        run: cargo check -p scah -p scah-reader -p scah-query-ir -p scah-macros
+
   rust-aarch64:
     name: Rust AArch64 SIMD Checks
     runs-on: ubuntu-24.04-arm
@@ -153,14 +183,19 @@ jobs:
         run: bun test
 
   python:
-    name: Python Binding Tests
+    name: Python Binding Tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest supported and newest stable CPython.
+        python-version: ["3.10", "3.14"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - uses: dtolnay/rust-toolchain@stable
 
