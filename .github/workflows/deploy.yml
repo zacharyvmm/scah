@@ -193,7 +193,9 @@ jobs:
     name: Publish Node.js Addon to NPM
     needs: [nodejs-build]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
+      # napi prepublish attaches the .node binaries to a GitHub release.
       contents: write
       id-token: write
     steps:
@@ -203,6 +205,9 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - name: Update npm
+        run: npm install -g npm@^11.5.1
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -224,8 +229,9 @@ jobs:
       - name: Publish to npm
         working-directory: crates/bindings/scah-node
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # npm authenticates with the job's OIDC token, both here and in the
+        # per-platform `npm publish` calls that napi prepublish makes.
         run: |
           bun run prepublishOnly
           npm publish --access public --provenance --ignore-scripts
