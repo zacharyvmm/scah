@@ -37,6 +37,18 @@ and you don't pay to build or walk a tree you don't need.
 scah = "0.0.21"
 ```
 
+> **Note:** this README describes the `main` branch. The examples below use
+> APIs that are not in the 0.0.21 release, notably `text` and
+> `Save::only_text()`, which replace `text_content`, and most of the selector
+> syntax listed under [Selector support](#selector-support). Until the next
+> release, install from git:
+>
+> - Rust: `scah = { git = "https://github.com/zacharyvmm/scah" }`
+> - Python (needs a Rust toolchain):
+>   `pip install "scah @ git+https://github.com/zacharyvmm/scah#subdirectory=crates/bindings/scah-python"`
+> - JavaScript: build from source as described in
+>   [CONTRIBUTING.md](https://github.com/zacharyvmm/scah/blob/main/CONTRIBUTING.md).
+
 ## Quick start
 
 ### Rust
@@ -207,10 +219,10 @@ Node takes plain option objects instead of `Save` constructors:
 
 ## Selector support
 
-> **Note:** this describes the `main` branch. Universal selectors, sibling combinators,
-> attribute value flags, selector lists, logical pseudo-classes, ordinals, and
-> `:root`/`:scope` are not in the 0.0.21 release yet. Until the next release,
-> use a git dependency: `scah = { git = "https://github.com/zacharyvmm/scah" }`.
+> **Note:** universal selectors, sibling combinators, attribute value flags,
+> selector lists, logical pseudo-classes, ordinals, and `:root`/`:scope` are not
+> in the 0.0.21 release yet. See [Install](#install) for using `main` until the
+> next release.
 
 | Syntax | Example | Notes |
 |--------|---------|-------|
