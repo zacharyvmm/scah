@@ -1248,4 +1248,28 @@ mod tests {
         };
         assert!(transition.next_with_context(&element, 1, 0, Some(&context)));
     }
+
+    #[test]
+    fn namespace_gate_spares_attribute_operators_and_strings_in_filters() {
+        for selector in [
+            "li:nth-child(1 of .a)",
+            "li:nth-child(1 of*)",
+            "li:nth-child(1 of [lang|=en])",
+            r#"li:nth-child(1 of [data-x="a|b"])"#,
+            "li[lang|=en]",
+            r#"li:is([data-x="a|b"])"#,
+        ] {
+            Transition::generate_transition_paths_from_string(selector)
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
+        }
+        for selector in [
+            "li:nth-child(1 of|div)",
+            "li:nth-child(1 of *|div)",
+            "li:not(:is(:nth-child(1 of|div)))",
+        ] {
+            let error =
+                Transition::generate_transition_paths_from_string(selector).expect_err(selector);
+            assert!(error.is_fatal(), "{selector}: {error}");
+        }
+    }
 }

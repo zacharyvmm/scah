@@ -1035,7 +1035,8 @@ fn parse_local_selector_list<'query>(
 /// values) and an exhausted nesting budget reject the whole selector rather
 /// than silently narrowing it. The recovery fails closed: an alternative
 /// containing syntax the tokenizer does not model (escapes, comments, the
-/// nesting selector, NUL) is never discarded, see [`require_modeled_syntax`].
+/// nesting selector, NUL, a namespace `|` at any depth) is never discarded,
+/// see [`require_modeled_syntax`].
 fn parse_forgiving_local_selector_list<'query>(
     source: &'query str,
     nesting: usize,
@@ -1163,11 +1164,7 @@ fn split_nth_filter(source: &str) -> Result<(&str, Option<&str>), SelectorParseE
         rest_bytes
             .get(..2)
             .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"of"))
-            && rest_bytes.get(2).is_some_and(|&next| {
-                // `of` ends at whitespace or at a token that cannot
-                // continue the identifier, as in `2 of.card`.
-                is_css_whitespace(next) || matches!(next, b'.' | b'#' | b'[' | b':' | b'*')
-            })
+            && ends_identifier(rest_bytes.get(2).copied())
     };
     let (Some(index), _) = scan(source, starts_filter) else {
         return Ok((source.trim_matches(is_css_whitespace_char), None));
@@ -1182,6 +1179,19 @@ fn split_nth_filter(source: &str) -> Result<(&str, Option<&str>), SelectorParseE
         ));
     }
     Ok((formula, Some(filter)))
+}
+
+/// Whether an identifier token ends before `next`, as the CSS tokenizer
+/// decides it: the identifier continues through name code points (including
+/// U+0000, which becomes U+FFFD) and escapes, and an identifier followed by
+/// `(` is a function token instead. Anything else ends it, as in `2 of.card`,
+/// `2 of*` or `2 of|div`.
+fn ends_identifier(next: Option<u8>) -> bool {
+    next.is_none_or(|next| {
+        !(next.is_ascii_alphanumeric()
+            || matches!(next, b'_' | b'-' | b'\\' | b'(' | 0)
+            || !next.is_ascii())
+    })
 }
 
 impl<'a> From<&mut Reader<'a>> for ElementPredicate<'a> {
@@ -1811,6 +1821,24 @@ mod tests {
             ("\u{0}.a, .x", "NUL characters are not supported"),
             ("|a, .x", "namespaces are not supported"),
             (".x, |a", "namespaces are not supported"),
+            (":nth-child(1 of|div), .x", "namespaces are not supported"),
+            (
+                ":nth-child(1 of *|div), .x",
+                "combinators are not supported inside local pseudo-classes",
+            ),
+            (":nth-last-child(1 of|div), .x", "unsupported pseudo-class"),
+            (
+                ".x, :nth-child(1 of|div, *)",
+                "namespaces are not supported",
+            ),
+            (
+                ":is(ns|div), .x",
+                "combinators are not supported inside local pseudo-classes",
+            ),
+            (
+                ":not(*|div), .x",
+                "combinators are not supported inside local pseudo-classes",
+            ),
             (":foo_bar, .x", "unsupported pseudo-class"),
             (":a1, .x", "unsupported pseudo-class"),
             (":caf\u{e9}, .x", "unsupported pseudo-class"),
@@ -1936,6 +1964,8 @@ mod tests {
             ("li:nth-child(2 of#featured)", None, Some("featured"), None),
             ("li:nth-child(2 of[hidden])", None, None, Some("hidden")),
             ("li:nth-child(2n+1 of*.foo)", Some("foo"), None, None),
+            ("li:nth-child(2 of .foo)", Some("foo"), None, None),
+            ("li:nth-child(1 of*)", None, None, None),
         ] {
             let mut reader = Reader::new(selector);
             let element = ElementPredicate::try_from(&mut reader)
@@ -1970,13 +2000,42 @@ mod tests {
             LocalLogicalPredicate::Not(_)
         ));
 
-        // `of` must still end at an identifier boundary.
-        for selector in ["li:nth-child(2 ofdiv)", "li:nth-child(2 of-x)"] {
+        // `of` must still end at an identifier boundary, and `of(` is a
+        // function token rather than the `of` keyword.
+        for selector in [
+            "li:nth-child(2 ofdiv)",
+            "li:nth-child(2 of-x)",
+            "li:nth-child(2 of_x)",
+            "li:nth-child(2 of1)",
+            "li:nth-child(2 of(.a))",
+            "li:nth-child(2 of)",
+        ] {
             let mut reader = Reader::new(selector);
             assert!(
                 ElementPredicate::try_from(&mut reader).is_err(),
                 "{selector}"
             );
+        }
+    }
+
+    #[test]
+    fn namespaces_in_nth_filters_are_unsupported_not_invalid() {
+        const COMBINATOR: &str = "combinators are not supported inside local pseudo-classes";
+        for (selector, message) in [
+            ("li:nth-child(1 of|div)", "namespaces are not supported"),
+            ("li:nth-last-child(1 of|div)", "unsupported pseudo-class"),
+            (
+                "li:nth-child(1 of .a, |div)",
+                "namespaces are not supported",
+            ),
+            ("li:nth-child(1 of *|div)", COMBINATOR),
+            ("li:nth-child(1 of ns|div)", COMBINATOR),
+        ] {
+            let mut reader = Reader::new(selector);
+            let error = ElementPredicate::try_from(&mut reader)
+                .expect_err(&format!("{selector} should be rejected"));
+            assert_eq!(error.message(), message, "{selector}");
+            assert!(error.is_fatal(), "{selector}");
         }
     }
 

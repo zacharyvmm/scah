@@ -1801,3 +1801,95 @@ fn streaming_forgiving_selectors_match_in_macro_queries() {
     check!(7, r#"p + :not(:where([data-x="a)b"], !!!))"#);
     assert_eq!(STREAMING_FORGIVING_CASES.len(), 8);
 }
+
+#[test]
+fn forgiving_lists_reject_namespaces_inside_function_arguments() {
+    // `of|div` ends the `of` keyword, so the filter is the namespaced
+    // `|div`. Discarding the alternative as an invalid formula would make
+    // `div:not(:is(:nth-child(1 of|div)))` match the first div too.
+    for inner in [
+        ":nth-child(1 of|div)",
+        ":nth-child(1 of *|div)",
+        ":nth-last-child(1 of|div)",
+        ":nth-child(1 of|div, *)",
+        ":is(ns|div)",
+        ":not(*|div)",
+    ] {
+        for selector in [
+            format!("div:is({inner})"),
+            format!("div:where({inner})"),
+            format!("div:not(:is({inner}))"),
+            format!("div:not(:where({inner}))"),
+            format!("div:not(:is({inner}, .x))"),
+        ] {
+            let error = Query::all(&selector, Save::all())
+                .err()
+                .unwrap_or_else(|| panic!("{selector} should be rejected"));
+            assert!(
+                matches!(
+                    error.message(),
+                    "namespaces are not supported"
+                        | "combinators are not supported inside local pseudo-classes"
+                        | "unsupported pseudo-class"
+                ),
+                "{selector}: {error}"
+            );
+        }
+    }
+}
+
+const PIPE_HTML: &str =
+    r#"<main><div lang="en-US" data-x="a|b">A</div><div lang="fr" data-x="a">B</div></main>"#;
+
+const PIPE_CASES: &[(&str, &[&str])] = &[
+    ("div[lang|=en]", &["A"]),
+    ("div:is([lang|=en])", &["A"]),
+    ("div:not(:where([lang|=en]))", &["B"]),
+    (r#"div[data-x="a|b"]"#, &["A"]),
+    (r#"div:is([data-x="a|b"], !!!)"#, &["A"]),
+    (r#"div:not(:is([data-x="a|b"]))"#, &["B"]),
+];
+
+fn pipe_texts<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> Vec<String> {
+    let store = parse(PIPE_HTML, queries).unwrap();
+    store
+        .get(selector)
+        .map(|elements| {
+            elements
+                .map(|element| element.text(&store).unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn attribute_pipes_and_quoted_pipes_still_match() {
+    for &(selector, expected) in PIPE_CASES {
+        let queries = [Query::all(selector, Save::all()).unwrap().build()];
+        assert_eq!(pipe_texts(&queries, selector), expected, "{selector}");
+    }
+}
+
+#[test]
+fn attribute_pipes_and_quoted_pipes_match_in_macro_queries() {
+    macro_rules! check {
+        ($index:literal, $selector:literal) => {{
+            let (selector, expected) = PIPE_CASES[$index];
+            assert_eq!(selector, $selector);
+            let static_queries = [query! { all($selector, Save::all()) }];
+            assert_eq!(
+                pipe_texts(&static_queries, selector),
+                expected,
+                "{selector}"
+            );
+        }};
+    }
+
+    check!(0, "div[lang|=en]");
+    check!(1, "div:is([lang|=en])");
+    check!(2, "div:not(:where([lang|=en]))");
+    check!(3, r#"div[data-x="a|b"]"#);
+    check!(4, r#"div:is([data-x="a|b"], !!!)"#);
+    check!(5, r#"div:not(:is([data-x="a|b"]))"#);
+    assert_eq!(PIPE_CASES.len(), 6);
+}
