@@ -1,4 +1,15 @@
+# Build output
 /target
-/benches/bench_data/
+/benches/target/
 
-criterion.json
+# Benchmark inputs and local results
+/benches/bench_data/
+/.benchmarks/
+/criterion.json
+/criterion.md
+/diagnostics/
+
+# Python tooling
+__pycache__/
+.venv/
+.pytest_cache/
