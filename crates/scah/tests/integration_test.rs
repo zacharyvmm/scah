@@ -1667,3 +1667,137 @@ fn forgiving_lists_match_in_macro_queries() {
     check!(7, "div:not(:where(.foo, !!!))");
     assert_eq!(FORGIVING_CASES.len(), 8);
 }
+
+/// Selectors that use streaming-engine syntax (structural pseudo-classes,
+/// `An+B of S` filters, sibling combinators) around constructs the selector
+/// tokenizer does not model. Each must be rejected outright.
+const STREAMING_UNMODELED_SELECTORS: &[&str] = &[
+    r"div:nth-child(2 of .a\,b)",
+    "div:nth-child(2 of .a/**/.b)",
+    r"div:nth-child(1 of [data-x=a\)b])",
+    r"div ~ :is(:\6e ot(.x))",
+    r"div + :where([data-x=a\,b])",
+    "div ~ :is(.a/**/.b)",
+    r"div + p:nth-child(odd of .a\,b)",
+    r"li:first-child + li:is(.a\]b)",
+    r"div:nth-of-type(2):is([data-x=a\,b])",
+];
+
+/// Unmodeled alternatives placed next to a valid or invalid sibling in a
+/// forgiving list. If the gate classified them as invalid, the list would
+/// discard them and the query would succeed with fewer matches, so rejecting
+/// these proves the error is fatal.
+const STREAMING_FORGIVABLE_IF_MISCLASSIFIED: &[&str] = &[
+    r"li:nth-child(2 of :is(.ok, .a\,b))",
+    "li:nth-child(2 of :where(!!!, .a/**/.b))",
+    r"li:nth-child(odd of :not(:is(.ok, [data-x=a\,b])))",
+    r"div ~ :is(.ok, :\6e ot(.x))",
+    r"div ~ :where(!!!, [data-x=a\)b])",
+    r"div + :where(.ok, [data-x=a\,b])",
+    r"div + p:not(:is(.ok, .a\]b))",
+    "li:first-child ~ li:is(.ok, .a/**/.b)",
+    r"div:nth-of-type(2):where(!!!, .a\,b)",
+];
+
+#[test]
+fn streaming_selectors_reject_syntax_the_parser_does_not_model() {
+    for &inner in STREAMING_UNMODELED_SELECTORS
+        .iter()
+        .chain(STREAMING_FORGIVABLE_IF_MISCLASSIFIED)
+    {
+        for selector in [
+            inner.to_string(),
+            format!("main > {inner}"),
+            format!("{inner}, div"),
+            format!("div, {inner}"),
+            format!(":is({inner})"),
+            format!("main :where(!!!, {inner})"),
+            format!("main :not({inner})"),
+        ] {
+            assert!(
+                Query::all(&selector, Save::all()).is_err(),
+                "{selector} should be rejected"
+            );
+            assert!(
+                Query::first(&selector, Save::all()).is_err(),
+                "{selector} should be rejected"
+            );
+            assert!(
+                Query::all("main", Save::none())
+                    .unwrap()
+                    .all(&selector, Save::all())
+                    .is_err(),
+                "{selector} should be rejected in a child section"
+            );
+        }
+    }
+}
+
+const STREAMING_FORGIVING_HTML: &str = concat!(
+    "<main>",
+    r#"<div id="d1" data-x="a,b">1</div>"#,
+    r#"<div id="d2" class="a">2</div>"#,
+    r#"<p id="p1">3</p>"#,
+    r#"<div id="d3" data-x="a,b">4</div>"#,
+    r#"<p id="p2">5</p>"#,
+    r#"<div id="d4" data-x="a)b">6</div>"#,
+    "</main>",
+);
+
+const STREAMING_FORGIVING_CASES: &[(&str, &[&str])] = &[
+    // The second `[data-x="a,b"]` among the siblings is d3.
+    (r#"div:nth-child(2 of [data-x="a,b"])"#, &["d3"]),
+    (r#"div:nth-child(2 of [data-x="a,b"], .a)"#, &["d2"]),
+    (r#"div:nth-child(1 of [data-x="a)b"])"#, &["d4"]),
+    ("div:is(.a, !!!) + p", &["p1"]),
+    (r#"div:where([data-x="a,b"], !!!) + p"#, &["p2"]),
+    (r#"div:is([data-x="a,b"]) ~ p"#, &["p1", "p2"]),
+    (r#"p ~ :is([data-x="a)b"], !!!)"#, &["d4"]),
+    (r#"p + :not(:where([data-x="a)b"], !!!))"#, &["d3"]),
+];
+
+fn streaming_forgiving_ids<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> Vec<String> {
+    let store = parse(STREAMING_FORGIVING_HTML, queries).unwrap();
+    store
+        .get(selector)
+        .map(|elements| elements.map(|e| e.id.unwrap().to_string()).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn streaming_selectors_keep_quoted_delimiters_and_forgive_invalid_branches() {
+    for &(selector, expected) in STREAMING_FORGIVING_CASES {
+        let queries = [Query::all(selector, Save::all()).unwrap().build()];
+        assert_eq!(
+            streaming_forgiving_ids(&queries, selector),
+            expected,
+            "{selector}"
+        );
+    }
+}
+
+#[test]
+fn streaming_forgiving_selectors_match_in_macro_queries() {
+    macro_rules! check {
+        ($index:literal, $selector:literal) => {{
+            let (selector, expected) = STREAMING_FORGIVING_CASES[$index];
+            assert_eq!(selector, $selector);
+            let static_queries = [query! { all($selector, Save::all()) }];
+            assert_eq!(
+                streaming_forgiving_ids(&static_queries, selector),
+                expected,
+                "{selector}"
+            );
+        }};
+    }
+
+    check!(0, r#"div:nth-child(2 of [data-x="a,b"])"#);
+    check!(1, r#"div:nth-child(2 of [data-x="a,b"], .a)"#);
+    check!(2, r#"div:nth-child(1 of [data-x="a)b"])"#);
+    check!(3, "div:is(.a, !!!) + p");
+    check!(4, r#"div:where([data-x="a,b"], !!!) + p"#);
+    check!(5, r#"div:is([data-x="a,b"]) ~ p"#);
+    check!(6, r#"p ~ :is([data-x="a)b"], !!!)"#);
+    check!(7, r#"p + :not(:where([data-x="a)b"], !!!))"#);
+    assert_eq!(STREAMING_FORGIVING_CASES.len(), 8);
+}
