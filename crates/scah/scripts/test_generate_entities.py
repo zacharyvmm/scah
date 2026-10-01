@@ -151,10 +151,7 @@ class ProvenanceTests(unittest.TestCase):
         entry_count = len(source)
 
         generated_table = self.gen.DESTINATION.read_text(encoding="utf-8")
-        root_notice = (
-            self.repo_root / "THIRD_PARTY_LICENSES" / "WHATWG-HTML.txt"
-        ).read_text(encoding="utf-8")
-        package_notice = (
+        notice = (
             self.repo_root
             / "crates"
             / "scah"
@@ -165,17 +162,12 @@ class ProvenanceTests(unittest.TestCase):
             self.repo_root / "crates" / "scah" / "scripts" / "README.md"
         ).read_text(encoding="utf-8")
 
-        self.assertEqual(root_notice, package_notice)
         self.assertEqual(
             extract_single_sha256(generated_table, "generated table"),
             fixture_hash,
         )
         self.assertEqual(
-            extract_single_sha256(root_notice, "root notice"),
-            fixture_hash,
-        )
-        self.assertEqual(
-            extract_single_sha256(package_notice, "package notice"),
+            extract_single_sha256(notice, "license notice"),
             fixture_hash,
         )
         self.assertEqual(
@@ -185,13 +177,13 @@ class ProvenanceTests(unittest.TestCase):
         self.assertIn(f"Source SHA-256: {fixture_hash}", generated_table)
         self.assertIn(f"// Entry count: {entry_count}", generated_table)
         self.assertIn(f"Entry count: {entry_count}", readme)
-        self.assertIn("https://creativecommons.org/licenses/by/4.0/", root_notice)
+        self.assertIn("https://creativecommons.org/licenses/by/4.0/", notice)
         self.assertIn(
             "Creative Commons Attribution 4.0 International Public License",
-            root_notice,
+            notice,
         )
-        self.assertIn("BSD 3-Clause License", root_notice)
-        self.assertIn("https://html.spec.whatwg.org/entities.json", root_notice)
+        self.assertIn("BSD 3-Clause License", notice)
+        self.assertIn("https://html.spec.whatwg.org/entities.json", notice)
 
 
 if __name__ == "__main__":

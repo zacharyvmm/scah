@@ -44,13 +44,9 @@ jobs:
           python3 -m unittest crates/scah/scripts/test_generate_entities.py
           python3 crates/scah/scripts/generate_entities.py
           git diff --exit-code -- crates/scah/src/html/entities_table.rs
-      - name: Verify third-party license notices
+      - name: Verify third-party license notice
         run: |
-          test -f THIRD_PARTY_LICENSES/WHATWG-HTML.txt
           test -f crates/scah/THIRD_PARTY_LICENSES/WHATWG-HTML.txt
-          cmp \
-            THIRD_PARTY_LICENSES/WHATWG-HTML.txt \
-            crates/scah/THIRD_PARTY_LICENSES/WHATWG-HTML.txt
           grep -F "THIRD_PARTY_LICENSES/WHATWG-HTML.txt" \
             crates/scah/src/html/entities_table.rs
       - name: Verify scah package contents
