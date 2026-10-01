@@ -1,17 +1,17 @@
 //! # scah - Streaming CSS-selector-driven HTML extraction
 //!
 //! **scah** (*scan HTML*) is a high-performance parsing library that bridges the gap
-//! between SAX/StAX streaming efficiency and DOM convenience. Instead of loading an
-//! entire document into memory or manually tracking parser state, you declare what
-//! you want with **CSS selectors**; the library handles the streaming complexity and
-//! builds a targeted [`Store`] containing only your selections.
+//! between SAX/StAX streaming efficiency and DOM convenience. Instead of building a
+//! full DOM or manually tracking parser state, you declare what you want with
+//! **CSS selectors**; the library handles the streaming complexity and builds a
+//! targeted [`Store`] containing only your selections.
 //!
 //! ## Highlights
 //!
 //! | Feature | Detail |
 //! |---------|--------|
-//! | **Streaming core** | Built on StAX: constant memory regardless of document size |
-//! | **Familiar API** | CSS selectors including `>` (child) and ` ` (descendant) combinators |
+//! | **Single pass, no DOM** | Selectors are evaluated as the document streams through the parser; only matches are stored |
+//! | **Familiar API** | CSS selectors including descendant, child, and sibling combinators |
 //! | **Composable queries** | Chain selections with [`QueryBuilder::then`] for hierarchical data extraction |
 //! | **Zero-copy** | Element names, attributes, and inner HTML are `&str` slices into the source |
 //! | **Multi-language** | Rust core with Python and TypeScript/JavaScript bindings |
