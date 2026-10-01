@@ -1,9 +1,9 @@
 use crate::Reader;
 use crate::query::compiler::SelectorParseError;
 use crate::query::selector::{
-    Combinator, ElementPredicate, IElement, Lexer, LocalLogicalPredicate,
+    self, Combinator, ElementPredicate, IElement, Lexer, LocalLogicalPredicate,
     MAX_SELECTOR_NESTING_DEPTH, StructuralMatchContext, StructuralPredicate,
-    is_css_whitespace_char,
+    is_css_whitespace_char, require_modeled_syntax,
 };
 
 #[inline]
@@ -538,7 +538,10 @@ impl<'query> Transition<'query> {
         let alternatives = split_selector_list(query)?;
         let mut paths = Vec::with_capacity(alternatives.len());
         for alternative in alternatives {
-            paths.push(Self::generate_single_path(alternative, scoped)?);
+            paths.push(require_modeled_syntax(
+                alternative,
+                Self::generate_single_path(alternative, scoped),
+            )?);
         }
         Ok(paths)
     }
@@ -691,35 +694,10 @@ impl<'query> Transition<'query> {
 }
 
 fn split_selector_list(source: &str) -> Result<Vec<&str>, SelectorParseError> {
-    let mut parts = Vec::new();
-    let bytes = source.as_bytes();
-    let mut start = 0;
-    let mut depth = 0usize;
-    let mut quote = None;
-    let mut escaped = false;
-    for (index, &byte) in bytes.iter().enumerate() {
-        if let Some(active_quote) = quote {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == active_quote {
-                quote = None;
-            }
-            continue;
-        }
-        match byte {
-            b'\'' | b'"' => quote = Some(byte),
-            b'[' | b'(' => depth += 1,
-            b']' | b')' => depth = depth.saturating_sub(1),
-            b',' if depth == 0 => {
-                parts.push(source[start..index].trim_matches(is_css_whitespace_char));
-                start = index + 1;
-            }
-            _ => {}
-        }
-    }
-    parts.push(source[start..].trim_matches(is_css_whitespace_char));
+    let parts = selector::split_selector_list(source)
+        .into_iter()
+        .map(|part| part.trim_matches(is_css_whitespace_char))
+        .collect::<Vec<_>>();
     if parts.iter().any(|part| part.is_empty()) {
         return Err(SelectorParseError::new(
             "selector list has an empty alternative",
@@ -1269,5 +1247,29 @@ mod tests {
             is_scope_root: false,
         };
         assert!(transition.next_with_context(&element, 1, 0, Some(&context)));
+    }
+
+    #[test]
+    fn namespace_gate_spares_attribute_operators_and_strings_in_filters() {
+        for selector in [
+            "li:nth-child(1 of .a)",
+            "li:nth-child(1 of*)",
+            "li:nth-child(1 of [lang|=en])",
+            r#"li:nth-child(1 of [data-x="a|b"])"#,
+            "li[lang|=en]",
+            r#"li:is([data-x="a|b"])"#,
+        ] {
+            Transition::generate_transition_paths_from_string(selector)
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
+        }
+        for selector in [
+            "li:nth-child(1 of|div)",
+            "li:nth-child(1 of *|div)",
+            "li:not(:is(:nth-child(1 of|div)))",
+        ] {
+            let error =
+                Transition::generate_transition_paths_from_string(selector).expect_err(selector);
+            assert!(error.is_fatal(), "{selector}: {error}");
+        }
     }
 }

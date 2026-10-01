@@ -11,6 +11,7 @@ pub(crate) fn is_css_whitespace_char(character: char) -> bool {
 mod builder;
 mod eq;
 mod lexer;
+mod scan;
 mod string_search;
 
 pub use builder::{
@@ -20,4 +21,5 @@ pub use builder::{
 };
 pub use lexer::Combinator;
 pub(super) use lexer::Lexer;
+pub(crate) use scan::{require_modeled_syntax, split_selector_list};
 pub use string_search::{AttributeCaseSensitivity, AttributeSelectionKind};

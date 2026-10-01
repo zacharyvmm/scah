@@ -869,4 +869,52 @@ mod tests {
             assert!(nested.is_err(), "nested {selector} should be rejected");
         }
     }
+
+    #[test]
+    fn unmodeled_syntax_rejects_the_whole_query_as_unsupported() {
+        for inner in [
+            r":\6e ot(.missing)",
+            ".foo/**/.bar",
+            r"[data-x=a\,b]",
+            r"[data-x=a\)b]",
+            r"[data-x=a\]b]",
+            r".a\)b",
+        ] {
+            for selector in [
+                format!("div{inner}"),
+                format!("div:is({inner})"),
+                format!("div:where({inner}, .x)"),
+                format!("div:not(:is({inner}))"),
+                format!("div:not(:where(.x, {inner}))"),
+                format!("div, a{inner}"),
+            ] {
+                let error = Query::all(&selector, Save::none())
+                    .err()
+                    .unwrap_or_else(|| panic!("{selector} should be rejected"));
+                assert!(error.is_fatal(), "{selector}: {error}");
+
+                let nested = Query::all("main", Save::none())
+                    .unwrap()
+                    .all(&selector, Save::none());
+                assert!(nested.is_err(), "nested {selector} should be rejected");
+            }
+        }
+    }
+
+    #[test]
+    fn quoted_commas_and_invalid_branches_still_build() {
+        for selector in [
+            r#"div:is([data-x="a,b"])"#,
+            r#"div:where([data-x="a,b"], .x)"#,
+            r#"div:not(:is([data-x="a,b"]))"#,
+            r#"div:not(:where([data-x="a,b"]))"#,
+            "div:is(.a, !!!)",
+            "div:where(.a, !!!)",
+            "div:not(:is(.a, !!!))",
+            "div:not(:where(.a, !!!))",
+        ] {
+            Query::all(selector, Save::none())
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
+        }
+    }
 }
