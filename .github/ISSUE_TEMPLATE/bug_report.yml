@@ -16,7 +16,7 @@ body:
     id: version
     attributes:
       label: Version or commit
-      placeholder: 0.0.21
+      placeholder: 0.1.0
     validations:
       required: true
   - type: textarea

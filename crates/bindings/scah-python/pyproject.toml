@@ -7,7 +7,7 @@ features = ["extension-module"]
 
 [project]
 name = "scah"
-version = "0.0.21"
+version = "0.1.0"
 description = "CSS selectors meet streaming HTML parsing: extract exactly what you select without building a full DOM."
 readme = "README.md"
 requires-python = ">=3.10"

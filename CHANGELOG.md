@@ -6,6 +6,10 @@ Rust crates and the Python and npm packages together.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-01
+
+Follows 0.0.21. The minor version moves because of the breaking text changes below.
+
 ### Breaking
 
 - **`text` replaces `text_content` and produces different output.** See
@@ -33,6 +37,9 @@ Rust crates and the Python and npm packages together.
 - Finished query runners are skipped during dispatch. ([#42], [#45])
 - Parsing without text capture no longer pays for text-capture code, and text
   extraction overhead is lower. ([#57], [#68])
+- The crates declare a minimum supported Rust version of 1.88. ([#73])
+- Releases publish through trusted publishing, so all npm packages, including
+  the per-platform binaries, carry provenance. ([#79])
 
 ### Deprecated
 
@@ -84,7 +91,8 @@ default. `parse` grows the requested text buffers only after a query matches.
 
 See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 
-[Unreleased]: https://github.com/zacharyvmm/scah/compare/v0.0.21...HEAD
+[Unreleased]: https://github.com/zacharyvmm/scah/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/zacharyvmm/scah/compare/v0.0.21...v0.1.0
 [#25]: https://github.com/zacharyvmm/scah/pull/25
 [#34]: https://github.com/zacharyvmm/scah/pull/34
 [#35]: https://github.com/zacharyvmm/scah/pull/35
@@ -104,3 +112,5 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#65]: https://github.com/zacharyvmm/scah/pull/65
 [#66]: https://github.com/zacharyvmm/scah/pull/66
 [#68]: https://github.com/zacharyvmm/scah/pull/68
+[#73]: https://github.com/zacharyvmm/scah/pull/73
+[#79]: https://github.com/zacharyvmm/scah/pull/79

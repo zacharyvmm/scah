@@ -1,6 +1,6 @@
 {
   "name": "@zacharymm/scah",
-  "version": "0.0.21",
+  "version": "0.1.0",
   "description": "CSS selectors meet streaming HTML parsing: extract exactly what you select without building a full DOM.",
   "main": "index.js",
   "license": "MIT",
@@ -106,10 +106,10 @@
     "arrowParens": "always"
   },
   "optionalDependencies": {
-    "@zacharymm/scah-win32-x64-msvc": "0.0.21",
-    "@zacharymm/scah-darwin-x64": "0.0.21",
-    "@zacharymm/scah-linux-x64-gnu": "0.0.21",
-    "@zacharymm/scah-linux-arm64-gnu": "0.0.21",
-    "@zacharymm/scah-darwin-arm64": "0.0.21"
+    "@zacharymm/scah-win32-x64-msvc": "0.1.0",
+    "@zacharymm/scah-darwin-x64": "0.1.0",
+    "@zacharymm/scah-linux-x64-gnu": "0.1.0",
+    "@zacharymm/scah-linux-arm64-gnu": "0.1.0",
+    "@zacharymm/scah-darwin-arm64": "0.1.0"
   }
 }

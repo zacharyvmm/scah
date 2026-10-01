@@ -89,7 +89,7 @@ impl Save {
     ///
     /// This compatibility name uses the new [`Save::text`] semantics and is
     /// not byte-for-byte compatible with the former text-content extractor.
-    #[deprecated(since = "0.0.22", note = "use `Save::only_text()`")]
+    #[deprecated(since = "0.1.0", note = "use `Save::only_text()`")]
     pub fn only_text_content() -> Self {
         Self::only_text()
     }
