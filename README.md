@@ -1,22 +1,35 @@
 # scah (scan HTML)
-> CSS selectors meet streaming XML/HTML parsing. Filter StAX events and build targeted DOMs without loading the entire document.
+
+> CSS selectors meet streaming HTML parsing. Extract exactly what you select, without building a DOM.
 
 [![Crates.io](https://img.shields.io/crates/v/scah)](https://crates.io/crates/scah)
 [![npm](https://img.shields.io/npm/v/%40zacharymm%2Fscah)](https://www.npmjs.com/package/@zacharymm/scah)
 [![PyPI](https://img.shields.io/pypi/v/scah)](https://pypi.org/project/scah/)
+[![docs.rs](https://img.shields.io/docsrs/scah)](https://docs.rs/scah)
+[![Tests](https://github.com/zacharyvmm/scah/actions/workflows/tests.yml/badge.svg)](https://github.com/zacharyvmm/scah/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/zacharyvmm/scah/blob/main/LICENSE)
 
-## What is scah?
+scah sits between SAX/StAX streaming and a full DOM. You declare what you want
+with CSS selectors. scah matches them in a single forward pass over the
+document and stores only the matches, so you don't track parser state by hand
+and you don't pay to build or walk a tree you don't need.
 
-**scah** is a high-performance parsing library that bridges the gap between SAX/StAX streaming efficiency and DOM convenience. Instead of loading an entire document into memory or manually tracking parser state, you declare what you want with **CSS selectors**; the library handles the streaming complexity and builds a targeted DOM containing only your selections.
+- **Single pass, no DOM**: selectors are evaluated while the document streams
+  through the parser; only matched elements are kept.
+- **Familiar API**: CSS selectors, including descendant, child, and sibling
+  combinators, attribute matchers, `:is()`/`:not()`, and `:nth-child()`.
+- **Structured queries**: nest selectors with `.then()` so child queries run
+  only inside their parent match. This is faster than flat filtering and keeps
+  hierarchical data together.
+- **Rust core** with Python and JavaScript/TypeScript bindings.
 
-- **Streaming core**: Built on StAX; constant memory regardless of document size
-- **Familiar API**: CSS selectors (including combinators like `>`, ` `, `+`, `~`)
-- **Multi-language**: Rust core with Python and TypeScript/JavaScript bindings
-- **Composable queries**: Chain selections and nest them with closures for **structured querying**; not only more efficient than flat filtering, but a fundamentally better pattern for extracting hierarchical data relationships
+## Install
 
-## Quick Start
-
-### Rust
+| Language | Package | Install |
+| -------- | ------- | ------- |
+| Rust | [`scah`](https://crates.io/crates/scah) | `cargo add scah` |
+| Python | [`scah`](https://pypi.org/project/scah/) | `pip install scah` |
+| JavaScript / TypeScript | [`@zacharymm/scah`](https://www.npmjs.com/package/@zacharymm/scah) | `npm install @zacharymm/scah` |
 
 ```toml
 # Cargo.toml
@@ -24,17 +37,18 @@
 scah = "0.0.21"
 ```
 
-#### Basic usage
+## Quick start
+
+### Rust
+
 ```rust
 use scah::{Query, Save, parse};
 
 let html = r#"<ul><li><a href="/one">One</a></li><li><a href="/two">Two</a></li></ul>"#;
 
-let queries = &[
-    Query::all("a[href]", Save::all())
-        .expect("valid selector")
-        .build()
-];
+let queries = &[Query::all("a[href]", Save::all())
+    .expect("valid selector")
+    .build()];
 let store = parse(html, queries).expect("parse succeeds");
 
 for a in store.get("a[href]").unwrap() {
@@ -42,17 +56,22 @@ for a in store.get("a[href]").unwrap() {
     let text = a.text(&store).unwrap_or_default();
     println!("{text}: {href}");
 }
-// Output:
-//   One: /one
-//   Two: /two
+// One: /one
+// Two: /two
 ```
 
-#### Structured querying with `.then()`
+#### Structured queries with `.then()`
 
-Instead of flat filtering, nest queries with closures. Child queries only run within the context of their parent match:
+Child queries only run within the context of their parent match:
 
 ```rust
 use scah::{Query, Save, parse};
+
+let html = r#"
+    <main>
+        <section><a href="/one">One</a><div><a href="/two">Two</a></div></section>
+    </main>
+"#;
 
 let query = Query::all("main > section", Save::all())
     .expect("valid selector")
@@ -68,23 +87,23 @@ let query = Query::all("main > section", Save::all())
 let queries = [query];
 let store = parse(html, &queries).expect("parse succeeds");
 
-// Access nested results through parent elements
 for section in store.get("main > section").unwrap() {
-    println!("Section: {}", section.inner_html.unwrap_or(""));
-
     if let Some(links) = section.get(&store, "> a[href]") {
         for link in links {
-            println!("\tDirect link: {}", link.attribute(&store, "href").unwrap());
+            println!("direct link: {}", link.attribute(&store, "href").unwrap());
         }
     }
 }
 ```
 
-If selectors come from user input, `Query::all(...)` and `Query::first(...)` return `Result`, so malformed selectors surface as `SelectorParseError`. For fixed selectors in examples or tests, use `.expect(...)` explicitly if you want panic-on-invalid-selector behavior.
+`Query::all` and `Query::first` return `Result`, so selectors from user input
+surface as `SelectorParseError` instead of panicking.
 
 #### Compile-time queries with `query!`
 
-For selectors that are known at compile time, prefer the `query!` macro. It validates the selector tree during compilation and emits a `StaticQuery` backed by inline arrays instead of heap-allocated query storage.
+For selectors known at compile time, the `query!` macro validates the selector
+tree during compilation and emits a `StaticQuery` backed by inline arrays
+instead of heap-allocated query storage:
 
 ```rust
 use scah::{Save, parse, query};
@@ -103,89 +122,178 @@ let query = query! {
         all("a[href]", Save::all()),
     }
 };
-let queries = [query]; 
+let queries = [query];
 let store = parse(html, &queries).expect("parse succeeds");
-let articles = store.get("article").unwrap();
-assert_eq!(articles.len(), 1);
-for article in articles {
-    assert_eq!(article.get("a[href]").unwrap().count(), 2);
+for article in store.get("article").unwrap() {
+    assert_eq!(article.get(&store, "a[href]").unwrap().count(), 2);
 }
 ```
 
-Use the runtime builder when you have dynamic sources. Use `query!` when the selector tree is authored in Rust code and should fail at compile time if it becomes invalid.
-
-#### `Save` options
-
-Control what data is captured per selector:
+#### Choosing what to save
 
 | Constructor | `inner_html` | `raw_text` | `text` | Use case |
 |-------------|:---:|:---:|:---:|----------|
-| `Save::all()` | Yes | Yes | Yes | Full extraction (captures both text modes; more work than the old two-field `Save::all()`) |
+| `Save::all()` | Yes | Yes | Yes | Full extraction |
 | `Save::only_inner_html()` | Yes | No | No | Raw markup only |
 | `Save::only_raw_text()` | No | Yes | No | Source-preserving text |
 | `Save::only_text()` | No | No | Yes | Normalized text scraping |
-| `Save::none()` | No | No | No | Structure-only (attributes still saved) |
+| `Save::none()` | No | No | No | Structure only (attributes are still saved) |
+| `Save::name_only()` | No | No | No | Element names only (attributes are not saved) |
 
-#### Supported CSS selector syntax
+Full API documentation is on [docs.rs/scah](https://docs.rs/scah).
 
-This table describes the `main` branch. Universal selectors, sibling
-combinators (`+`, `~`), attribute value flags, selector lists, logical pseudos,
-ordinals, and root/scope selectors are not in the 0.0.21 release on crates.io. Until the next release, use them
-through a git dependency:
+### Python
 
-```toml
-scah = { git = "https://github.com/zacharyvmm/scah" }
+```python
+from scah import Query, Save, parse
+
+html = """
+<main>
+  <section><a href="/one">One</a><div><a href="/two">Two</a></div></section>
+</main>
+"""
+
+query = (
+    Query.all("main > section", Save.none())
+    .then(lambda section: [
+        section.all("> a[href]", Save.only_text()),
+        section.all("div a", Save.only_text()),
+    ])
+    .build()
+)
+
+store = parse(html, [query])
+for section in store.get("main > section"):
+    for link in section.get("> a[href]"):
+        print(link.text, link.get_attribute("href"))  # One /one
 ```
 
-| Syntax | Example | Status |
-|--------|---------|--------|
-| Tag name | `a`, `div` | Working |
-| ID | `#my-id` | Working |
-| Class | `.my-class` | Working |
-| Universal | `*`, `*.card` | Working |
-| Descendant | `main section a` | Working |
-| Child | `main > section` | Working |
-| Attribute presence | `a[href]` | Working |
-| Attribute exact | `a[href="url"]` | Working |
-| Attribute prefix | `a[href^="https"]` | Working |
-| Attribute suffix | `a[href$=".com"]` | Working |
-| Attribute substring | `a[href*="example"]` | Working |
-| Attribute value flags | `[data-kind="FOO" i]`, `[data-kind="FOO" S]` | ASCII-insensitive or sensitive; flags are case-insensitive |
-| Adjacent sibling | `h1 + p` | Working |
-| General sibling | `h1 ~ p` | Working |
-| Selector lists | `h1, h2`, `main > h1, main > h2` | Working |
-| Logical pseudos | `:not(...)`, `:is(...)`, `:where(...)` | Local/current-element compounds |
-| Child ordinals | `:first-child`, `:nth-child(2n+1)` | Working |
-| Type ordinals | `:first-of-type`, `:nth-of-type(2)` | Working |
-| Filtered ordinals | `:nth-child(2 of .card, [data-card])` | Streaming-safe local filters |
-| Root/scope | `:root`, `:scope > a` | scah document/nested-query scope |
+### JavaScript / TypeScript
 
-Filtered `of S` arguments are intentionally limited to local compound selectors
-that can be evaluated at an opening tag. Future-dependent selectors such as
-`:has()`, `:empty`, `:last-child`, and `:nth-last-child()` are rejected.
-Inside `:is()` and `:where()`, only recoverable invalid alternatives are
-discarded, so `div:is(.card, .bad])` matches `div.card`. Valid alternatives
-that scah cannot evaluate reject the whole selector, so results are never
-silently narrowed. These include combinators, structural or unrecognized
-pseudo-classes, escaped pseudo-class names, out-of-range `An+B` numbers,
-escaped or non-ASCII identifiers (including attribute names), escaped
-attribute values such as `[title="a\"b"]`, and namespaced attributes such as
-`[ns|attr]`. Parsing also fails closed on syntax scah does not model: an
-alternative containing a CSS escape (`\`), a comment (`/* */`), the nesting
-selector `&`, a NUL character, or a namespace `|` outside attribute brackets
-rejects the whole selector, even if it is otherwise malformed and even inside
-nested `:not()`, `:is()`, or `:where()`. For example, `div:is(.card, .bad]/**/)`
-fails with "CSS comments are not supported". `:not()` and filtered `of S` lists
-are strict and reject any invalid or unsupported alternative. In nested query
-sections, `:scope` is supported as a standalone leading anchor for a following
-relative selector, as in `:scope > a`. Terminal `:scope` and compound anchors
-such as `:scope.card` are not supported. Selector lists nested inside
-functional pseudo-classes are limited to `MAX_SELECTOR_NESTING_DEPTH` (32)
-levels; deeper selectors are rejected when the query is built.
+```ts
+import { Query, parse } from '@zacharymm/scah'
 
-> Full API documentation: [docs.rs/scah](https://docs.rs/scah)
+const html = `
+<main>
+  <section><a href="/one">One</a><div><a href="/two">Two</a></div></section>
+</main>`
 
-#### Benchmarks
+const query = Query.all('main > section', { attributes: false })
+  .then((section) => [
+    section.all('> a[href]', { text: true }),
+    section.all('div a', { text: true }),
+  ])
+  .build()
+
+const store = parse(html, [query])
+for (const section of store.get('main > section') ?? []) {
+  for (const link of section.get('> a[href]')) {
+    console.log(link.text, link.getAttribute('href')) // One /one
+  }
+}
+```
+
+Node takes plain option objects instead of `Save` constructors:
+
+```ts
+{
+  innerHtml?: boolean
+  rawText?: boolean
+  text?: boolean
+  attributes?: boolean
+  textContent?: boolean // deprecated alias for text
+}
+```
+
+## Selector support
+
+> **Note:** this describes the `main` branch. Universal selectors, sibling combinators,
+> attribute value flags, selector lists, logical pseudo-classes, ordinals, and
+> `:root`/`:scope` are not in the 0.0.21 release yet. Until the next release,
+> use a git dependency: `scah = { git = "https://github.com/zacharyvmm/scah" }`.
+
+| Syntax | Example | Notes |
+|--------|---------|-------|
+| Tag name | `a`, `div` | |
+| ID | `#my-id` | |
+| Class | `.my-class` | |
+| Universal | `*`, `*.card` | |
+| Descendant | `main section a` | |
+| Child | `main > section` | |
+| Adjacent sibling | `h1 + p` | |
+| General sibling | `h1 ~ p` | |
+| Attribute presence | `a[href]` | |
+| Attribute value | `[href="url"]`, `^=`, `$=`, `*=` | Exact, prefix, suffix, substring |
+| Attribute value flags | `[data-kind="FOO" i]`, `[data-kind="FOO" S]` | ASCII case-insensitive or sensitive; the flag itself is case-insensitive |
+| Selector lists | `h1, h2`, `main > h1, main > h2` | |
+| Logical pseudo-classes | `:not(...)`, `:is(...)`, `:where(...)` | Arguments must be local compound selectors |
+| Child ordinals | `:first-child`, `:nth-child(2n+1)` | |
+| Type ordinals | `:first-of-type`, `:nth-of-type(2)` | |
+| Filtered ordinals | `:nth-child(2 of .card, [data-card])` | `of S` must be a local compound selector |
+| Root and scope | `:root`, `:scope > a` | `:scope` is the nested query's parent match |
+
+scah evaluates selectors as tags open. Rather than silently narrowing results,
+it rejects selectors it cannot decide at that point:
+
+- **Future-dependent selectors** are rejected: `:has()`, `:empty`,
+  `:last-child`, and `:nth-last-child()`.
+- **Inside `:is()` and `:where()`**, recoverable invalid alternatives are
+  dropped as CSS specifies, so `div:is(.card, .bad])` matches `div.card`. A
+  valid alternative that scah cannot evaluate rejects the whole selector. That
+  covers combinators, structural or unrecognized pseudo-classes, escaped
+  pseudo-class names, out-of-range `An+B` numbers, escaped or non-ASCII
+  identifiers (including attribute names), escaped attribute values such as
+  `[title="a\"b"]`, and namespaced attributes such as `[ns|attr]`.
+- **`:not()` and `of S` lists are strict**: any invalid or unsupported
+  alternative rejects the selector.
+- **Unmodeled syntax fails closed**, even inside nested `:not()`, `:is()`, or
+  `:where()`: CSS escapes (`\`), comments (`/* */`), the nesting selector `&`,
+  NUL characters, and namespace `|` outside attribute brackets. For example,
+  `div:is(.card, .bad]/**/)` fails with "CSS comments are not supported".
+- **`:scope`** is supported only as a standalone leading anchor in nested
+  queries, as in `:scope > a`. Terminal `:scope` and compound anchors such as
+  `:scope.card` are rejected.
+- **Nesting depth**: selector lists inside functional pseudo-classes may nest
+  up to `MAX_SELECTOR_NESTING_DEPTH` (32) levels.
+
+## Text extraction
+
+| Field | Meaning |
+| ----- | ------- |
+| `inner_html` / `innerHtml` | Raw markup between the element's tags |
+| `raw_text` / `rawText` | Source-preserving descendant text. Whitespace and entity spellings are kept and markup is omitted. Includes `script`, `style`, `template`, and `hidden` subtrees. |
+| `text` | Normalized, human-readable descendant text (details below). This is **not** browser `innerText`; scah does not evaluate CSS. |
+
+Normalized `text`:
+
+- Omits `script`, `style`, `template`, and elements with a `hidden` attribute,
+  including any structural separators they would contribute.
+- Inserts line breaks for blocks, `<br>`, and `<hr>`, newlines between table
+  rows, and tabs between table cells. Other elements concatenate inline.
+- Preserves preformatted whitespace in `pre` and `textarea`, including literal
+  or decoded nonbreaking spaces, after HTML's rule that drops a newline
+  immediately following the start tag.
+- Decodes HTML character references: named, numeric, legacy semicolon-less
+  forms in data state, C1 remapping, and U+FFFD for invalid scalars.
+
+"Block" is a fixed set of structural elements: `address`, `article`, `aside`,
+`blockquote`, `body`, `caption`, `colgroup`, `dd`, `details`, `dialog`, `div`,
+`dl`, `dt`, `fieldset`, `figcaption`, `figure`, `footer`, `form`, `h1`–`h6`,
+`header`, `hgroup`, `legend`, `li`, `main`, `menu`, `nav`, `ol`, `p`, `pre`,
+`search`, `section`, `summary`, `table`, `tbody`, `tfoot`, `thead`, and `ul`.
+
+`None` / `null` means the query did not request that representation; an empty
+string means it was requested and the element had no text.
+
+`Save::all()` captures all three representations. Prefer `Save::only_text()` or
+`Save::only_raw_text()` when you need just one.
+
+> **Breaking change:** `text` replaced `text_content` on `main`, and its output differs. If you
+> store or compare extracted text, see the [migration notes](https://github.com/zacharyvmm/scah/blob/main/CHANGELOG.md).
+
+## Benchmarks
+
+### Rust
 
 <!-- benchmarks:rust -->
 | Library | WHATWG spec | Nested (all) | Nested (first) | Flat (all) | Flat (first) |
@@ -200,26 +308,7 @@ levels; deeper selectors are rejected when the query is built.
 Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-06-06; raw data and run details in [`benches/results/rust`](https://github.com/zacharyvmm/scah/tree/main/benches/results/rust).
 <!-- /benchmarks:rust -->
 
-See [`benches/`](benches/README.md) for methodology and how to reproduce these numbers.
-
 ### Python
-```bash
-pip install -U scah
-```
-```python
-from scah import Query, Save, parse 
-
-query = Query.all("main > section", Save.all())
-    .then(lambda section: [
-        section.all("> a[href]", Save.all()),
-        section.all("div a", Save.all()),
-    ])
-    .build()
-
-store = parse(html, [query])
-```
-
-#### Benchmarks
 
 <!-- benchmarks:python -->
 | Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
@@ -234,25 +323,7 @@ store = parse(html, [query])
 Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-04-08 to 2026-07-15; raw data and run details in [`benches/results/python`](https://github.com/zacharyvmm/scah/tree/main/benches/results/python).
 <!-- /benchmarks:python -->
 
-### Typescript / Javascript
-```bash
-npm install scah@npm:@zacharymm/scah
-```
-
-```ts
-import { Query, parse } from 'scah';
-
-const query = Query.all('main > section', { innerHtml: true, rawText: true, text: true })
-  .then((p) => [
-    p.all('> a[href]', { innerHtml: true, rawText: true, text: true }),
-    p.all('div a', { innerHtml: true, rawText: true, text: true }),
-  ])
-  .build();
-
-const store = parse(html, [query]);
-```
-
-#### Benchmarks
+### JavaScript (Bun)
 
 <!-- benchmarks:node -->
 | Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
@@ -267,90 +338,16 @@ const store = parse(html, [query]);
 Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-04-08 to 2026-07-15; raw data and run details in [`benches/results/node`](https://github.com/zacharyvmm/scah/tree/main/benches/results/node).
 <!-- /benchmarks:node -->
 
-## Text extraction
+See [`benches/`](https://github.com/zacharyvmm/scah/blob/main/benches/README.md) for what each scenario measures and how to
+reproduce these numbers.
 
-Scah exposes two text modes (plus inner HTML):
+## Contributing
 
-| Field | Meaning |
-| ----- | ------- |
-| `inner_html` / `innerHtml` | Raw markup between the element's tags |
-| `raw_text` / `rawText` | Source-preserving descendant text. Whitespace and entity spellings are retained; markup itself is omitted. Includes content inside `script` / `style` / `template` / `hidden` subtrees. |
-| `text` | Normalized, human-readable descendant text. Whitespace and structural boundaries are normalized, non-content elements are omitted, and HTML character references are decoded. This is **not** browser `innerText` and does not process CSS. |
+See [CONTRIBUTING.md](https://github.com/zacharyvmm/scah/blob/main/CONTRIBUTING.md). Changes are recorded in
+[CHANGELOG.md](https://github.com/zacharyvmm/scah/blob/main/CHANGELOG.md).
 
-Normalized `text` specifically:
+## License
 
-- Omits `script`, `style`, `template`, and elements with a `hidden` attribute (no text and no structural separators from those subtrees).
-- Inserts line breaks for blocks / `<br>` / `<hr>`, and tabs between table cells.
-- Preserves preformatted whitespace in `pre` and `textarea`, including literal or decoded nonbreaking spaces, after HTML's initial-newline rule (only a newline immediately after the start tag is removed).
-- Decodes HTML character references (named, numeric, legacy semicolon-less forms in data state, C1 remapping, and U+FFFD replacement for invalid scalars).
-
-Because Scah does not evaluate CSS, "block" is a fixed structural HTML set:
-`address`, `article`, `aside`, `blockquote`, `body`, `caption`, `colgroup`, `dd`, `details`,
-`dialog`, `div`, `dl`, `dt`, `fieldset`, `figcaption`, `figure`, `footer`,
-`form`, `h1` through `h6`, `header`, `hgroup`, `legend`, `li`, `main`, `menu`,
-`nav`, `ol`, `p`, `pre`, `search`, `section`, `summary`, `table`, `tbody`,
-`tfoot`, `thead`, and `ul`. Table rows and cells use newline and tab boundaries,
-respectively. Other elements use inline concatenation semantics.
-
-`None` / `null` means the query did not request that representation. An empty string means it was requested but the element produced no text.
-
-### Node `Save` options
-
-Node uses plain option objects (no runtime `Save` helpers):
-
-```ts
-{
-  innerHtml?: boolean
-  rawText?: boolean
-  text?: boolean
-  attributes?: boolean
-  textContent?: boolean // legacy alias for text
-}
-```
-
-Rust and Python retain `Save::only_raw_text()` / `Save.only_raw_text()` style constructors.
-
-### Breaking migration from `text_content`
-
-`text` replaces `text_content`, but it is not output-compatible. The new
-representation decodes character references, omits `script`, `style`,
-`template`, and `[hidden]` subtrees, inserts structural line and table-cell
-boundaries, and applies different whitespace rules. Code that compares,
-hashes, indexes, or persists extracted text should treat this change as a data
-migration, not a field rename.
-
-For example, extracting the text of `main` from:
-
-```html
-<main><p>A&nbsp;&amp; B</p><div hidden>secret</div><p>C</p></main>
-```
-
-produces different bytes:
-
-```text
-old text_content: "A&nbsp;&amp; B secret C"
-new text:         "A\u{00A0}& B\nC"
-```
-
-The new result contains U+00A0 and a line feed. It also omits the hidden text.
-
-| Before | After |
-| ------ | ----- |
-| `Save::only_text_content()` | `Save::only_text()` |
-| `Save { text_content: true, ... }` | `Save { text: true, ... }` |
-| `element.text_content(&store)` | `element.text(&store)` |
-| `CapacityOptions::reserve_text_content` | `CapacityOptions::reserve_text` |
-| Python `element.text_content` | Python `element.text` |
-| Node `element.textContent` | Node `element.text` |
-| No raw equivalent | `raw_text` / `rawText` |
-
-Deprecated compatibility aliases remain for `Save::only_text_content()` and
-`element.text_content(&store)` in Rust, `Save.only_text_content()`,
-`Save(text_content=...)`, and `element.text_content` in Python, and
-`textContent` save options and `Element.textContent` in Node. These aliases return
-the new normalized representation. They do not restore the old byte output.
-Python emits `DeprecationWarning` when its aliases are used.
-
-`Save::all()` now captures both `raw_text` and normalized `text` (plus `inner_html`), which can perform more work than the old two-field `Save::all()`. Prefer `Save::only_text()` or `Save::only_raw_text()` when only one representation is needed.
-
-`Store::with_capacity` reserves capacity for both text representations by default. Query-aware `parse` construction grows requested text buffers and range sidecars only after a query matches.
+scah is available under the [MIT License](https://github.com/zacharyvmm/scah/blob/main/LICENSE). The HTML entity table is
+derived from the WHATWG HTML Standard; see
+[`crates/scah/THIRD_PARTY_LICENSES`](https://github.com/zacharyvmm/scah/blob/main/crates/scah/THIRD_PARTY_LICENSES/WHATWG-HTML.txt).
