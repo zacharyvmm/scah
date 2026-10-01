@@ -1,25 +1,16 @@
-WHATWG HTML Named Character References
+WHATWG HTML named character references
 
-Scah incorporates an unmodified copy of the WHATWG HTML named character
-reference dataset:
+scah's entity decoding table (src/html/entities_table.rs) is generated from
+the WHATWG named character reference dataset:
 
-https://html.spec.whatwg.org/entities.json
+  Source:  https://html.spec.whatwg.org/entities.json
+  SHA-256: d741d877ac77c4194c4ad526b5b4a19aef8dfe411ab840a466891cdbb9f362e6
+  License: https://creativecommons.org/licenses/by/4.0/
 
-Committed fixture:
-crates/scah/scripts/entities.json
-
-The committed entities.json fixture is an unmodified copy of the identified
-upstream dataset. The generated Rust table changes representation and escaping
-but not the underlying entity names or character values.
-
-Committed source SHA-256:
-d741d877ac77c4194c4ad526b5b4a19aef8dfe411ab840a466891cdbb9f362e6
-
-Creative Commons Attribution 4.0 International license URI:
-https://creativecommons.org/licenses/by/4.0/
-
-The following license notice is reproduced verbatim from the upstream
-WHATWG HTML repository:
+The table changes the representation of the data, not the entity names or
+character values. The source repository also carries an unmodified copy of the
+dataset at crates/scah/scripts/entities.json. The upstream license notice
+follows verbatim.
 
 --------------------------------------------------------------------------------
 
