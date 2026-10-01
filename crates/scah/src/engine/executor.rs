@@ -1505,7 +1505,6 @@ where
         store: &mut Store<'html, 'query>,
     ) -> bool {
         let close_depth = document_position.element_depth;
-        let mut last_pruned_parent = None;
         let mut significant_close = false;
 
         // Walk backwards so `swap_remove` cannot move an unvisited cursor.
@@ -1547,7 +1546,6 @@ where
                 significant_close = true;
             } else if cur.scope_depth >= close_depth {
                 let pruned = self.cursors.swap_remove(i);
-                last_pruned_parent = Some(pruned.parent);
                 significant_close = true;
 
                 crate::scah_trace!(
@@ -1564,14 +1562,10 @@ where
             }
         }
 
-        // Restore the parent for future sibling matches after scoped cursors
-        // are pruned at the close boundary.
-        if let Some(parent) = last_pruned_parent
-            && let Some(root) = self.cursors.first_mut()
-            && root.scope_depth == SENTINEL_SCOPE
-        {
-            root.parent = parent;
-        }
+        // Sentinel root cursors keep their original output parent: every save
+        // path restores the cursor parent after storing a match, so closing an
+        // element must not rewrite it. Copying a pruned child cursor's parent
+        // here would misfile later matches of other root alternatives.
 
         significant_close
     }
