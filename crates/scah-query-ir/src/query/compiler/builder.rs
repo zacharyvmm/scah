@@ -490,17 +490,16 @@ impl<'query> QueryBuilder<'query> {
         let exit_at_section_end = self.exit_at_section();
         let states_box = self.states.into_boxed_slice();
         let query_box = self.selection.into_boxed_slice();
-        Query {
-            states: states_box,
-            queries: query_box,
+        Query::new(
+            states_box,
+            query_box,
             exit_at_section_end,
-            alternatives: self
-                .alternatives
+            self.alternatives
                 .into_iter()
                 .map(Vec::into_boxed_slice)
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
-        }
+        )
     }
 }
 
@@ -676,9 +675,13 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_ids_are_rejected() {
-        let result = Query::all("#a1#a2", Save::none());
-        assert!(result.is_err(), "duplicate IDs should be rejected");
+    fn repeated_ids_are_valid_selectors() {
+        for selector in ["#a1#a1", "#a1#a2", "div:is(#a1#a1)", "div:not(#a1#a2)"] {
+            assert!(
+                Query::all(selector, Save::none()).is_ok(),
+                "{selector} is valid CSS"
+            );
+        }
     }
 
     // Priority 4: combinator tokenization without spaces

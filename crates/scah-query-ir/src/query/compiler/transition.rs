@@ -622,7 +622,6 @@ impl<'query> Transition<'query> {
             current_depth >= last_depth,
             "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
         );
-
         self.guard.evaluate(last_depth, current_depth) && self.predicate.matches_element(element)
     }
 

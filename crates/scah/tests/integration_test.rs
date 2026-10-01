@@ -1281,6 +1281,90 @@ fn logical_pseudos_reject_unsupported_alternatives_instead_of_narrowing_results(
     assert_eq!(texts, vec![Some("X")]);
 }
 
+const REPEATED_ID_HTML: &str =
+    r#"<main><div id="hero">H</div><div id="other">O</div><div>N</div></main>"#;
+
+const REPEATED_ID_CASES: &[(&str, &[&str])] = &[
+    ("div#hero#hero", &["H"]),
+    ("div#hero#other", &[]),
+    ("div:is(#hero#hero)", &["H"]),
+    ("div:is(#hero#other)", &[]),
+    ("div:where(#hero#hero)", &["H"]),
+    ("div:where(#hero#other)", &[]),
+    ("div:not(#hero#hero)", &["O", "N"]),
+    ("div:not(#hero#other)", &["H", "O", "N"]),
+    ("div:not(:is(#hero#hero))", &["O", "N"]),
+    ("div:not(:where(#hero#other))", &["H", "O", "N"]),
+];
+
+fn repeated_id_texts<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> Vec<String> {
+    let store = parse(REPEATED_ID_HTML, queries).unwrap();
+    store
+        .get(selector)
+        .map(|elements| {
+            elements
+                .map(|element| element.text(&store).unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn repeated_id_selectors_match_as_a_conjunction() {
+    for &(selector, expected) in REPEATED_ID_CASES {
+        let queries = [Query::all(selector, Save::all()).unwrap().build()];
+        assert_eq!(
+            repeated_id_texts(&queries, selector),
+            expected,
+            "{selector}"
+        );
+    }
+}
+
+#[test]
+fn repeated_id_selectors_match_in_macro_queries() {
+    macro_rules! check {
+        ($index:literal, $selector:literal) => {{
+            let (selector, expected) = REPEATED_ID_CASES[$index];
+            assert_eq!(selector, $selector);
+            let static_queries = [query! { all($selector, Save::all()) }];
+            let runtime_query = Query::all(selector, Save::all()).unwrap().build();
+            let static_states = static_queries[0].states();
+            assert_eq!(static_states.len(), runtime_query.states().len());
+            for (static_state, runtime_state) in static_states.iter().zip(runtime_query.states()) {
+                assert_eq!(static_state.guard, runtime_state.guard, "{selector}");
+                assert_eq!(
+                    static_state.predicate(),
+                    runtime_state.predicate(),
+                    "{selector}: macro and runtime predicates differ"
+                );
+                assert_eq!(
+                    static_state.metadata().attribute_names(),
+                    runtime_state.metadata().attribute_names(),
+                    "{selector}"
+                );
+            }
+            assert_eq!(
+                repeated_id_texts(&static_queries, selector),
+                expected,
+                "{selector}"
+            );
+        }};
+    }
+
+    check!(0, "div#hero#hero");
+    check!(1, "div#hero#other");
+    check!(2, "div:is(#hero#hero)");
+    check!(3, "div:is(#hero#other)");
+    check!(4, "div:where(#hero#hero)");
+    check!(5, "div:where(#hero#other)");
+    check!(6, "div:not(#hero#hero)");
+    check!(7, "div:not(#hero#other)");
+    check!(8, "div:not(:is(#hero#hero))");
+    check!(9, "div:not(:where(#hero#other))");
+    assert_eq!(REPEATED_ID_CASES.len(), 10);
+}
+
 #[test]
 fn stray_quotes_after_selectors_are_rejected() {
     for selector in ["b[a]\"", "div:not(.a)\"", "div[class]''"] {
@@ -1289,4 +1373,199 @@ fn stray_quotes_after_selectors_are_rejected() {
             "{selector} should be rejected"
         );
     }
+}
+
+/// Root ids paired with the ids of their `a` children, in document order.
+fn root_alternative_owners(
+    store: &Store<'_, '_>,
+    root: &str,
+    child: &str,
+) -> Vec<(String, Vec<String>)> {
+    store
+        .get(root)
+        .map(|roots| {
+            roots
+                .map(|parent| {
+                    let children = parent
+                        .get(store, child)
+                        .map(|it| it.map(|a| a.id.unwrap().to_string()).collect())
+                        .unwrap_or_default();
+                    (parent.id.unwrap().to_string(), children)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn owners(expected: &[(&str, &[&str])]) -> Vec<(String, Vec<String>)> {
+    expected
+        .iter()
+        .map(|(id, children)| {
+            (
+                id.to_string(),
+                children.iter().map(|c| c.to_string()).collect(),
+            )
+        })
+        .collect()
+}
+
+fn parse_root_alternatives(selector: &str, html: &str) -> Vec<(String, Vec<String>)> {
+    let query = Query::all(selector, Save::all())
+        .unwrap()
+        .then(|parent| Ok([parent.all("a", Save::all())?]))
+        .unwrap()
+        .build();
+    let queries = [query];
+    let store = parse(html, &queries).unwrap();
+    assert_eq!(store.get("a").map_or(0, Iterator::count), 0);
+    root_alternative_owners(&store, selector, "a")
+}
+
+#[test]
+fn root_alternatives_keep_root_parent_after_nested_close() {
+    let html = "<div id='outer'><div id='inner'></div><span id='s'></span></div>";
+    let query = Query::all("span, div", Save::none())
+        .unwrap()
+        .all("a", Save::none())
+        .unwrap()
+        .build();
+    let queries = [query];
+    let store = parse(html, &queries).unwrap();
+    let ids: Vec<_> = store.get("span, div").unwrap().map(|e| e.id).collect();
+    assert_eq!(ids.len(), 3);
+
+    let saved_all = parse_root_alternatives("span, div", html);
+    assert_eq!(
+        saved_all,
+        owners(&[("outer", &[]), ("inner", &[]), ("s", &[])])
+    );
+}
+
+#[test]
+fn root_alternatives_keep_child_ownership_in_either_order() {
+    let html = concat!(
+        "<div id='outer'><a id='a1'></a>",
+        "<div id='inner'><a id='a2'></a></div>",
+        "<span id='s1'><a id='a3'></a></span>",
+        "<a id='a4'></a></div>",
+        "<span id='s2'><a id='a5'></a></span>",
+    );
+    let expected = owners(&[
+        ("outer", &["a1", "a2", "a3", "a4"]),
+        ("inner", &["a2"]),
+        ("s1", &["a3"]),
+        ("s2", &["a5"]),
+    ]);
+
+    assert_eq!(parse_root_alternatives("span, div", html), expected);
+    assert_eq!(parse_root_alternatives("div, span", html), expected);
+}
+
+#[test]
+fn root_alternatives_keep_parent_across_deep_closes() {
+    let html = concat!(
+        "<section id='sec'>",
+        "<div id='d1'><div id='d2'><span id='s1'><a id='a1'></a></span></div>",
+        "<p id='p1'><a id='a2'></a></p></div>",
+        "<span id='s2'><div id='d3'><a id='a3'></a></div></span>",
+        "</section>",
+        "<p id='p2'><a id='a4'></a></p>",
+    );
+    let expected = owners(&[
+        ("d1", &["a1", "a2"]),
+        ("d2", &["a1"]),
+        ("s1", &["a1"]),
+        ("p1", &["a2"]),
+        ("s2", &["a3"]),
+        ("d3", &["a3"]),
+        ("p2", &["a4"]),
+    ]);
+
+    assert_eq!(parse_root_alternatives("span, div, p", html), expected);
+    assert_eq!(parse_root_alternatives("p, div, span", html), expected);
+}
+
+#[test]
+fn root_alternatives_keep_parent_for_first_child_queries() {
+    let html = concat!(
+        "<div id='outer'><div id='inner'><a id='a1'></a></div>",
+        "<span id='s'><a id='a2'></a><a id='a3'></a></span></div>",
+    );
+    let query = Query::all("span, div", Save::all())
+        .unwrap()
+        .then(|parent| Ok([parent.first("a", Save::all())?]))
+        .unwrap()
+        .build();
+    let queries = [query];
+    let store = parse(html, &queries).unwrap();
+
+    assert_eq!(
+        root_alternative_owners(&store, "span, div", "a"),
+        owners(&[("outer", &["a1"]), ("inner", &["a1"]), ("s", &["a2"])])
+    );
+}
+
+#[test]
+fn first_root_alternative_owns_all_nested_children() {
+    let html = concat!(
+        "<div id='outer'><div id='inner'><a id='a1'></a></div>",
+        "<span id='s'><a id='a2'></a></span></div>",
+        "<span id='late'><a id='a3'></a></span>",
+    );
+    let query = Query::first("span, div", Save::all())
+        .unwrap()
+        .then(|parent| Ok([parent.all("a", Save::all())?]))
+        .unwrap()
+        .build();
+    let queries = [query];
+    let store = parse(html, &queries).unwrap();
+
+    assert_eq!(
+        root_alternative_owners(&store, "span, div", "a"),
+        owners(&[("outer", &["a1", "a2"])])
+    );
+}
+
+#[test]
+fn nested_child_alternatives_keep_parent_after_nested_close() {
+    let html = concat!(
+        "<main id='m1'><div id='outer'><div id='inner'><a id='a1'></a></div>",
+        "<span id='s'><a id='a2'></a></span></div></main>",
+        "<main id='m2'><span id='s2'></span></main>",
+    );
+    let query = Query::all("main", Save::all())
+        .unwrap()
+        .then(|main| {
+            Ok([main
+                .all("span, div", Save::all())?
+                .then(|parent| Ok([parent.all("a", Save::all())?]))?])
+        })
+        .unwrap()
+        .build();
+    let queries = [query];
+    let store = parse(html, &queries).unwrap();
+    let mains: Vec<_> = store.get("main").unwrap().collect();
+    assert_eq!(mains.len(), 2);
+
+    let nested = |main: &scah::Element<'_>| -> Vec<(String, Vec<String>)> {
+        main.get(&store, "span, div")
+            .map(|parents| {
+                parents
+                    .map(|parent| {
+                        let children = parent
+                            .get(&store, "a")
+                            .map(|it| it.map(|a| a.id.unwrap().to_string()).collect())
+                            .unwrap_or_default();
+                        (parent.id.unwrap().to_string(), children)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    assert_eq!(
+        nested(mains[0]),
+        owners(&[("outer", &["a1", "a2"]), ("inner", &["a1"]), ("s", &["a2"])])
+    );
+    assert_eq!(nested(mains[1]), owners(&[("s2", &[])]));
 }
