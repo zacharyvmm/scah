@@ -763,4 +763,42 @@ mod tests {
             );
         }
     }
+
+    fn query_node(selector: &str) -> QueryNode {
+        syn::parse_str::<QueryNode>(&format!("all({selector:?}, Save::none())")).unwrap()
+    }
+
+    #[test]
+    fn macro_rejects_syntax_the_parser_does_not_model_in_forgiving_lists() {
+        for inner in [
+            r":\6e ot(.missing)",
+            ".foo/**/.bar",
+            r"[data-x=a\,b]",
+            r"[data-x=a\)b]",
+            r"[data-x=a\]b]",
+        ] {
+            for selector in [
+                format!("div{inner}"),
+                format!("div:is({inner})"),
+                format!("div:where({inner})"),
+                format!("div:not(:is({inner}))"),
+                format!("div:not(:where({inner}))"),
+            ] {
+                assert!(
+                    expand_query(&query_node(&selector)).is_err(),
+                    "{selector} should be rejected"
+                );
+            }
+        }
+
+        for selector in [
+            r#"div:is([data-x="a,b"])"#,
+            r#"div:not(:where([data-x="a,b"]))"#,
+            "div:is(.a, !!!)",
+            "div:not(:where(.a, !!!))",
+        ] {
+            expand_query(&query_node(selector))
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
+        }
+    }
 }

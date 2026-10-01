@@ -613,3 +613,101 @@ fn stray_quotes_after_selectors_are_rejected() {
         );
     }
 }
+
+#[test]
+fn forgiving_lists_reject_syntax_the_parser_does_not_model() {
+    // Each alternative is valid CSS that scah would misread. Forgiving it as
+    // invalid would make `:is()` / `:where()` miss elements a browser matches
+    // and the enclosing `:not()` return extra ones, so the query is rejected.
+    for inner in [
+        r":\6e ot(.missing)",
+        ".foo/**/.bar",
+        r"[data-x=a\,b]",
+        r"[data-x=a\)b]",
+        r"[data-x=a\]b]",
+        r".a\)b",
+    ] {
+        for selector in [
+            format!("div{inner}"),
+            format!("div:is({inner})"),
+            format!("div:where({inner})"),
+            format!("div:not(:is({inner}))"),
+            format!("div:not(:where({inner}))"),
+            format!("div:is(.x, {inner})"),
+        ] {
+            assert!(
+                Query::all(&selector, Save::all()).is_err(),
+                "{selector} should be rejected"
+            );
+        }
+    }
+}
+
+const FORGIVING_HTML: &str = r#"<main><div class="foo bar">F</div><div data-x="a,b">C</div><div data-x="a)b">P</div><div>N</div></main>"#;
+
+const FORGIVING_CASES: &[(&str, &[&str])] = &[
+    (r#"div:is([data-x="a,b"])"#, &["C"]),
+    (r#"div:where([data-x="a,b"], [data-x="a)b"])"#, &["C", "P"]),
+    (r#"div:not(:is([data-x="a,b"]))"#, &["F", "P", "N"]),
+    (r#"div:not(:where([data-x="a)b"], !!!))"#, &["F", "C", "N"]),
+    ("div:is(.foo, !!!)", &["F"]),
+    ("div:where(.bar, !!!)", &["F"]),
+    ("div:not(:is(.foo, !!!))", &["C", "P", "N"]),
+    ("div:not(:where(.foo, !!!))", &["C", "P", "N"]),
+];
+
+fn forgiving_texts<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> Vec<String> {
+    let store = parse(FORGIVING_HTML, queries).unwrap();
+    store
+        .get(selector)
+        .map(|elements| {
+            elements
+                .map(|element| element.text(&store).unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn forgiving_lists_keep_quoted_commas_and_forgive_invalid_branches() {
+    for &(selector, expected) in FORGIVING_CASES {
+        let queries = [Query::all(selector, Save::all()).unwrap().build()];
+        assert_eq!(forgiving_texts(&queries, selector), expected, "{selector}");
+    }
+}
+
+#[test]
+fn forgiving_lists_match_in_macro_queries() {
+    macro_rules! check {
+        ($index:literal, $selector:literal) => {{
+            let (selector, expected) = FORGIVING_CASES[$index];
+            assert_eq!(selector, $selector);
+            let static_queries = [query! { all($selector, Save::all()) }];
+            let runtime_query = Query::all(selector, Save::all()).unwrap().build();
+            let static_states = static_queries[0].states();
+            assert_eq!(static_states.len(), runtime_query.states().len());
+            for (static_state, runtime_state) in static_states.iter().zip(runtime_query.states()) {
+                assert_eq!(
+                    static_state.predicate(),
+                    runtime_state.predicate(),
+                    "{selector}: macro and runtime predicates differ"
+                );
+            }
+            assert_eq!(
+                forgiving_texts(&static_queries, selector),
+                expected,
+                "{selector}"
+            );
+        }};
+    }
+
+    check!(0, r#"div:is([data-x="a,b"])"#);
+    check!(1, r#"div:where([data-x="a,b"], [data-x="a)b"])"#);
+    check!(2, r#"div:not(:is([data-x="a,b"]))"#);
+    check!(3, r#"div:not(:where([data-x="a)b"], !!!))"#);
+    check!(4, "div:is(.foo, !!!)");
+    check!(5, "div:where(.bar, !!!)");
+    check!(6, "div:not(:is(.foo, !!!))");
+    check!(7, "div:not(:where(.foo, !!!))");
+    assert_eq!(FORGIVING_CASES.len(), 8);
+}

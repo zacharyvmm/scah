@@ -1,7 +1,8 @@
 use crate::Reader;
 use crate::query::compiler::SelectorParseError;
 use crate::query::selector::{
-    Combinator, ElementPredicate, IElement, Lexer, StructuralMatchContext, is_css_whitespace_char,
+    self, Combinator, ElementPredicate, IElement, Lexer, StructuralMatchContext,
+    is_css_whitespace_char, require_modeled_syntax,
 };
 
 #[inline]
@@ -445,7 +446,10 @@ impl<'query> Transition<'query> {
         let alternatives = split_selector_list(query)?;
         let mut paths = Vec::with_capacity(alternatives.len());
         for alternative in alternatives {
-            paths.push(Self::generate_single_path(alternative, scoped)?);
+            paths.push(require_modeled_syntax(
+                alternative,
+                Self::generate_single_path(alternative, scoped),
+            )?);
         }
         Ok(paths)
     }
@@ -556,35 +560,10 @@ impl<'query> Transition<'query> {
 }
 
 fn split_selector_list(source: &str) -> Result<Vec<&str>, SelectorParseError> {
-    let mut parts = Vec::new();
-    let bytes = source.as_bytes();
-    let mut start = 0;
-    let mut depth = 0usize;
-    let mut quote = None;
-    let mut escaped = false;
-    for (index, &byte) in bytes.iter().enumerate() {
-        if let Some(active_quote) = quote {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == active_quote {
-                quote = None;
-            }
-            continue;
-        }
-        match byte {
-            b'\'' | b'"' => quote = Some(byte),
-            b'[' | b'(' => depth += 1,
-            b']' | b')' => depth = depth.saturating_sub(1),
-            b',' if depth == 0 => {
-                parts.push(source[start..index].trim_matches(is_css_whitespace_char));
-                start = index + 1;
-            }
-            _ => {}
-        }
-    }
-    parts.push(source[start..].trim_matches(is_css_whitespace_char));
+    let parts = selector::split_selector_list(source)
+        .into_iter()
+        .map(|part| part.trim_matches(is_css_whitespace_char))
+        .collect::<Vec<_>>();
     if parts.iter().any(|part| part.is_empty()) {
         return Err(SelectorParseError::new(
             "selector list has an empty alternative",
