@@ -1,9 +1,12 @@
 
 [package]
-authors = ["Zachary McSween Manickchand <contact@zacharymm.com>"]
-edition = "2024"
-name    = "scah-nodejs"
-version = "0.0.21"
+name = "scah-nodejs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
 
 [lib]
 crate-type = ["cdylib"]
@@ -13,7 +16,7 @@ napi        = "3.0.0"
 napi-derive = "3.0.0"
 
   [dependencies.scah]
-  path = "../../scah"
+  workspace = true
 
 [build-dependencies]
 napi-build = "2"

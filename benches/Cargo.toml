@@ -1,11 +1,11 @@
 [package]
 name = "scah-benches"
-version = "0.0.21"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 publish = false
 
 [dependencies]
-scah = { path = "../crates/scah", features = ["simd-bench-internals"] }
+scah = { workspace = true, features = ["simd-bench-internals"] }
 
 # Benchmarking Tools
 criterion = { version = "0.8.1", features = ["html_reports"] }

@@ -1,9 +1,14 @@
 {
   "name": "@zacharymm/scah",
   "version": "0.0.21",
-  "description": "scah (scan HTML) nodejs bindings",
+  "description": "CSS selectors meet streaming HTML parsing: extract exactly what you select without building a full DOM.",
   "main": "index.js",
   "license": "MIT",
+  "author": "Zachary McSween Manickchand <contact@zacharymm.com>",
+  "homepage": "https://github.com/zacharyvmm/scah#readme",
+  "bugs": {
+    "url": "https://github.com/zacharyvmm/scah/issues"
+  },
   "keywords": [
     "htmlparser",
     "css",
@@ -20,7 +25,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zacharyvmm/scah.git"
+    "url": "git+https://github.com/zacharyvmm/scah.git",
+    "directory": "crates/bindings/scah-node"
   },
   "napi": {
     "packageName": "@zacharymm/scah",

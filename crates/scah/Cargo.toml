@@ -1,11 +1,13 @@
 [package]
 name = "scah"
-version = "0.0.21"
-edition = "2024"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
 description = "CSS selectors meet streaming XML/HTML parsing. Filter StAX events and build targeted DOMs without loading the entire document."
-repository = "https://github.com/zacharyvmm/scah"
-homepage = "https://github.com/zacharyvmm/scah"
+repository.workspace = true
+homepage.workspace = true
 documentation = "https://docs.rs/scah"
 readme = "../../README.md"
 keywords = ["css", "selector", "parser", "html", "sax"]
@@ -20,9 +22,9 @@ path = "src/lib.rs"
 
 [dependencies]
 smallvec = "1.15.1"
-scah-reader = { version = "0.0.21", path = "../scah-reader" }
-scah-query-ir = { version = "0.0.21", path = "../scah-query-ir" }
-scah-macros = { version = "0.0.21", path = "../scah-macros" }
+scah-reader.workspace = true
+scah-query-ir.workspace = true
+scah-macros.workspace = true
 tracing = { version = "0.1", optional = true }
 
 [features]

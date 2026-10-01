@@ -1,11 +1,13 @@
 [package]
 name = "scah-reader"
-version = "0.0.21"
-edition = "2024"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
 description = "Streaming XML and HTML reader primitives used by scah."
-repository = "https://github.com/zacharyvmm/scah"
-homepage = "https://github.com/zacharyvmm/scah"
+repository.workspace = true
+homepage.workspace = true
 documentation = "https://docs.rs/scah-reader"
 
 [lints.clippy]
