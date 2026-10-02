@@ -30,14 +30,18 @@ Run a single Rust comparison while iterating:
 just bench-rust-simple-all   # or bench-rust-first, bench-rust-nested, bench-rust-whatwg
 ```
 
-Record published results and refresh the README tables:
+Record published results and refresh the README tables in one go (needs
+`cargo-criterion`, `bun`, and `uv` on `PATH`; install the first with
+`cargo install cargo-criterion`):
 
 ```bash
-just bench-rust     # needs cargo-criterion: cargo install cargo-criterion
-just bench-python
-just bench-node
-just bench-readme
+just bench
 ```
+
+This checks the tools up front, rebuilds the Node and Python bindings in release
+mode, runs every suite into `results/`, and regenerates the README tables. The
+suites can also run one at a time with `just bench-rust`, `just bench-node`,
+`just bench-python`, and `just bench-readme`.
 
 Commit the updated `results/` files together with the README changes. Each
 file records the date, commit, OS, CPU, and runtime of its run; record results

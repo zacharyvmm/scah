@@ -36,7 +36,7 @@ lint:
     cd crates/bindings/scah-node && bun run lint
 
 # Run every comparison benchmark into benches/results, then refresh README tables
-bench: bench-rust bench-node bench-python bench-readme
+bench: bench-preflight bench-rust bench-node bench-python bench-readme
 bench-readme:
     python3 benches/report/report.py readme README.md crates/bindings/scah-python/README.md crates/bindings/scah-node/README.md
 
@@ -57,12 +57,25 @@ bench-rust-whatwg:
 bench-rust-nested:
     cargo bench -p scah-benches --bench speed_bench_nested_queries
 
-bench-node: (bench-node-scenario "simple-all" "10000") (bench-node-scenario "simple-first" "10000") (bench-node-scenario "nested-all" "10000") (bench-node-scenario "whatwg-all-links")
+# Fail before the hour-long run, not halfway through it
+bench-preflight:
+    #!/usr/bin/env bash
+    missing=0
+    for tool in cargo-criterion bun uv python3; do
+        command -v "$tool" > /dev/null || { echo "missing $tool on PATH" >&2; missing=1; }
+    done
+    [ -f benches/bench_data/html.spec.whatwg.org.html ] || { echo "missing WHATWG spec; run: just download-html-spec-bench" >&2; missing=1; }
+    exit $missing
+
+# Rebuild the bindings in release mode first so they measure the current checkout
+bench-node: build-node (bench-node-scenario "simple-all" "10000") (bench-node-scenario "simple-first" "10000") (bench-node-scenario "nested-all" "10000") (bench-node-scenario "whatwg-all-links")
 bench-node-scenario scenario size="":
     cd crates/bindings/scah-node && bun benchmark/bench.ts --scenario {{scenario}} --json benchmark/results/{{scenario}}.json
     python3 benches/report/report.py import-pytest crates/bindings/scah-node/benchmark/results/{{scenario}}.json --suite node --scenario {{scenario}} --runtime "bun $(bun --version)" {{ if size != "" { "--size " + size } else { "" } }}
 
-bench-python: (bench-python-scenario "test_synthetic.py" "simple-all" "10000") (bench-python-scenario "test_synthetic_first.py" "simple-first" "10000") (bench-python-scenario "test_structural.py" "nested-all" "10000") (bench-python-scenario "test_spec.py" "whatwg-all-links")
+bench-python: bench-python-sync (bench-python-scenario "test_synthetic.py" "simple-all" "10000") (bench-python-scenario "test_synthetic_first.py" "simple-first" "10000") (bench-python-scenario "test_structural.py" "nested-all" "10000") (bench-python-scenario "test_spec.py" "whatwg-all-links")
+bench-python-sync:
+    cd crates/bindings/scah-python && uv sync --all-extras --reinstall-package scah
 bench-python-scenario test scenario size="":
     cd crates/bindings/scah-python && uv run --all-extras pytest benches/{{test}} --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/{{scenario}}.json
     python3 benches/report/report.py import-pytest crates/bindings/scah-python/benches/{{scenario}}.json --suite python --scenario {{scenario}} {{ if size != "" { "--size " + size } else { "" } }}
