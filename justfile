@@ -41,8 +41,12 @@ bench-readme:
     python3 benches/report/report.py readme README.md crates/bindings/scah-python/README.md crates/bindings/scah-node/README.md
 
 # Requires cargo-criterion: cargo install cargo-criterion
+# One bench per invocation: cargo-criterion forwards repeated --bench flags as `--bench a b c`, which cargo bench rejects
 bench-rust:
-    cargo criterion -p scah-benches --message-format=json --bench speed_bench_simple_all --bench speed_bench_simple_first --bench speed_bench_nested_queries --bench speed_bench_spec_all_links > criterion.json
+    rm -f criterion.json
+    for bench in speed_bench_simple_all speed_bench_simple_first speed_bench_nested_queries speed_bench_spec_all_links; do \
+        cargo criterion -p scah-benches --message-format=json --bench "$bench" >> criterion.json || exit 1; \
+    done
     python3 benches/report/report.py import-criterion criterion.json
 bench-rust-simple-all:
     cargo bench -p scah-benches --bench speed_bench_simple_all

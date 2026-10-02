@@ -1544,6 +1544,7 @@ where
                 }
                 significant_close = true;
             } else if cur.scope_depth >= close_depth {
+                #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))]
                 let pruned = self.cursors.swap_remove(i);
                 significant_close = true;
 
