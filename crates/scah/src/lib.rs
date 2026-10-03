@@ -472,10 +472,11 @@ where
     if let Some(err) = parser.take_error() {
         return Err(err.into());
     }
-    let store = parser.into_sink();
+    let mut store = parser.into_sink();
     if store.overflowed() {
         return Err(ColumnarParseError::InputTooLarge);
     }
+    store.compact_result_lists();
     Ok(store)
 }
 

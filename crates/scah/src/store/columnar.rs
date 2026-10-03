@@ -116,6 +116,25 @@ fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
 }
 
+/// One query-result list: the matches of one selector under one parent
+/// (or at the root), linked through `next_sibling`.
+///
+/// Unlike elements, query nodes stay row-oriented: a lookup always reads
+/// the selector and `next` together, then `first`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct QueryNodeRow {
+    /// Index into the interned selector table.
+    selector: u32,
+    /// Next result list under the same parent, or [`NONE`].
+    next: u32,
+    /// First element id; once lists are compacted, the start of the list's
+    /// run in `list_ids`.
+    first: u32,
+    /// Last element id; once lists are compacted, the end (exclusive) of the
+    /// list's run in `list_ids`.
+    last: u32,
+}
+
 /// Matches stored column by column.
 ///
 /// Returned by [`parse_columnar`](crate::parse_columnar). It answers the same
@@ -146,10 +165,15 @@ fn vec_bytes<T>(values: &Vec<T>) -> usize {
 /// | `inner_html` | 8-byte span | a query saves inner HTML |
 /// | `raw_text`, `text` | 8-byte span each | a query saves that text mode |
 /// | `first_child_query` | `u32` | a query has nested sections |
-/// | `next_sibling` | `u32` | always |
+/// | `next_sibling` | `u32` | while parsing |
+/// | `list_ids` | `u32` | after parsing |
 ///
+/// Result lists are linked through `next_sibling` while parsing, because
+/// lists interleave in document order. When the parse ends they are copied
+/// into `list_ids` as one contiguous run per list and the link column is
+/// freed, so iterating a result list scans a slice of ids.
 /// So an element costs 12 bytes with no saved content and at most 60 bytes
-/// with everything saved, against a fixed 104-byte [`Element`](crate::Element)
+/// with everything saved, against a fixed 112-byte [`Element`](crate::Element)
 /// plus a 24-byte text-range slot per enabled text mode in [`Store`](crate::Store).
 ///
 /// # Limits
@@ -171,14 +195,15 @@ pub struct ColumnarStore<'html, 'query> {
     raw_text: Vec<Span>,
     text: Vec<Span>,
     first_child_query: Vec<u32>,
+    /// Result-list links while parsing; freed when lists are compacted.
     next_sibling: Vec<u32>,
+    /// Every result list as a contiguous run of element ids, once compacted.
+    list_ids: Vec<u32>,
+    contiguous: bool,
 
     /// Distinct selector strings; query nodes refer to them by index.
     selectors: Vec<&'query str>,
-    node_selector: Vec<u32>,
-    node_next: Vec<u32>,
-    node_first: Vec<u32>,
-    node_last: Vec<u32>,
+    nodes: Vec<QueryNodeRow>,
 
     attribute_tape: Arena<Attribute<'html>, AttributeId>,
     text_tapes: TextStore,
@@ -206,7 +231,7 @@ impl<'html, 'query: 'html> ColumnarStore<'html, 'query> {
                 Vec::new()
             }
         };
-        let mut store = Self {
+        Self {
             html,
             plan,
             overflowed: false,
@@ -223,24 +248,17 @@ impl<'html, 'query: 'html> ColumnarStore<'html, 'query> {
                 Vec::new()
             },
             next_sibling: Vec::with_capacity(slots),
+            list_ids: Vec::new(),
+            contiguous: false,
             selectors: Vec::new(),
-            node_selector: Vec::new(),
-            node_next: Vec::new(),
-            node_first: Vec::new(),
-            node_last: Vec::new(),
+            nodes: Vec::new(),
             attribute_tape: if reserve && plan.attributes {
                 Arena::with_capacity(html.len() / ATTRIBUTE_BYTES_PER_SLOT)
             } else {
                 Arena::new()
             },
             text_tapes: TextStore::new(),
-        };
-        for query in queries {
-            for section in query.queries() {
-                store.intern(section.source);
-            }
         }
-        store
     }
 
     /// Whether a value or element count exceeded the `u32` limits.
@@ -272,13 +290,50 @@ impl<'html, 'query: 'html> ColumnarStore<'html, 'query> {
     /// Returns `None` when the selector was not part of the parsed queries or
     /// matched nothing, exactly like [`Store::get`](crate::Store::get).
     pub fn get(&self, selector: &str) -> Option<ColumnarElements<'_, 'html, 'query>> {
-        if self.node_selector.is_empty() {
+        if self.nodes.is_empty() {
             return None;
         }
-        self.find_node(0, selector).map(|node| ColumnarElements {
+        self.find_node(0, selector).map(|node| self.list(node))
+    }
+
+    /// Store every result list as one contiguous run of element ids.
+    ///
+    /// While parsing, a list grows one element at a time in between other
+    /// lists, so lists are linked through a per-element `next_sibling`
+    /// column. Once parsing ends this pass copies each list into a single id
+    /// array, in list order, and frees the link column, so
+    /// [`ColumnarStore::get`] and [`ElementRef::get`] iterate a slice
+    /// instead of following links. Ids and results are unchanged.
+    pub(crate) fn compact_result_lists(&mut self) {
+        debug_assert!(!self.contiguous, "result lists compacted twice");
+        // Every element belongs to exactly one list.
+        let mut list_ids = Vec::with_capacity(self.len());
+        for row in &mut self.nodes {
+            let start = list_ids.len() as u32;
+            let mut cursor = row.first;
+            while cursor != NONE {
+                list_ids.push(cursor);
+                cursor = self.next_sibling[cursor as usize];
+            }
+            row.first = start;
+            row.last = list_ids.len() as u32;
+        }
+        debug_assert_eq!(list_ids.len(), self.len());
+        self.list_ids = list_ids;
+        self.next_sibling = Vec::new();
+        self.contiguous = true;
+    }
+
+    /// Iterator over the elements of query node `node`.
+    #[inline]
+    fn list(&self, node: u32) -> ColumnarElements<'_, 'html, 'query> {
+        debug_assert!(self.contiguous, "result lists read before compaction");
+        let row = self.nodes[node as usize];
+        // Once compacted, `first..last` is the list's run in `list_ids`.
+        ColumnarElements {
             store: self,
-            cursor: self.node_first[node as usize],
-        })
+            ids: self.list_ids[row.first as usize..row.last as usize].iter(),
+        }
     }
 
     /// The element with this id, if any. Ids run from `0` to `len() - 1` in
@@ -320,12 +375,9 @@ impl<'html, 'query: 'html> ColumnarStore<'html, 'query> {
                 + vec_bytes(&self.raw_text)
                 + vec_bytes(&self.text)
                 + vec_bytes(&self.first_child_query)
-                + vec_bytes(&self.next_sibling),
-            query_nodes: vec_bytes(&self.selectors)
-                + vec_bytes(&self.node_selector)
-                + vec_bytes(&self.node_next)
-                + vec_bytes(&self.node_first)
-                + vec_bytes(&self.node_last),
+                + vec_bytes(&self.next_sibling)
+                + vec_bytes(&self.list_ids),
+            query_nodes: vec_bytes(&self.selectors) + vec_bytes(&self.nodes),
             attributes: vec_bytes(&self.attribute_tape),
             text_tapes: self.text_tapes.raw_text.capacity() + self.text_tapes.text.capacity(),
         }
@@ -333,13 +385,13 @@ impl<'html, 'query: 'html> ColumnarStore<'html, 'query> {
 
     /// Walk the query-node chain from `head` for the node of `selector`.
     fn find_node(&self, head: u32, selector: &str) -> Option<u32> {
-        let selector = self.selectors.iter().position(|known| *known == selector)? as u32;
         let mut node = head;
         while node != NONE {
-            if self.node_selector[node as usize] == selector {
+            let row = &self.nodes[node as usize];
+            if self.selectors[row.selector as usize] == selector {
                 return Some(node);
             }
-            node = self.node_next[node as usize];
+            node = row.next;
         }
         None
     }
@@ -443,19 +495,34 @@ impl<'html, 'query: 'html> ColumnarStore<'html, 'query> {
         unsafe { self.html.get_unchecked(span.range()) }
     }
 
+    /// Value at `id` of a column, or `None` if the column is off.
+    ///
+    /// `id` must come from an [`ElementRef`] or a result-list link, so it is
+    /// below `len()`.
     #[inline(always)]
-    fn optional_slice(&self, column: &[Span], id: u32) -> Option<&'html str> {
-        match column.get(id as usize) {
-            Some(span) if span.is_present() => Some(self.slice(*span)),
-            _ => None,
+    fn cell<T: Copy>(&self, column: &[T], id: u32) -> Option<T> {
+        debug_assert!(column.is_empty() || column.len() == self.len());
+        debug_assert!((id as usize) < self.len());
+        if column.is_empty() {
+            None
+        } else {
+            // SAFETY: a column is either off (empty) or holds exactly one
+            // value per element: `push` appends to every enabled column, and
+            // enabling a column back-fills it to the current element count.
+            // The store is immutable once parsed, and `id` names a recorded
+            // element, so it is below `len()` and thus in bounds.
+            Some(unsafe { *column.get_unchecked(id as usize) })
         }
     }
 
-    fn column_span(column: &[Span], id: u32) -> Option<Span> {
-        column
-            .get(id as usize)
-            .copied()
-            .filter(|span| span.is_present())
+    #[inline(always)]
+    fn optional_slice(&self, column: &[Span], id: u32) -> Option<&'html str> {
+        self.column_span(column, id).map(|span| self.slice(span))
+    }
+
+    #[inline(always)]
+    fn column_span(&self, column: &[Span], id: u32) -> Option<Span> {
+        self.cell(column, id).filter(|span| span.is_present())
     }
 }
 
@@ -466,6 +533,7 @@ impl<'html, 'query: 'html> ResultSink<'html, 'query> for ColumnarStore<'html, 'q
         selection: &QuerySection<'query>,
         element: XHtmlElement<'html>,
     ) -> ElementId {
+        debug_assert!(!self.contiguous, "push after compact_result_lists");
         let index = self.names.len();
         if self.overflowed || index >= MAX_ELEMENTS {
             // Results are discarded once a limit is exceeded; keep handing
@@ -512,11 +580,7 @@ impl<'html, 'query: 'html> ResultSink<'html, 'query> for ColumnarStore<'html, 'q
 
         let selector = self.intern(selection.source);
         let head = if from.is_null() {
-            if self.node_selector.is_empty() {
-                NONE
-            } else {
-                0
-            }
+            if self.nodes.is_empty() { NONE } else { 0 }
         } else {
             self.first_child_query.get(from.0).copied().unwrap_or(NONE)
         };
@@ -524,27 +588,30 @@ impl<'html, 'query: 'html> ResultSink<'html, 'query> for ColumnarStore<'html, 'q
         let mut node = head;
         let mut tail = NONE;
         while node != NONE {
-            if self.node_selector[node as usize] == selector {
+            let row = &self.nodes[node as usize];
+            if row.selector == selector {
                 break;
             }
             tail = node;
-            node = self.node_next[node as usize];
+            node = row.next;
         }
 
         if node != NONE {
-            let last = self.node_last[node as usize];
+            let row = &mut self.nodes[node as usize];
+            let last = std::mem::replace(&mut row.last, element_id);
             debug_assert_eq!(self.next_sibling[last as usize], NONE);
             self.next_sibling[last as usize] = element_id;
-            self.node_last[node as usize] = element_id;
         } else {
             // There are never more query nodes than elements.
-            let new_node = self.node_selector.len() as u32;
-            self.node_selector.push(selector);
-            self.node_next.push(NONE);
-            self.node_first.push(element_id);
-            self.node_last.push(element_id);
+            let new_node = self.nodes.len() as u32;
+            self.nodes.push(QueryNodeRow {
+                selector,
+                next: NONE,
+                first: element_id,
+                last: element_id,
+            });
             if tail != NONE {
-                self.node_next[tail as usize] = new_node;
+                self.nodes[tail as usize].next = new_node;
             } else if !from.is_null() {
                 if !self.plan.nested {
                     self.plan.nested = true;
@@ -628,7 +695,7 @@ impl<'html, 'query: 'html> ResultSink<'html, 'query> for ColumnarStore<'html, 'q
 
     #[inline(always)]
     fn query_node_count(&self) -> usize {
-        self.node_selector.len()
+        self.nodes.len()
     }
 
     #[cfg(any(debug_assertions, test))]
@@ -650,7 +717,7 @@ impl fmt::Debug for ColumnarStore<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ColumnarStore")
             .field("elements", &self.len())
-            .field("query_nodes", &self.node_selector.len())
+            .field("query_nodes", &self.nodes.len())
             .field("selectors", &self.selectors)
             .field("attributes", &self.attribute_tape.len())
             .finish_non_exhaustive()
@@ -678,7 +745,9 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// The tag name (e.g. `"a"`).
     #[inline]
     pub fn name(&self) -> &'html str {
-        self.store.slice(self.store.names[self.id as usize])
+        let span = self.store.cell(&self.store.names, self.id);
+        self.store
+            .slice(span.expect("every recorded element has a name"))
     }
 
     /// The `class` attribute value, if present and saved.
@@ -705,7 +774,8 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// and non-empty.
     #[inline]
     pub fn attributes(&self) -> Option<&'store [Attribute<'html>]> {
-        ColumnarStore::column_span(&self.store.attributes, self.id)
+        self.store
+            .column_span(&self.store.attributes, self.id)
             .map(|span| &self.store.attribute_tape.deref()[span.range()])
     }
 
@@ -722,27 +792,31 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// Source-preserving descendant text, when saved.
     #[inline]
     pub fn raw_text(&self) -> Option<&'store str> {
-        ColumnarStore::column_span(&self.store.raw_text, self.id)
+        self.store
+            .column_span(&self.store.raw_text, self.id)
             .map(|span| self.store.text_tapes.raw_text.slice(span.range()))
     }
 
     /// Normalized descendant text, when saved.
     #[inline]
     pub fn text(&self) -> Option<&'store str> {
-        ColumnarStore::column_span(&self.store.text, self.id)
+        self.store
+            .column_span(&self.store.text, self.id)
             .map(|span| self.store.text_tapes.text.slice(span.range()))
     }
 
     /// Whether a raw-text range was captured (possibly empty).
     #[inline]
     pub fn has_raw_text(&self) -> bool {
-        ColumnarStore::column_span(&self.store.raw_text, self.id).is_some()
+        self.store
+            .column_span(&self.store.raw_text, self.id)
+            .is_some()
     }
 
     /// Whether a normalized-text range was captured (possibly empty).
     #[inline]
     pub fn has_text(&self) -> bool {
-        ColumnarStore::column_span(&self.store.text, self.id).is_some()
+        self.store.column_span(&self.store.text, self.id).is_some()
     }
 
     /// Elements matched by the nested query with this selector string under
@@ -750,19 +824,14 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     pub fn get(&self, selector: &str) -> Option<ColumnarElements<'store, 'html, 'query>> {
         let head = self
             .store
-            .first_child_query
-            .get(self.id as usize)
-            .copied()
+            .cell(&self.store.first_child_query, self.id)
             .unwrap_or(NONE);
         if head == NONE {
             return None;
         }
         self.store
             .find_node(head, selector)
-            .map(|node| ColumnarElements {
-                store: self.store,
-                cursor: self.store.node_first[node as usize],
-            })
+            .map(|node| self.store.list(node))
     }
 }
 
@@ -781,7 +850,7 @@ impl fmt::Debug for ElementRef<'_, '_, '_> {
 #[derive(Clone)]
 pub struct ColumnarElements<'store, 'html, 'query> {
     store: &'store ColumnarStore<'html, 'query>,
-    cursor: u32,
+    ids: std::slice::Iter<'store, u32>,
 }
 
 impl<'store, 'html, 'query: 'html> Iterator for ColumnarElements<'store, 'html, 'query> {
@@ -789,11 +858,25 @@ impl<'store, 'html, 'query: 'html> Iterator for ColumnarElements<'store, 'html, 
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cursor == NONE {
-            return None;
-        }
-        let id = self.cursor;
-        self.cursor = self.store.next_sibling[id as usize];
+        let id = *self.ids.next()?;
+        Some(ElementRef {
+            store: self.store,
+            id,
+        })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.ids.size_hint()
+    }
+}
+
+impl<'html, 'query: 'html> ExactSizeIterator for ColumnarElements<'_, 'html, 'query> {}
+
+impl<'html, 'query: 'html> DoubleEndedIterator for ColumnarElements<'_, 'html, 'query> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let id = *self.ids.next_back()?;
         Some(ElementRef {
             store: self.store,
             id,
@@ -816,7 +899,8 @@ mod tests {
             store.raw_text.len(),
             store.text.len(),
             store.first_child_query.len(),
-            store.next_sibling.len(),
+            // Links while parsing, list ids once compacted.
+            store.next_sibling.len().max(store.list_ids.len()),
         ]
     }
 
@@ -887,12 +971,41 @@ mod tests {
 
         // Node 0 lists the sections; node 1 lists the first section's links.
         assert_eq!(store.first_child_query, [1, NONE, NONE]);
-        assert_eq!(store.next_sibling, [2, NONE, NONE]);
+        assert_eq!(store.list_ids, [0, 2, 1]);
         let sections: Vec<_> = store.get("section").unwrap().collect();
         assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].get("a").unwrap().count(), 1);
         assert!(sections[1].get("a").is_none());
         assert!(sections[0].get("missing").is_none());
+    }
+
+    #[test]
+    fn compaction_lays_lists_out_contiguously() {
+        let html = "<section><a>1</a><a>2</a></section><section><a>3</a></section>";
+        let queries = [Query::all("section", Save::none())
+            .unwrap()
+            .then(|section| Ok([section.all("a", Save::none())?]))
+            .unwrap()
+            .build()];
+        let store = parse_columnar(html, &queries).unwrap();
+        // Match order: section 0, a 1, a 2, section 3, a 4.
+        assert!(store.contiguous);
+        assert!(store.next_sibling.is_empty());
+        assert_eq!(store.next_sibling.capacity(), 0);
+        // Lists in creation order: sections, first links, second links.
+        assert_eq!(store.list_ids, [0, 3, 1, 2, 4]);
+        let ranges: Vec<_> = store.nodes.iter().map(|row| row.first..row.last).collect();
+        assert_eq!(ranges, [0..2, 2..4, 4..5]);
+
+        let links: Vec<Vec<u32>> = store
+            .get("section")
+            .unwrap()
+            .map(|section| section.get("a").unwrap().map(|a| a.id()).collect())
+            .collect();
+        assert_eq!(links, [vec![1, 2], vec![4]]);
+        assert_eq!(store.get("section").unwrap().len(), 2);
+        let last = store.get("section").unwrap().next_back().unwrap();
+        assert_eq!(last.id(), 3);
     }
 
     #[test]
@@ -998,10 +1111,10 @@ mod tests {
         let store = parse_columnar(&html, &queries).unwrap();
         let usage = store.heap_usage();
 
-        // Names and next-sibling links only: 12 bytes per reserved slot.
+        // A name span per reserved slot plus one list id per element.
         let slots = store.names.capacity();
         assert!(slots >= 1_000);
-        assert_eq!(usage.elements, slots * 12);
+        assert_eq!(usage.elements, slots * 8 + store.len() * 4);
         assert_eq!(usage.attributes, 0);
         assert_eq!(usage.text_tapes, 0);
 
