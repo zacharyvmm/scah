@@ -5,39 +5,38 @@
   "title": "Every <a> in the WHATWG HTML specification",
   "unit": "ms",
   "environment": {
-    "date": "2026-07-15",
-    "commit": null,
-    "dirty": null,
-    "os": null,
-    "arch": null,
-    "cpu": null,
-    "runtime": null,
-    "note": "Imported from the markdown report generated alongside the former PNG chart; the run did not record commit or machine details."
+    "date": "2026-10-03",
+    "commit": "29df6d08a64d91e196ce575bbd65ec9651a8e5cb",
+    "dirty": false,
+    "os": "Darwin 25.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "runtime": "bun 1.3.14"
   },
   "results": [
     {
       "library": "scah",
       "size": null,
-      "mean": 146.267183,
-      "stdev": 18.614416
-    },
-    {
-      "library": "cheerio",
-      "size": null,
-      "mean": 1441.005123,
-      "stdev": 77.146941
-    },
-    {
-      "library": "node-html-parser",
-      "size": null,
-      "mean": 1887.461627,
-      "stdev": 55.297171
+      "mean": 51.7558336,
+      "stdev": 3.2338417244557043
     },
     {
       "library": "linkedom",
       "size": null,
-      "mean": 6571.230916,
-      "stdev": 6574.421441
+      "mean": 430.90955199999996,
+      "stdev": 178.17711408613192
+    },
+    {
+      "library": "cheerio",
+      "size": null,
+      "mean": 517.2551354166667,
+      "stdev": 28.861114968806046
+    },
+    {
+      "library": "node-html-parser",
+      "size": null,
+      "mean": 666.6976283333333,
+      "stdev": 16.97526245769281
     }
   ]
 }

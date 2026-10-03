@@ -93,9 +93,21 @@ def _cpu() -> str | None:
     return _run("sysctl", "-n", "machdep.cpu.brand_string") or platform.processor() or None
 
 
+# Files a `just bench` run rewrites; changes to them don't make the measured code dirty.
+BENCH_OUTPUTS = (
+    "benches/results",
+    "README.md",
+    "crates/bindings/scah-python/README.md",
+    "crates/bindings/scah-node/README.md",
+)
+
+
 def capture_environment(runtime: str | None) -> dict:
     commit = _run("git", "rev-parse", "HEAD")
-    dirty = _run("git", "status", "--porcelain", "--untracked-files=no")
+    dirty = _run(
+        "git", "status", "--porcelain", "--untracked-files=no", "--",
+        ".", *(f":(exclude){path}" for path in BENCH_OUTPUTS),
+    )
     return {
         "date": datetime.now(timezone.utc).date().isoformat(),
         "commit": commit,
