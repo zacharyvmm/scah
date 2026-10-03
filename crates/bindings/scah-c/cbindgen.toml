@@ -24,7 +24,8 @@ header = """
  *      scah_query_builder_then, and compile it with scah_query_build.
  *   2. Parse HTML against one or more queries with scah_parse.
  *   3. Look up matches with scah_store_get and scah_element_get, then read
- *      element fields with the scah_element_* getters.
+ *      element fields with the scah_element_* getters, or export a whole
+ *      result set as Arrow columns with scah_store_export_arrow.
  *
  * Ownership
  *   - Every handle returned through an out-pointer is owned by the caller and
@@ -52,9 +53,60 @@ header = """
  *   Builders, element lists, and errors must not be used from two threads at
  *   once.
  */"""
+# The standard Arrow C Data Interface structs, verbatim from
+# https://arrow.apache.org/docs/format/CDataInterface.html. The guard lets the
+# header coexist with Arrow's own headers. The Rust definitions live in
+# scah-ffi, which cbindgen does not parse.
+after_includes = """
+#ifndef ARROW_C_DATA_INTERFACE
+#define ARROW_C_DATA_INTERFACE
+
+#define ARROW_FLAG_DICTIONARY_ORDERED 1
+#define ARROW_FLAG_NULLABLE 2
+#define ARROW_FLAG_MAP_KEYS_SORTED 4
+
+struct ArrowSchema {
+  // Array type description
+  const char* format;
+  const char* name;
+  const char* metadata;
+  int64_t flags;
+  int64_t n_children;
+  struct ArrowSchema** children;
+  struct ArrowSchema* dictionary;
+
+  // Release callback
+  void (*release)(struct ArrowSchema*);
+  // Opaque producer-specific data
+  void* private_data;
+};
+
+struct ArrowArray {
+  // Array data description
+  int64_t length;
+  int64_t null_count;
+  int64_t offset;
+  int64_t n_buffers;
+  int64_t n_children;
+  const void** buffers;
+  struct ArrowArray** children;
+  struct ArrowArray* dictionary;
+
+  // Release callback
+  void (*release)(struct ArrowArray*);
+  // Opaque producer-specific data
+  void* private_data;
+};
+
+#endif  // ARROW_C_DATA_INTERFACE"""
 
 [export]
 prefix = ""
+
+# Arrow's header declares tagged structs without typedefs.
+[export.rename]
+"ArrowSchema" = "struct ArrowSchema"
+"ArrowArray" = "struct ArrowArray"
 
 [fn]
 sort_by = "None"

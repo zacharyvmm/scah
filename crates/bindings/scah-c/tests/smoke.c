@@ -277,11 +277,178 @@ static void check_lookup_errors(const ScahStore *store) {
   scah_error_free(err);
 }
 
+/* Element ids the Arrow export of the section links should hold. */
+typedef struct {
+  ScahElementId sections[2];
+  ScahElementId links[3];
+} LinkIds;
+
+static LinkIds link_ids(const ScahStore *store) {
+  ScahElementList *sections = get(store, "section");
+  LinkIds ids;
+  size_t row = 0;
+  size_t i, j;
+
+  CHECK(scah_element_list_len(sections) == 2);
+  for (i = 0; i < 2; i++) {
+    ScahElementList *links;
+    ids.sections[i] = scah_element_list_ids(sections)[i];
+    links = get_nested(store, ids.sections[i], "a");
+    for (j = 0; j < scah_element_list_len(links); j++) {
+      CHECK(row < 3);
+      ids.links[row++] = scah_element_list_ids(links)[j];
+    }
+    scah_element_list_free(links);
+  }
+  CHECK(row == 3);
+  scah_element_list_free(sections);
+  return ids;
+}
+
+/* Export the links of every section with a few attribute columns. */
+static void export_links(const ScahStore *store, struct ArrowSchema *schema,
+                         struct ArrowArray *array) {
+  ScahStringView attributes[3];
+  ScahStringView no_parent;
+  ScahError *err = NULL;
+
+  attributes[0] = sv("href");
+  attributes[1] = sv("disabled");
+  attributes[2] = sv("data-empty");
+  OK(scah_store_export_arrow(store, sv("a"), sv("section"), attributes, 3,
+                             schema, array, &err));
+
+  /* Requesting a fixed column name fails and leaves both outputs released. */
+  {
+    struct ArrowSchema bad_schema;
+    struct ArrowArray bad_array;
+    attributes[0] = sv("text");
+    no_parent.data = NULL;
+    no_parent.len = 0;
+    CHECK(scah_store_export_arrow(store, sv("a"), no_parent, attributes, 1,
+                                  &bad_schema, &bad_array,
+                                  &err) == SCAH_STATUS_INVALID_ARGUMENT);
+    CHECK(bad_schema.release == NULL && bad_array.release == NULL);
+    CHECK(view_eq(scah_error_message(err), "duplicate column name `text`"));
+    scah_error_free(err);
+  }
+}
+
+static const struct ArrowArray *column(const struct ArrowArray *array,
+                                       int64_t index) {
+  return array->children[index];
+}
+
+static int is_valid(const struct ArrowArray *array, int64_t row) {
+  const uint8_t *validity = (const uint8_t *)array->buffers[0];
+  return validity == NULL || ((validity[row / 8] >> (row % 8)) & 1);
+}
+
+/* Read one Utf8View value; returns 0 for null. Records whether the value was
+ * inlined in its view and, if not, which data buffer holds it. */
+static int view_at(const struct ArrowArray *array, int64_t row,
+                   ScahStringView *out, int *inlined, int32_t *buffer) {
+  const uint8_t *view = (const uint8_t *)array->buffers[1] + 16 * row;
+  int32_t length;
+
+  if (!is_valid(array, row)) {
+    return 0;
+  }
+  memcpy(&length, view, 4);
+  out->len = (size_t)length;
+  *inlined = length <= 12;
+  *buffer = -1;
+  if (*inlined) {
+    out->data = view + 4;
+  } else {
+    int32_t offset;
+    const uint8_t *data;
+    memcpy(buffer, view + 8, 4);
+    memcpy(&offset, view + 12, 4);
+    data = (const uint8_t *)array->buffers[2 + *buffer];
+    CHECK(memcmp(view + 4, data + offset, 4) == 0); /* the prefix */
+    out->data = data + offset;
+  }
+  return 1;
+}
+
+static void check_arrow(struct ArrowSchema *schema, struct ArrowArray *array,
+                        const LinkIds *ids) {
+  static const char *const names[] = {
+      "index", "parent", "tag",      "inner_html", "raw_text",
+      "text",  "href",   "disabled", "data-empty"};
+  const struct ArrowArray *text, *raw_text, *inner_html, *disabled, *empty;
+  const uint32_t *index_values, *parent_values;
+  const int64_t *variadic_sizes;
+  ScahStringView value;
+  int inlined;
+  int32_t buffer;
+  int64_t i;
+
+  CHECK(schema->release != NULL && array->release != NULL);
+  CHECK(strcmp(schema->format, "+s") == 0);
+  CHECK(schema->n_children == 9 && array->n_children == 9);
+  CHECK(array->length == 3 && array->null_count == 0);
+  for (i = 0; i < 9; i++) {
+    const struct ArrowSchema *field = schema->children[i];
+    CHECK(strcmp(field->name, names[i]) == 0);
+    CHECK(strcmp(field->format, i < 2 ? "I" : "vu") == 0);
+    CHECK((field->flags & ARROW_FLAG_NULLABLE) == (i < 3 ? 0 : 2));
+    CHECK(column(array, i)->length == 3);
+    /* validity, views, HTML, raw text, text, variadic sizes */
+    CHECK(column(array, i)->n_buffers == (i < 2 ? 2 : 6));
+  }
+
+  index_values = (const uint32_t *)column(array, 0)->buffers[1];
+  parent_values = (const uint32_t *)column(array, 1)->buffers[1];
+  for (i = 0; i < 3; i++) {
+    CHECK(index_values[i] == ids->links[i]);
+    CHECK(parent_values[i] == ids->sections[i < 2 ? 0 : 1]);
+  }
+
+  /* `text` is inlined; `raw_text` and `inner_html` point into the raw text
+   * buffer and the HTML. */
+  inner_html = column(array, 3);
+  raw_text = column(array, 4);
+  text = column(array, 5);
+  CHECK(view_at(text, 0, &value, &inlined, &buffer));
+  CHECK(inlined && view_eq(value, "One & only"));
+  CHECK(view_at(raw_text, 0, &value, &inlined, &buffer));
+  CHECK(!inlined && buffer == 1 && view_eq(value, "One &amp; only"));
+  CHECK(view_at(inner_html, 0, &value, &inlined, &buffer));
+  CHECK(!inlined && buffer == 0 && view_eq(value, "One &amp; only"));
+  CHECK(view_at(raw_text, 1, &value, &inlined, &buffer));
+  CHECK(inlined && view_eq(value, "  Two  "));
+  CHECK(text->null_count == 0 && text->buffers[0] == NULL);
+  variadic_sizes = (const int64_t *)text->buffers[5];
+  CHECK(variadic_sizes[0] == (int64_t)strlen(HTML));
+
+  /* Valueless and missing attributes are null; empty values are not. */
+  disabled = column(array, 7);
+  CHECK(disabled->null_count == 3);
+  for (i = 0; i < 3; i++) {
+    CHECK(!view_at(disabled, i, &value, &inlined, &buffer));
+  }
+  empty = column(array, 8);
+  CHECK(empty->null_count == 2);
+  CHECK(view_at(empty, 0, &value, &inlined, &buffer) && value.len == 0);
+  CHECK(!view_at(empty, 1, &value, &inlined, &buffer));
+  CHECK(view_at(column(array, 6), 2, &value, &inlined, &buffer));
+  CHECK(view_eq(value, "/three"));
+
+  schema->release(schema);
+  array->release(array);
+  CHECK(schema->release == NULL && array->release == NULL);
+}
+
 int main(void) {
   ScahQuery *sections = NULL;
   ScahQuery *note = NULL;
   const ScahQuery *queries[2];
   ScahStore *store = NULL;
+  struct ArrowSchema schema;
+  struct ArrowArray array;
+  LinkIds ids;
   char *html;
 
   CHECK(scah_abi_version() == SCAH_ABI_VERSION);
@@ -307,7 +474,12 @@ int main(void) {
   check_links(store);
   check_note(store);
   check_lookup_errors(store);
+
+  /* Arrow exports keep the store's data alive after scah_store_free. */
+  ids = link_ids(store);
+  export_links(store, &schema, &array);
   scah_store_free(store);
+  check_arrow(&schema, &array, &ids);
 
   scah_store_free(NULL);
   scah_query_free(NULL);

@@ -30,6 +30,11 @@ pub enum ScahStatus {
     /// scah panicked. The library state is intact, but this is a bug worth
     /// reporting.
     InternalPanic = 7,
+    /// An argument was invalid, such as an Arrow column requested twice.
+    InvalidArgument = 8,
+    /// A result was too large to export, such as HTML over 2 GiB for Arrow's
+    /// 32-bit offsets.
+    TooLarge = 9,
 }
 
 /// An error message returned through `out_error`.
