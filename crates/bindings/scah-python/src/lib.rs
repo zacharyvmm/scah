@@ -3,6 +3,7 @@ use pyo3_stub_gen::{define_stub_info_gatherer, derive::gen_stub_pyfunction};
 
 use std::sync::Arc;
 
+mod arrow;
 mod element;
 mod query;
 mod save;
@@ -50,6 +51,7 @@ fn scah(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyQueryFactory>()?;
     m.add_class::<PyElement>()?;
     m.add_class::<PyStore>()?;
+    m.add_class::<arrow::PyArrowTable>()?;
     Ok(())
 }
 

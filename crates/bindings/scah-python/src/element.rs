@@ -1,3 +1,4 @@
+use crate::arrow::{PyArrowTable, arrow_error};
 use pyo3::exceptions::{PyDeprecationWarning, PyValueError};
 use pyo3::ffi::c_str;
 use pyo3::types::PyDict;
@@ -5,6 +6,7 @@ use pyo3::{Bound, IntoPyObjectExt, prelude::*};
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use scah_core::{Attribute, ElementId};
 use scah_ffi::OwnedStore;
+use scah_ffi::arrow::ArrowTable;
 use std::sync::Arc;
 
 #[gen_stub_pyclass]
@@ -178,5 +180,31 @@ impl PyStore {
 
     fn __len__(&self) -> usize {
         self.store.store().elements.len()
+    }
+
+    /// Lay out matched elements as Arrow columns.
+    ///
+    /// Rows are the elements matched by top-level selector `selector`, or,
+    /// with `parent`, the elements matched by child selector `selector` under
+    /// each element matched by top-level selector `parent`.
+    ///
+    /// Columns: `index` (uint32 element id), `parent` (uint32 parent id, only
+    /// with `parent`), `tag`, `inner_html`, `raw_text`, `text`, then one per
+    /// name in `attributes` (`id` and `class` included). All but `index`,
+    /// `parent`, and `tag` are null when not saved or absent. Strings are
+    /// `string_view` columns that borrow the store's memory instead of
+    /// copying it.
+    #[pyo3(signature = (selector, *, attributes=None, parent=None))]
+    fn to_arrow(
+        &self,
+        selector: &str,
+        attributes: Option<Vec<String>>,
+        parent: Option<&str>,
+    ) -> PyResult<PyArrowTable> {
+        let attributes = attributes.unwrap_or_default();
+        let attributes: Vec<&str> = attributes.iter().map(String::as_str).collect();
+        ArrowTable::build(self.store.clone(), selector, parent, &attributes)
+            .map(PyArrowTable::new)
+            .map_err(arrow_error)
     }
 }

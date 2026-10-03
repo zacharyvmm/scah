@@ -4,6 +4,7 @@
 import builtins
 import typing
 __all__ = [
+    "ArrowTable",
     "Element",
     "PyQuery",
     "PyQueryBuilder",
@@ -13,6 +14,42 @@ __all__ = [
     "Store",
     "parse",
 ]
+
+@typing.final
+class ArrowTable:
+    r"""
+    Query results as Arrow columns.
+    
+    Implements the Arrow PyCapsule Interface, so pyarrow, polars, DuckDB, and
+    other Arrow libraries can import it without copying strings, e.g.
+    `pyarrow.record_batch(table)` or `polars.DataFrame(table)`. Imported data
+    stays valid after the store and this table are gone.
+    """
+    @property
+    def num_rows(self) -> builtins.int:
+        r"""
+        The number of rows.
+        """
+    @property
+    def column_names(self) -> builtins.list[builtins.str]:
+        r"""
+        The column names, in order.
+        """
+    def __len__(self) -> builtins.int: ...
+    def __arrow_c_schema__(self) -> typing.Any:
+        r"""
+        Export the schema as an `arrow_schema` PyCapsule.
+        """
+    def __arrow_c_array__(self, requested_schema: typing.Optional[typing.Any] = None) -> tuple[typing.Any, typing.Any]:
+        r"""
+        Export the table as a record batch: a pair of `arrow_schema` and
+        `arrow_array` PyCapsules. `requested_schema` is ignored.
+        """
+    def __arrow_c_stream__(self, requested_schema: typing.Optional[typing.Any] = None) -> typing.Any:
+        r"""
+        Export the table as an `arrow_array_stream` PyCapsule yielding one
+        record batch. `requested_schema` is ignored.
+        """
 
 @typing.final
 class Element:
@@ -82,5 +119,20 @@ class Save:
 class Store:
     def get(self, query: builtins.str) -> typing.Optional[builtins.list[Element]]: ...
     def __len__(self) -> builtins.int: ...
+    def to_arrow(self, selector: builtins.str, *, attributes: typing.Optional[typing.Sequence[builtins.str]] = None, parent: typing.Optional[builtins.str] = None) -> ArrowTable:
+        r"""
+        Lay out matched elements as Arrow columns.
+        
+        Rows are the elements matched by top-level selector `selector`, or,
+        with `parent`, the elements matched by child selector `selector` under
+        each element matched by top-level selector `parent`.
+        
+        Columns: `index` (uint32 element id), `parent` (uint32 parent id, only
+        with `parent`), `tag`, `inner_html`, `raw_text`, `text`, then one per
+        name in `attributes` (`id` and `class` included). All but `index`,
+        `parent`, and `tag` are null when not saved or absent. Strings are
+        `string_view` columns that borrow the store's memory instead of
+        copying it.
+        """
 
 def parse(html: builtins.str, queries: typing.Sequence[PyQuery]) -> Store: ...
