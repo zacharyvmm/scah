@@ -1,4 +1,5 @@
-use ::scah::{Attribute, ElementId, Store};
+use ::scah::{Attribute, ElementId};
+use ::scah_ffi::OwnedStore;
 
 use napi::bindgen_prelude::*;
 use napi::{Env, Error, Result, Status};
@@ -17,7 +18,7 @@ pub struct JsonElement<'a> {
 
 #[napi(js_name = "Element")]
 pub struct JsElement {
-    pub(super) store: std::sync::Arc<Store<'static, 'static>>,
+    pub(super) store: std::sync::Arc<OwnedStore>,
     pub(super) id: ElementId,
 }
 
@@ -25,8 +26,8 @@ pub struct JsElement {
 impl JsElement {
     #[napi]
     pub fn to_json<'a>(&'a self, env: Env) -> Result<JsonElement<'a>> {
-        let element = self
-            .store
+        let store = self.store.store();
+        let element = store
             .elements
             .get(self.id.index())
             .expect("The Element ID should be valid");
@@ -37,8 +38,8 @@ impl JsElement {
             class: element.class.map(|s| s.to_string()),
             attributes: self.attributes(env)?,
             inner_html: element.inner_html.map(|s| s.to_string()),
-            raw_text: element.raw_text(&self.store).map(|s| s.to_string()),
-            text: element.text(&self.store).map(|s| s.to_string()),
+            raw_text: element.raw_text(store).map(|s| s.to_string()),
+            text: element.text(store).map(|s| s.to_string()),
         };
 
         Ok(json)
@@ -46,12 +47,17 @@ impl JsElement {
 
     #[napi(getter)]
     pub fn name(&self) -> Option<&str> {
-        self.store.elements.get(self.id.index()).map(|e| e.name)
+        self.store
+            .store()
+            .elements
+            .get(self.id.index())
+            .map(|e| e.name)
     }
 
     #[napi(getter)]
     pub fn class_name(&self) -> Option<&str> {
         self.store
+            .store()
             .elements
             .get(self.id.index())
             .and_then(|e| e.class)
@@ -59,25 +65,30 @@ impl JsElement {
 
     #[napi(getter)]
     pub fn id(&self) -> Option<&str> {
-        self.store.elements.get(self.id.index()).and_then(|e| e.id)
+        self.store
+            .store()
+            .elements
+            .get(self.id.index())
+            .and_then(|e| e.id)
     }
 
     #[napi]
     pub fn get_attribute(&self, key: String) -> Option<&str> {
         self.store
+            .store()
             .elements
             .get(self.id.index())
-            .and_then(|e| e.attribute(&self.store, &key))
+            .and_then(|e| e.attribute(self.store.store(), &key))
     }
 
     #[napi(getter)]
     pub fn attributes<'a>(&'a self, env: Env) -> Result<Object<'a>> {
         let mut object = Object::new(&env)?;
-        let attributes = self
-            .store
+        let store = self.store.store();
+        let attributes = store
             .elements
             .get(self.id.index())
-            .and_then(|e| e.attributes(&self.store));
+            .and_then(|e| e.attributes(store));
 
         if let Some(attrs) = attributes {
             for Attribute { key, value } in attrs {
@@ -90,6 +101,7 @@ impl JsElement {
     #[napi(getter)]
     pub fn inner_html(&self) -> Option<&str> {
         self.store
+            .store()
             .elements
             .get(self.id.index())
             .and_then(|e| e.inner_html)
@@ -98,17 +110,19 @@ impl JsElement {
     #[napi(getter)]
     pub fn raw_text(&self) -> Option<&str> {
         self.store
+            .store()
             .elements
             .get(self.id.index())
-            .and_then(|e| e.raw_text(&self.store))
+            .and_then(|e| e.raw_text(self.store.store()))
     }
 
     #[napi(getter)]
     pub fn text(&self) -> Option<&str> {
         self.store
+            .store()
             .elements
             .get(self.id.index())
-            .and_then(|e| e.text(&self.store))
+            .and_then(|e| e.text(self.store.store()))
     }
 
     #[napi(getter)]
@@ -119,12 +133,12 @@ impl JsElement {
 
     #[napi]
     pub fn get(&self, query: String) -> Result<Vec<JsElement>> {
-        let element = self
-            .store
+        let store = self.store.store();
+        let element = store
             .elements
             .get(self.id.index())
             .expect("The Element ID should be valid");
-        let children = element.get(&self.store, &query);
+        let children = element.get(store, &query);
         match children {
             None => Err(Error::new(
                 Status::GenericFailure,
@@ -133,7 +147,7 @@ impl JsElement {
             Some(children) => Ok(children
                 .map(|e| JsElement {
                     store: self.store.clone(),
-                    id: unsafe { self.store.elements.index_of(e) },
+                    id: unsafe { store.elements.index_of(e) },
                 })
                 .collect()),
         }
