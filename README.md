@@ -21,7 +21,7 @@ and you don't pay to build or walk a tree you don't need.
 - **Structured queries**: nest selectors with `.then()` so child queries run
   only inside their parent match. This is faster than flat filtering and keeps
   hierarchical data together.
-- **Rust core** with Python and JavaScript/TypeScript bindings.
+- **Rust core** with Python, JavaScript/TypeScript, and C bindings.
 
 ## Install
 
@@ -30,6 +30,7 @@ and you don't pay to build or walk a tree you don't need.
 | Rust | [`scah`](https://crates.io/crates/scah) | `cargo add scah` |
 | Python | [`scah`](https://pypi.org/project/scah/) | `pip install scah` |
 | JavaScript / TypeScript | [`@zacharymm/scah`](https://www.npmjs.com/package/@zacharymm/scah) | `npm install @zacharymm/scah` |
+| C / C++ | [`crates/bindings/scah-c`](crates/bindings/scah-c) | `cargo build --release -p scah-c` |
 
 ```toml
 # Cargo.toml
@@ -204,6 +205,13 @@ Node takes plain option objects instead of `Save` constructors:
   textContent?: boolean // deprecated alias for text
 }
 ```
+
+### C / C++
+
+The C ABI in [`crates/bindings/scah-c`](crates/bindings/scah-c) exposes the
+same queries and results through opaque handles. See its
+[README](crates/bindings/scah-c/README.md) for build and link instructions
+and a complete example.
 
 ## Selector support
 

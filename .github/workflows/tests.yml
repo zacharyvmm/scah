@@ -42,6 +42,12 @@ jobs:
         run: cargo clippy --workspace --all-targets --exclude scah-benches -- -D warnings
       - name: Test
         run: cargo test --workspace --exclude scah-benches
+      - name: Verify generated C header
+        run: |
+          cargo run -p scah-c --features header-gen --bin generate_header
+          git diff --exit-code -- crates/bindings/scah-c/include/scah.h
+      - name: Run C and C++ smoke tests
+        run: crates/bindings/scah-c/scripts/smoke-test.sh --debug
       - name: Test optimized parser semantics
         run: cargo test --release -p scah
       - name: Test cursor instrumentation
@@ -138,7 +144,7 @@ jobs:
       - name: Build docs
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps -p scah -p scah-reader -p scah-query-ir -p scah-macros
+        run: cargo doc --no-deps -p scah -p scah-reader -p scah-query-ir -p scah-macros -p scah-ffi -p scah-c
 
   msrv:
     name: Rust MSRV (1.88)

@@ -3,9 +3,11 @@ set shell := ["bash", "-c"]
 default:
     @just --list
 
-build: build-rust build-node build-python
+build: build-rust build-node build-python build-c
 build-rust:
     cargo build --release
+build-c:
+    cargo build --release -p scah-c
 build-node:
     cd crates/bindings/scah-node && bun install && bun run build
 build-python:
@@ -19,13 +21,19 @@ dev-node:
 dev-python:
     cd crates/bindings/scah-python && cargo run --bin stub_gen && uvx maturin build
 
-test: test-rust test-node test-python
+test: test-rust test-node test-python test-c
 test-rust:
     cargo test --all-targets --all-features
 test-node:
     cd crates/bindings/scah-node && bun test
 test-python:
     cd crates/bindings/scah-python && uv run --with pytest --reinstall-package scah pytest tests/
+test-c:
+    crates/bindings/scah-c/scripts/smoke-test.sh
+
+# Regenerate the committed C header after changing the C ABI
+header:
+    cargo run -p scah-c --features header-gen --bin generate_header
 
 format:
     cargo fmt --all
