@@ -7,7 +7,7 @@ use crate::debug::ScopedCursorReason;
 #[cfg(any(debug_assertions, test))]
 use crate::debug::{CursorSuppressionReason, CursorTraceKind, TraceEvent, TransitionRejectReason};
 use crate::store::ElementId;
-use crate::store::Store;
+use crate::store::ResultSink;
 use crate::{
     Combinator, Position, QuerySectionId, QuerySpec, SelectionKind, StructuralMatchContext,
     XHtmlElement,
@@ -192,12 +192,12 @@ where
     }
 
     #[cfg(any(debug_assertions, test))]
-    pub(crate) fn trace_name_rejections(
+    pub(crate) fn trace_name_rejections<S: ResultSink<'html, 'query>>(
         &self,
         runner_index: usize,
         element: &XHtmlElement<'html>,
         depth: super::DepthSize,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
     ) {
         let name_hash = ascii_case_insensitive_hash(element.name);
         for (cursor_index, cursor) in self.cursors.iter().enumerate() {
@@ -227,10 +227,10 @@ where
         }
     }
 
-    pub fn save_element(
+    pub fn save_element<S: ResultSink<'html, 'query>>(
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
         tree: &Q,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
         element: XHtmlElement<'html>,
         cursor: &mut ScopedCursor,
     ) -> SaveHit {
@@ -242,7 +242,7 @@ where
             TraceEvent::ElementSaved {
                 runner_index: runner.index(),
                 selector: section.source,
-                element: store.elements[element_pointer].name,
+                element: store.element_name(element_pointer),
                 element_id: element_pointer,
                 parent_id: cursor.get_parent(),
                 save_inner_html: section.save.inner_html,
@@ -290,8 +290,8 @@ where
     }
 
     #[cfg(any(debug_assertions, test))]
-    fn trace_cursor_suppressed(
-        store: &mut Store<'html, 'query>,
+    fn trace_cursor_suppressed<S: ResultSink<'html, 'query>>(
+        store: &mut S,
         runner: RunnerId,
         candidate: &ScopedCursor,
         existing: &ScopedCursor,
@@ -328,14 +328,11 @@ where
         })
     }
 
-    fn finish_push_cursor(
+    fn finish_push_cursor<S: ResultSink<'html, 'query>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
-        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut Store<
-            'html,
-            'query,
-        >,
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut S,
         create_reason: Option<ScopedCursorReason>,
     ) -> SpawnOutcome {
         #[cfg(any(debug_assertions, test))]
@@ -365,14 +362,11 @@ where
     /// Live cursors cannot be deeper than a new candidate: candidates use the
     /// current document depth, and deeper scopes are pruned before parsing
     /// resumes at a shallower depth.
-    fn try_push_descendant(
+    fn try_push_descendant<S: ResultSink<'html, 'query>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
-        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut Store<
-            'html,
-            'query,
-        >,
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut S,
         create_reason: Option<ScopedCursorReason>,
     ) -> SpawnOutcome {
         let candidate_base = candidate.match_base_depth();
@@ -402,14 +396,11 @@ where
     }
 
     /// Admit a child obligation unless the exact obligation is already live.
-    fn try_push_child(
+    fn try_push_child<S: ResultSink<'html, 'query>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
-        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut Store<
-            'html,
-            'query,
-        >,
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut S,
         create_reason: Option<ScopedCursorReason>,
     ) -> SpawnOutcome {
         let candidate_base = candidate.match_base_depth();
@@ -440,14 +431,11 @@ where
     /// Identity is `(output parent, continuation position, scope_depth,
     /// match_base_depth)`. Earlier watchers dominate later equivalents so
     /// multiple left-hand matches do not duplicate right-hand work.
-    fn try_push_sibling(
+    fn try_push_sibling<S: ResultSink<'html, 'query>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
-        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut Store<
-            'html,
-            'query,
-        >,
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut S,
         create_reason: Option<ScopedCursorReason>,
     ) -> SpawnOutcome {
         debug_assert_eq!(
@@ -497,14 +485,11 @@ where
     }
 
     /// Admit a cursor after applying `First` ownership and combinator rules.
-    fn try_push_cursor(
+    fn try_push_cursor<S: ResultSink<'html, 'query>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
-        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut Store<
-            'html,
-            'query,
-        >,
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut S,
         create_reason: Option<ScopedCursorReason>,
     ) -> SpawnOutcome {
         if self.first_scope_is_claimed(&candidate) {
@@ -545,14 +530,11 @@ where
     /// Admit a cursor for a query set whose cached features contain no sibling
     /// combinators. Keeping this dispatch physically separate prevents the
     /// sibling-watcher admission scan from entering the ordinary spawn graph.
-    fn try_push_plain_cursor(
+    fn try_push_plain_cursor<S: ResultSink<'html, 'query>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
-        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut Store<
-            'html,
-            'query,
-        >,
+        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] store: &mut S,
         create_reason: Option<ScopedCursorReason>,
     ) -> SpawnOutcome {
         if self.first_scope_is_claimed(&candidate) {
@@ -591,7 +573,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn dispatch_sibling_continuations(
+    fn dispatch_sibling_continuations<S: ResultSink<'html, 'query>>(
         &mut self,
         runner: RunnerId,
         source_depth: super::DepthSize,
@@ -599,7 +581,7 @@ where
         output_parent: ElementId,
         positions: &[Position],
         sibling_callbacks: &mut Vec<SiblingCallback>,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
     ) {
         for pos in positions {
             let guard = &self.query.get_transition(pos.state).guard;
@@ -648,12 +630,12 @@ where
         }
     }
 
-    pub(crate) fn activate_sibling(
+    pub(crate) fn activate_sibling<S: ResultSink<'html, 'query>>(
         &mut self,
         runner: RunnerId,
         callback: SiblingCallback,
         source_depth: super::DepthSize,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
     ) -> SpawnOutcome {
         let guard = &self.query.get_transition(callback.continuation.state).guard;
         let (lifetime, reason) = match guard {
@@ -689,12 +671,12 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn next_plain(
+    pub(crate) fn next_plain<S: ResultSink<'html, 'query>>(
         &mut self,
         runner: RunnerId,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
         save_hits: &mut Vec<SaveHit>,
     ) {
         let depth = document_position.element_depth;
@@ -954,12 +936,12 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn next_plain_with_context(
+    pub(crate) fn next_plain_with_context<S: ResultSink<'html, 'query>>(
         &mut self,
         runner: RunnerId,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
         save_hits: &mut Vec<SaveHit>,
         structural: Option<&StructuralMatchContext<'query>>,
     ) {
@@ -1183,12 +1165,12 @@ where
 
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    pub(crate) fn next_with_siblings(
+    pub(crate) fn next_with_siblings<S: ResultSink<'html, 'query>>(
         &mut self,
         runner: RunnerId,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
         save_hits: &mut Vec<SaveHit>,
         sibling_callbacks: &mut Vec<SiblingCallback>,
         structural: Option<&StructuralMatchContext<'query>>,
@@ -1460,12 +1442,12 @@ where
     }
 
     #[cfg(test)]
-    pub fn next(
+    pub fn next<S: ResultSink<'html, 'query>>(
         &mut self,
         runner: RunnerId,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
         save_hits: &mut Vec<SaveHit>,
         sibling_callbacks: &mut Vec<SiblingCallback>,
     ) {
@@ -1496,12 +1478,12 @@ where
     }
 
     #[inline(always)]
-    pub fn back(
+    pub fn back<S: ResultSink<'html, 'query>>(
         &mut self,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
         _element: &'html str,
         document_position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
     ) -> bool {
         let close_depth = document_position.element_depth;
         let mut significant_close = false;
