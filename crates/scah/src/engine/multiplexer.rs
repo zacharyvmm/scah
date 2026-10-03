@@ -4,7 +4,7 @@ use crate::__private::ascii_case_insensitive_hash;
 use crate::StructuralMatchContext;
 use crate::XHtmlElement;
 use crate::store::ElementId;
-use crate::store::Store;
+use crate::store::ResultSink;
 use crate::{ElementPredicate, LocalLogicalPredicate, LocalSelectorList};
 use crate::{Position, QuerySectionId, StructuralPredicate};
 use crate::{QuerySpec, Reader, TextRequirements};
@@ -394,11 +394,11 @@ where
     // layer; otherwise x86-64 keeps the wrapper in the parser hot loop.
     #[allow(dead_code)]
     #[inline(always)]
-    pub(crate) fn next_plain_into(
+    pub(crate) fn next_plain_into<S: ResultSink<'html, 'query>>(
         &mut self,
         xhtml_element: &XHtmlElement<'html>,
         position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
         save_hits: &mut Vec<SaveHit>,
         preflight: &ElementPreflight<'query>,
     ) {
@@ -420,11 +420,11 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn next_plain_into_with_context(
+    pub(crate) fn next_plain_into_with_context<S: ResultSink<'html, 'query>>(
         &mut self,
         xhtml_element: &XHtmlElement<'html>,
         position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
         save_hits: &mut Vec<SaveHit>,
         preflight: &ElementPreflight<'query>,
         structural: Option<&StructuralMatchContext<'query>>,
@@ -449,11 +449,11 @@ where
 
     #[inline(never)]
     #[allow(dead_code)]
-    pub(crate) fn next_with_siblings_into(
+    pub(crate) fn next_with_siblings_into<S: ResultSink<'html, 'query>>(
         &mut self,
         xhtml_element: &XHtmlElement<'html>,
         position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
         save_hits: &mut Vec<SaveHit>,
         preflight: &ElementPreflight<'query>,
         sibling_callbacks: &mut Vec<SiblingCallback>,
@@ -470,11 +470,11 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn next_with_siblings_into_with_context(
+    pub(crate) fn next_with_siblings_into_with_context<S: ResultSink<'html, 'query>>(
         &mut self,
         xhtml_element: &XHtmlElement<'html>,
         position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
         save_hits: &mut Vec<SaveHit>,
         preflight: &ElementPreflight<'query>,
         sibling_callbacks: &mut Vec<SiblingCallback>,
@@ -501,11 +501,11 @@ where
     }
 
     #[cfg(any(debug_assertions, test))]
-    fn trace_preflight_rejections(
+    fn trace_preflight_rejections<S: ResultSink<'html, 'query>>(
         &self,
         xhtml_element: &XHtmlElement<'html>,
         position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
         preflight: &ElementPreflight<'query>,
     ) {
         for (runner_index, runner) in self.runners.iter().enumerate() {
@@ -522,11 +522,11 @@ where
         }
     }
 
-    pub(crate) fn activate_sibling_callback(
+    pub(crate) fn activate_sibling_callback<S: ResultSink<'html, 'query>>(
         &mut self,
         callback: SiblingCallback,
         source_depth: crate::engine::DepthSize,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
     ) {
         if !self.is_runner_active(callback.runner) {
             return;
@@ -540,11 +540,11 @@ where
         self.track_cursor_stats();
     }
 
-    pub(crate) fn activate_sibling_callbacks(
+    pub(crate) fn activate_sibling_callbacks<S: ResultSink<'html, 'query>>(
         &mut self,
         callbacks: &[SiblingCallback],
         source_depth: crate::engine::DepthSize,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
     ) {
         for callback in callbacks {
             self.activate_sibling_callback(*callback, source_depth, store);
@@ -552,12 +552,12 @@ where
     }
 
     #[inline(never)]
-    fn back_sparse(
+    fn back_sparse<S: ResultSink<'html, 'query>>(
         runners: &mut Runners<'query, Q>,
         active_ids: &mut Vec<RunnerId>,
         xhtml_element: &'html str,
         position: &DocumentPosition,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
     ) {
         active_ids.retain(|runner| {
             let session = &mut runners[runner.index()];
@@ -570,12 +570,12 @@ where
         });
     }
 
-    pub(crate) fn back<const RETIREMENT: bool>(
+    pub(crate) fn back<const RETIREMENT: bool, S: ResultSink<'html, 'query>>(
         &mut self,
         xhtml_element: &'html str,
         position: &DocumentPosition,
         reader: &Reader<'html>,
-        store: &mut Store<'html, 'query>,
+        store: &mut S,
     ) -> bool {
         if !RETIREMENT {
             debug_assert!(self.active.is_none());

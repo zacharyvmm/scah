@@ -8,6 +8,7 @@ mod arena;
 mod attributes;
 mod element;
 mod query_node;
+mod sink;
 
 pub(crate) use arena::id::Nullable;
 use arena::span::Span;
@@ -19,6 +20,7 @@ pub use arena::{
 pub use element::Element;
 pub(crate) use element::ElementTextRanges;
 pub use query_node::QueryNode;
+pub(crate) use sink::ResultSink;
 
 /// The result set returned by [`parse`](crate::parse).
 ///

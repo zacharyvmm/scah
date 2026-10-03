@@ -19,7 +19,7 @@ use crate::engine::attribute_interest::AttributeInterest;
 use crate::engine::multiplexer::{
     DocumentPosition, ElementPreflight, QueryMultiplexer, SaveHit, SiblingCallback,
 };
-use crate::store::{Store, trim_collapsed_range};
+use crate::store::{ResultSink, Store, trim_collapsed_range};
 use crate::{LocalSelectorList, QuerySpec};
 use smallvec::SmallVec;
 
@@ -160,10 +160,10 @@ impl<'html, 'query> ParserTempState<'html, 'query> {
     }
 }
 
-pub struct XHtmlParser<'html, 'query, Q> {
+pub struct XHtmlParser<'html, 'query, Q, S = Store<'html, 'query>> {
     position: DocumentPosition,
     pub selectors: QueryMultiplexer<'query, Q>,
-    store: Store<'html, 'query>,
+    store: S,
     element: crate::XHtmlElement<'html>,
     open_elements: OpenElementStack<'html>,
     temp_state: ParserTempState<'html, 'query>,
@@ -245,17 +245,7 @@ where
         indexing_mode: IndexingMode,
     ) -> Self {
         let requirements = selectors.text_requirements();
-        let text_state = ParserTextState::new(requirements);
         let persist_attributes = selectors.requires_attribute_storage();
-        let parse_attributes = selectors.requires_attribute_parsing() || requirements.text;
-        let features = selectors.features();
-        let has_sibling_queries = features.has_sibling_queries;
-        let structural_filters = selectors.structural_filters();
-        let tracked_type_names = features
-            .needs_type_ordinals
-            .then(|| selectors.type_ordinal_names())
-            .flatten();
-        let structural_attribute_interest = selectors.structural_attribute_interest();
         let store = capacity.map_or_else(Store::default, |capacity| {
             Store::with_capacity_requirements(
                 capacity,
@@ -268,6 +258,65 @@ where
                 false,
             )
         });
+        Self::with_sink(selectors, store, indexing_mode)
+    }
+
+    pub fn with_capacity(selectors: QueryMultiplexer<'query, Q>, capacity: usize) -> Self {
+        let indexing_mode = if selectors.allows_early_exit() {
+            IndexingMode::Rolling
+        } else {
+            IndexingMode::FullDocument
+        };
+        Self::with_indexing_mode(selectors, Some(capacity), indexing_mode)
+    }
+
+    pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
+        self.step(reader)
+    }
+
+    pub fn matches(self) -> Store<'html, 'query> {
+        self.store
+    }
+
+    pub fn trace_parse_started(&mut self, html_len: usize, query_count: usize) {
+        self.trace_started(html_len, query_count);
+    }
+
+    pub fn take_parse_error(&mut self) -> Option<ParseError> {
+        self.take_error()
+    }
+
+    pub fn finish(self) -> Store<'html, 'query> {
+        self.into_sink()
+    }
+}
+
+// Every method here is crate-private; the public parser API lives on the
+// `Store` impl above, so the crate-private sink bound never reaches callers.
+#[allow(private_bounds)]
+impl<'html, 'query: 'html, Q, S> XHtmlParser<'html, 'query, Q, S>
+where
+    Q: QuerySpec<'query>,
+    S: ResultSink<'html, 'query>,
+{
+    /// Build a parser that writes matches into an already constructed sink.
+    pub(crate) fn with_sink(
+        selectors: QueryMultiplexer<'query, Q>,
+        store: S,
+        indexing_mode: IndexingMode,
+    ) -> Self {
+        let requirements = selectors.text_requirements();
+        let text_state = ParserTextState::new(requirements);
+        let persist_attributes = selectors.requires_attribute_storage();
+        let parse_attributes = selectors.requires_attribute_parsing() || requirements.text;
+        let features = selectors.features();
+        let has_sibling_queries = features.has_sibling_queries;
+        let structural_filters = selectors.structural_filters();
+        let tracked_type_names = features
+            .needs_type_ordinals
+            .then(|| selectors.type_ordinal_names())
+            .flatten();
+        let structural_attribute_interest = selectors.structural_attribute_interest();
 
         Self {
             position: DocumentPosition {
@@ -327,15 +376,6 @@ where
         }
     }
 
-    pub fn with_capacity(selectors: QueryMultiplexer<'query, Q>, capacity: usize) -> Self {
-        let indexing_mode = if selectors.allows_early_exit() {
-            IndexingMode::Rolling
-        } else {
-            IndexingMode::FullDocument
-        };
-        Self::with_indexing_mode(selectors, Some(capacity), indexing_mode)
-    }
-
     fn flush_source_text(&mut self, reader: &Reader<'html>, end: usize) {
         let raw_start = self.raw_source_start.take();
         let text_start = self.text_state.source_start.take();
@@ -347,12 +387,15 @@ where
             self.text_state.path_stats.flush_calls += 1;
         }
         if let Some(start) = raw_start.filter(|start| *start < end) {
-            self.store.text.raw_text.push_str(reader.slice(start..end));
+            self.store
+                .text_tapes_mut()
+                .raw_text
+                .push_str(reader.slice(start..end));
         }
         if let Some(start) = text_start.filter(|start| *start < end) {
             let depth = self.position.element_depth;
             self.text_state.write_normalized_fragment(
-                &mut self.store.text.text,
+                &mut self.store.text_tapes_mut().text,
                 reader.slice(start..end),
                 depth,
             );
@@ -369,7 +412,7 @@ where
         }
     }
 
-    pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
+    pub(crate) fn step(&mut self, reader: &mut Reader<'html>) -> bool {
         if self.parse_error.is_some() {
             return false;
         }
@@ -558,7 +601,7 @@ where
                     self.position.reader_position = open.start;
                     let name = open.name(source);
                     self.element.set_name(name);
-                    self.temp_state.attribute_start = self.store.attributes.len();
+                    self.temp_state.attribute_start = self.store.attribute_count();
 
                     let (tag_flags, text_tag_flags) =
                         if CAPTURE && self.capture_mode.captures_text() {
@@ -616,7 +659,7 @@ where
                         if self.persist_attributes {
                             self.element.parse_attributes(
                                 &mut attributes,
-                                &mut self.store.attributes,
+                                self.store.attribute_tape(),
                                 &self.temp_state.preflight.attribute_interest,
                             );
                         } else {
@@ -781,7 +824,7 @@ where
                     };
                     if !attributes_saved {
                         self.store
-                            .attributes
+                            .attribute_tape()
                             .truncate(self.temp_state.attribute_start);
                     }
                 }
@@ -806,19 +849,22 @@ where
                         self.text_state.discard_pending();
                     }
                     self.text_state.before_open_element(
-                        &mut self.store.text.text,
+                        &mut self.store.text_tapes_mut().text,
                         behavior,
                         is_self_closing,
                     );
                     self.text_state.before_text_range_start(
-                        &mut self.store.text.text,
+                        &mut self.store.text_tapes_mut().text,
                         behavior,
                         text_edge_policy,
                         open_text_tag_flags.is_cell(),
                     );
                 }
                 let (raw_start, text_start) = if CAPTURE {
-                    (self.store.text.raw_text.len(), self.store.text.text.len())
+                    (
+                        self.store.text_tapes().raw_text.len(),
+                        self.store.text_tapes().text.len(),
+                    )
                 } else {
                     (0, 0)
                 };
@@ -850,7 +896,7 @@ where
                         );
                         sibling.pending.clear();
                     }
-                    early_exit = self.selectors.back::<RETIREMENT>(
+                    early_exit = self.selectors.back::<RETIREMENT, _>(
                         self.element.name,
                         &self.position,
                         reader,
@@ -912,11 +958,7 @@ where
         !early_exit && !reader.eof()
     }
 
-    pub fn matches(self) -> Store<'html, 'query> {
-        self.store
-    }
-
-    pub fn trace_parse_started(
+    pub(crate) fn trace_started(
         &mut self,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] html_len: usize,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] query_count: usize,
@@ -930,7 +972,7 @@ where
         );
     }
 
-    pub fn take_parse_error(&mut self) -> Option<ParseError> {
+    pub(crate) fn take_error(&mut self) -> Option<ParseError> {
         self.parse_error.take()
     }
 
@@ -940,17 +982,17 @@ where
         }
     }
 
-    pub fn finish(
+    pub(crate) fn into_sink(
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_mut))] mut self,
-    ) -> Store<'html, 'query> {
+    ) -> S {
         crate::scah_trace!(
             self.store,
             TraceEvent::ParseFinished {
-                element_count: self.store.elements.len(),
-                query_node_count: self.store.queries.len(),
-                attribute_count: self.store.attributes.len(),
-                raw_text_len: self.store.text.raw_text.len(),
-                text_len: self.store.text.text.len(),
+                element_count: self.store.element_count(),
+                query_node_count: self.store.query_node_count(),
+                attribute_count: self.store.attribute_count(),
+                raw_text_len: self.store.text_tapes().raw_text.len(),
+                text_len: self.store.text_tapes().text.len(),
             }
         );
         self.store
@@ -991,7 +1033,7 @@ where
             }
         }
         self.position.element_depth = close_depth;
-        let early_exit = self.selectors.back::<RETIREMENT>(
+        let early_exit = self.selectors.back::<RETIREMENT, _>(
             open_element.name,
             &self.position,
             reader,
@@ -1180,12 +1222,12 @@ where
             }
             let raw_text = saved
                 .raw_text_start()
-                .map(|start| start..self.store.text.raw_text.len());
+                .map(|start| start..self.store.text_tapes().raw_text.len());
             let text = saved.text_start().map(|start| {
-                let range = start..self.store.text.text.len();
+                let range = start..self.store.text_tapes().text.len();
                 match saved.text_edge_policy() {
                     TextEdgePolicy::TrimCollapsedSeparators => {
-                        trim_collapsed_range(&self.store.text.text, range)
+                        trim_collapsed_range(&self.store.text_tapes().text, range)
                     }
                     TextEdgePolicy::Preserve => range,
                 }
