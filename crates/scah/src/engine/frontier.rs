@@ -1,5 +1,6 @@
 //! Struct-of-arrays index of every resident cursor's tag requirement.
 
+use super::DepthSize;
 use super::multiplexer::RunnerId;
 use crate::__private::PredicateMetadata;
 use scah_query_ir::TagId;
@@ -49,6 +50,11 @@ pub(crate) trait CursorObserver<'query> {
     fn deactivate(&mut self, runner: RunnerId, cursor: usize);
     fn swap_remove(&mut self, runner: RunnerId, cursor: usize);
     fn clear(&mut self, runner: RunnerId);
+    /// Raises the runner's close bound to at least `bound`; see
+    /// [`Frontier::needs_close`].
+    fn raise_close_bound(&mut self, runner: RunnerId, bound: DepthSize);
+    /// Replaces the runner's close bound with an exact recomputation.
+    fn set_close_bound(&mut self, runner: RunnerId, bound: DepthSize);
 }
 
 /// Standalone executors (unit tests) have no frontier to maintain.
@@ -63,6 +69,10 @@ impl<'query> CursorObserver<'query> for () {
     fn swap_remove(&mut self, _: RunnerId, _: usize) {}
     #[inline(always)]
     fn clear(&mut self, _: RunnerId) {}
+    #[inline(always)]
+    fn raise_close_bound(&mut self, _: RunnerId, _: DepthSize) {}
+    #[inline(always)]
+    fn set_close_bound(&mut self, _: RunnerId, _: DepthSize) {}
 }
 
 /// Every resident cursor across all runners, updated in place as executors
@@ -78,6 +88,10 @@ pub(crate) struct Frontier<'query> {
     entries: Vec<FrontierEntry<'query>>,
     /// Per runner, cursor index -> slot.
     slots: Vec<Vec<u32>>,
+    /// Per runner, an upper bound on one past the deepest close that can
+    /// change any of its cursors. Raised as cursors gain scopes or pending
+    /// closes, and made exact whenever the runner handles a close.
+    close_bounds: Vec<DepthSize>,
 }
 
 impl<'query> Frontier<'query> {
@@ -86,7 +100,14 @@ impl<'query> Frontier<'query> {
             tags: Vec::new(),
             entries: Vec::new(),
             slots: vec![Vec::new(); runner_count],
+            close_bounds: vec![0; runner_count],
         }
+    }
+
+    /// Whether closing an element at `depth` can change `runner`'s cursors.
+    #[inline(always)]
+    pub(crate) fn needs_close(&self, runner: RunnerId, depth: DepthSize) -> bool {
+        self.close_bounds[runner.index()] > depth
     }
 
     /// Active cursors that may match an element resolved to `tag`.
@@ -179,6 +200,18 @@ impl<'query> CursorObserver<'query> for Frontier<'query> {
         while let Some(slot) = self.slots[runner.index()].pop() {
             self.remove_slot(slot as usize);
         }
+        self.close_bounds[runner.index()] = 0;
+    }
+
+    #[inline]
+    fn raise_close_bound(&mut self, runner: RunnerId, bound: DepthSize) {
+        let current = &mut self.close_bounds[runner.index()];
+        *current = (*current).max(bound);
+    }
+
+    #[inline]
+    fn set_close_bound(&mut self, runner: RunnerId, bound: DepthSize) {
+        self.close_bounds[runner.index()] = bound;
     }
 }
 
