@@ -141,6 +141,22 @@ impl<'query> QuerySpec<'query> for Query<'query> {
     }
 }
 
+/// Queries can be parsed by reference, so a caller holding queries elsewhere
+/// does not have to clone them into one slice.
+impl<'query, Q: QuerySpec<'query> + ?Sized> QuerySpec<'query> for &Q {
+    fn states(&self) -> &[Transition<'query>] {
+        (**self).states()
+    }
+
+    fn queries(&self) -> &[QuerySection<'query>] {
+        (**self).queries()
+    }
+
+    fn selection_ranges(&self, section: QuerySectionId) -> &[Range<TransitionId>] {
+        (**self).selection_ranges(section)
+    }
+}
+
 /// A query built at compile time by the `query!` macro.
 #[derive(Debug, PartialEq, Clone)]
 pub struct StaticQuery<'query, const N_STATES: usize, const N_SECTIONS: usize> {
