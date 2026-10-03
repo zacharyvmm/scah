@@ -53,6 +53,7 @@ pull request, run them locally on an x86-64 machine:
 ```bash
 just gate-sibling   # ordinary and sibling selector parsing
 just gate-text      # text extraction
+just gate-bindings  # Python and Node binding overhead
 ```
 
 Both compare the working tree against `origin/main`; pass another revision to

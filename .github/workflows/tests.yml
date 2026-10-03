@@ -149,6 +149,46 @@ jobs:
       - name: Check published crates
         run: cargo check -p scah -p scah-reader -p scah-query-ir -p scah-macros
 
+  bindings-performance:
+    name: Binding Performance Gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Only changes that can reach the compiled bindings need the gate.
+      - name: Detect binding-relevant changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- Cargo.toml Cargo.lock crates \
+            benches/gates/bindings benches/gates/check-binding-performance.sh \
+            ':(exclude)*.md' ':(exclude)crates/bindings/scah-c/**'; then
+            echo "No binding-relevant changes; skipping the binding performance gate."
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        if: steps.changes.outputs.relevant == 'true'
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        if: steps.changes.outputs.relevant == 'true'
+      - uses: oven-sh/setup-bun@v2
+        if: steps.changes.outputs.relevant == 'true'
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.changes.outputs.relevant == 'true'
+      - name: Enforce binding performance gate
+        if: steps.changes.outputs.relevant == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # Shared runners are noisier than a local machine.
+          SCAH_BINDING_GATE_LIMIT: "1.10"
+        run: ./benches/gates/check-binding-performance.sh "$BASE_SHA"
+
   rust-aarch64:
     name: Rust AArch64 SIMD Checks
     runs-on: ubuntu-24.04-arm
