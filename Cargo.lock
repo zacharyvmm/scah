@@ -1656,6 +1656,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "scah-c"
+version = "0.1.0"
+dependencies = [
+ "scah",
+ "scah-ffi",
+]
+
+[[package]]
 name = "scah-ffi"
 version = "0.1.0"
 dependencies = [
