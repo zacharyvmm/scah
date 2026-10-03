@@ -86,6 +86,8 @@ gate-sibling base="origin/main":
     ./benches/gates/check-sibling-performance.sh {{base}}
 gate-text base="origin/main":
     ./benches/gates/check-text-performance.sh {{base}}
+gate-bindings base="origin/main":
+    ./benches/gates/check-binding-performance.sh {{base}}
 download-html-spec-bench:
     mkdir -p benches/bench_data
     curl -L "https://html.spec.whatwg.org/" -o benches/bench_data/html.spec.whatwg.org.html
