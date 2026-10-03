@@ -69,6 +69,7 @@ where
                 self.cursor_target(index),
                 self.cursors[index].is_active(),
             );
+            observer.raise_close_bound(runner, self.cursors[index].close_bound());
         }
     }
 
@@ -95,8 +96,10 @@ where
     ) {
         let index = self.cursors.len();
         let active = cursor.is_active();
+        let close_bound = cursor.close_bound();
         self.cursors.push(cursor);
         observer.push(runner, self.cursor_target(index), active);
+        observer.raise_close_bound(runner, close_bound);
     }
 
     #[inline]
@@ -109,6 +112,7 @@ where
     ) {
         self.cursors[index].block_until_close(depth);
         observer.deactivate(runner, index);
+        observer.raise_close_bound(runner, self.cursors[index].close_bound());
     }
 
     /// Sentinel-aware broadest-scope combination for First ownership.
@@ -196,6 +200,7 @@ where
         self.cursors[selected_cursor_index]
             .select_first_until_close(selected_depth, ownership_scope_depth);
         observer.deactivate(runner, selected_cursor_index);
+        observer.raise_close_bound(runner, self.cursors[selected_cursor_index].close_bound());
     }
 
     pub fn query(&self) -> &Q {
@@ -1630,12 +1635,15 @@ where
     ) -> bool {
         let close_depth = document_position.element_depth;
         let mut significant_close = false;
+        // Recomputed exactly over the surviving cursors.
+        let mut close_bound = 0;
 
         // Walk backwards so `swap_remove` cannot move an unvisited cursor.
         let mut i = self.cursors.len();
         while i > 0 {
             i -= 1;
             let cur = &self.cursors[i];
+            let mut pruned_here = false;
 
             if cur.scope_depth == SENTINEL_SCOPE {
                 if cur.unwind_depth() == Some(close_depth) {
@@ -1675,6 +1683,7 @@ where
                 let pruned = self.cursors.swap_remove(i);
                 observer.swap_remove(runner, i);
                 significant_close = true;
+                pruned_here = true;
 
                 crate::scah_trace!(
                     store,
@@ -1688,7 +1697,12 @@ where
                     }
                 );
             }
+            // A pruned slot now holds the former last cursor, already counted.
+            if !pruned_here {
+                close_bound = close_bound.max(self.cursors[i].close_bound());
+            }
         }
+        observer.set_close_bound(runner, close_bound);
 
         // Sentinel root cursors keep their original output parent: every save
         // path restores the cursor parent after storing a match, so closing an

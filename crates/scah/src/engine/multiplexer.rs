@@ -696,6 +696,32 @@ where
         }
     }
 
+    /// Whether no cursor of `runner` can change when this element closes, so
+    /// its close step can be skipped.
+    #[inline(always)]
+    fn skips_close(
+        frontier: &Frontier<'query>,
+        #[cfg_attr(not(debug_assertions), allow(unused_variables))] session: &QueryExecutor<
+            'query,
+            'query,
+            Q,
+        >,
+        runner: RunnerId,
+        position: &DocumentPosition,
+    ) -> bool {
+        let skip = !frontier.needs_close(runner, position.element_depth);
+        debug_assert!(
+            !skip
+                || session
+                    .cursors
+                    .iter()
+                    .all(|cursor| cursor.close_bound() <= position.element_depth),
+            "close bound missed a cursor of runner {}",
+            runner.index()
+        );
+        skip
+    }
+
     #[inline(never)]
     fn back_sparse(
         runners: &mut Runners<'query, Q>,
@@ -707,6 +733,9 @@ where
     ) {
         active_ids.retain(|runner| {
             let session = &mut runners[runner.index()];
+            if Self::skips_close(frontier, session, *runner, position) {
+                return true;
+            }
             let significant_close = session.back(*runner, xhtml_element, position, store, frontier);
             let retire = significant_close && session.early_exit();
             if retire {
@@ -726,6 +755,9 @@ where
         if !RETIREMENT {
             debug_assert!(self.active.is_none());
             for (index, session) in self.runners.iter_mut().enumerate() {
+                if Self::skips_close(&self.frontier, session, RunnerId(index), position) {
+                    continue;
+                }
                 let _ = session.back(
                     RunnerId(index),
                     xhtml_element,
@@ -751,8 +783,14 @@ where
             );
         } else {
             let runner_count = self.runners.len();
-            let mut remaining = None;
+            let mut remaining: Option<Vec<RunnerId>> = None;
             for (index, session) in self.runners.iter_mut().enumerate() {
+                if Self::skips_close(&self.frontier, session, RunnerId(index), position) {
+                    if let Some(ids) = remaining.as_mut() {
+                        ids.push(RunnerId(index));
+                    }
+                    continue;
+                }
                 let significant_close = session.back(
                     RunnerId(index),
                     xhtml_element,

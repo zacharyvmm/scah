@@ -351,6 +351,21 @@ impl ScopedCursor {
         !self.is_active()
     }
 
+    /// One past the deepest element close that can change this cursor, or 0.
+    ///
+    /// A close at depth `d` affects the cursor only when `d` is its pending
+    /// unwind depth or `d <= scope_depth` for a non-sentinel scope.
+    #[inline]
+    pub(crate) fn close_bound(&self) -> super::DepthSize {
+        let scope = if self.scope_depth == SENTINEL_SCOPE {
+            0
+        } else {
+            self.scope_depth + 1
+        };
+        let unwind = self.unwind_depth().map_or(0, |depth| depth + 1);
+        scope.max(unwind)
+    }
+
     #[cfg(test)]
     pub fn spawn_moving(&self, at_depth: super::DepthSize, next_position: Position) -> Self {
         Self {
