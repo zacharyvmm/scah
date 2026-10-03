@@ -6,6 +6,12 @@ Rust crates and the Python and npm packages together.
 
 ## [Unreleased]
 
+### Added
+
+- A C ABI in `crates/bindings/scah-c`, with a generated `scah.h` header and
+  C and C++ smoke tests. It shares its owned query and store handles with the
+  Python and Node bindings.
+
 ### Fixed
 
 - Python and Node elements could read freed memory after their `Store` was
