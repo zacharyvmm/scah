@@ -1,0 +1,20 @@
+[package]
+name = "scah-c"
+description = "C ABI for scah"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+# Not `scah`: scah-python's cdylib already uses that name, and two cdylibs
+# with one name overwrite each other's artifacts in the shared target dir.
+name = "scah_c"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+scah.workspace = true
+scah-ffi = { path = "../../scah-ffi" }
