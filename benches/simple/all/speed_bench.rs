@@ -190,13 +190,10 @@ fn bench_comparison(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("lol_html", size), &content, |b, html| {
             b.iter(|| {
                 let mut rewriter = HtmlRewriter::new(
-                    Settings {
-                        element_content_handlers: vec![element!(QUERY, |el| {
-                            black_box(el.get_attribute("href"));
-                            Ok(())
-                        })],
-                        ..Settings::default()
-                    },
+                    Settings::new().append_element_content_handler(element!(QUERY, |el| {
+                        black_box(el.get_attribute("href"));
+                        Ok(())
+                    })),
                     |_: &[u8]| {},
                 );
                 rewriter.write(html.as_bytes()).unwrap();

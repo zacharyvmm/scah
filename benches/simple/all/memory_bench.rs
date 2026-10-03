@@ -116,13 +116,10 @@ use lol_html::{HtmlRewriter, Settings, element};
 #[bench::lol_html(setup_html())]
 fn bench_lol_html(html: String) {
     let mut rewriter = HtmlRewriter::new(
-        Settings {
-            element_content_handlers: vec![element!(QUERY, |el| {
-                black_box(el.get_attribute("href"));
-                Ok(())
-            })],
-            ..Settings::default()
-        },
+        Settings::new().append_element_content_handler(element!(QUERY, |el| {
+            black_box(el.get_attribute("href"));
+            Ok(())
+        })),
         |_: &[u8]| {},
     );
     rewriter.write(html.as_bytes()).unwrap();

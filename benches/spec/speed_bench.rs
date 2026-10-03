@@ -158,13 +158,10 @@ fn bench_spec_links(c: &mut Criterion) {
     group.bench_function("lol_html", |b| {
         b.iter(|| {
             let mut rewriter = HtmlRewriter::new(
-                Settings {
-                    element_content_handlers: vec![element!(QUERY, |el| {
-                        black_box(el.get_attribute("href"));
-                        Ok(())
-                    })],
-                    ..Settings::default()
-                },
+                Settings::new().append_element_content_handler(element!(QUERY, |el| {
+                    black_box(el.get_attribute("href"));
+                    Ok(())
+                })),
                 |_: &[u8]| {},
             );
             rewriter.write(content.as_bytes()).unwrap();

@@ -247,27 +247,26 @@ fn bench_nested_all(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("lol_html", size), &content, |b, html| {
             b.iter(|| {
                 let mut rewriter = HtmlRewriter::new(
-                    Settings {
-                        element_content_handlers: vec![
-                            element!("div.product", |el| {
-                                black_box(el.get_attribute("class"));
-                                Ok(())
-                            }),
-                            text!("div.product > h1", |t| {
+                    Settings::new()
+                        .append_element_content_handler(element!("div.product", |el| {
+                            black_box(el.get_attribute("class"));
+                            Ok(())
+                        }))
+                        .append_element_content_handler(text!("div.product > h1", |t| {
+                            black_box(t.as_str());
+                            Ok(())
+                        }))
+                        .append_element_content_handler(text!("div.product > span.rating", |t| {
+                            black_box(t.as_str());
+                            Ok(())
+                        }))
+                        .append_element_content_handler(text!(
+                            "div.product > p.description",
+                            |t| {
                                 black_box(t.as_str());
                                 Ok(())
-                            }),
-                            text!("div.product > span.rating", |t| {
-                                black_box(t.as_str());
-                                Ok(())
-                            }),
-                            text!("div.product > p.description", |t| {
-                                black_box(t.as_str());
-                                Ok(())
-                            }),
-                        ],
-                        ..Settings::default()
-                    },
+                            }
+                        )),
                     |_: &[u8]| {},
                 );
 
@@ -457,27 +456,26 @@ fn bench_nested_first(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("lol_html", size), &content, |b, html| {
             b.iter(|| {
                 let mut rewriter = HtmlRewriter::new(
-                    Settings {
-                        element_content_handlers: vec![
-                            element!("div.product", |el| {
-                                black_box(el.get_attribute("class"));
-                                Ok(())
-                            }),
-                            text!("div.product > h1", |t| {
-                                black_box(t.as_str());
-                                Ok(())
-                            }),
-                            text!("div.product > span.rating", |t| {
-                                black_box(t.as_str());
-                                Ok(())
-                            }),
-                            text!("div.product > p.description", |t| {
+                    Settings::new()
+                        .append_element_content_handler(element!("div.product", |el| {
+                            black_box(el.get_attribute("class"));
+                            Ok(())
+                        }))
+                        .append_element_content_handler(text!("div.product > h1", |t| {
+                            black_box(t.as_str());
+                            Ok(())
+                        }))
+                        .append_element_content_handler(text!("div.product > span.rating", |t| {
+                            black_box(t.as_str());
+                            Ok(())
+                        }))
+                        .append_element_content_handler(text!(
+                            "div.product > p.description",
+                            |t| {
                                 black_box(t.as_str());
                                 Err(Box::new(StopParsing))
-                            }),
-                        ],
-                        ..Settings::default()
-                    },
+                            }
+                        )),
                     |_: &[u8]| {},
                 );
 

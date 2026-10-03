@@ -217,27 +217,23 @@ fn bench_lexbor_all(html: String) {
 #[bench::lol_html_all(setup_html())]
 fn bench_lol_html_all(html: String) {
     let mut rewriter = HtmlRewriter::new(
-        Settings {
-            element_content_handlers: vec![
-                element!("div.product", |el| {
-                    black_box(el.get_attribute("class"));
-                    Ok(())
-                }),
-                text!("div.product > h1", |t| {
-                    black_box(t.as_str());
-                    Ok(())
-                }),
-                text!("div.product > span.rating", |t| {
-                    black_box(t.as_str());
-                    Ok(())
-                }),
-                text!("div.product > p.description", |t| {
-                    black_box(t.as_str());
-                    Ok(())
-                }),
-            ],
-            ..Settings::default()
-        },
+        Settings::new()
+            .append_element_content_handler(element!("div.product", |el| {
+                black_box(el.get_attribute("class"));
+                Ok(())
+            }))
+            .append_element_content_handler(text!("div.product > h1", |t| {
+                black_box(t.as_str());
+                Ok(())
+            }))
+            .append_element_content_handler(text!("div.product > span.rating", |t| {
+                black_box(t.as_str());
+                Ok(())
+            }))
+            .append_element_content_handler(text!("div.product > p.description", |t| {
+                black_box(t.as_str());
+                Ok(())
+            })),
         |_: &[u8]| {},
     );
 
@@ -416,27 +412,23 @@ fn bench_lexbor_first(html: String) {
 #[bench::lol_html_first(setup_html())]
 fn bench_lol_html_first(html: String) {
     let mut rewriter = HtmlRewriter::new(
-        Settings {
-            element_content_handlers: vec![
-                element!("div.product", |el| {
-                    black_box(el.get_attribute("class"));
-                    Ok(())
-                }),
-                text!("div.product > h1", |t| {
-                    black_box(t.as_str());
-                    Ok(())
-                }),
-                text!("div.product > span.rating", |t| {
-                    black_box(t.as_str());
-                    Ok(())
-                }),
-                text!("div.product > p.description", |t| {
-                    black_box(t.as_str());
-                    Err(Box::new(StopParsing))
-                }),
-            ],
-            ..Settings::default()
-        },
+        Settings::new()
+            .append_element_content_handler(element!("div.product", |el| {
+                black_box(el.get_attribute("class"));
+                Ok(())
+            }))
+            .append_element_content_handler(text!("div.product > h1", |t| {
+                black_box(t.as_str());
+                Ok(())
+            }))
+            .append_element_content_handler(text!("div.product > span.rating", |t| {
+                black_box(t.as_str());
+                Ok(())
+            }))
+            .append_element_content_handler(text!("div.product > p.description", |t| {
+                black_box(t.as_str());
+                Err(Box::new(StopParsing))
+            })),
         |_: &[u8]| {},
     );
 
