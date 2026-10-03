@@ -6,6 +6,11 @@ Rust crates and the Python and npm packages together.
 
 ## [Unreleased]
 
+### Fixed
+
+- Python elements could read freed memory after their `Store` was garbage
+  collected. Elements now keep the parsed HTML and queries alive.
+
 ## [0.1.0] - 2026-10-01
 
 Follows 0.0.21. The minor version moves because of the breaking text changes below.

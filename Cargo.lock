@@ -1762,6 +1762,7 @@ dependencies = [
  "pyo3",
  "pyo3-stub-gen",
  "scah",
+ "scah-ffi",
 ]
 
 [[package]]
