@@ -1,6 +1,7 @@
 pub(crate) mod attribute_interest;
 pub mod cursor;
 pub mod executor;
+pub(crate) mod frontier;
 pub mod multiplexer;
 //pub mod tree;
 

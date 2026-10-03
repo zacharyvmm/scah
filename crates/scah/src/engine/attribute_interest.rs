@@ -93,6 +93,26 @@ impl<'query> AttributeInterest<'query> {
         }
     }
 
+    /// Whether both request the same fields, ignoring key order.
+    #[cfg(debug_assertions)]
+    pub fn same_requirements(&self, other: &Self) -> bool {
+        let covers = |left: &Self, right: &Self| {
+            left.keys.iter().all(|key| {
+                right
+                    .keys
+                    .iter()
+                    .any(|other| other.eq_ignore_ascii_case(key))
+            })
+        };
+        self.all == other.all
+            && self.id == other.id
+            && self.class == other.class
+            && self.hidden == other.hidden
+            && self.keys.len() == other.keys.len()
+            && covers(self, other)
+            && covers(other, self)
+    }
+
     #[inline]
     pub fn is_empty(&self) -> bool {
         !self.all && !self.id && !self.class && !self.hidden && self.keys.is_empty()

@@ -1,28 +1,11 @@
 use crate::Reader;
+use crate::TagId;
 use crate::query::compiler::SelectorParseError;
 use crate::query::selector::{
     self, Combinator, ElementPredicate, IElement, Lexer, LocalLogicalPredicate,
     MAX_SELECTOR_NESTING_DEPTH, StructuralMatchContext, StructuralPredicate,
     is_css_whitespace_char, require_modeled_syntax,
 };
-
-#[inline]
-pub const fn ascii_case_insensitive_hash(value: &str) -> u64 {
-    let bytes = value.as_bytes();
-    let mut index = 0;
-    let mut hash = 0xcbf2_9ce4_8422_2325;
-    while index < bytes.len() {
-        let byte = bytes[index];
-        let lower = if byte >= b'A' && byte <= b'Z' {
-            byte + (b'a' - b'A')
-        } else {
-            byte
-        };
-        hash = (hash ^ lower as u64).wrapping_mul(0x0000_0100_0000_01b3);
-        index += 1;
-    }
-    hash
-}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum AttributeNames<'query> {
@@ -46,7 +29,8 @@ impl<'query> AttributeNames<'query> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PredicateMetadata<'query> {
     name: Option<&'query str>,
-    name_hash: u64,
+    /// Resolved `name`; [`TagId::UNKNOWN`] also when `name` is `None`.
+    tag: TagId,
     needs_id: bool,
     needs_class: bool,
     local_name_only: bool,
@@ -70,7 +54,10 @@ impl<'query> PredicateMetadata<'query> {
 
         Self {
             name,
-            name_hash: name.map_or(0, ascii_case_insensitive_hash),
+            tag: match name {
+                Some(name) => TagId::of(name),
+                None => TagId::UNKNOWN,
+            },
             needs_id,
             needs_class,
             local_name_only: predicate.id.is_none()
@@ -92,9 +79,9 @@ impl<'query> PredicateMetadata<'query> {
     ) -> Self {
         Self {
             name,
-            name_hash: match name {
-                Some(name) => ascii_case_insensitive_hash(name),
-                None => 0,
+            tag: match name {
+                Some(name) => TagId::of(name),
+                None => TagId::UNKNOWN,
             },
             needs_id,
             needs_class,
@@ -111,11 +98,7 @@ impl<'query> PredicateMetadata<'query> {
             (None, None) => true,
             _ => false,
         };
-        let predicate_name_hash = match predicate.name {
-            Some(name) => ascii_case_insensitive_hash(name),
-            None => 0,
-        };
-        if !names_match || self.name_hash != predicate_name_hash {
+        if !names_match {
             return false;
         }
 
@@ -139,13 +122,22 @@ impl<'query> PredicateMetadata<'query> {
             && metadata_index == metadata_names.len()
     }
 
+    /// Required tag, or `None` when any name can match. A required
+    /// [`TagId::UNKNOWN`] still needs [`Self::matches_tag`] to compare names.
     #[inline]
-    pub fn matches_name(&self, name: &str, name_hash: u64) -> bool {
-        self.name.is_none_or(|expected| {
-            expected.len() == name.len()
-                && self.name_hash == name_hash
-                && expected.eq_ignore_ascii_case(name)
-        })
+    pub fn required_tag(&self) -> Option<TagId> {
+        self.name.map(|_| self.tag)
+    }
+
+    /// Whether an element named `name`, resolved to `tag`, satisfies the
+    /// tag-name part of this predicate.
+    #[inline]
+    pub fn matches_tag(&self, tag: TagId, name: &str) -> bool {
+        match self.name {
+            None => true,
+            Some(_) if self.tag.is_known() => self.tag == tag,
+            Some(expected) => !tag.is_known() && expected.eq_ignore_ascii_case(name),
+        }
     }
 
     #[inline]
@@ -826,7 +818,7 @@ mod tests {
         assert!(
             transition
                 .metadata()
-                .matches_name("article", ascii_case_insensitive_hash("article"))
+                .matches_tag(TagId::of("article"), "article")
         );
         assert!(transition.metadata().needs_id());
         assert!(transition.metadata().needs_class());
@@ -857,17 +849,30 @@ mod tests {
         });
 
         assert_eq!(transition.predicate().name, Some("div"));
-        assert!(
-            transition
-                .metadata()
-                .matches_name("div", ascii_case_insensitive_hash("div"))
-        );
-        assert!(
-            !transition
-                .metadata()
-                .matches_name("a", ascii_case_insensitive_hash("a"))
-        );
+        assert!(transition.metadata().matches_tag(TagId::of("div"), "div"));
+        assert!(!transition.metadata().matches_tag(TagId::of("a"), "a"));
         assert!(transition.metadata().needs_id());
+    }
+
+    #[test]
+    fn unknown_tag_names_fall_back_to_name_comparison() {
+        let transition = Transition::new(
+            Combinator::Descendant,
+            ElementPredicate {
+                name: Some("my-widget"),
+                id: None,
+                classes: ClassSelections::from_static(&[]),
+                attributes: AttributeSelections::from_static(&[]),
+                logical: crate::LogicalPredicates::from_static(&[]),
+                structural: crate::StructuralPredicates::from_static(&[]),
+            },
+        );
+        let metadata = transition.metadata();
+
+        assert_eq!(metadata.required_tag(), Some(TagId::UNKNOWN));
+        assert!(metadata.matches_tag(TagId::UNKNOWN, "MY-WIDGET"));
+        assert!(!metadata.matches_tag(TagId::UNKNOWN, "other-widget"));
+        assert!(!metadata.matches_tag(TagId::DIV, "div"));
     }
 
     fn li(structural: Vec<StructuralPredicate<'static>>) -> ElementPredicate<'static> {

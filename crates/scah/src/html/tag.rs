@@ -5,6 +5,8 @@
 //! requested, [`ClassifiedTag::classify`] returns both sets from a single
 //! name lookup.
 
+use scah_query_ir::TagId;
+
 /// Cached, overlapping properties of an HTML tag required by the parser.
 ///
 /// This is a bit set rather than a single tag enum because one tag can have
@@ -83,56 +85,66 @@ impl TagFlags {
     /// Parser-only classification. Prefer this on no-text paths.
     #[inline]
     pub fn classify(name: &str) -> Self {
-        let flags = Self::classify_lowercase(name);
-        if flags.0 != 0 || !name.as_bytes().iter().any(u8::is_ascii_uppercase) {
-            return flags;
-        }
-
-        // Known HTML names in this classifier are at most ten bytes long.
-        // Mixed-case names are uncommon, so normalize only this fallback and
-        // feed it through the same exact-match table as lowercase markup.
-        if name.len() > 10 {
-            return Self::default();
-        }
-
-        let mut lowercase = [0_u8; 10];
-        for (output, input) in lowercase.iter_mut().zip(name.bytes()) {
-            *output = input.to_ascii_lowercase();
-        }
-
-        // ASCII case folding preserves UTF-8 validity: non-ASCII bytes are
-        // copied unchanged, while ASCII uppercase bytes remain single-byte.
-        let lowercase = unsafe { std::str::from_utf8_unchecked(&lowercase[..name.len()]) };
-        Self::classify_lowercase(lowercase)
+        Self::of(TagId::of(name))
     }
 
     #[inline]
-    fn classify_lowercase(name: &str) -> Self {
+    pub const fn of(tag: TagId) -> Self {
         // Intentionally mirrors main @ 30750d8: parser semantics only.
-        let flags = match name {
-            "area" | "base" | "br" | "col" | "embed" | "img" | "input" | "link" | "meta"
-            | "param" | "source" | "track" | "wbr" => Self::VOID,
-            "hr" => Self::VOID | Self::CLOSES_P,
-            "address" | "article" | "aside" | "blockquote" | "div" | "dl" | "fieldset"
-            | "footer" | "form" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "header" | "main"
-            | "nav" | "pre" | "section" => Self::CLOSES_P,
-            "p" => Self::CLOSES_P | Self::P,
-            "ol" | "ul" => Self::CLOSES_P | Self::LIST_BARRIER,
-            "table" => Self::CLOSES_P | Self::DEFAULT_BARRIER | Self::TABLE_BARRIER,
-            "button" => Self::BUTTON,
-            "li" => Self::LI,
-            "dt" | "dd" => Self::DT_DD,
-            "option" => Self::OPTION,
-            "optgroup" => Self::OPTGROUP,
-            "tr" => Self::TR | Self::TABLE_SCOPE,
-            "td" | "th" => Self::CELL | Self::DEFAULT_BARRIER,
-            "thead" | "tbody" | "tfoot" | "caption" | "colgroup" => Self::TABLE_SCOPE,
-            "applet" | "marquee" | "object" => Self::DEFAULT_BARRIER,
-            "html" | "template" => Self::HTML_TEMPLATE | Self::TABLE_BARRIER,
-            "script" => Self::RAW_SCRIPT,
-            "style" => Self::RAW_STYLE,
-            "textarea" => Self::RAW_TEXTAREA,
-            "title" => Self::RAW_TITLE,
+        let flags = match tag {
+            TagId::AREA
+            | TagId::BASE
+            | TagId::BR
+            | TagId::COL
+            | TagId::EMBED
+            | TagId::IMG
+            | TagId::INPUT
+            | TagId::LINK
+            | TagId::META
+            | TagId::PARAM
+            | TagId::SOURCE
+            | TagId::TRACK
+            | TagId::WBR => Self::VOID,
+            TagId::HR => Self::VOID | Self::CLOSES_P,
+            TagId::ADDRESS
+            | TagId::ARTICLE
+            | TagId::ASIDE
+            | TagId::BLOCKQUOTE
+            | TagId::DIV
+            | TagId::DL
+            | TagId::FIELDSET
+            | TagId::FOOTER
+            | TagId::FORM
+            | TagId::H1
+            | TagId::H2
+            | TagId::H3
+            | TagId::H4
+            | TagId::H5
+            | TagId::H6
+            | TagId::HEADER
+            | TagId::MAIN
+            | TagId::NAV
+            | TagId::PRE
+            | TagId::SECTION => Self::CLOSES_P,
+            TagId::P => Self::CLOSES_P | Self::P,
+            TagId::OL | TagId::UL => Self::CLOSES_P | Self::LIST_BARRIER,
+            TagId::TABLE => Self::CLOSES_P | Self::DEFAULT_BARRIER | Self::TABLE_BARRIER,
+            TagId::BUTTON => Self::BUTTON,
+            TagId::LI => Self::LI,
+            TagId::DT | TagId::DD => Self::DT_DD,
+            TagId::OPTION => Self::OPTION,
+            TagId::OPTGROUP => Self::OPTGROUP,
+            TagId::TR => Self::TR | Self::TABLE_SCOPE,
+            TagId::TD | TagId::TH => Self::CELL | Self::DEFAULT_BARRIER,
+            TagId::THEAD | TagId::TBODY | TagId::TFOOT | TagId::CAPTION | TagId::COLGROUP => {
+                Self::TABLE_SCOPE
+            }
+            TagId::APPLET | TagId::MARQUEE | TagId::OBJECT => Self::DEFAULT_BARRIER,
+            TagId::HTML | TagId::TEMPLATE => Self::HTML_TEMPLATE | Self::TABLE_BARRIER,
+            TagId::SCRIPT => Self::RAW_SCRIPT,
+            TagId::STYLE => Self::RAW_STYLE,
+            TagId::TEXTAREA => Self::RAW_TEXTAREA,
+            TagId::TITLE => Self::RAW_TITLE,
             _ => 0,
         };
         Self(flags)
@@ -225,37 +237,59 @@ impl TextTagFlags {
     /// Text-only classification. Call only when normalized text is requested.
     #[inline]
     pub fn classify(name: &str) -> Self {
-        let flags = Self::classify_lowercase(name);
-        if flags.0 != 0 || !name.as_bytes().iter().any(u8::is_ascii_uppercase) {
-            return flags;
-        }
-        if name.len() > 10 {
-            return Self::default();
-        }
-        let mut lowercase = [0_u8; 10];
-        for (output, input) in lowercase.iter_mut().zip(name.bytes()) {
-            *output = input.to_ascii_lowercase();
-        }
-        let lowercase = unsafe { std::str::from_utf8_unchecked(&lowercase[..name.len()]) };
-        Self::classify_lowercase(lowercase)
+        Self::of(TagId::of(name))
     }
 
     #[inline]
-    fn classify_lowercase(name: &str) -> Self {
-        let flags = match name {
-            "br" | "hr" => Self::BREAK,
-            "address" | "article" | "aside" | "blockquote" | "div" | "dl" | "fieldset"
-            | "footer" | "form" | "header" | "main" | "nav" | "section" | "h1" | "h2" | "h3"
-            | "h4" | "h5" | "h6" | "p" | "ol" | "ul" | "table" | "li" | "dt" | "dd" | "thead"
-            | "tbody" | "tfoot" | "colgroup" | "caption" | "body" | "details" | "dialog"
-            | "figcaption" | "figure" | "hgroup" | "legend" | "menu" | "search" | "summary" => {
-                Self::BLOCK
-            }
-            "tr" => Self::ROW | Self::BLOCK,
-            "td" | "th" => Self::CELL,
-            "template" | "script" | "style" => Self::SUPPRESSED,
-            "textarea" => Self::PREFORMATTED,
-            "pre" => Self::BLOCK | Self::PREFORMATTED,
+    pub const fn of(tag: TagId) -> Self {
+        let flags = match tag {
+            TagId::BR | TagId::HR => Self::BREAK,
+            TagId::ADDRESS
+            | TagId::ARTICLE
+            | TagId::ASIDE
+            | TagId::BLOCKQUOTE
+            | TagId::DIV
+            | TagId::DL
+            | TagId::FIELDSET
+            | TagId::FOOTER
+            | TagId::FORM
+            | TagId::HEADER
+            | TagId::MAIN
+            | TagId::NAV
+            | TagId::SECTION
+            | TagId::H1
+            | TagId::H2
+            | TagId::H3
+            | TagId::H4
+            | TagId::H5
+            | TagId::H6
+            | TagId::P
+            | TagId::OL
+            | TagId::UL
+            | TagId::TABLE
+            | TagId::LI
+            | TagId::DT
+            | TagId::DD
+            | TagId::THEAD
+            | TagId::TBODY
+            | TagId::TFOOT
+            | TagId::COLGROUP
+            | TagId::CAPTION
+            | TagId::BODY
+            | TagId::DETAILS
+            | TagId::DIALOG
+            | TagId::FIGCAPTION
+            | TagId::FIGURE
+            | TagId::HGROUP
+            | TagId::LEGEND
+            | TagId::MENU
+            | TagId::SEARCH
+            | TagId::SUMMARY => Self::BLOCK,
+            TagId::TR => Self::ROW | Self::BLOCK,
+            TagId::TD | TagId::TH => Self::CELL,
+            TagId::TEMPLATE | TagId::SCRIPT | TagId::STYLE => Self::SUPPRESSED,
+            TagId::TEXTAREA => Self::PREFORMATTED,
+            TagId::PRE => Self::BLOCK | Self::PREFORMATTED,
             _ => 0,
         };
         Self(flags)
@@ -310,85 +344,16 @@ impl ClassifiedTag {
     /// Single lookup returning both parser and text flags.
     ///
     /// Use this on normalized-text paths so the tag name is matched once.
-    #[inline]
+    #[cfg(test)]
     pub fn classify(name: &str) -> Self {
-        let classified = Self::classify_lowercase(name);
-        if classified.parser.0 != 0
-            || classified.text.0 != 0
-            || !name.as_bytes().iter().any(u8::is_ascii_uppercase)
-        {
-            return classified;
-        }
-        if name.len() > 10 {
-            return Self::default();
-        }
-        let mut lowercase = [0_u8; 10];
-        for (output, input) in lowercase.iter_mut().zip(name.bytes()) {
-            *output = input.to_ascii_lowercase();
-        }
-        let lowercase = unsafe { std::str::from_utf8_unchecked(&lowercase[..name.len()]) };
-        Self::classify_lowercase(lowercase)
+        Self::of(TagId::of(name))
     }
 
     #[inline]
-    fn classify_lowercase(name: &str) -> Self {
-        let (parser, text) = match name {
-            "area" | "base" | "col" | "embed" | "img" | "input" | "link" | "meta" | "param"
-            | "source" | "track" | "wbr" => (TagFlags::VOID, 0),
-            "br" => (TagFlags::VOID, TextTagFlags::BREAK),
-            "hr" => (TagFlags::VOID | TagFlags::CLOSES_P, TextTagFlags::BREAK),
-            "address" | "article" | "aside" | "blockquote" | "div" | "dl" | "fieldset"
-            | "footer" | "form" | "header" | "main" | "nav" | "section" => {
-                (TagFlags::CLOSES_P, TextTagFlags::BLOCK)
-            }
-            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => (TagFlags::CLOSES_P, TextTagFlags::BLOCK),
-            "p" => (TagFlags::CLOSES_P | TagFlags::P, TextTagFlags::BLOCK),
-            "ol" | "ul" => (
-                TagFlags::CLOSES_P | TagFlags::LIST_BARRIER,
-                TextTagFlags::BLOCK,
-            ),
-            "table" => (
-                TagFlags::CLOSES_P | TagFlags::DEFAULT_BARRIER | TagFlags::TABLE_BARRIER,
-                TextTagFlags::BLOCK,
-            ),
-            "button" => (TagFlags::BUTTON, 0),
-            "li" => (TagFlags::LI, TextTagFlags::BLOCK),
-            "dt" | "dd" => (TagFlags::DT_DD, TextTagFlags::BLOCK),
-            "option" => (TagFlags::OPTION, 0),
-            "optgroup" => (TagFlags::OPTGROUP, 0),
-            "tr" => (
-                TagFlags::TR | TagFlags::TABLE_SCOPE,
-                TextTagFlags::ROW | TextTagFlags::BLOCK,
-            ),
-            "td" | "th" => (
-                TagFlags::CELL | TagFlags::DEFAULT_BARRIER,
-                TextTagFlags::CELL,
-            ),
-            "thead" | "tbody" | "tfoot" | "colgroup" => {
-                (TagFlags::TABLE_SCOPE, TextTagFlags::BLOCK)
-            }
-            "caption" => (TagFlags::TABLE_SCOPE, TextTagFlags::BLOCK),
-            "applet" | "marquee" | "object" => (TagFlags::DEFAULT_BARRIER, 0),
-            "html" => (TagFlags::HTML_TEMPLATE | TagFlags::TABLE_BARRIER, 0),
-            "template" => (
-                TagFlags::HTML_TEMPLATE | TagFlags::TABLE_BARRIER,
-                TextTagFlags::SUPPRESSED,
-            ),
-            "script" => (TagFlags::RAW_SCRIPT, TextTagFlags::SUPPRESSED),
-            "style" => (TagFlags::RAW_STYLE, TextTagFlags::SUPPRESSED),
-            "textarea" => (TagFlags::RAW_TEXTAREA, TextTagFlags::PREFORMATTED),
-            "title" => (TagFlags::RAW_TITLE, 0),
-            "pre" => (
-                TagFlags::CLOSES_P,
-                TextTagFlags::BLOCK | TextTagFlags::PREFORMATTED,
-            ),
-            "body" | "details" | "dialog" | "figcaption" | "figure" | "hgroup" | "legend"
-            | "menu" | "search" | "summary" => (0, TextTagFlags::BLOCK),
-            _ => (0, 0),
-        };
+    pub const fn of(tag: TagId) -> Self {
         Self {
-            parser: TagFlags(parser),
-            text: TextTagFlags(text),
+            parser: TagFlags::of(tag),
+            text: TextTagFlags::of(tag),
         }
     }
 }

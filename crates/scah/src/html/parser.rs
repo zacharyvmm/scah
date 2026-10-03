@@ -21,6 +21,7 @@ use crate::engine::multiplexer::{
 };
 use crate::store::{Store, trim_collapsed_range};
 use crate::{LocalSelectorList, QuerySpec};
+use scah_query_ir::TagId;
 use smallvec::SmallVec;
 
 #[derive(Default)]
@@ -560,12 +561,14 @@ where
                     self.element.set_name(name);
                     self.temp_state.attribute_start = self.store.attributes.len();
 
+                    // One name lookup serves parser semantics and query matching.
+                    let tag_id = TagId::of(name);
                     let (tag_flags, text_tag_flags) =
                         if CAPTURE && self.capture_mode.captures_text() {
-                            let classified = ClassifiedTag::classify(name);
+                            let classified = ClassifiedTag::of(tag_id);
                             (classified.parser, classified.text)
                         } else {
-                            (TagFlags::classify(name), TextTagFlags::default())
+                            (TagFlags::of(tag_id), TextTagFlags::default())
                         };
                     if CAPTURE && (self.raw_active_count > 0 || self.text_active_count > 0) {
                         self.flush_source_text(reader, open.start);
@@ -588,12 +591,14 @@ where
                         self.selectors
                             .prepare_element_with_structural_interest::<SIBLINGS, RETIREMENT>(
                                 name,
+                                tag_id,
                                 &mut self.temp_state.preflight,
                                 &structural.attribute_interest,
                             );
                     } else {
                         self.selectors.prepare_element::<SIBLINGS, RETIREMENT>(
                             name,
+                            tag_id,
                             &mut self.temp_state.preflight,
                         );
                     }

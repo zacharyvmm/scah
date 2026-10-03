@@ -6,6 +6,12 @@ Rust crates and the Python and npm packages together.
 
 ## [Unreleased]
 
+### Changed
+
+- Tag names resolve to a one-byte id once per tag, and each opening tag scans a
+  single contiguous index of active query cursors instead of walking every
+  query. Parsing with 16 or more queries is 14–22% faster.
+
 ## [0.1.0] - 2026-10-01
 
 Follows 0.0.21. The minor version moves because of the breaking text changes below.
