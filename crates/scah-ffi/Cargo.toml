@@ -1,0 +1,13 @@
+[package]
+name = "scah-ffi"
+description = "Owned query and store handles for scah's foreign-language bindings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+scah.workspace = true
