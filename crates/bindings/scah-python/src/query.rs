@@ -1,8 +1,9 @@
 use crate::save::PySave;
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use scah_core::QuerySectionId;
 use scah_core::lazy::{LazyQuery, LazyQueryBuilder};
-use scah_core::{Query, QuerySectionId};
+use scah_ffi::OwnedQuery;
 
 #[gen_stub_pyclass]
 #[pyclass]
@@ -40,9 +41,9 @@ impl PyQueryBuilder {
     }
 
     fn build(&self) -> PyResult<PyQuery> {
-        let (tape, query) = unsafe { self.builder.clone().try_to_query() }
+        let query = OwnedQuery::build(self.builder.clone())
             .map_err(|err| pyo3::exceptions::PyValueError::new_err(err.to_string()))?;
-        Ok(PyQuery { tape, query })
+        Ok(PyQuery { query })
     }
 }
 
@@ -71,15 +72,14 @@ impl PyQueryFactory {
 #[pyclass]
 #[derive(Clone)]
 pub struct PyQuery {
-    pub(super) tape: std::sync::Arc<Vec<u8>>,
-    pub(super) query: Query<'static>,
+    pub(super) query: OwnedQuery,
 }
 
 #[gen_stub_pymethods]
 #[pymethods]
 impl PyQuery {
     fn __repr__(&self) -> String {
-        format!("PyQuery(tape={:?}, query={:?})", self.tape, self.query)
+        format!("PyQuery(query={:?})", self.query)
     }
 }
 
