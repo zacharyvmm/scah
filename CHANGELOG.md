@@ -13,6 +13,8 @@ Rust crates and the Python and npm packages together.
   query. Parsing with 16 or more queries is 14–22% faster.
 - Closing tags skip queries whose cursors that close cannot change. Parsing
   with 64 queries is a further 15–26% faster.
+- Large query sets scan the cursor index and close bounds 16 entries at a
+  time. Parsing with 64 queries is a further 6–13% faster.
 
 ## [0.1.0] - 2026-10-01
 
