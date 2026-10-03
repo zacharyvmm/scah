@@ -371,7 +371,7 @@ where
         interest: &mut AttributeInterest<'query>,
         mut mark_viable: impl FnMut(usize),
     ) {
-        for entry in self.frontier.candidates(tag) {
+        self.frontier.for_each_candidate(tag, |entry| {
             let cursor = &entry.target;
             let name_matches = cursor.metadata.matches_tag(tag, name);
             if name_matches {
@@ -384,7 +384,7 @@ where
             if name_matches || (SIBLINGS && cursor.adjacent) {
                 mark_viable(entry.runner as usize);
             }
-        }
+        });
     }
 
     #[cfg(debug_assertions)]
@@ -752,20 +752,24 @@ where
         reader: &Reader<'html>,
         store: &mut Store<'html, 'query>,
     ) -> bool {
+        #[cfg(debug_assertions)]
+        for (index, session) in self.runners.iter().enumerate() {
+            let _ = Self::skips_close(&self.frontier, session, RunnerId(index), position);
+        }
+
+        let runners = &mut self.runners;
         if !RETIREMENT {
             debug_assert!(self.active.is_none());
-            for (index, session) in self.runners.iter_mut().enumerate() {
-                if Self::skips_close(&self.frontier, session, RunnerId(index), position) {
-                    continue;
-                }
-                let _ = session.back(
-                    RunnerId(index),
-                    xhtml_element,
-                    position,
-                    store,
-                    &mut self.frontier,
-                );
-            }
+            self.frontier
+                .for_each_needing_close(position.element_depth, |frontier, runner| {
+                    let _ = runners[runner.index()].back(
+                        runner,
+                        xhtml_element,
+                        position,
+                        store,
+                        frontier,
+                    );
+                });
             let _ = reader;
             #[cfg(feature = "bench-internals")]
             self.track_cursor_stats();
@@ -774,7 +778,7 @@ where
 
         if let Some(active_ids) = self.active.as_mut() {
             Self::back_sparse(
-                &mut self.runners,
+                runners,
                 active_ids,
                 &mut self.frontier,
                 xhtml_element,
@@ -782,35 +786,32 @@ where
                 store,
             );
         } else {
-            let runner_count = self.runners.len();
+            let runner_count = runners.len();
+            // Once a runner retires, every other runner, visited or skipped,
+            // stays in the sparse active list in order.
             let mut remaining: Option<Vec<RunnerId>> = None;
-            for (index, session) in self.runners.iter_mut().enumerate() {
-                if Self::skips_close(&self.frontier, session, RunnerId(index), position) {
-                    if let Some(ids) = remaining.as_mut() {
-                        ids.push(RunnerId(index));
+            let mut unlisted = 0;
+            self.frontier
+                .for_each_needing_close(position.element_depth, |frontier, runner| {
+                    let index = runner.index();
+                    let session = &mut runners[index];
+                    let significant_close =
+                        session.back(runner, xhtml_element, position, store, frontier);
+                    if significant_close && session.early_exit() {
+                        session.release_cursor_storage(runner, frontier);
+                        remaining
+                            .get_or_insert_with(|| {
+                                Vec::with_capacity(runner_count.saturating_sub(1))
+                            })
+                            .extend((unlisted..index).map(RunnerId));
+                        unlisted = index + 1;
+                    } else if let Some(ids) = remaining.as_mut() {
+                        ids.extend((unlisted..=index).map(RunnerId));
+                        unlisted = index + 1;
                     }
-                    continue;
-                }
-                let significant_close = session.back(
-                    RunnerId(index),
-                    xhtml_element,
-                    position,
-                    store,
-                    &mut self.frontier,
-                );
-                let retire = significant_close && session.early_exit();
-                if retire {
-                    session.release_cursor_storage(RunnerId(index), &mut self.frontier);
-                    if remaining.is_none() {
-                        let mut ids = Vec::with_capacity(runner_count.saturating_sub(1));
-                        ids.extend((0..index).map(RunnerId));
-                        remaining = Some(ids);
-                    }
-                } else if let Some(ids) = remaining.as_mut() {
-                    ids.push(RunnerId(index));
-                }
-            }
-            if let Some(remaining) = remaining {
+                });
+            if let Some(mut remaining) = remaining {
+                remaining.extend((unlisted..runner_count).map(RunnerId));
                 self.active = Some(Box::new(remaining));
             }
         }
@@ -1034,6 +1035,29 @@ mod tests {
         assert!(!mux.runner_slot_occupied(RunnerId(1)));
         assert!(mux.runner_slot_occupied(RunnerId(2)));
         assert_eq!(mux.runner_query_source(RunnerId(2)), Some("aside + footer"));
+    }
+
+    #[test]
+    fn retirement_keeps_visited_and_skipped_runners_in_order() {
+        let queries = [
+            Query::all("h1 span", Save::none()).unwrap().build(),
+            Query::first("footer", Save::none()).unwrap().build(),
+            Query::first("h1", Save::none()).unwrap().build(),
+            Query::first("footer", Save::none()).unwrap().build(),
+        ];
+        let mut parser = XHtmlParser::new(QueryMultiplexer::new(&queries));
+        let mut reader = Reader::new("<main><h1></h1><footer></footer></main>");
+
+        assert!(parser.next(&mut reader)); // <main>
+        assert!(parser.next(&mut reader)); // <h1>
+        // </h1>: runner 0 handles the close without retiring, runners 1 and 3
+        // have nothing to do, and runner 2 retires.
+        assert!(parser.next(&mut reader));
+
+        assert_eq!(
+            parser.selectors.active_runner_ids(),
+            &[RunnerId(0), RunnerId(1), RunnerId(3)]
+        );
     }
 
     #[test]

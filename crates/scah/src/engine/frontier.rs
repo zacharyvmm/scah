@@ -12,6 +12,52 @@ const ANY_TAG: u8 = u8::MAX;
 const INACTIVE: u8 = u8::MAX - 1;
 const _: () = assert!(TagId::COUNT <= INACTIVE as usize);
 
+/// Scan width: each chunk of a column compares into one bitmask, which the
+/// compiler can vectorize, and only set bits are visited.
+const CHUNK: usize = 16;
+
+/// Bit `i` is set when `keep(chunk[i])`.
+#[inline(always)]
+fn chunk_mask<T: Copy>(chunk: &[T; CHUNK], keep: impl Fn(T) -> bool) -> u32 {
+    let mut mask = 0;
+    for (index, &value) in chunk.iter().enumerate() {
+        mask |= u32::from(keep(value)) << index;
+    }
+    mask
+}
+
+/// Calls `visit` with the index of every element of `values[..len]` that
+/// satisfies `keep`, in order. Full chunks go through [`chunk_mask`]; the
+/// tail, which is the whole column for small query sets, is compared directly
+/// because building a mask costs more than a few scalar compares. `visit`
+/// gets `state` back mutably, so `values` is re-read from it per chunk.
+#[inline(always)]
+fn for_each_match<S: ?Sized, T: Copy>(
+    state: &mut S,
+    values: impl Fn(&S) -> &[T],
+    keep: impl Fn(T) -> bool,
+    mut visit: impl FnMut(&mut S, usize),
+) {
+    let len = values(state).len();
+    let full = len - len % CHUNK;
+    let mut start = 0;
+    while start < full {
+        let chunk = <&[T; CHUNK]>::try_from(&values(state)[start..start + CHUNK])
+            .expect("chunk has CHUNK elements");
+        let mut mask = chunk_mask(chunk, &keep);
+        while mask != 0 {
+            visit(state, start + mask.trailing_zeros() as usize);
+            mask &= mask - 1;
+        }
+        start += CHUNK;
+    }
+    for index in full..len {
+        if keep(values(state)[index]) {
+            visit(state, index);
+        }
+    }
+}
+
 /// Preflight data for one cursor, fixed when the cursor is pushed.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct CursorTarget<'query> {
@@ -110,19 +156,71 @@ impl<'query> Frontier<'query> {
         self.close_bounds[runner.index()] > depth
     }
 
-    /// Active cursors that may match an element resolved to `tag`.
-    ///
-    /// Yields every entry whose required tag equals `tag` plus every
-    /// [`ANY_TAG`] entry; callers still confirm with
-    /// [`PredicateMetadata::matches_tag`] for nameless and unknown tags.
+    /// Calls `visit` with every runner whose cursors a close at `depth` can
+    /// change, in runner order. `visit` receives the frontier back so the
+    /// runner's close step can update it.
     #[inline(always)]
-    pub(crate) fn candidates(&self, tag: TagId) -> impl Iterator<Item = &FrontierEntry<'query>> {
+    pub(crate) fn for_each_needing_close(
+        &mut self,
+        depth: DepthSize,
+        mut visit: impl FnMut(&mut Self, RunnerId),
+    ) {
+        let len = self.close_bounds.len();
+        if len >= CHUNK {
+            self.for_each_needing_close_chunked(depth, visit);
+            return;
+        }
+        for runner in 0..len {
+            if self.close_bounds[runner] > depth {
+                visit(self, RunnerId(runner));
+            }
+        }
+    }
+
+    /// Kept out of line so the small-set loop above stays compact; each
+    /// visitor inlines a whole close step.
+    #[inline(never)]
+    fn for_each_needing_close_chunked(
+        &mut self,
+        depth: DepthSize,
+        mut visit: impl FnMut(&mut Self, RunnerId),
+    ) {
+        let len = self.close_bounds.len();
+        let mut start = 0;
+        while start < len {
+            let end = len.min(start + CHUNK);
+            let bounds = &self.close_bounds[start..end];
+            let mut mask = match <&[DepthSize; CHUNK]>::try_from(bounds) {
+                Ok(chunk) => chunk_mask(chunk, |bound| bound > depth),
+                Err(_) => bounds.iter().enumerate().fold(0, |mask, (index, &bound)| {
+                    mask | u32::from(bound > depth) << index
+                }),
+            };
+            while mask != 0 {
+                visit(self, RunnerId(start + mask.trailing_zeros() as usize));
+                mask &= mask - 1;
+            }
+            start = end;
+        }
+    }
+
+    /// Calls `visit` with every active cursor that may match an element
+    /// resolved to `tag`: entries requiring `tag` and every [`ANY_TAG`] entry.
+    /// Callers still confirm with [`PredicateMetadata::matches_tag`] for
+    /// nameless and unknown tags.
+    #[inline(always)]
+    pub(crate) fn for_each_candidate(
+        &self,
+        tag: TagId,
+        mut visit: impl FnMut(&FrontierEntry<'query>),
+    ) {
         let key = tag.index() as u8;
-        self.tags
-            .iter()
-            .zip(&self.entries)
-            .filter(move |(candidate, _)| **candidate == key || **candidate == ANY_TAG)
-            .map(|(_, entry)| entry)
+        for_each_match(
+            &mut &*self,
+            |frontier| &frontier.tags,
+            |candidate| candidate == key || candidate == ANY_TAG,
+            |frontier, slot| visit(&frontier.entries[slot]),
+        );
     }
 
     #[inline]
@@ -223,7 +321,8 @@ mod tests {
     use scah_query_ir::TagId;
 
     fn runners_at<'query>(frontier: &Frontier<'query>, tag: TagId) -> Vec<u32> {
-        let mut runners: Vec<_> = frontier.candidates(tag).map(|entry| entry.runner).collect();
+        let mut runners = Vec::new();
+        frontier.for_each_candidate(tag, |entry| runners.push(entry.runner));
         runners.sort_unstable();
         runners
     }
