@@ -199,7 +199,7 @@ test('Save can match attributes without retaining them', () => {
 test("store remains valid after query object goes out of scope", () => {
   // Query tapes (selector strings) are owned by the query objects.
   // This test verifies that dropping the query does not invalidate
-  // the store, because JSStore internally retains _query_tapes.
+  // the store, because the store keeps its queries alive.
   const store = (() => {
     const q = Query.all("a[href]", { innerHtml: true, text: true }).build()
     return parse("<a href='x'>x</a>", [q])
@@ -262,4 +262,130 @@ test('legacy textContent still requests normalized text', () => {
 test('Save is an options interface, not a runtime helper export', () => {
   const scah = require('../index')
   expect(scah.Save).toBeUndefined()
+})
+
+test('multi-child then appends all branches', () => {
+  const html = `<main><a href="1">one</a><span>s</span><p>p</p></main>`
+  const query = Query.all('main', { text: true })
+    .then((q) => [q.all('a', { text: true }), q.all('span', { text: true }), q.all('p', { text: true })])
+    .build()
+  const store = parse(html, [query])
+  const main = store.get('main')!.at(0)!
+  expect(main.get('a')[0].text).toBe('one')
+  expect(main.get('span')[0].text).toBe('s')
+  expect(main.get('p')[0].text).toBe('p')
+})
+
+test('build can be reused without consuming the builder', () => {
+  const builder = Query.all('a', { text: true })
+  const q1 = builder.build()
+  const q2 = builder.build()
+  const store1 = parse('<a>1</a>', [q1])
+  const store2 = parse('<a>2</a>', [q2])
+  expect(store1.get('a')![0].text).toBe('1')
+  expect(store2.get('a')![0].text).toBe('2')
+})
+
+test('one query can be shared by several parses', () => {
+  const q = Query.all('a', { text: true }).build()
+  const stores = ['<a>1</a>', '<a>2</a>', '<a>3</a>'].map((html) => parse(html, [q]))
+  expect(stores.map((s) => s.get('a')![0].text)).toEqual(['1', '2', '3'])
+})
+
+test('element remains valid after store is dropped', () => {
+  const element = (() => {
+    const q = Query.all('a', { text: true }).build()
+    const store = parse('<a href="x">hi</a>', [q])
+    return store.get('a')![0]
+  })()
+  Bun.gc(true)
+  expect(element.name).toBe('a')
+  expect(element.text).toBe('hi')
+  expect(element.getAttribute('href')).toBe('x')
+})
+
+test('nested element remains valid after parent list is dropped', () => {
+  const child = (() => {
+    const q = Query.all('div', { text: true }).all('a', { text: true }).build()
+    const store = parse('<div><a href="nested">n</a></div>', [q])
+    const parents = store.get('div')!
+    return parents[0]!.get('a')[0]!
+  })()
+  Bun.gc(true)
+  expect(child.name).toBe('a')
+  expect(child.getAttribute('href')).toBe('nested')
+  expect(child.text).toBe('n')
+})
+
+test('JsonElement typing is exported', () => {
+  const q = Query.all('a', { text: true }).build()
+  const store = parse('<a id="x" class="c">hi</a>', [q])
+  const json = store.get('a')![0]!.toJson()
+  const typed: import('../index').JsonElement = json
+  expect(typed.name).toBe('a')
+  expect(typed.id).toBe('x')
+  expect(typed.class).toBe('c')
+  expect(typed.text).toBe('hi')
+  expect(typed.attributes).toEqual({})
+})
+
+test('selective lookup cardinality', () => {
+  const html =
+    '<s1>x</s1>' +
+    Array.from({ length: 10 }, () => '<s10>x</s10>').join('') +
+    Array.from({ length: 100 }, () => '<a>x</a>').join('')
+  const store = parse(html, [
+    Query.all('s1', { text: true }).build(),
+    Query.all('s10', { text: true }).build(),
+    Query.all('a', { text: true }).build(),
+  ])
+  expect(store.get('s1')).toHaveLength(1)
+  expect(store.get('s10')).toHaveLength(10)
+  expect(store.get('a')).toHaveLength(100)
+  expect(store.get('missing')).toBeNull()
+})
+
+test('parse with empty queries throws', () => {
+  expect(() => parse('<a></a>', [])).toThrow(/parse requires at least one query/)
+})
+
+test('invalid selector fails at build', () => {
+  expect(() => Query.all('').build()).toThrow()
+  expect(() => Query.all('a[').build()).toThrow()
+})
+
+test('attributes preserve missing versus empty values', () => {
+  const q = Query.all('input', { innerHtml: true, text: true }).build()
+  const store = parse('<input disabled value="">', [q])
+  const element = store.get('input')![0]
+  const attributes = element.attributes as Record<string, string | null>
+  // napi maps Option::None to null and Some("") to "".
+  expect(attributes.disabled).toBeNull()
+  expect(attributes.value).toBe('')
+  expect(element.getAttribute('value')).toBe('')
+  expect(element.getAttribute('missing')).toBeNull()
+})
+
+test('attributes materialize zero to many', () => {
+  const q = Query.all('el', { innerHtml: true, text: true }).build()
+  const attrs = (n: number) => Array.from({ length: n }, (_, i) => `k${i}="v${i}"`).join(' ')
+  const expected = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`k${i}`, `v${i}`]))
+
+  for (const n of [0, 1, 8, 9, 24]) {
+    expect(parse(`<el ${attrs(n)}></el>`, [q]).get('el')![0].attributes).toEqual(expected(n))
+  }
+})
+
+test('large result collection correctness', () => {
+  const count = 10_000
+  let html = ''
+  for (let i = 0; i < count; i++) {
+    html += `<a href="/${i}">x</a>`
+  }
+  const q = Query.all('a', { text: true }).build()
+  const store = parse(html, [q])
+  const hits = store.get('a')
+  expect(hits).toHaveLength(count)
+  expect(hits![0].getAttribute('href')).toBe('/0')
+  expect(hits![count - 1].getAttribute('href')).toBe(`/${count - 1}`)
 })

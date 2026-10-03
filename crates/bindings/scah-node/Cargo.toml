@@ -18,5 +18,8 @@ napi-derive = "3.0.0"
   [dependencies.scah]
   workspace = true
 
+  [dependencies.scah-ffi]
+  path = "../../scah-ffi"
+
 [build-dependencies]
 napi-build = "2"

@@ -8,8 +8,8 @@ Rust crates and the Python and npm packages together.
 
 ### Fixed
 
-- Python elements could read freed memory after their `Store` was garbage
-  collected. Elements now keep the parsed HTML and queries alive.
+- Python and Node elements could read freed memory after their `Store` was
+  garbage collected. Elements now keep the parsed HTML and queries alive.
 
 ## [0.1.0] - 2026-10-01
 
