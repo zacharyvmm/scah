@@ -41,7 +41,7 @@ pub struct OwnedStore {
     // Declared first so the borrowing store drops before its backing data.
     store: Store<'static, 'static>,
     _tapes: Vec<Arc<Vec<u8>>>,
-    _html: String,
+    html: String,
 }
 
 impl OwnedStore {
@@ -80,13 +80,21 @@ impl OwnedStore {
         Ok(Self {
             store,
             _tapes: queries.iter().map(|q| q.tape.clone()).collect(),
-            _html: html,
+            html,
         })
     }
 
     /// The parsed store, borrowed for no longer than `self`.
     pub fn store(&self) -> &Store<'_, '_> {
         &self.store
+    }
+
+    /// The HTML the store was parsed from.
+    ///
+    /// Element names, ids, classes, attribute values, and inner HTML borrow
+    /// from this string.
+    pub fn html(&self) -> &str {
+        &self.html
     }
 }
 
