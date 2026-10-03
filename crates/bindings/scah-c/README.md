@@ -70,5 +70,11 @@ function accepts NULL. A store copies the HTML and shares its queries' selector 
 so both may be freed right after `scah_parse`. String views borrow from the
 store and stay valid until `scah_store_free`.
 
+For bulk access, `scah_store_export_arrow` exports the matches of one
+selector as an Arrow record batch through the
+[Arrow C Data Interface](https://arrow.apache.org/docs/format/CDataInterface.html).
+String columns point into the store's own buffers, and the exported arrays
+keep the store alive until released.
+
 Run the C and C++ smoke tests with `just test-c`. After changing the ABI,
 regenerate the header with `just header`; CI rejects a stale header.
