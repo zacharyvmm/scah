@@ -124,3 +124,13 @@ harness = false
 name = "speed_bench_structural"
 path = "structural/speed_bench.rs"
 harness = false
+
+[[bench]]
+name = "speed_bench_columnar_store"
+path = "columnar/speed_bench.rs"
+harness = false
+
+[[bench]]
+name = "columnar_memory_report"
+path = "columnar/memory_report.rs"
+harness = false
