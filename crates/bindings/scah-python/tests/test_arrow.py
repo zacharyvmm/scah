@@ -237,21 +237,28 @@ def test_imports_outlive_the_store_and_the_table():
 
 
 def test_pyarrow_imports_without_copying():
-    """Every import references the same HTML and text buffers."""
+    """Every import references the store's own buffers, and each column lists
+    only the buffers its values point into."""
     store = links_store()
     table = store.to_arrow("a", attributes=["href"])
     first = pa.record_batch(table)
     second = pa.record_batch(table)
-    html_size = len(LINKS.encode())
-    for name in ("tag", "inner_html", "raw_text", "text", "href"):
+    html = LINKS.encode()
+
+    # Every tag is short enough to live inside its view.
+    assert len(first.column("tag").buffers()) == 2
+    for name, from_html in (
+        ("inner_html", True),
+        ("href", True),
+        ("raw_text", False),
+        ("text", False),
+    ):
         a = first.column(name).buffers()
         b = second.column(name).buffers()
-        # [validity, views, HTML, raw text, text]
-        assert len(a) == 5
-        assert a[2].size == html_size
-        assert a[2].to_pybytes() == LINKS.encode()
-        for x, y in zip(a[2:], b[2:]):
-            assert x.address == y.address
+        # [validity, views, the one data buffer the column uses]
+        assert len(a) == 3
+        assert (a[2].to_pybytes() == html) == from_html
+        assert a[2].address == b[2].address
 
 
 # ── polars ─────────────────────────────────────────────────────────────────

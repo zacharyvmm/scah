@@ -177,6 +177,9 @@ enum ColumnData {
     UInt32(Vec<u32>),
     Utf8View {
         views: Vec<View>,
+        /// The shared buffers (`HTML`, `RAW_TEXT`, `TEXT`, `OVERFLOW`) that
+        /// the views point into, in the order the views number them.
+        data_buffers: Vec<usize>,
         /// LSB-ordered validity bitmap, `None` when the column has no nulls.
         validity: Option<Vec<u8>>,
         null_count: usize,
@@ -323,16 +326,23 @@ impl ArrowTable {
             ),
             ColumnData::Utf8View {
                 views,
+                data_buffers,
                 validity,
                 null_count,
                 ..
             } => {
-                let html = self.store.html().as_bytes();
                 let doc = self.store.store();
-                let mut data = vec![html, doc.raw_text_buffer(), doc.text_buffer()];
-                if !self.overflow.is_empty() {
-                    data.push(&self.overflow);
-                }
+                // Only the buffers this column uses, so consumers that sum
+                // buffer sizes don't count the HTML once per column.
+                let data: Vec<&[u8]> = data_buffers
+                    .iter()
+                    .map(|&buffer| match buffer {
+                        HTML => self.store.html().as_bytes(),
+                        RAW_TEXT => doc.raw_text_buffer(),
+                        TEXT => doc.text_buffer(),
+                        _ => &self.overflow,
+                    })
+                    .collect();
                 let variadic_sizes: Vec<i64> = data
                     .iter()
                     // Checked against i32::MAX when the table was built.
@@ -493,6 +503,17 @@ impl View {
         Self(view)
     }
 
+    /// The buffer an out-of-line view points into.
+    fn buffer(&self) -> Option<usize> {
+        let len = i32::from_ne_bytes(self.0[..4].try_into().unwrap()) as usize;
+        (len > Self::MAX_INLINE)
+            .then(|| i32::from_ne_bytes(self.0[8..12].try_into().unwrap()) as usize)
+    }
+
+    fn set_buffer(&mut self, buffer: usize) {
+        self.0[8..12].copy_from_slice(&(buffer as i32).to_ne_bytes());
+    }
+
     /// `value` must be longer than 12 bytes; its length, `buffer`, and
     /// `offset` must fit an `i32`.
     fn reference(value: &[u8], buffer: usize, offset: usize) -> Self {
@@ -536,9 +557,27 @@ impl ViewBuilder {
         Ok(())
     }
 
-    fn finish(self, nullable: bool) -> ColumnData {
+    fn finish(mut self, nullable: bool) -> ColumnData {
+        // Number the shared buffers this column uses consecutively.
+        let mut used = [false; 4];
+        for view in &self.views {
+            if let Some(buffer) = view.buffer() {
+                used[buffer] = true;
+            }
+        }
+        let data_buffers: Vec<usize> = (0..used.len()).filter(|&b| used[b]).collect();
+        let mut local = [0; 4];
+        for (position, &buffer) in data_buffers.iter().enumerate() {
+            local[buffer] = position;
+        }
+        for view in &mut self.views {
+            if let Some(buffer) = view.buffer() {
+                view.set_buffer(local[buffer]);
+            }
+        }
         ColumnData::Utf8View {
             views: self.views,
+            data_buffers,
             validity: (self.null_count > 0).then_some(self.validity),
             null_count: self.null_count,
             nullable,
@@ -959,13 +998,17 @@ mod tests {
             doc.text_buffer(),
         ];
         for column in &batch.columns()[2 + usize::from(parent.is_some())..] {
+            // Each data buffer is one of the store's own, never a copy.
             let buffers = strings(column).data_buffers();
-            assert_eq!(buffers.len(), 3);
-            for (buffer, original) in buffers.iter().zip(shared) {
-                assert_eq!(buffer.len(), original.len());
-                if !original.is_empty() {
-                    assert_eq!(buffer.as_ptr(), original.as_ptr(), "copied a buffer");
-                }
+            assert!(buffers.len() <= shared.len());
+            for buffer in buffers.iter() {
+                assert!(
+                    shared
+                        .iter()
+                        .any(|original| buffer.as_ptr() == original.as_ptr()
+                            && buffer.len() == original.len()),
+                    "copied a buffer"
+                );
             }
         }
         batch
@@ -1223,6 +1266,31 @@ mod tests {
     }
 
     #[test]
+    fn columns_list_only_the_buffers_they_use() {
+        let store = parse(
+            "<a href='/a/long/enough/path'>some text long enough to leave the view</a>",
+            vec![LazyQuery::all("a".to_owned(), Save::only_text())],
+        );
+        let table = Arc::new(ArrowTable::build(store, "a", None, &["href", "title"]).unwrap());
+        let batch = import(&table);
+        let buffers = |name: &str| {
+            strings(batch.column_by_name(name).unwrap())
+                .data_buffers()
+                .len()
+        };
+        // Short values are inlined, so `tag` needs no data buffer at all.
+        assert_eq!(buffers("tag"), 0);
+        assert_eq!(buffers("href"), 1);
+        assert_eq!(buffers("text"), 1);
+        assert_eq!(buffers("raw_text"), 0);
+        assert_eq!(buffers("title"), 0);
+        assert_eq!(
+            strings(batch.column_by_name("text").unwrap()).value(0),
+            "some text long enough to leave the view"
+        );
+    }
+
+    #[test]
     fn copies_strings_from_outside_the_store() {
         static OUTSIDE: &str = "a string that lives outside the store";
         let store = parse("<a></a>", vec![LazyQuery::all("a".to_owned(), Save::all())]);
@@ -1233,29 +1301,24 @@ mod tests {
             doc.text_buffer(),
         ])
         .unwrap();
-        let views = vec![
-            buffers.view(OUTSIDE.as_bytes(), HTML).unwrap(),
-            buffers.view(b"inline", HTML).unwrap(),
-            buffers.view(&OUTSIDE.as_bytes()[2..], HTML).unwrap(),
-        ];
+        let mut column = ViewBuilder::default();
+        for value in [OUTSIDE, "inline", &OUTSIDE[2..]] {
+            column.push(Some(value), HTML, &mut buffers).unwrap();
+        }
         let table = Arc::new(ArrowTable {
             store: store.clone(),
             num_rows: 3,
             columns: vec![Column {
                 name: c"value".to_owned(),
-                data: ColumnData::Utf8View {
-                    views,
-                    validity: None,
-                    null_count: 0,
-                    nullable: false,
-                },
+                data: column.finish(false),
             }],
             overflow: buffers.overflow,
         });
 
         let batch = import(&table);
         let column = strings(batch.column(0));
-        assert_eq!(column.data_buffers().len(), 4);
+        // Only the overflow buffer holds this column's out-of-line values.
+        assert_eq!(column.data_buffers().len(), 1);
         assert_eq!(column.value(0), OUTSIDE);
         assert_eq!(column.value(1), "inline");
         assert_eq!(column.value(2), &OUTSIDE[2..]);

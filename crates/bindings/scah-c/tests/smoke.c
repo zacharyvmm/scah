@@ -395,8 +395,14 @@ static void check_arrow(struct ArrowSchema *schema, struct ArrowArray *array,
     CHECK(strcmp(field->format, i < 2 ? "I" : "vu") == 0);
     CHECK((field->flags & ARROW_FLAG_NULLABLE) == (i < 3 ? 0 : 2));
     CHECK(column(array, i)->length == 3);
-    /* validity, views, HTML, raw text, text, variadic sizes */
-    CHECK(column(array, i)->n_buffers == (i < 2 ? 2 : 6));
+    /* validity and values, or validity, views, the data buffers the column
+     * uses (at most HTML, raw text, and text), and their sizes */
+    if (i < 2) {
+      CHECK(column(array, i)->n_buffers == 2);
+    } else {
+      CHECK(column(array, i)->n_buffers >= 3);
+      CHECK(column(array, i)->n_buffers <= 6);
+    }
   }
 
   index_values = (const uint32_t *)column(array, 0)->buffers[1];
@@ -407,20 +413,22 @@ static void check_arrow(struct ArrowSchema *schema, struct ArrowArray *array,
   }
 
   /* `text` is inlined; `raw_text` and `inner_html` point into the raw text
-   * buffer and the HTML. */
+   * buffer and the HTML, each the only data buffer of its column. */
   inner_html = column(array, 3);
   raw_text = column(array, 4);
   text = column(array, 5);
   CHECK(view_at(text, 0, &value, &inlined, &buffer));
   CHECK(inlined && view_eq(value, "One & only"));
   CHECK(view_at(raw_text, 0, &value, &inlined, &buffer));
-  CHECK(!inlined && buffer == 1 && view_eq(value, "One &amp; only"));
+  CHECK(!inlined && buffer == 0 && view_eq(value, "One &amp; only"));
   CHECK(view_at(inner_html, 0, &value, &inlined, &buffer));
   CHECK(!inlined && buffer == 0 && view_eq(value, "One &amp; only"));
   CHECK(view_at(raw_text, 1, &value, &inlined, &buffer));
   CHECK(inlined && view_eq(value, "  Two  "));
   CHECK(text->null_count == 0 && text->buffers[0] == NULL);
-  variadic_sizes = (const int64_t *)text->buffers[5];
+  CHECK(text->n_buffers == 3); /* every value is inlined */
+  CHECK(inner_html->n_buffers == 4);
+  variadic_sizes = (const int64_t *)inner_html->buffers[3];
   CHECK(variadic_sizes[0] == (int64_t)strlen(HTML));
 
   /* Valueless and missing attributes are null; empty values are not. */
