@@ -9,7 +9,8 @@
  *      scah_query_builder_then, and compile it with scah_query_build.
  *   2. Parse HTML against one or more queries with scah_parse.
  *   3. Look up matches with scah_store_get and scah_element_get, then read
- *      element fields with the scah_element_* getters.
+ *      element fields with the scah_element_* getters, or export a whole
+ *      result set as Arrow columns with scah_store_export_arrow.
  *
  * Ownership
  *   - Every handle returned through an out-pointer is owned by the caller and
@@ -46,6 +47,47 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#ifndef ARROW_C_DATA_INTERFACE
+#define ARROW_C_DATA_INTERFACE
+
+#define ARROW_FLAG_DICTIONARY_ORDERED 1
+#define ARROW_FLAG_NULLABLE 2
+#define ARROW_FLAG_MAP_KEYS_SORTED 4
+
+struct ArrowSchema {
+  // Array type description
+  const char* format;
+  const char* name;
+  const char* metadata;
+  int64_t flags;
+  int64_t n_children;
+  struct ArrowSchema** children;
+  struct ArrowSchema* dictionary;
+
+  // Release callback
+  void (*release)(struct ArrowSchema*);
+  // Opaque producer-specific data
+  void* private_data;
+};
+
+struct ArrowArray {
+  // Array data description
+  int64_t length;
+  int64_t null_count;
+  int64_t offset;
+  int64_t n_buffers;
+  int64_t n_children;
+  const void** buffers;
+  struct ArrowArray** children;
+  struct ArrowArray* dictionary;
+
+  // Release callback
+  void (*release)(struct ArrowArray*);
+  // Opaque producer-specific data
+  void* private_data;
+};
+
+#endif  // ARROW_C_DATA_INTERFACE
 
 /**
  * Version of the C ABI described by `scah.h`.
@@ -96,6 +138,15 @@ typedef enum ScahStatus {
    * reporting.
    */
   SCAH_STATUS_INTERNAL_PANIC = 7,
+  /**
+   * An argument was invalid, such as an Arrow column requested twice.
+   */
+  SCAH_STATUS_INVALID_ARGUMENT = 8,
+  /**
+   * A result was too large to export, such as HTML over 2 GiB for Arrow's
+   * 32-bit offsets.
+   */
+  SCAH_STATUS_TOO_LARGE = 9,
 } ScahStatus;
 
 /**
@@ -137,7 +188,9 @@ typedef struct ScahQueryBuilder ScahQueryBuilder;
  *
  * Created by `scah_parse` and released with `scah_store_free`. The store
  * owns a copy of the HTML and shares its queries' selector strings. Every
- * string view read from it stays valid until it is freed.
+ * string view read from it stays valid until it is freed. Arrow exports
+ * from `scah_store_export_arrow` hold their own reference to the data and
+ * stay valid until released, even after the store is freed.
  */
 typedef struct ScahStore ScahStore;
 
@@ -590,6 +643,55 @@ enum ScahStatus scah_element_attribute_at(const struct ScahStore *store,
                                           struct ScahStringView *out_key,
                                           struct ScahOptionalStringView *out_value,
                                           struct ScahError **out_error);
+
+/**
+ * Export matched elements as an Arrow record batch through the Arrow C Data
+ * Interface.
+ *
+ * Rows are the elements matched by top-level section `selector`, or, when
+ * `parent.data` is not NULL, the elements matched by child section
+ * `selector` under each element matched by top-level section `parent`.
+ *
+ * `*out_schema` receives a struct schema (format `"+s"`) and `*out_array` a
+ * struct array with these columns, in order:
+ *
+ * - `index`: uint32 (`"I"`), the element's `ScahElementId`.
+ * - `parent`: uint32, the parent's `ScahElementId`. Only with a `parent`.
+ * - `tag`: Utf8View (`"vu"`), the tag name.
+ * - `inner_html`, `raw_text`, `text`: nullable Utf8View, null unless the
+ *   query saved them.
+ * - One nullable Utf8View column per entry of `attributes`, named after it
+ *   and looked up like `scah_element_attribute`; `id` and `class` read the
+ *   element's id and class. Null when absent, valueless, or not saved.
+ *
+ * Strings of up to 12 bytes are inlined in their views; longer ones point
+ * into the store's HTML and text buffers, which are exported as data
+ * buffers without copying. The schema and the array each keep that data
+ * alive until released through their `release` callbacks, even after
+ * `scah_store_free`. A selector without matches yields an empty array.
+ *
+ * On entry `*out_schema` and `*out_array` are marked released (`release`
+ * set to NULL); on success both must be released by the caller.
+ * `SCAH_STATUS_INVALID_ARGUMENT` reports an attribute that repeats a column
+ * name or contains a NUL byte, and `SCAH_STATUS_TOO_LARGE` a buffer beyond
+ * Arrow's 32-bit offsets.
+ *
+ * # Safety
+ *
+ * `store` must be NULL or a live store. `selector` must be a readable view,
+ * and `parent` a readable view or one with NULL `data`. `attributes` must be
+ * NULL with `attribute_count` 0, or point to `attribute_count` readable
+ * views. `out_schema`, `out_array`, and `out_error` must be NULL or
+ * writable.
+ */
+enum ScahStatus scah_store_export_arrow(const struct ScahStore *store,
+                                        struct ScahStringView selector,
+                                        struct ScahStringView parent,
+                                        const struct ScahStringView *attributes,
+                                        size_t attribute_count,
+                                        struct ArrowSchema *out_schema,
+                                        struct ArrowArray *out_array,
+                                        struct ScahError **out_error);
 
 #ifdef __cplusplus
 }  // extern "C"

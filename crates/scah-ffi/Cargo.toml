@@ -11,3 +11,9 @@ publish = false
 
 [dependencies]
 scah.workspace = true
+
+[dev-dependencies]
+# Tests import exported tables with arrow-rs to validate them.
+arrow-array = { version = "60", default-features = false, features = ["ffi"] }
+arrow-data = { version = "60", features = ["ffi"] }
+arrow-schema = { version = "60", features = ["ffi"] }

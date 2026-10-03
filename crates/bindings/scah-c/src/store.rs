@@ -7,6 +7,7 @@ use crate::query::ScahQuery;
 use crate::string::{ScahOptionalStringView, ScahStringView};
 use scah::{Element, ParseError, Store};
 use scah_ffi::OwnedStore;
+use std::sync::Arc;
 
 /// Identifies an element within the store that produced it.
 ///
@@ -18,9 +19,11 @@ pub type ScahElementId = usize;
 ///
 /// Created by `scah_parse` and released with `scah_store_free`. The store
 /// owns a copy of the HTML and shares its queries' selector strings. Every
-/// string view read from it stays valid until it is freed.
+/// string view read from it stays valid until it is freed. Arrow exports
+/// from `scah_store_export_arrow` hold their own reference to the data and
+/// stay valid until released, even after the store is freed.
 pub struct ScahStore {
-    inner: OwnedStore,
+    pub(crate) inner: Arc<OwnedStore>,
 }
 
 /// The ids of the elements matched by one selector, in document order.
@@ -78,7 +81,7 @@ pub unsafe extern "C" fn scah_parse(
         // SAFETY: the caller passes a readable view.
         let html = unsafe { html.to_str("html") }?.to_owned();
 
-        let inner = OwnedStore::parse(html, &queries)?;
+        let inner = Arc::new(OwnedStore::parse(html, &queries)?);
         let store = Box::new(ScahStore { inner });
         // SAFETY: checked non-NULL and writable above.
         unsafe { out_store.write(Box::into_raw(store)) };
@@ -535,7 +538,7 @@ pub unsafe extern "C" fn scah_element_attribute_at(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::error::tests::take_message;
     use crate::query::tests::{ALL, NAME_ONLY, build, builder};
@@ -556,7 +559,7 @@ mod tests {
     }
 
     /// Parse `html` against `queries`, freeing the queries.
-    fn parse(html: &str, queries: &[*mut ScahQuery]) -> *mut ScahStore {
+    pub(crate) fn parse(html: &str, queries: &[*mut ScahQuery]) -> *mut ScahStore {
         let html = html.to_owned();
         let mut store = ptr::null_mut();
         let mut error = ptr::null_mut();

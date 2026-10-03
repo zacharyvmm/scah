@@ -10,7 +10,8 @@
 //!    with [`scah_query_builder_then`], and compile it with [`scah_query_build`].
 //! 2. Parse HTML against one or more queries with [`scah_parse`].
 //! 3. Look up matches with [`scah_store_get`] and [`scah_element_get`], then
-//!    read element fields with the `scah_element_*` getters.
+//!    read element fields with the `scah_element_*` getters, or export a
+//!    whole result set as Arrow columns with [`scah_store_export_arrow`].
 //!
 //! # Ownership
 //!
@@ -46,6 +47,10 @@ mod query;
 mod store;
 mod string;
 
+// After `store` so the header declares the Arrow export after the store API.
+mod arrow;
+
+pub use arrow::scah_store_export_arrow;
 pub use error::{ScahError, ScahStatus, scah_error_free, scah_error_message};
 pub use query::{
     ScahQuery, ScahQueryBuilder, ScahSave, scah_query_build, scah_query_builder_all,

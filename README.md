@@ -259,6 +259,32 @@ it rejects selectors it cannot decide at that point:
 - **Nesting depth**: selector lists inside functional pseudo-classes may nest
   up to `MAX_SELECTOR_NESTING_DEPTH` (32) levels.
 
+## Arrow export
+
+For bulk work, export matches as an [Apache Arrow](https://arrow.apache.org/)
+table instead of element objects. String columns point straight into the
+parsed HTML and text buffers, so nothing is copied and no per-element objects
+are created. Any library that reads the Arrow C Data Interface can import the
+table:
+
+```python
+import polars as pl
+from scah import Query, Save, parse
+
+store = parse(html, [Query.all("a", Save(text=True)).build()])
+df = pl.DataFrame(store.to_arrow("a", attributes=["href"]))
+# columns: index, tag, inner_html, raw_text, text, href
+```
+
+Pass `parent=` to export a child section, for example
+`store.to_arrow("h1", parent="div.product")`. Each row then carries a
+`parent` column holding the parent's `index`, ready to join. On 100,000 links,
+building a polars DataFrame this way takes about a tenth of the time it takes
+through element objects. Reading values back one by one (`to_pylist()`) is no
+faster than element objects, so use Arrow when the data stays columnar.
+From C, `scah_store_export_arrow` fills the standard `ArrowSchema` and
+`ArrowArray` structs.
+
 ## Text extraction
 
 | Field | Meaning |

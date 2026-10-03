@@ -251,6 +251,24 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             .map(|element_id| self.elements.iter_from(element_id))
     }
 
+    /// The shared buffer every [`Element::raw_text`] slice borrows from.
+    ///
+    /// Each `raw_text` value is a subslice of these bytes, so a consumer can
+    /// address the values as offsets into one buffer instead of copying them.
+    /// The buffer is append-only during parsing and never changes afterwards.
+    pub fn raw_text_buffer(&self) -> &[u8] {
+        self.text.raw_text.as_bytes()
+    }
+
+    /// The shared buffer every [`Element::text`] slice borrows from.
+    ///
+    /// Each `text` value is a subslice of these bytes, so a consumer can
+    /// address the values as offsets into one buffer instead of copying them.
+    /// The buffer is append-only during parsing and never changes afterwards.
+    pub fn text_buffer(&self) -> &[u8] {
+        self.text.text.as_bytes()
+    }
+
     fn link_query_to_query(&mut self, query: QueryId, mut root: QueryId) {
         loop {
             if root == query {
@@ -545,6 +563,33 @@ mod tests {
         assert_eq!(store.text.raw_text.capacity(), 0);
         assert_eq!(store.text.text.capacity(), 0);
         assert!(!store.tracks_element_text_ranges());
+    }
+
+    #[test]
+    fn text_values_borrow_from_the_shared_buffers() {
+        let html = "<p>A &amp; <b>B</b></p><p> é </p>";
+        let query = Query::all("p", Save::all()).unwrap().build();
+        let queries = [query];
+        let store = crate::parse(html, &queries).unwrap();
+
+        fn offset_in(buffer: &[u8], value: &str) -> Option<usize> {
+            let offset = value.as_ptr().addr().checked_sub(buffer.as_ptr().addr())?;
+            (offset + value.len() <= buffer.len()).then_some(offset)
+        }
+        for p in store.get("p").unwrap() {
+            let raw = p.raw_text(&store).unwrap();
+            let text = p.text(&store).unwrap();
+            let raw_offset = offset_in(store.raw_text_buffer(), raw).unwrap();
+            let text_offset = offset_in(store.text_buffer(), text).unwrap();
+            assert_eq!(
+                &store.raw_text_buffer()[raw_offset..][..raw.len()],
+                raw.as_bytes()
+            );
+            assert_eq!(
+                &store.text_buffer()[text_offset..][..text.len()],
+                text.as_bytes()
+            );
+        }
     }
 
     #[test]
