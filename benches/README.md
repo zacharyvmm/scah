@@ -9,6 +9,7 @@
 | `text_extraction/` | Text-mode throughput and memory, plus the text performance gate |
 | `cursor_dominance/`, `sibling/`, `structural/`, `ordinary_gate/` | Parser engine workloads; `ordinary_gate` backs the sibling performance gate |
 | `element_tape/`, `escape_scanner/`, `tag_classification/` | Microbenchmarks for internal design experiments |
+| `experiments/` | Same-process comparisons for design experiments; `experiments/arrow/` compares Arrow export with the Python handle API |
 | `gates/` | Scripts that compare a pull request against its base revision in CI; `gates/bindings/` holds the Python and Node workloads |
 | `results/` | Published comparison results, one JSON file per suite and scenario |
 | `report/` | Converts raw benchmark output into `results/` and renders the README tables |
