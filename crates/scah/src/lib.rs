@@ -123,7 +123,10 @@ pub use scah_query_ir::{
     StructuralPredicates, TextRequirements, Transition, TransitionId,
 };
 pub use scah_reader::Reader;
-pub use store::{CapacityOptions, Element, ElementId, Store};
+pub use store::{
+    CapacityOptions, ColumnarElements, ColumnarStore, Element, ElementId, ElementRef, HeapUsage,
+    Store,
+};
 
 /// Implementation details referenced by `query!` expansions.
 #[doc(hidden)]
@@ -272,6 +275,44 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
+/// Errors from [`parse_columnar`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ColumnarParseError {
+    /// The same failure [`parse`] would report.
+    Parse(ParseError),
+    /// The HTML is `u32::MAX` bytes or longer, or the parse produced
+    /// `u32::MAX` or more elements or text bytes. [`ColumnarStore`] addresses
+    /// everything with `u32`; use [`parse`] for such inputs.
+    InputTooLarge,
+}
+
+impl From<ParseError> for ColumnarParseError {
+    fn from(err: ParseError) -> Self {
+        Self::Parse(err)
+    }
+}
+
+impl std::fmt::Display for ColumnarParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parse(err) => err.fmt(f),
+            Self::InputTooLarge => write!(
+                f,
+                "input exceeds the u32 offsets of the columnar store; use parse"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ColumnarParseError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Parse(err) => Some(err),
+            Self::InputTooLarge => None,
+        }
+    }
+}
+
 /// Parse an HTML string against one or more pre-built [`Query`] objects and
 /// return a [`Result`] containing a [`Store`] with all matched elements.
 ///
@@ -371,6 +412,71 @@ where
         return Err(err);
     }
     Ok(parser.finish())
+}
+
+/// Parse like [`parse`], but return the matches as a [`ColumnarStore`].
+///
+/// Runs the same streaming parser and query engine; only the result layout
+/// differs. Every element, attribute, text value, and nested result reads
+/// back exactly as it would from the [`Store`] that [`parse`] returns.
+///
+/// # Errors
+///
+/// Returns [`ColumnarParseError::Parse`] for any error [`parse`] reports and
+/// [`ColumnarParseError::InputTooLarge`] when the input or results exceed
+/// the store's `u32` offsets.
+///
+/// # Example
+///
+/// ```rust
+/// use scah::{Query, Save, parse_columnar};
+///
+/// let html = "<main><article><h1>A</h1></article><article><h1>B</h1></article></main>";
+/// let queries = &[Query::all("article", Save::none())
+///     .unwrap()
+///     .then(|article| Ok([article.first("h1", Save::only_text())?]))
+///     .unwrap()
+///     .build()];
+/// let store = parse_columnar(html, queries).unwrap();
+///
+/// let titles: Vec<_> = store
+///     .get("article")
+///     .unwrap()
+///     .filter_map(|article| article.get("h1")?.next()?.text())
+///     .collect();
+/// assert_eq!(titles, ["A", "B"]);
+/// ```
+pub fn parse_columnar<'a: 'query, 'html: 'query, 'query: 'html, Q>(
+    html: &'html str,
+    queries: &'a [Q],
+) -> Result<ColumnarStore<'html, 'query>, ColumnarParseError>
+where
+    Q: QuerySpec<'query>,
+{
+    if queries.is_empty() {
+        return Err(ParseError::EmptyQueries.into());
+    }
+    if html.len() >= u32::MAX as usize {
+        return Err(ColumnarParseError::InputTooLarge);
+    }
+
+    let no_extra_allocations = queries.iter().all(|q| q.exit_at_section_end().is_some());
+    let selectors = QueryMultiplexer::new(queries);
+    let store = ColumnarStore::for_queries(html, queries, !no_extra_allocations);
+    let mut parser = XHtmlParser::for_sink(selectors, store);
+
+    let mut reader = Reader::new(html);
+    parser.trace_started(html.len(), queries.len());
+    parser.run(&mut reader);
+
+    if let Some(err) = parser.take_error() {
+        return Err(err.into());
+    }
+    let store = parser.into_sink();
+    if store.overflowed() {
+        return Err(ColumnarParseError::InputTooLarge);
+    }
+    Ok(store)
 }
 
 #[cfg(test)]

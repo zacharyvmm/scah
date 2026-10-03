@@ -49,6 +49,14 @@ impl ElementTextRanges {
             .and_then(Option::as_ref)
     }
 
+    pub(crate) fn heap_bytes(&self) -> usize {
+        [&self.raw_text, &self.text]
+            .into_iter()
+            .flatten()
+            .map(|ranges| ranges.capacity() * size_of::<Option<Range<usize>>>())
+            .sum()
+    }
+
     #[cfg(test)]
     pub(crate) fn tracks_raw_text(&self) -> bool {
         self.raw_text.is_some()

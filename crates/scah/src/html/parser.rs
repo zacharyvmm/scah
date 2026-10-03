@@ -299,6 +299,17 @@ where
     Q: QuerySpec<'query>,
     S: ResultSink<'html, 'query>,
 {
+    /// Build a parser that writes matches into `store`, choosing the
+    /// indexing strategy the way [`XHtmlParser::new`] does.
+    pub(crate) fn for_sink(selectors: QueryMultiplexer<'query, Q>, store: S) -> Self {
+        let indexing_mode = if selectors.allows_early_exit() {
+            IndexingMode::Rolling
+        } else {
+            IndexingMode::FullDocument
+        };
+        Self::with_sink(selectors, store, indexing_mode)
+    }
+
     /// Build a parser that writes matches into an already constructed sink.
     pub(crate) fn with_sink(
         selectors: QueryMultiplexer<'query, Q>,

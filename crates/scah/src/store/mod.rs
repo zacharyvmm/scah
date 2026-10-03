@@ -6,6 +6,7 @@ mod text;
 pub(crate) use text::{TextStore, TextTape, trim_collapsed_range};
 mod arena;
 mod attributes;
+mod columnar;
 mod element;
 mod query_node;
 mod sink;
@@ -17,6 +18,7 @@ pub use arena::{
     id::{AttributeId, ElementId, QueryId},
 };
 
+pub use columnar::{ColumnarElements, ColumnarStore, ElementRef, HeapUsage};
 pub use element::Element;
 pub(crate) use element::ElementTextRanges;
 pub use query_node::QueryNode;
@@ -251,6 +253,26 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             .find(|q| q.query == query)
             .map(|query_node| query_node.elements.start())
             .map(|element_id| self.elements.iter_from(element_id))
+    }
+
+    /// Heap bytes held by this store, by role.
+    ///
+    /// Counts allocated capacity, not just used length. The debug-only trace
+    /// log is excluded.
+    pub fn heap_usage(&self) -> HeapUsage {
+        fn bytes<T>(values: &[T], capacity: usize) -> usize {
+            debug_assert!(values.len() <= capacity);
+            capacity * size_of::<T>()
+        }
+        let text_ranges = self.element_text_ranges.as_ref().map_or(0, |ranges| {
+            size_of::<ElementTextRanges>() + ranges.heap_bytes()
+        });
+        HeapUsage {
+            elements: bytes(&self.elements, self.elements.capacity()) + text_ranges,
+            query_nodes: bytes(&self.queries, self.queries.capacity()),
+            attributes: bytes(&self.attributes, self.attributes.capacity()),
+            text_tapes: self.text.raw_text.capacity() + self.text.text.capacity(),
+        }
     }
 
     /// The shared buffer every [`Element::raw_text`] slice borrows from.
