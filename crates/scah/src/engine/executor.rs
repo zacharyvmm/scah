@@ -1,8 +1,8 @@
+#[cfg(debug_assertions)]
 use super::attribute_interest::AttributeInterest;
 use super::cursor::{CursorLifetime, SENTINEL_SCOPE, ScopedCursor, SiblingLifetimeResult};
+use super::frontier::{CursorObserver, CursorTarget};
 use super::multiplexer::{DocumentPosition, RunnerId, SaveHit, SiblingCallback};
-#[cfg(any(debug_assertions, test))]
-use crate::__private::ascii_case_insensitive_hash;
 use crate::debug::ScopedCursorReason;
 #[cfg(any(debug_assertions, test))]
 use crate::debug::{CursorSuppressionReason, CursorTraceKind, TraceEvent, TransitionRejectReason};
@@ -12,6 +12,8 @@ use crate::{
     Combinator, Position, QuerySectionId, QuerySpec, SelectionKind, StructuralMatchContext,
     XHtmlElement,
 };
+#[cfg(any(debug_assertions, test))]
+use scah_query_ir::TagId;
 use smallvec::SmallVec;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +27,10 @@ pub(crate) enum SpawnOutcome {
 /// Cursor 0 is the sentinel root. It is never depth-pruned; query progress is
 /// represented by spawned moving cursors, while anchored cursors keep
 /// descendant searches alive within their scope.
+///
+/// Every cursor push, removal and activity change is reported to a
+/// [`CursorObserver`] at the point it happens, which keeps the multiplexer's
+/// tag frontier exact without rescanning cursors.
 pub struct QueryExecutor<'a, 'query, Q> {
     pub(crate) query: &'a Q,
     pub(crate) cursors: Vec<ScopedCursor>,
@@ -32,7 +38,7 @@ pub struct QueryExecutor<'a, 'query, Q> {
     query_lifetime: std::marker::PhantomData<&'query ()>,
 }
 
-impl<'a, 'html, 'query: 'html, Q> QueryExecutor<'a, 'query, Q>
+impl<'a, 'html, 'query: 'html + 'a, Q> QueryExecutor<'a, 'query, Q>
 where
     Q: QuerySpec<'query>,
 {
@@ -55,6 +61,56 @@ where
         }
     }
 
+    /// Reports every resident cursor to a newly attached observer.
+    pub(crate) fn announce<O: CursorObserver<'a>>(&self, runner: RunnerId, observer: &mut O) {
+        for index in 0..self.cursors.len() {
+            observer.push(
+                runner,
+                self.cursor_target(index),
+                self.cursors[index].is_active(),
+            );
+        }
+    }
+
+    /// Preflight data for the cursor at `index`.
+    #[inline]
+    fn cursor_target(&self, index: usize) -> CursorTarget<'a> {
+        let query: &'a Q = self.query;
+        let cursor = &self.cursors[index];
+        let position = cursor.position;
+        CursorTarget {
+            metadata: query.get_transition(position.state).metadata(),
+            requires_all: query.is_save_point(&position)
+                && query.get_selection(position.selection).save.attributes,
+            adjacent: matches!(cursor.lifetime(), CursorLifetime::AdjacentSibling),
+        }
+    }
+
+    #[inline]
+    fn push_cursor<O: CursorObserver<'a>>(
+        &mut self,
+        runner: RunnerId,
+        cursor: ScopedCursor,
+        observer: &mut O,
+    ) {
+        let index = self.cursors.len();
+        let active = cursor.is_active();
+        self.cursors.push(cursor);
+        observer.push(runner, self.cursor_target(index), active);
+    }
+
+    #[inline]
+    fn block_cursor<O: CursorObserver<'a>>(
+        &mut self,
+        runner: RunnerId,
+        index: usize,
+        depth: super::DepthSize,
+        observer: &mut O,
+    ) {
+        self.cursors[index].block_until_close(depth);
+        observer.deactivate(runner, index);
+    }
+
     /// Sentinel-aware broadest-scope combination for First ownership.
     ///
     /// `SENTINEL_SCOPE` is numerically max, but semantically broader than every
@@ -71,12 +127,15 @@ where
         }
     }
 
-    fn claim_first_scope(
+    #[allow(clippy::too_many_arguments)]
+    fn claim_first_scope<O: CursorObserver<'a>>(
         &mut self,
         section: QuerySectionId,
         output_parent: ElementId,
         selected_cursor_index: usize,
         selected_depth: super::DepthSize,
+        runner: RunnerId,
+        observer: &mut O,
     ) {
         debug_assert!(
             matches!(
@@ -125,6 +184,7 @@ where
 
             if index != selected_cursor_index {
                 cursor.cancel_complete();
+                observer.deactivate(runner, index);
             }
         }
 
@@ -135,6 +195,7 @@ where
 
         self.cursors[selected_cursor_index]
             .select_first_until_close(selected_depth, ownership_scope_depth);
+        observer.deactivate(runner, selected_cursor_index);
     }
 
     pub fn query(&self) -> &Q {
@@ -142,8 +203,13 @@ where
     }
 
     /// Drop cursor storage once this runner can no longer receive events.
-    pub(crate) fn release_cursor_storage(&mut self) {
+    pub(crate) fn release_cursor_storage<O: CursorObserver<'a>>(
+        &mut self,
+        runner: RunnerId,
+        observer: &mut O,
+    ) {
         self.cursors = Vec::new();
+        observer.clear(runner);
     }
 
     /// Extend attribute interest for `name` and return whether this runner
@@ -153,11 +219,11 @@ where
     /// is safe, while skipping attributes needed by a viable transition is
     /// not. Save points always need the complete element because attributes
     /// are part of the stored result even when the selector itself is tag-only.
-    #[inline(always)]
+    #[cfg(debug_assertions)]
     pub(crate) fn extend_attribute_interest_for<const SIBLINGS: bool>(
         &self,
         name: &str,
-        name_hash: u64,
+        tag: TagId,
         interest: &mut AttributeInterest<'query>,
     ) -> bool {
         let mut viable = false;
@@ -174,7 +240,7 @@ where
 
             let position = cursor.position;
             let metadata = self.query.get_transition(position.state).metadata();
-            if !metadata.matches_name(name, name_hash) {
+            if !metadata.matches_tag(tag, name) {
                 continue;
             }
             viable = true;
@@ -199,7 +265,7 @@ where
         depth: super::DepthSize,
         store: &mut Store<'html, 'query>,
     ) {
-        let name_hash = ascii_case_insensitive_hash(element.name);
+        let tag = TagId::of(element.name);
         for (cursor_index, cursor) in self.cursors.iter().enumerate() {
             if !cursor.is_active() {
                 continue;
@@ -207,7 +273,7 @@ where
 
             let position = cursor.position;
             let transition = self.query.get_transition(position.state);
-            if transition.metadata().matches_name(element.name, name_hash) {
+            if transition.metadata().matches_tag(tag, element.name) {
                 continue;
             }
 
@@ -328,7 +394,7 @@ where
         })
     }
 
-    fn finish_push_cursor(
+    fn finish_push_cursor<O: CursorObserver<'a>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
@@ -337,6 +403,7 @@ where
             'query,
         >,
         create_reason: Option<ScopedCursorReason>,
+        observer: &mut O,
     ) -> SpawnOutcome {
         #[cfg(any(debug_assertions, test))]
         if let Some(reason) = create_reason {
@@ -356,7 +423,7 @@ where
         #[cfg(not(any(debug_assertions, test)))]
         let _ = create_reason;
 
-        self.cursors.push(candidate);
+        self.push_cursor(runner, candidate, observer);
         SpawnOutcome::Inserted
     }
 
@@ -365,7 +432,7 @@ where
     /// Live cursors cannot be deeper than a new candidate: candidates use the
     /// current document depth, and deeper scopes are pruned before parsing
     /// resumes at a shallower depth.
-    fn try_push_descendant(
+    fn try_push_descendant<O: CursorObserver<'a>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
@@ -374,6 +441,7 @@ where
             'query,
         >,
         create_reason: Option<ScopedCursorReason>,
+        observer: &mut O,
     ) -> SpawnOutcome {
         let candidate_base = candidate.match_base_depth();
         for existing in self.cursors.iter().rev() {
@@ -398,11 +466,11 @@ where
             }
             debug_assert!(false, "shallower descendant candidate while deeper exists");
         }
-        self.finish_push_cursor(candidate, runner, store, create_reason)
+        self.finish_push_cursor(candidate, runner, store, create_reason, observer)
     }
 
     /// Admit a child obligation unless the exact obligation is already live.
-    fn try_push_child(
+    fn try_push_child<O: CursorObserver<'a>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
@@ -411,6 +479,7 @@ where
             'query,
         >,
         create_reason: Option<ScopedCursorReason>,
+        observer: &mut O,
     ) -> SpawnOutcome {
         let candidate_base = candidate.match_base_depth();
         for existing in self.cursors.iter().rev() {
@@ -432,7 +501,7 @@ where
                 return SpawnOutcome::Dominated;
             }
         }
-        self.finish_push_cursor(candidate, runner, store, create_reason)
+        self.finish_push_cursor(candidate, runner, store, create_reason, observer)
     }
 
     /// Admit a sibling-stream obligation unless an equivalent watcher is live.
@@ -440,7 +509,7 @@ where
     /// Identity is `(output parent, continuation position, scope_depth,
     /// match_base_depth)`. Earlier watchers dominate later equivalents so
     /// multiple left-hand matches do not duplicate right-hand work.
-    fn try_push_sibling(
+    fn try_push_sibling<O: CursorObserver<'a>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
@@ -449,6 +518,7 @@ where
             'query,
         >,
         create_reason: Option<ScopedCursorReason>,
+        observer: &mut O,
     ) -> SpawnOutcome {
         debug_assert_eq!(
             candidate.match_base_depth(),
@@ -493,11 +563,11 @@ where
                 return SpawnOutcome::Dominated;
             }
         }
-        self.finish_push_cursor(candidate, runner, store, create_reason)
+        self.finish_push_cursor(candidate, runner, store, create_reason, observer)
     }
 
     /// Admit a cursor after applying `First` ownership and combinator rules.
-    fn try_push_cursor(
+    fn try_push_cursor<O: CursorObserver<'a>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
@@ -506,6 +576,7 @@ where
             'query,
         >,
         create_reason: Option<ScopedCursorReason>,
+        observer: &mut O,
     ) -> SpawnOutcome {
         if self.first_scope_is_claimed(&candidate) {
             #[cfg(any(debug_assertions, test))]
@@ -530,14 +601,16 @@ where
         let guard = &self.query.get_transition(candidate.position.state).guard;
         match guard {
             Combinator::Descendant => {
-                self.try_push_descendant(candidate, runner, store, create_reason)
+                self.try_push_descendant(candidate, runner, store, create_reason, observer)
             }
-            Combinator::Child => self.try_push_child(candidate, runner, store, create_reason),
+            Combinator::Child => {
+                self.try_push_child(candidate, runner, store, create_reason, observer)
+            }
             Combinator::NextSibling | Combinator::SubsequentSibling => {
-                self.try_push_sibling(candidate, runner, store, create_reason)
+                self.try_push_sibling(candidate, runner, store, create_reason, observer)
             }
             Combinator::Namespace => {
-                self.finish_push_cursor(candidate, runner, store, create_reason)
+                self.finish_push_cursor(candidate, runner, store, create_reason, observer)
             }
         }
     }
@@ -545,7 +618,7 @@ where
     /// Admit a cursor for a query set whose cached features contain no sibling
     /// combinators. Keeping this dispatch physically separate prevents the
     /// sibling-watcher admission scan from entering the ordinary spawn graph.
-    fn try_push_plain_cursor(
+    fn try_push_plain_cursor<O: CursorObserver<'a>>(
         &mut self,
         candidate: ScopedCursor,
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
@@ -554,6 +627,7 @@ where
             'query,
         >,
         create_reason: Option<ScopedCursorReason>,
+        observer: &mut O,
     ) -> SpawnOutcome {
         if self.first_scope_is_claimed(&candidate) {
             #[cfg(any(debug_assertions, test))]
@@ -577,11 +651,13 @@ where
 
         match self.query.get_transition(candidate.position.state).guard {
             Combinator::Descendant => {
-                self.try_push_descendant(candidate, runner, store, create_reason)
+                self.try_push_descendant(candidate, runner, store, create_reason, observer)
             }
-            Combinator::Child => self.try_push_child(candidate, runner, store, create_reason),
+            Combinator::Child => {
+                self.try_push_child(candidate, runner, store, create_reason, observer)
+            }
             Combinator::Namespace => {
-                self.finish_push_cursor(candidate, runner, store, create_reason)
+                self.finish_push_cursor(candidate, runner, store, create_reason, observer)
             }
             Combinator::NextSibling | Combinator::SubsequentSibling => {
                 debug_assert!(false, "plain executor received a sibling transition");
@@ -591,7 +667,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn dispatch_sibling_continuations(
+    fn dispatch_sibling_continuations<O: CursorObserver<'a>>(
         &mut self,
         runner: RunnerId,
         source_depth: super::DepthSize,
@@ -600,6 +676,7 @@ where
         positions: &[Position],
         sibling_callbacks: &mut Vec<SiblingCallback>,
         store: &mut Store<'html, 'query>,
+        observer: &mut O,
     ) {
         for pos in positions {
             let guard = &self.query.get_transition(pos.state).guard;
@@ -616,9 +693,11 @@ where
                     }
                     let _ = match guard {
                         Combinator::Descendant => {
-                            self.try_push_descendant(continuation, runner, store, None)
+                            self.try_push_descendant(continuation, runner, store, None, observer)
                         }
-                        Combinator::Child => self.try_push_child(continuation, runner, store, None),
+                        Combinator::Child => {
+                            self.try_push_child(continuation, runner, store, None, observer)
+                        }
                         _ => unreachable!(),
                     };
                 }
@@ -648,12 +727,13 @@ where
         }
     }
 
-    pub(crate) fn activate_sibling(
+    pub(crate) fn activate_sibling<O: CursorObserver<'a>>(
         &mut self,
         runner: RunnerId,
         callback: SiblingCallback,
         source_depth: super::DepthSize,
         store: &mut Store<'html, 'query>,
+        observer: &mut O,
     ) -> SpawnOutcome {
         let guard = &self.query.get_transition(callback.continuation.state).guard;
         let (lifetime, reason) = match guard {
@@ -685,17 +765,18 @@ where
             lifetime,
         );
 
-        self.try_push_cursor(candidate, runner, store, Some(reason))
+        self.try_push_cursor(candidate, runner, store, Some(reason), observer)
     }
 
     #[inline(always)]
-    pub(crate) fn next_plain(
+    pub(crate) fn next_plain<O: CursorObserver<'a>>(
         &mut self,
         runner: RunnerId,
         element: &XHtmlElement<'html>,
         document_position: &DocumentPosition,
         store: &mut Store<'html, 'query>,
         save_hits: &mut Vec<SaveHit>,
+        observer: &mut O,
     ) {
         let depth = document_position.element_depth;
         let snapshot_len = self.cursors.len();
@@ -837,9 +918,16 @@ where
                                 saved_element.is_some(),
                                 "terminal First must have a saved element"
                             );
-                            self.claim_first_scope(position.selection, output_parent, i, depth);
+                            self.claim_first_scope(
+                                position.selection,
+                                output_parent,
+                                i,
+                                depth,
+                                runner,
+                                observer,
+                            );
                         } else if is_descendant || is_save_point {
-                            self.cursors[i].block_until_close(depth);
+                            self.block_cursor(runner, i, depth, observer);
                         }
                     }
 
@@ -853,13 +941,15 @@ where
                             runner,
                             store,
                             Some(ScopedCursorReason::DescendantFork),
+                            observer,
                         );
                     }
 
                     spawned_positions = self.cursors[i].next_positions(self.query);
                     for pos in &spawned_positions {
                         let continuation = ScopedCursor::new_moving(depth, saved_parent, *pos);
-                        let _ = self.try_push_plain_cursor(continuation, runner, store, None);
+                        let _ =
+                            self.try_push_plain_cursor(continuation, runner, store, None, observer);
                     }
                 }
                 super::cursor::CursorMode::Anchored { .. } => {
@@ -946,15 +1036,17 @@ where
 
                     for pos in &spawned_positions {
                         let continuation = ScopedCursor::new_moving(depth, saved_parent, *pos);
-                        let _ = self.try_push_plain_cursor(continuation, runner, store, None);
+                        let _ =
+                            self.try_push_plain_cursor(continuation, runner, store, None, observer);
                     }
                 }
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    pub(crate) fn next_plain_with_context(
+    pub(crate) fn next_plain_with_context<O: CursorObserver<'a>>(
         &mut self,
         runner: RunnerId,
         element: &XHtmlElement<'html>,
@@ -962,6 +1054,7 @@ where
         store: &mut Store<'html, 'query>,
         save_hits: &mut Vec<SaveHit>,
         structural: Option<&StructuralMatchContext<'query>>,
+        observer: &mut O,
     ) {
         let depth = document_position.element_depth;
         let snapshot_len = self.cursors.len();
@@ -1072,9 +1165,16 @@ where
                                 saved_element.is_some(),
                                 "terminal First must have a saved element"
                             );
-                            self.claim_first_scope(position.selection, output_parent, i, depth);
+                            self.claim_first_scope(
+                                position.selection,
+                                output_parent,
+                                i,
+                                depth,
+                                runner,
+                                observer,
+                            );
                         } else if is_descendant || is_save_point {
-                            self.cursors[i].block_until_close(depth);
+                            self.block_cursor(runner, i, depth, observer);
                         }
                     }
 
@@ -1088,13 +1188,15 @@ where
                             runner,
                             store,
                             Some(ScopedCursorReason::DescendantFork),
+                            observer,
                         );
                     }
 
                     spawned_positions = self.cursors[i].next_positions(self.query);
                     for pos in &spawned_positions {
                         let continuation = ScopedCursor::new_moving(depth, saved_parent, *pos);
-                        let _ = self.try_push_plain_cursor(continuation, runner, store, None);
+                        let _ =
+                            self.try_push_plain_cursor(continuation, runner, store, None, observer);
                     }
                 }
                 super::cursor::CursorMode::Anchored { .. } => {
@@ -1174,7 +1276,8 @@ where
 
                     for pos in &spawned_positions {
                         let continuation = ScopedCursor::new_moving(depth, saved_parent, *pos);
-                        let _ = self.try_push_plain_cursor(continuation, runner, store, None);
+                        let _ =
+                            self.try_push_plain_cursor(continuation, runner, store, None, observer);
                     }
                 }
             }
@@ -1183,7 +1286,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    pub(crate) fn next_with_siblings(
+    pub(crate) fn next_with_siblings<O: CursorObserver<'a>>(
         &mut self,
         runner: RunnerId,
         element: &XHtmlElement<'html>,
@@ -1192,6 +1295,7 @@ where
         save_hits: &mut Vec<SaveHit>,
         sibling_callbacks: &mut Vec<SiblingCallback>,
         structural: Option<&StructuralMatchContext<'query>>,
+        observer: &mut O,
     ) {
         let depth = document_position.element_depth;
         let snapshot_len = self.cursors.len();
@@ -1307,16 +1411,30 @@ where
                                 saved_element.is_some(),
                                 "terminal First must have a saved element"
                             );
-                            self.claim_first_scope(position.selection, output_parent, i, depth);
+                            self.claim_first_scope(
+                                position.selection,
+                                output_parent,
+                                i,
+                                depth,
+                                runner,
+                                observer,
+                            );
                         } else if is_descendant || is_save_point {
-                            self.cursors[i].block_until_close(depth);
+                            self.block_cursor(runner, i, depth, observer);
                         }
                     } else if expires_after && terminal_first {
                         debug_assert!(
                             saved_element.is_some(),
                             "terminal First must have a saved element"
                         );
-                        self.claim_first_scope(position.selection, output_parent, i, depth);
+                        self.claim_first_scope(
+                            position.selection,
+                            output_parent,
+                            i,
+                            depth,
+                            runner,
+                            observer,
+                        );
                     }
 
                     // A terminal All match on a non-void element spawns nothing
@@ -1336,6 +1454,7 @@ where
                             runner,
                             store,
                             Some(ScopedCursorReason::DescendantFork),
+                            observer,
                         );
                     }
 
@@ -1348,6 +1467,7 @@ where
                         &spawned_positions,
                         sibling_callbacks,
                         store,
+                        observer,
                     );
                 }
                 super::cursor::CursorMode::Anchored { .. } => {
@@ -1394,6 +1514,7 @@ where
                             &spawned_positions,
                             sibling_callbacks,
                             store,
+                            observer,
                         );
                         continue;
                     }
@@ -1440,6 +1561,7 @@ where
                         &spawned_positions,
                         sibling_callbacks,
                         store,
+                        observer,
                     );
                 }
             }
@@ -1454,6 +1576,7 @@ where
                     && !self.cursors[index].is_first_winner()
                 {
                     self.cursors.swap_remove(index);
+                    observer.swap_remove(runner, index);
                 }
             }
         }
@@ -1477,6 +1600,7 @@ where
             save_hits,
             sibling_callbacks,
             None,
+            &mut (),
         );
     }
 
@@ -1496,12 +1620,13 @@ where
     }
 
     #[inline(always)]
-    pub fn back(
+    pub fn back<O: CursorObserver<'a>>(
         &mut self,
-        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] runner: RunnerId,
+        runner: RunnerId,
         _element: &'html str,
         document_position: &DocumentPosition,
         store: &mut Store<'html, 'query>,
+        observer: &mut O,
     ) -> bool {
         let close_depth = document_position.element_depth;
         let mut significant_close = false;
@@ -1516,6 +1641,7 @@ where
                 if cur.unwind_depth() == Some(close_depth) {
                     if cur.is_blocked() {
                         self.cursors[i].reactivate_after_close();
+                        observer.activate(runner, i);
                     } else if cur.is_complete() {
                         self.cursors[i].complete_after_close();
                         #[cfg(any(debug_assertions, test))]
@@ -1537,6 +1663,7 @@ where
             } else if cur.is_moving() && cur.unwind_depth() == Some(close_depth) {
                 if cur.is_blocked() {
                     self.cursors[i].reactivate_after_close();
+                    observer.activate(runner, i);
                 } else if cur.is_complete() {
                     self.cursors[i].complete_after_close();
                 } else {
@@ -1546,6 +1673,7 @@ where
             } else if cur.scope_depth >= close_depth {
                 #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))]
                 let pruned = self.cursors.swap_remove(i);
+                observer.swap_remove(runner, i);
                 significant_close = true;
 
                 crate::scah_trace!(
@@ -1606,18 +1734,6 @@ mod tests {
     fn terminal_state<Q: QuerySpec<'static>>(query: &Q) -> TransitionId {
         let section = query.get_selection(QuerySectionId(0));
         TransitionId(section.range.end.index() - 1)
-    }
-
-    #[test]
-    fn compiled_name_hash_is_ascii_case_insensitive() {
-        assert_eq!(
-            ascii_case_insensitive_hash("ARTICLE"),
-            ascii_case_insensitive_hash("article")
-        );
-        assert_ne!(
-            ascii_case_insensitive_hash("article"),
-            ascii_case_insensitive_hash("aside")
-        );
     }
 
     fn live_moving_cursors_at(
@@ -1788,6 +1904,7 @@ mod tests {
                 self_closing: false,
             },
             &mut store,
+            &mut (),
         );
 
         let retained = &selection.cursors;
@@ -1841,6 +1958,7 @@ mod tests {
                 self_closing: false,
             },
             &mut store,
+            &mut (),
         );
 
         assert!(!selection.cursors[0].end());
@@ -2322,6 +2440,7 @@ mod tests {
                 self_closing: false,
             },
             &mut store,
+            &mut (),
         );
 
         assert_eq!(selection.cursors.len(), 1, "Only root should remain");
@@ -2377,6 +2496,7 @@ mod tests {
                 self_closing: false,
             },
             &mut store,
+            &mut (),
         );
 
         assert!(reactivated, "back() should return true on first close");
@@ -2476,6 +2596,7 @@ mod tests {
                 self_closing: false,
             },
             &mut store,
+            &mut (),
         );
 
         let remaining_scopes: Vec<_> = selection
@@ -2838,7 +2959,7 @@ mod tests {
             !selection.early_exit(),
             "first('div') must not early-exit before selected close"
         );
-        selection.back(RunnerId(0), "div", &doc_pos(0), &mut store3);
+        selection.back(RunnerId(0), "div", &doc_pos(0), &mut store3, &mut ());
         assert!(
             selection.early_exit(),
             "first('div') must early-exit after selected close"
@@ -2955,13 +3076,13 @@ mod tests {
             &mut Vec::new(),
         );
 
-        selection.back(RunnerId(0), "p", &doc_pos(1), &mut store);
+        selection.back(RunnerId(0), "p", &doc_pos(1), &mut store, &mut ());
         let root = &selection.cursors[0];
         assert!(root.end());
         assert_eq!(root.unwind_depth(), Some(0));
         assert!(!selection.early_exit());
 
-        selection.back(RunnerId(0), "article", &doc_pos(0), &mut store);
+        selection.back(RunnerId(0), "article", &doc_pos(0), &mut store, &mut ());
         let root = &selection.cursors[0];
         assert!(root.end());
         assert_eq!(root.unwind_depth(), None);
@@ -3168,6 +3289,7 @@ mod tests {
                 self_closing: true,
             },
             &mut store,
+            &mut (),
         );
         assert!(
             selection
@@ -3225,6 +3347,7 @@ mod tests {
                 self_closing: true,
             },
             &mut store,
+            &mut (),
         );
         assert!(
             selection.early_exit(),
@@ -3281,6 +3404,7 @@ mod tests {
                 self_closing: true,
             },
             &mut store,
+            &mut (),
         );
         assert!(
             selection.cursors.iter().any(|c| c.is_active()),
@@ -3725,7 +3849,7 @@ mod tests {
         let before_position = selection.cursors[blocked_idx].position;
         assert!(selection.cursors[blocked_idx].is_blocked());
 
-        selection.back(RunnerId(0), "div", &doc_pos(1), &mut store);
+        selection.back(RunnerId(0), "div", &doc_pos(1), &mut store, &mut ());
 
         let reactivated = selection
             .cursors
@@ -3923,7 +4047,7 @@ mod tests {
         assert_eq!(selection.cursors[0].unwind_depth(), Some(0));
         assert!(!selection.early_exit());
 
-        selection.back(RunnerId(0), "div", &doc_pos(0), &mut store);
+        selection.back(RunnerId(0), "div", &doc_pos(0), &mut store, &mut ());
         assert!(selection.cursors[0].is_first_winner());
         assert!(selection.cursors[0].is_complete());
         assert_eq!(selection.cursors[0].unwind_depth(), None);
@@ -3980,6 +4104,7 @@ mod tests {
                 self_closing: true,
             },
             &mut store,
+            &mut (),
         );
         assert!(selection.cursors[0].is_first_winner());
         assert!(selection.cursors[0].is_complete());
@@ -4046,7 +4171,14 @@ mod tests {
         let selected_depth = 4;
         assert_eq!(executor.cursors[selected_index].scope_depth, 4);
 
-        executor.claim_first_scope(QuerySectionId(0), parent, selected_index, selected_depth);
+        executor.claim_first_scope(
+            QuerySectionId(0),
+            parent,
+            selected_index,
+            selected_depth,
+            RunnerId(0),
+            &mut (),
+        );
 
         let winner = &executor.cursors[selected_index];
         assert!(winner.is_first_winner());
@@ -4081,7 +4213,14 @@ mod tests {
 
         let selected_index = 1;
         let selected_depth = 2;
-        executor.claim_first_scope(QuerySectionId(0), parent, selected_index, selected_depth);
+        executor.claim_first_scope(
+            QuerySectionId(0),
+            parent,
+            selected_index,
+            selected_depth,
+            RunnerId(0),
+            &mut (),
+        );
 
         let winner = &executor.cursors[selected_index];
         assert!(winner.is_first_winner());
@@ -4148,7 +4287,7 @@ mod tests {
         assert_eq!(winner.scope_depth, 0);
         assert_eq!(winner.unwind_depth(), Some(2));
 
-        executor.back(RunnerId(0), "p", &doc_pos(2), &mut store);
+        executor.back(RunnerId(0), "p", &doc_pos(2), &mut store, &mut ());
         let winner = executor
             .cursors
             .iter()
@@ -4161,7 +4300,7 @@ mod tests {
         assert_eq!(winner.scope_depth, 0);
         assert_eq!(winner.unwind_depth(), None);
 
-        executor.back(RunnerId(0), "div", &doc_pos(1), &mut store);
+        executor.back(RunnerId(0), "div", &doc_pos(1), &mut store, &mut ());
         assert!(
             executor.cursors.iter().any(|cursor| {
                 cursor.is_first_winner()
@@ -4177,11 +4316,11 @@ mod tests {
         };
         let late_candidate = ScopedCursor::new_moving(1, article_id, terminal);
         assert_eq!(
-            executor.try_push_cursor(late_candidate, RunnerId(0), &mut store, None),
+            executor.try_push_cursor(late_candidate, RunnerId(0), &mut store, None, &mut ()),
             SpawnOutcome::Dominated,
         );
 
-        executor.back(RunnerId(0), "article", &doc_pos(0), &mut store);
+        executor.back(RunnerId(0), "article", &doc_pos(0), &mut store, &mut ());
         assert!(
             !executor.cursors.iter().any(|cursor| {
                 cursor.is_first_winner()
@@ -4225,8 +4364,8 @@ mod tests {
         assert_eq!(winner.scope_depth, SENTINEL_SCOPE);
         assert_eq!(winner.unwind_depth(), Some(1));
 
-        executor.back(RunnerId(0), "p", &doc_pos(1), &mut store);
-        executor.back(RunnerId(0), "div", &doc_pos(0), &mut store);
+        executor.back(RunnerId(0), "p", &doc_pos(1), &mut store, &mut ());
+        executor.back(RunnerId(0), "div", &doc_pos(0), &mut store, &mut ());
 
         let winner = executor
             .cursors
@@ -4336,6 +4475,7 @@ mod tests {
                 self_closing: true,
             },
             &mut store,
+            &mut (),
         );
 
         let first_section = QuerySectionId(1);
@@ -4350,7 +4490,7 @@ mod tests {
             "void winner must keep article ownership after synthetic close"
         );
 
-        executor.back(RunnerId(0), "div", &doc_pos(1), &mut store);
+        executor.back(RunnerId(0), "div", &doc_pos(1), &mut store, &mut ());
         assert!(
             executor.cursors.iter().any(|cursor| {
                 cursor.is_first_winner()
@@ -4360,7 +4500,7 @@ mod tests {
             "void winner must survive prefix close"
         );
 
-        executor.back(RunnerId(0), "article", &doc_pos(0), &mut store);
+        executor.back(RunnerId(0), "article", &doc_pos(0), &mut store, &mut ());
         assert!(
             !executor.cursors.iter().any(|cursor| {
                 cursor.is_first_winner()
@@ -4409,8 +4549,8 @@ mod tests {
             &mut save_hits,
             &mut Vec::new(),
         );
-        executor.back(RunnerId(0), "p", &doc_pos(2), &mut store);
-        executor.back(RunnerId(0), "div", &doc_pos(1), &mut store);
+        executor.back(RunnerId(0), "p", &doc_pos(2), &mut store, &mut ());
+        executor.back(RunnerId(0), "div", &doc_pos(1), &mut store, &mut ());
 
         executor.next(
             RunnerId(0),
@@ -4438,8 +4578,8 @@ mod tests {
             &mut save_hits,
             &mut Vec::new(),
         );
-        executor.back(RunnerId(0), "p", &doc_pos(3), &mut store);
-        executor.back(RunnerId(0), "div", &doc_pos(2), &mut store);
+        executor.back(RunnerId(0), "p", &doc_pos(3), &mut store, &mut ());
+        executor.back(RunnerId(0), "div", &doc_pos(2), &mut store, &mut ());
 
         assert!(executor.cursors.iter().any(|cursor| {
             cursor.is_first_winner()
@@ -4454,7 +4594,7 @@ mod tests {
                 && cursor.scope_depth == 1
         }));
 
-        executor.back(RunnerId(0), "article", &doc_pos(1), &mut store);
+        executor.back(RunnerId(0), "article", &doc_pos(1), &mut store, &mut ());
         assert!(
             !executor.cursors.iter().any(|cursor| {
                 cursor.is_first_winner()
@@ -4473,7 +4613,7 @@ mod tests {
             "outer article owner remains after inner close"
         );
 
-        executor.back(RunnerId(0), "article", &doc_pos(0), &mut store);
+        executor.back(RunnerId(0), "article", &doc_pos(0), &mut store, &mut ());
         assert!(
             !executor.cursors.iter().any(|cursor| {
                 cursor.is_first_winner() && cursor.position.selection == first_section
@@ -4523,8 +4663,8 @@ mod tests {
                 &mut save_hits,
                 &mut Vec::new(),
             );
-            executor.back(RunnerId(0), "p", &doc_pos(2), &mut store);
-            executor.back(RunnerId(0), "div", &doc_pos(1), &mut store);
+            executor.back(RunnerId(0), "p", &doc_pos(2), &mut store, &mut ());
+            executor.back(RunnerId(0), "div", &doc_pos(1), &mut store, &mut ());
 
             let winners = executor
                 .cursors
@@ -4539,7 +4679,7 @@ mod tests {
                 cursor.is_first_winner() && cursor.parent == article_id && cursor.scope_depth == 0
             }));
 
-            executor.back(RunnerId(0), "article", &doc_pos(0), &mut store);
+            executor.back(RunnerId(0), "article", &doc_pos(0), &mut store, &mut ());
             assert!(
                 !executor.cursors.iter().any(|cursor| {
                     cursor.is_first_winner() && cursor.position.selection == first_section
@@ -4569,7 +4709,7 @@ mod tests {
 
         let original_len = selection.cursors.len();
         let candidate = ScopedCursor::new_moving(1, parent, position);
-        let outcome = selection.try_push_cursor(candidate, RunnerId(0), &mut store, None);
+        let outcome = selection.try_push_cursor(candidate, RunnerId(0), &mut store, None, &mut ());
 
         assert_eq!(outcome, SpawnOutcome::Dominated);
         assert_eq!(selection.cursors.len(), original_len);
@@ -4594,7 +4734,7 @@ mod tests {
 
         let original_len = selection.cursors.len();
         let candidate = ScopedCursor::new_moving(1, parent_b, position);
-        let outcome = selection.try_push_cursor(candidate, RunnerId(0), &mut store, None);
+        let outcome = selection.try_push_cursor(candidate, RunnerId(0), &mut store, None, &mut ());
 
         assert_eq!(outcome, SpawnOutcome::Inserted);
         assert_eq!(selection.cursors.len(), original_len + 1);
@@ -4640,7 +4780,7 @@ mod tests {
 
         let original_len = selection.cursors.len();
         let candidate = ScopedCursor::new_moving(1, parent, span_position);
-        let outcome = selection.try_push_cursor(candidate, RunnerId(0), &mut store, None);
+        let outcome = selection.try_push_cursor(candidate, RunnerId(0), &mut store, None, &mut ());
 
         assert_eq!(outcome, SpawnOutcome::Inserted);
         assert_eq!(selection.cursors.len(), original_len + 1);
@@ -4686,7 +4826,7 @@ mod tests {
 
         let original_len = selection.cursors.len();
         let candidate = ScopedCursor::new_moving(1, parent, all_position);
-        let outcome = selection.try_push_cursor(candidate, RunnerId(0), &mut store, None);
+        let outcome = selection.try_push_cursor(candidate, RunnerId(0), &mut store, None, &mut ());
 
         assert_eq!(outcome, SpawnOutcome::Inserted);
         assert_eq!(selection.cursors.len(), original_len + 1);
@@ -4707,7 +4847,7 @@ mod tests {
         };
         let original_len = selection.cursors.len();
         let candidate = ScopedCursor::new_moving(1, ElementId::default(), position);
-        let outcome = selection.try_push_cursor(candidate, RunnerId(0), &mut store, None);
+        let outcome = selection.try_push_cursor(candidate, RunnerId(0), &mut store, None, &mut ());
 
         assert_eq!(outcome, SpawnOutcome::Inserted);
         assert_eq!(selection.cursors.len(), original_len + 1);
@@ -4755,7 +4895,7 @@ mod tests {
 
         let original_len = selection.cursors.len();
         let late = ScopedCursor::new_moving(2, parent, terminal);
-        let outcome = selection.try_push_cursor(late, RunnerId(0), &mut store, None);
+        let outcome = selection.try_push_cursor(late, RunnerId(0), &mut store, None, &mut ());
         assert_eq!(outcome, SpawnOutcome::Dominated);
         assert_eq!(selection.cursors.len(), original_len);
         assert!(selection.first_scope_is_claimed(&ScopedCursor::new_moving(3, parent, terminal)));
@@ -4785,7 +4925,7 @@ mod tests {
             .expect("failed First prefix must block until </div>");
         let before_position = selection.cursors[blocked_idx].position;
 
-        selection.back(RunnerId(0), "div", &doc_pos(0), &mut store);
+        selection.back(RunnerId(0), "div", &doc_pos(0), &mut store, &mut ());
         let reactivated = selection
             .cursors
             .iter()
@@ -4848,7 +4988,7 @@ mod tests {
                     state,
                 },
             };
-            let _ = selection.activate_sibling(RunnerId(0), callback, 1, &mut store);
+            let _ = selection.activate_sibling(RunnerId(0), callback, 1, &mut store, &mut ());
             if parent == ElementId(10) {
                 selection.cursors.push(ScopedCursor::new_moving(
                     1,
@@ -4870,6 +5010,7 @@ mod tests {
             &mut Vec::new(),
             &mut Vec::new(),
             None,
+            &mut (),
         );
 
         assert_eq!(selection.cursors.len(), 2);

@@ -1,10 +1,11 @@
 mod query;
+mod tag;
 
 pub use query::compiler::lazy;
 pub use query::compiler::{
     AttributeNames, Position, PredicateMetadata, Query, QueryBuilder, QueryFactory, QuerySection,
     QuerySectionId, QuerySpec, Save, SelectionKind, SelectorParseError, StaticQuery,
-    TextRequirements, Transition, TransitionId, ascii_case_insensitive_hash,
+    TextRequirements, Transition, TransitionId,
 };
 pub use query::selector::{
     AnPlusB, Attribute, AttributeCaseSensitivity, AttributeSelection, AttributeSelectionKind,
@@ -13,3 +14,4 @@ pub use query::selector::{
     StructuralMatchContext, StructuralPredicate, StructuralPredicates,
 };
 pub use scah_reader::Reader;
+pub use tag::TagId;

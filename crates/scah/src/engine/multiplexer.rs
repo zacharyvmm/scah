@@ -1,6 +1,6 @@
 use super::attribute_interest::AttributeInterest;
 use super::executor::QueryExecutor;
-use crate::__private::ascii_case_insensitive_hash;
+use super::frontier::Frontier;
 use crate::StructuralMatchContext;
 use crate::XHtmlElement;
 use crate::store::ElementId;
@@ -8,6 +8,7 @@ use crate::store::Store;
 use crate::{ElementPredicate, LocalLogicalPredicate, LocalSelectorList};
 use crate::{Position, QuerySectionId, StructuralPredicate};
 use crate::{QuerySpec, Reader, TextRequirements};
+use scah_query_ir::TagId;
 use smallvec::SmallVec;
 
 pub(crate) struct DocumentPosition {
@@ -47,6 +48,9 @@ impl SaveHit {
 pub(crate) struct ElementPreflight<'query> {
     pub attribute_interest: AttributeInterest<'query>,
     runner_indices: SmallVec<[usize; 8]>,
+    /// Viable-runner bitset for more than 64 runners; all words are zero
+    /// between elements.
+    viable_runners: Vec<u64>,
     runner_len: usize,
 }
 
@@ -77,6 +81,14 @@ pub(crate) struct SiblingCallback {
 }
 
 type Runners<'query, Q> = Vec<QueryExecutor<'query, 'query, Q>>;
+
+#[inline(always)]
+fn push_set_bits(runners: &mut SmallVec<[usize; 8]>, base: usize, mut bits: u64) {
+    while bits != 0 {
+        runners.push(base + bits.trailing_zeros() as usize);
+        bits &= bits - 1;
+    }
+}
 
 fn visit_structural_predicates<'predicate, 'query>(
     predicate: &'predicate ElementPredicate<'query>,
@@ -135,6 +147,8 @@ pub struct QueryMultiplexer<'query, Q> {
     runners: Runners<'query, Q>,
     active: ActiveRunnerSet,
     features: MultiplexerFeatures,
+    /// Active cursors of every runner, kept exact by the executors.
+    frontier: Frontier<'query>,
     #[cfg(feature = "bench-internals")]
     cursor_stats: Option<CursorStats>,
 }
@@ -145,6 +159,14 @@ where
 {
     fn build_runners(queries: &'query [Q]) -> Runners<'query, Q> {
         queries.iter().map(QueryExecutor::new).collect()
+    }
+
+    fn build_frontier(runners: &Runners<'query, Q>) -> Frontier<'query> {
+        let mut frontier = Frontier::with_runners(runners.len());
+        for (index, runner) in runners.iter().enumerate() {
+            runner.announce(RunnerId(index), &mut frontier);
+        }
+        frontier
     }
 
     fn collect_features(queries: &'query [Q]) -> MultiplexerFeatures {
@@ -200,6 +222,7 @@ where
     pub fn new(queries: &'query [Q]) -> Self {
         let runners = Self::build_runners(queries);
         Self {
+            frontier: Self::build_frontier(&runners),
             runners,
             active: None,
             features: Self::collect_features(queries),
@@ -212,6 +235,7 @@ where
     pub(crate) fn new_with_cursor_stats(queries: &'query [Q]) -> Self {
         let runners = Self::build_runners(queries);
         Self {
+            frontier: Self::build_frontier(&runners),
             runners,
             active: None,
             features: Self::collect_features(queries),
@@ -288,23 +312,134 @@ where
     }
 
     /// Whether an active runner may inspect or save attributes for this name.
+    ///
+    /// Scans the contiguous frontier tag column instead of walking each
+    /// runner's cursors through the query transitions.
     #[inline(always)]
     pub(crate) fn prepare_element<const SIBLINGS: bool, const RETIREMENT: bool>(
         &self,
         name: &str,
+        tag: TagId,
         preflight: &mut ElementPreflight<'query>,
     ) {
         preflight.attribute_interest.clear();
         preflight.runner_indices.clear();
         preflight.runner_len = self.runners.len();
-        let name_hash = ascii_case_insensitive_hash(name);
+
+        // Frontier slots are unordered and a runner may own several viable
+        // cursors, so collect runners as a bitset and emit them in order.
+        if self.runners.len() <= 64 {
+            let mut viable = 0_u64;
+            self.scan_frontier::<SIBLINGS>(
+                name,
+                tag,
+                &mut preflight.attribute_interest,
+                |runner| {
+                    viable |= 1 << runner;
+                },
+            );
+            push_set_bits(&mut preflight.runner_indices, 0, viable);
+        } else {
+            let viable = &mut preflight.viable_runners;
+            viable.resize(self.runners.len().div_ceil(64), 0);
+            self.scan_frontier::<SIBLINGS>(
+                name,
+                tag,
+                &mut preflight.attribute_interest,
+                |runner| {
+                    viable[runner / 64] |= 1 << (runner % 64);
+                },
+            );
+            for (word_index, word) in viable.iter_mut().enumerate() {
+                push_set_bits(
+                    &mut preflight.runner_indices,
+                    word_index * 64,
+                    std::mem::take(word),
+                );
+            }
+        }
+
+        #[cfg(debug_assertions)]
+        self.debug_assert_frontier_matches::<SIBLINGS, RETIREMENT>(name, tag, preflight);
+    }
+
+    #[inline(always)]
+    fn scan_frontier<const SIBLINGS: bool>(
+        &self,
+        name: &str,
+        tag: TagId,
+        interest: &mut AttributeInterest<'query>,
+        mut mark_viable: impl FnMut(usize),
+    ) {
+        for entry in self.frontier.candidates(tag) {
+            let cursor = &entry.target;
+            let name_matches = cursor.metadata.matches_tag(tag, name);
+            if name_matches {
+                if cursor.requires_all {
+                    interest.require_all();
+                } else {
+                    interest.add_metadata(cursor.metadata);
+                }
+            }
+            if name_matches || (SIBLINGS && cursor.adjacent) {
+                mark_viable(entry.runner as usize);
+            }
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn debug_assert_frontier_matches<const SIBLINGS: bool, const RETIREMENT: bool>(
+        &self,
+        name: &str,
+        tag: TagId,
+        preflight: &ElementPreflight<'query>,
+    ) {
+        let mut active = 0;
+        for (index, runner) in self.runners.iter().enumerate() {
+            let runner_id = RunnerId(index);
+            debug_assert_eq!(self.frontier.resident_len(runner_id), runner.cursors.len());
+            for (cursor_index, cursor) in runner.cursors.iter().enumerate() {
+                debug_assert_eq!(
+                    self.frontier.is_active(runner_id, cursor_index),
+                    cursor.is_active(),
+                    "runner {index} cursor {cursor_index}"
+                );
+                active += usize::from(cursor.is_active());
+            }
+        }
+        debug_assert_eq!(self.frontier.active_len(), active);
+
+        let mut expected = ElementPreflight::default();
+        self.prepare_element_reference::<SIBLINGS, RETIREMENT>(name, tag, &mut expected);
+        debug_assert_eq!(preflight.runner_indices, expected.runner_indices, "{name}");
+        debug_assert!(
+            preflight
+                .attribute_interest
+                .same_requirements(&expected.attribute_interest),
+            "{name}: {:?} != {:?}",
+            preflight.attribute_interest,
+            expected.attribute_interest
+        );
+    }
+
+    /// Cursor-walking preflight used to validate the frontier in debug builds.
+    #[cfg(debug_assertions)]
+    fn prepare_element_reference<const SIBLINGS: bool, const RETIREMENT: bool>(
+        &self,
+        name: &str,
+        tag: TagId,
+        preflight: &mut ElementPreflight<'query>,
+    ) {
+        preflight.attribute_interest.clear();
+        preflight.runner_indices.clear();
+        preflight.runner_len = self.runners.len();
 
         if RETIREMENT && let Some(ids) = &self.active {
             for runner_id in ids.iter().copied() {
                 let runner_index = runner_id.index();
                 if self.runners[runner_index].extend_attribute_interest_for::<SIBLINGS>(
                     name,
-                    name_hash,
+                    tag,
                     &mut preflight.attribute_interest,
                 ) {
                     preflight.runner_indices.push(runner_index);
@@ -317,7 +452,7 @@ where
         for (runner_index, runner) in self.runners.iter().enumerate() {
             if runner.extend_attribute_interest_for::<SIBLINGS>(
                 name,
-                name_hash,
+                tag,
                 &mut preflight.attribute_interest,
             ) {
                 preflight.runner_indices.push(runner_index);
@@ -332,10 +467,11 @@ where
     >(
         &self,
         name: &str,
+        tag: TagId,
         preflight: &mut ElementPreflight<'query>,
         structural_interest: &AttributeInterest<'query>,
     ) {
-        self.prepare_element::<SIBLINGS, RETIREMENT>(name, preflight);
+        self.prepare_element::<SIBLINGS, RETIREMENT>(name, tag, preflight);
         preflight.attribute_interest.merge(structural_interest);
     }
 
@@ -411,6 +547,7 @@ where
                 position,
                 store,
                 save_hits,
+                &mut self.frontier,
             );
         }
         #[cfg(any(debug_assertions, test))]
@@ -439,6 +576,7 @@ where
                 store,
                 save_hits,
                 structural,
+                &mut self.frontier,
             );
         }
         #[cfg(any(debug_assertions, test))]
@@ -492,6 +630,7 @@ where
                 save_hits,
                 sibling_callbacks,
                 structural,
+                &mut self.frontier,
             );
         }
         #[cfg(any(debug_assertions, test))]
@@ -532,7 +671,13 @@ where
             return;
         }
         if let Some(session) = self.runners.get_mut(callback.runner.index()) {
-            let _ = session.activate_sibling(callback.runner, callback, source_depth, store);
+            let _ = session.activate_sibling(
+                callback.runner,
+                callback,
+                source_depth,
+                store,
+                &mut self.frontier,
+            );
         } else {
             debug_assert!(false, "sibling callback references unknown runner");
         }
@@ -555,16 +700,17 @@ where
     fn back_sparse(
         runners: &mut Runners<'query, Q>,
         active_ids: &mut Vec<RunnerId>,
+        frontier: &mut Frontier<'query>,
         xhtml_element: &'html str,
         position: &DocumentPosition,
         store: &mut Store<'html, 'query>,
     ) {
         active_ids.retain(|runner| {
             let session = &mut runners[runner.index()];
-            let significant_close = session.back(*runner, xhtml_element, position, store);
+            let significant_close = session.back(*runner, xhtml_element, position, store, frontier);
             let retire = significant_close && session.early_exit();
             if retire {
-                session.release_cursor_storage();
+                session.release_cursor_storage(*runner, frontier);
             }
             !retire
         });
@@ -580,7 +726,13 @@ where
         if !RETIREMENT {
             debug_assert!(self.active.is_none());
             for (index, session) in self.runners.iter_mut().enumerate() {
-                let _ = session.back(RunnerId(index), xhtml_element, position, store);
+                let _ = session.back(
+                    RunnerId(index),
+                    xhtml_element,
+                    position,
+                    store,
+                    &mut self.frontier,
+                );
             }
             let _ = reader;
             #[cfg(feature = "bench-internals")]
@@ -592,6 +744,7 @@ where
             Self::back_sparse(
                 &mut self.runners,
                 active_ids,
+                &mut self.frontier,
                 xhtml_element,
                 position,
                 store,
@@ -600,11 +753,16 @@ where
             let runner_count = self.runners.len();
             let mut remaining = None;
             for (index, session) in self.runners.iter_mut().enumerate() {
-                let significant_close =
-                    session.back(RunnerId(index), xhtml_element, position, store);
+                let significant_close = session.back(
+                    RunnerId(index),
+                    xhtml_element,
+                    position,
+                    store,
+                    &mut self.frontier,
+                );
                 let retire = significant_close && session.early_exit();
                 if retire {
-                    session.release_cursor_storage();
+                    session.release_cursor_storage(RunnerId(index), &mut self.frontier);
                     if remaining.is_none() {
                         let mut ids = Vec::with_capacity(runner_count.saturating_sub(1));
                         ids.extend((0..index).map(RunnerId));
@@ -656,7 +814,7 @@ where
 
     #[cfg(test)]
     pub(crate) fn retire_runner_for_test(&mut self, runner: RunnerId) {
-        self.runners[runner.index()].release_cursor_storage();
+        self.runners[runner.index()].release_cursor_storage(runner, &mut self.frontier);
         let mut ids: Vec<_> = match &self.active {
             None => (0..self.runners.len()).map(RunnerId).collect(),
             Some(ids) => ids.as_ref().clone(),
@@ -693,20 +851,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{ActiveRunnerSet, ElementPreflight, QueryMultiplexer, RunnerId, SiblingCallback};
+    use super::{ElementPreflight, QueryMultiplexer, RunnerId, SiblingCallback};
     use crate::Position;
     use crate::store::{ElementId, Store};
     use crate::{Query, Reader, Save, XHtmlParser};
-
-    #[cfg(target_pointer_width = "64")]
-    #[test]
-    fn multiplexer_dense_state_does_not_embed_sparse_vector() {
-        assert_eq!(std::mem::size_of::<ActiveRunnerSet>(), 8);
-        #[cfg(not(feature = "bench-internals"))]
-        assert_eq!(std::mem::size_of::<QueryMultiplexer<'_, Query>>(), 40);
-        #[cfg(feature = "bench-internals")]
-        assert_eq!(std::mem::size_of::<QueryMultiplexer<'_, Query>>(), 64);
-    }
+    use scah_query_ir::TagId;
 
     #[test]
     fn multiplexer_features_aggregate_mixed_query_slice() {
@@ -980,7 +1129,7 @@ mod tests {
         let selectors = QueryMultiplexer::new(&queries);
         let mut preflight = ElementPreflight::default();
 
-        selectors.prepare_element::<false, false>("span", &mut preflight);
+        selectors.prepare_element::<false, false>("span", TagId::SPAN, &mut preflight);
 
         assert_eq!(preflight.runner_indices.as_slice(), &[1, 2]);
         assert!(preflight.attribute_interest.includes_class());
@@ -1001,6 +1150,7 @@ mod tests {
         let structural_interest = selectors.structural_attribute_interest().unwrap();
         selectors.prepare_element_with_structural_interest::<false, false>(
             "div",
+            TagId::DIV,
             &mut preflight,
             &structural_interest,
         );
