@@ -293,14 +293,14 @@ string means it was requested and the element had no text.
 <!-- benchmarks:rust -->
 | Library | WHATWG spec | Nested (all) | Nested (first) | Flat (all) | Flat (first) |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| **scah** | **28.3 ms** | **4.34 ms** | **968 ns** | **1.92 ms** | **408 ns** |
-| lol_html | 27.1 ms (0.96×) | 8.39 ms (1.93×) | 2.81 µs (2.90×) | 2.40 ms (1.25×) | 686 ns (1.68×) |
-| tl | 33.3 ms (1.18×) | 10.7 ms (2.47×) | 2.44 ms (2,517×) | 3.27 ms (1.71×) | 1.69 ms (4,136×) |
-| lexbor | 59.3 ms (2.09×) | 10.2 ms (2.34×) | 5.64 ms (5,828×) | 4.87 ms (2.54×) | 3.43 ms (8,395×) |
-| scraper | 139 ms (4.90×) | 22.0 ms (5.06×) | 12.0 ms (12,362×) | 13.6 ms (7.10×) | 11.8 ms (28,840×) |
-| lxml | 328 ms (11.6×) | 59.6 ms (13.7×) | 42.9 ms (44,367×) | 23.5 ms (12.2×) | 17.6 ms (43,217×) |
+| **scah** | **20.8 ms** | **4.32 ms** | **1.77 µs** | **1.56 ms** | **619 ns** |
+| lol_html | 26.9 ms (1.29×) | 8.39 ms (1.94×) | 2.82 µs (1.59×) | 2.49 ms (1.60×) | 663 ns (1.07×) |
+| tl | 33.6 ms (1.61×) | 10.8 ms (2.49×) | 2.46 ms (1,392×) | 3.35 ms (2.15×) | 1.72 ms (2,784×) |
+| lexbor | 60.6 ms (2.91×) | 10.3 ms (2.40×) | 5.75 ms (3,253×) | 4.74 ms (3.04×) | 3.43 ms (5,529×) |
+| scraper | 137 ms (6.60×) | 23.0 ms (5.34×) | 12.0 ms (6,813×) | 13.6 ms (8.73×) | 12.0 ms (19,333×) |
+| lxml | 328 ms (15.7×) | 60.6 ms (14.0×) | 43.2 ms (24,456×) | 23.4 ms (15.0×) | 17.5 ms (28,328×) |
 
-Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-06-06; raw data and run details in [`benches/results/rust`](https://github.com/zacharyvmm/scah/tree/main/benches/results/rust).
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-03; raw data and run details in [`benches/results/rust`](https://github.com/zacharyvmm/scah/tree/main/benches/results/rust).
 <!-- /benchmarks:rust -->
 
 ### Python
@@ -308,14 +308,14 @@ Mean time per parse and query; lower is better. Multipliers are relative to scah
 <!-- benchmarks:python -->
 | Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
 | :--- | ---: | ---: | ---: | ---: |
-| **Scah** | **116 ms** | **25.2 ms** | **8.61 ms** | **47.0 µs** |
-| Selectolax | 340 ms (2.94×) | 162 ms (6.43×) | 21.2 ms (2.46×) | 9.23 ms (196×) |
-| lxml | 769 ms (6.65×) | 970 ms (38.4×) | 53.0 ms (6.16×) | 15.9 ms (337×) |
-| Parsel | 1.80 s (15.5×) | 767 ms (30.4×) | 200 ms (23.2×) | 25.8 ms (550×) |
-| Gazpacho | 3.81 s (33.0×) | — | 556 ms (64.6×) | 156 ms (3,325×) |
-| BS4 (lxml) | 5.45 s (47.1×) | 2.15 s (85.3×) | 248 ms (28.8×) | 246 ms (5,235×) |
+| **Scah** | **45.1 ms** | **11.1 ms** | **3.32 ms** | **8.35 µs** |
+| Selectolax | 140 ms (3.11×) | 73.4 ms (6.64×) | 7.96 ms (2.39×) | 3.00 ms (359×) |
+| lxml | 345 ms (7.66×) | 330 ms (29.8×) | 21.7 ms (6.54×) | 6.54 ms (783×) |
+| Parsel | 644 ms (14.3×) | 276 ms (25.0×) | 69.7 ms (21.0×) | 10.4 ms (1,249×) |
+| Gazpacho | 1.57 s (34.9×) | — | 120 ms (36.0×) | 64.7 ms (7,739×) |
+| BS4 (lxml) | 2.43 s (53.9×) | 817 ms (73.9×) | 101 ms (30.4×) | 80.6 ms (9,650×) |
 
-Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-04-08 to 2026-07-15; raw data and run details in [`benches/results/python`](https://github.com/zacharyvmm/scah/tree/main/benches/results/python).
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-03; raw data and run details in [`benches/results/python`](https://github.com/zacharyvmm/scah/tree/main/benches/results/python).
 <!-- /benchmarks:python -->
 
 ### JavaScript (Bun)
@@ -323,14 +323,14 @@ Mean time per parse and query; lower is better. Multipliers are relative to scah
 <!-- benchmarks:node -->
 | Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
 | :--- | ---: | ---: | ---: | ---: |
-| **scah** | **146 ms** | **72.7 ms** | **15.2 ms** | **247 µs** |
-| cheerio | 1.44 s (9.85×) | 253 ms (3.48×) | 87.4 ms (5.73×) | 68.2 ms (276×) |
-| node-html-parser | 1.89 s (12.9×) | 393 ms (5.41×) | 462 ms (30.3×) | 64.1 ms (259×) |
-| linkedom | 6.57 s (44.9×) | 218 ms (3.00×) | 96.3 ms (6.32×) | 147 ms (595×) |
-| jsdom | — | 1.01 s (13.9×) | 404 ms (26.5×) | 291 ms (1,180×) |
-| happy-dom | — | — | 320 ms (21.0×) | 252 ms (1,019×) |
+| **scah** | **51.8 ms** | **26.3 ms** | **5.46 ms** | **58.3 µs** |
+| linkedom | 431 ms (8.33×) | 67.4 ms (2.57×) | 50.3 ms (9.20×) | 85.8 ms (1,472×) |
+| cheerio | 517 ms (9.99×) | 90.9 ms (3.46×) | 32.5 ms (5.94×) | 24.1 ms (413×) |
+| node-html-parser | 667 ms (12.9×) | 115 ms (4.37×) | 159 ms (29.2×) | 31.2 ms (535×) |
+| jsdom | — | 365 ms (13.9×) | 179 ms (32.8×) | 297 ms (5,103×) |
+| happy-dom | — | — | 124 ms (22.7×) | 125 ms (2,148×) |
 
-Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-04-08 to 2026-07-15; raw data and run details in [`benches/results/node`](https://github.com/zacharyvmm/scah/tree/main/benches/results/node).
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-03; raw data and run details in [`benches/results/node`](https://github.com/zacharyvmm/scah/tree/main/benches/results/node).
 <!-- /benchmarks:node -->
 
 See [`benches/`](https://github.com/zacharyvmm/scah/blob/main/benches/README.md) for what each scenario measures and how to

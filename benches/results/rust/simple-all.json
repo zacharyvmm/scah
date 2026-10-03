@@ -5,123 +5,122 @@
   "title": "Every <a> in a flat list of <div><a> pairs",
   "unit": "ms",
   "environment": {
-    "date": "2026-06-06",
-    "commit": null,
-    "dirty": null,
-    "os": null,
-    "arch": null,
-    "cpu": null,
-    "runtime": null,
-    "note": "Imported from the markdown report generated alongside the former PNG chart; the run did not record commit or machine details."
+    "date": "2026-10-03",
+    "commit": "29df6d08a64d91e196ce575bbd65ec9651a8e5cb",
+    "dirty": false,
+    "os": "Darwin 25.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "runtime": "rustc 1.95.0 (59807616e 2026-04-14) (Homebrew)"
   },
   "results": [
     {
       "library": "scah",
       "size": 100,
-      "mean": 0.019732,
-      "stdev": 0.000207
+      "mean": 0.016442125988733337,
+      "stdev": 0.00013382457692424427
     },
     {
       "library": "lol_html",
       "size": 100,
-      "mean": 0.025187,
-      "stdev": 0.000222
+      "mean": 0.025927576240450622,
+      "stdev": 0.0012885829229321141
     },
     {
       "library": "tl",
       "size": 100,
-      "mean": 0.029108,
-      "stdev": 0.000231
+      "mean": 0.029214184279965232,
+      "stdev": 9.60586828194745e-05
     },
     {
       "library": "lexbor",
       "size": 100,
-      "mean": 0.056394,
-      "stdev": 0.000566
+      "mean": 0.057795738330761015,
+      "stdev": 0.0007503662067870191
     },
     {
       "library": "scraper",
       "size": 100,
-      "mean": 0.132458,
-      "stdev": 0.000565
+      "mean": 0.1313957647368393,
+      "stdev": 0.0009458925437844216
     },
     {
       "library": "lxml",
       "size": 100,
-      "mean": 0.238904,
-      "stdev": 0.00092
+      "mean": 0.2377974114195603,
+      "stdev": 0.0010890646968343364
     },
     {
       "library": "scah",
       "size": 1000,
-      "mean": 0.193196,
-      "stdev": 0.001253
+      "mean": 0.15653299652511857,
+      "stdev": 0.0014666797452316269
     },
     {
       "library": "lol_html",
       "size": 1000,
-      "mean": 0.243865,
-      "stdev": 0.002561
+      "mean": 0.2515079936127845,
+      "stdev": 0.011542471041643566
     },
     {
       "library": "tl",
       "size": 1000,
-      "mean": 0.285094,
-      "stdev": 0.001338
+      "mean": 0.28952911553529614,
+      "stdev": 0.0013104866992751923
     },
     {
       "library": "lexbor",
       "size": 1000,
-      "mean": 0.49296,
-      "stdev": 0.003316
+      "mean": 0.4836439528739864,
+      "stdev": 0.002547426503751942
     },
     {
       "library": "scraper",
       "size": 1000,
-      "mean": 1.323338,
-      "stdev": 0.003854
+      "mean": 1.3182409728022793,
+      "stdev": 0.009996114563638522
     },
     {
       "library": "lxml",
       "size": 1000,
-      "mean": 2.350505,
-      "stdev": 0.006333
+      "mean": 2.344796157272727,
+      "stdev": 0.007862622497912471
     },
     {
       "library": "scah",
       "size": 10000,
-      "mean": 1.917392,
-      "stdev": 0.008932
+      "mean": 1.5595893125416307,
+      "stdev": 0.007871960505799733
     },
     {
       "library": "lol_html",
       "size": 10000,
-      "mean": 2.402751,
-      "stdev": 0.018206
+      "mean": 2.4916807923809516,
+      "stdev": 0.11319118779824801
     },
     {
       "library": "tl",
       "size": 10000,
-      "mean": 3.273427,
-      "stdev": 0.012414
+      "mean": 3.3536651059999985,
+      "stdev": 0.010307518549838844
     },
     {
       "library": "lexbor",
       "size": 10000,
-      "mean": 4.872407,
-      "stdev": 0.019504
+      "mean": 4.735216669999999,
+      "stdev": 0.01707395046076132
     },
     {
       "library": "scraper",
       "size": 10000,
-      "mean": 13.612814,
-      "stdev": 0.038746
+      "mean": 13.6179296075,
+      "stdev": 0.07252507550951377
     },
     {
       "library": "lxml",
       "size": 10000,
-      "mean": 23.481411,
-      "stdev": 0.10102
+      "mean": 23.4243718,
+      "stdev": 0.19857085664552096
     }
   ]
 }

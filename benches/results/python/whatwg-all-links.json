@@ -5,51 +5,50 @@
   "title": "Every <a> in the WHATWG HTML specification",
   "unit": "ms",
   "environment": {
-    "date": "2026-07-15",
-    "commit": null,
-    "dirty": null,
-    "os": null,
-    "arch": null,
-    "cpu": null,
-    "runtime": null,
-    "note": "Imported from the markdown report generated alongside the former PNG chart; the run did not record commit or machine details."
+    "date": "2026-10-03",
+    "commit": "29df6d08a64d91e196ce575bbd65ec9651a8e5cb",
+    "dirty": false,
+    "os": "Darwin 25.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "runtime": "CPython 3.12.13"
   },
   "results": [
     {
       "library": "Scah",
       "size": null,
-      "mean": 115.621425,
-      "stdev": 8.431628
+      "mean": 45.05030094451791,
+      "stdev": 2.4237664661508664
     },
     {
       "library": "Selectolax",
       "size": null,
-      "mean": 340.430453,
-      "stdev": 9.725557
+      "mean": 139.9253835998934,
+      "stdev": 3.3791354735654555
     },
     {
       "library": "lxml",
       "size": null,
-      "mean": 769.386151,
-      "stdev": 7.15806
+      "mean": 344.8868501999641,
+      "stdev": 5.011623119317297
     },
     {
       "library": "Parsel",
       "size": null,
-      "mean": 1797.527487,
-      "stdev": 15.829262
+      "mean": 643.9717085999291,
+      "stdev": 4.510477158327161
     },
     {
       "library": "Gazpacho",
       "size": null,
-      "mean": 3814.067066,
-      "stdev": 10.931782
+      "mean": 1574.3276169999262,
+      "stdev": 2.0280108519775593
     },
     {
       "library": "BS4 (lxml)",
       "size": null,
-      "mean": 5449.638127,
-      "stdev": 283.404282
+      "mean": 2427.757749800003,
+      "stdev": 310.0409845659069
     }
   ]
 }
