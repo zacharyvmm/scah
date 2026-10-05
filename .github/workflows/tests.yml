@@ -44,6 +44,8 @@ jobs:
         run: cargo test --workspace --exclude scah-benches
       - name: Test optimized parser semantics
         run: cargo test --release -p scah
+      - name: Compare results with the last release
+        run: cargo test --release --manifest-path crates/scah-differential/Cargo.toml
       - name: Test cursor instrumentation
         run: cargo test -p scah --features bench-internals
       - name: Test optimized implied-close preflight

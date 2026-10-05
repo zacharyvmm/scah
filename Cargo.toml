@@ -4,11 +4,13 @@ members = [
     "crates/scah-query-ir",
     "crates/scah-macros",
     "crates/scah",
-    "crates/scah-differential",
     "crates/bindings/scah-python",
     "crates/bindings/scah-node",
     "benches",
 ]
+# Depends on the published scah, so it keeps its own lockfile: sharing this one
+# would put two `scah-reader 0.1.0`s in it and break `cargo package`.
+exclude = ["crates/scah-differential"]
 default-members = ["crates/scah"]
 resolver = "3"
 
