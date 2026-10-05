@@ -74,3 +74,16 @@ fn comment_with_multibyte_char_before_gt_does_not_leak_elements() {
     assert_eq!(links[0].attribute(&store, "href"), Some("real"));
     assert_eq!(links[0].text(&store), Some("ok"));
 }
+
+#[test]
+fn end_tag_attributes_do_not_change_the_closed_element() {
+    // Regression test for #92: `</div class=x>` closes the div, as in browsers.
+    let html = "<div>a</div class=x><span>b</span><p>c</p   ><em>d</em/>";
+    let store = super::helpers::parse_all(html, &["div", "span", "div span", "p", "em"]);
+
+    assert_eq!(super::helpers::inner_htmls(&store, "div"), vec![Some("a")]);
+    assert_eq!(super::helpers::elements(&store, "div span").len(), 0);
+    assert_eq!(super::helpers::inner_htmls(&store, "span"), vec![Some("b")]);
+    assert_eq!(super::helpers::inner_htmls(&store, "p"), vec![Some("c")]);
+    assert_eq!(super::helpers::inner_htmls(&store, "em"), vec![Some("d")]);
+}
