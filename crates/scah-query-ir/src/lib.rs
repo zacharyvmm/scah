@@ -1,5 +1,7 @@
+pub mod program;
 mod query;
 
+pub use program::{AttributeMask, Program, ProgramFeatures, SectionIndex, SectionMask, StepMask};
 pub use query::compiler::lazy;
 pub use query::compiler::{
     AttributeNames, Position, PredicateMetadata, Query, QueryBuilder, QueryFactory, QuerySection,
