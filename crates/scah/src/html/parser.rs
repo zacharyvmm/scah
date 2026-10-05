@@ -427,7 +427,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             if CAPTURE && self.capture_mode.captures_any() {
                 self.mark_active_source_start(reader.get_position());
             }
-            return !finished && !reader.eof();
+            return self.continue_after_tag::<CAPTURE>(finished, reader);
         }
 
         let source = reader.source();
@@ -725,6 +725,18 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             }
         }
 
+        self.continue_after_tag::<CAPTURE>(finished, reader)
+    }
+
+    /// Whether another tag should be processed. At the end of the input
+    /// (trailing whitespace included) elements still open are closed, so
+    /// their saved content is finalized.
+    #[inline(always)]
+    fn continue_after_tag<const CAPTURE: bool>(
+        &mut self,
+        finished: bool,
+        reader: &mut Reader<'html>,
+    ) -> bool {
         if finished {
             crate::scah_trace!(
                 self.store,
@@ -732,8 +744,14 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                     reader_position: reader.get_position(),
                 }
             );
+            return false;
         }
-        !finished && !reader.eof()
+        if reader.eof() {
+            reader.advance_to(reader.source().len());
+            self.drain_open_elements::<CAPTURE>(reader);
+            return false;
+        }
+        true
     }
 
     pub fn matches(self) -> Store<'html, 'query> {
@@ -2192,7 +2210,7 @@ mod tests {
 
     #[test]
     fn sibling_queries_leave_no_frames_after_eof_drain() {
-        let html = "<main><h1></h1>text";
+        let html = "<main><h1></h1>";
         let mut reader = Reader::new(html);
         let queries = &[
             Query::all("h1 + p", Save::none()).unwrap().build(),

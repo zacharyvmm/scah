@@ -368,14 +368,7 @@ impl<'source> FusedMaskStream<'source> {
                     let gt = self
                         .find_greater_than(content_start)
                         .unwrap_or(self.source.len());
-                    let mut name_start = content_start;
-                    let mut name_end = gt;
-                    while name_start < name_end && is_html_whitespace(self.source[name_start]) {
-                        name_start += 1;
-                    }
-                    while name_end > name_start && is_html_whitespace(self.source[name_end - 1]) {
-                        name_end -= 1;
-                    }
+                    let (name_start, name_end) = close_tag_name(self.source, content_start, gt);
                     IndexedEvent {
                         start: start as u32,
                         end: if gt < self.source.len() {
@@ -759,6 +752,24 @@ fn is_html_whitespace(byte: u8) -> bool {
     matches!(byte, b' ' | b'\t' | b'\n' | 0x0C | b'\r')
 }
 
+/// The name of a close tag whose content spans `content_start..gt`.
+///
+/// Like the HTML tokenizer, the name ends at whitespace or `/`: anything
+/// after it (`</div class=x>`) is ignored rather than becoming part of the
+/// name. Leading whitespace is skipped.
+#[inline]
+fn close_tag_name(source: &[u8], content_start: usize, gt: usize) -> (usize, usize) {
+    let mut name_start = content_start;
+    while name_start < gt && is_html_whitespace(source[name_start]) {
+        name_start += 1;
+    }
+    let mut name_end = name_start;
+    while name_end < gt && !is_html_whitespace(source[name_end]) && source[name_end] != b'/' {
+        name_end += 1;
+    }
+    (name_start, name_end)
+}
+
 #[inline]
 fn is_name_boundary(byte: u8) -> bool {
     is_html_whitespace(byte) || matches!(byte, b'\'' | b'"' | b'=' | b'>')
@@ -858,14 +869,7 @@ fn next_event(search: &mut impl StructuralSearch, source: &[u8], from: usize) ->
                 let gt = search
                     .find_byte(source, content_start, b'>')
                     .unwrap_or(source.len());
-                let mut name_start = content_start;
-                let mut name_end = gt;
-                while name_start < name_end && is_html_whitespace(source[name_start]) {
-                    name_start += 1;
-                }
-                while name_end > name_start && is_html_whitespace(source[name_end - 1]) {
-                    name_end -= 1;
-                }
+                let (name_start, name_end) = close_tag_name(source, content_start, gt);
                 Some(TagEvent::Complete(TagSpan {
                     start,
                     end: if gt < source.len() { gt + 1 } else { gt },
