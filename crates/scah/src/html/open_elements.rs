@@ -1,5 +1,4 @@
 use crate::ParseError;
-use crate::engine::multiplexer::SiblingCallback;
 use crate::engine::{DepthSize, MAX_ELEMENT_DEPTH};
 use crate::html::tag::{ScopeKind, TagFlags};
 use crate::html::text_edge::TextEdgePolicy;
@@ -159,21 +158,6 @@ impl<'html> OpenElementStack<'html> {
         start..start + open_element.saved_count as usize
     }
 
-    pub(crate) fn attach_sibling_callbacks(
-        &mut self,
-        callbacks: &mut Vec<SiblingCallback>,
-        deferred_callbacks: &mut Vec<SiblingCallback>,
-    ) {
-        if callbacks.is_empty() {
-            return;
-        }
-        debug_assert!(
-            self.entries.last().is_some(),
-            "sibling callbacks require an open source element"
-        );
-        deferred_callbacks.append(callbacks);
-    }
-
     #[cfg(test)]
     pub fn prepare_for_open(&mut self, name: &str) -> Vec<OpenElement<'html>> {
         let mut popped = Vec::new();
@@ -312,25 +296,9 @@ impl<'html> OpenElementStack<'html> {
 #[cfg(test)]
 mod tests {
     use super::{OpenElement, OpenElementStack, SavedElement};
-    use crate::Position;
     use crate::engine::MAX_ELEMENT_DEPTH;
-    use crate::engine::multiplexer::{RunnerId, SiblingCallback};
-    use crate::html::tag::TagFlags;
     use crate::html::text_edge::TextEdgePolicy;
-    use crate::html::text_state::TextElementFlags;
     use crate::store::ElementId;
-    use crate::{QuerySectionId, TransitionId};
-
-    fn sample_callback(runner: usize) -> SiblingCallback {
-        SiblingCallback {
-            runner: RunnerId(runner),
-            output_parent: ElementId::default(),
-            continuation: Position {
-                selection: QuerySectionId(0),
-                state: TransitionId(0),
-            },
-        }
-    }
 
     #[test]
     fn saved_element_none_starts_round_trip() {
@@ -420,29 +388,6 @@ mod tests {
     #[test]
     fn open_element_keeps_hot_stack_entries_compact() {
         assert!(std::mem::size_of::<OpenElement<'_>>() <= 32);
-    }
-
-    #[test]
-    fn sibling_callbacks_attach_to_open_source() {
-        let mut stack = OpenElementStack::default();
-        let mut pending = Vec::new();
-        let mut arena = Vec::new();
-
-        stack
-            .push_classified(
-                "parent",
-                TagFlags::classify("parent"),
-                0,
-                TextElementFlags::empty(),
-            )
-            .unwrap();
-        pending.push(sample_callback(1));
-        pending.push(sample_callback(2));
-        stack.attach_sibling_callbacks(&mut pending, &mut arena);
-        assert!(pending.is_empty());
-        assert_eq!(arena.len(), 2);
-        assert_eq!(arena[0].runner, RunnerId(1));
-        assert_eq!(arena[1].runner, RunnerId(2));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 # Build output
 /target
 /benches/target/
+/crates/scah-differential/target/
 
 # Benchmark inputs and local results
 /benches/bench_data/

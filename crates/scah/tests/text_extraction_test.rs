@@ -1170,15 +1170,14 @@ fn text_sidecar_aligned_for_multiple_matching_queries() {
     assert_eq!(by_class.text(&store), None);
 }
 
-use scah::{ParseError, QueryMultiplexer, Reader, Store, XHtmlParser, parse_without_text_capture};
+use scah::{ParseError, Reader, Store, XHtmlParser, parse_without_text_capture};
 
 /// Directly constructs `XHtmlParser` with capacity preallocation and parses HTML.
 fn parse_with_general_parser<'html>(
     html: &'html str,
     queries: &'html [Query],
 ) -> Result<Store<'html, 'html>, ParseError> {
-    let selectors = QueryMultiplexer::new(queries);
-    let mut parser = XHtmlParser::with_capacity(selectors, html.len());
+    let mut parser = XHtmlParser::with_capacity(queries, html.len());
     let mut reader = Reader::new(html);
 
     while parser.next(&mut reader) {}
@@ -1195,8 +1194,7 @@ fn parse_with_general_parser_new<'html>(
     html: &'html str,
     queries: &'html [Query],
 ) -> Result<Store<'html, 'html>, ParseError> {
-    let selectors = QueryMultiplexer::new(queries);
-    let mut parser = XHtmlParser::new(selectors);
+    let mut parser = XHtmlParser::new(queries);
     let mut reader = Reader::new(html);
 
     while parser.next(&mut reader) {}

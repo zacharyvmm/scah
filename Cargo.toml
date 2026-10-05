@@ -8,11 +8,15 @@ members = [
     "crates/bindings/scah-node",
     "benches",
 ]
+# Depends on the published scah, so it keeps its own lockfile: sharing this one
+# would put two `scah-reader 0.1.0`s in it and break `cargo package`.
+exclude = ["crates/scah-differential"]
 default-members = ["crates/scah"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+# Unreleased breaking changes; `just bump` sets the release version.
+version = "0.2.0-dev"
 edition = "2024"
 rust-version = "1.88"
 license = "MIT"
@@ -21,10 +25,10 @@ repository = "https://github.com/zacharyvmm/scah"
 homepage = "https://github.com/zacharyvmm/scah"
 
 [workspace.dependencies]
-scah = { version = "0.1.0", path = "crates/scah" }
-scah-reader = { version = "0.1.0", path = "crates/scah-reader" }
-scah-query-ir = { version = "0.1.0", path = "crates/scah-query-ir" }
-scah-macros = { version = "0.1.0", path = "crates/scah-macros" }
+scah = { version = "0.2.0-dev", path = "crates/scah" }
+scah-reader = { version = "0.2.0-dev", path = "crates/scah-reader" }
+scah-query-ir = { version = "0.2.0-dev", path = "crates/scah-query-ir" }
+scah-macros = { version = "0.2.0-dev", path = "crates/scah-macros" }
 
 [profile.release]
 opt-level = 3
