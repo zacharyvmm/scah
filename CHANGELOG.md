@@ -19,6 +19,15 @@ Rust crates and the Python and npm packages together.
   `Program`, and each open element carries a few bitsets. Deeply nested
   descendant chains and nested `.then()` scopes parse up to 15x faster, and
   parsing documents with no matches is about 14% faster. ([#94], [#95])
+- Tag names are resolved once per tag to a one-byte id that drives parser,
+  text, and selector lookups. ([#96])
+
+### Fixed
+
+- End tags with attributes, such as `</div class=x>`, close their element.
+  ([#92], [#96])
+- Elements left open when the input ends right after a tag, optionally
+  followed by whitespace, keep their saved content. ([#93], [#96])
 
 ## [0.1.0] - 2026-10-01
 
@@ -130,3 +139,6 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#79]: https://github.com/zacharyvmm/scah/pull/79
 [#94]: https://github.com/zacharyvmm/scah/pull/94
 [#95]: https://github.com/zacharyvmm/scah/pull/95
+[#92]: https://github.com/zacharyvmm/scah/issues/92
+[#93]: https://github.com/zacharyvmm/scah/issues/93
+[#96]: https://github.com/zacharyvmm/scah/pull/96
