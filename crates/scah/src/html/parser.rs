@@ -22,6 +22,7 @@ use crate::{LocalSelectorList, Program, QuerySpec};
 use scah_query_ir::AttributeMask;
 use scah_query_ir::TagId;
 use smallvec::SmallVec;
+use std::borrow::Cow;
 
 /// Where the parser is in the document.
 #[derive(Debug, Default)]
@@ -246,17 +247,17 @@ fn text_behavior_for(
 
 impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     pub fn new<Q: QuerySpec<'query>>(queries: &'query [Q]) -> Self {
-        Self::from_program(Program::compile(queries), None, None)
+        Self::from_program(Cow::Owned(Program::compile(queries)), None, None)
     }
 
     /// Like [`XHtmlParser::new`], but reserves result storage for an input of
     /// `capacity` bytes.
     pub fn with_capacity<Q: QuerySpec<'query>>(queries: &'query [Q], capacity: usize) -> Self {
-        Self::from_program(Program::compile(queries), Some(capacity), None)
+        Self::from_program(Cow::Owned(Program::compile(queries)), Some(capacity), None)
     }
 
     pub(crate) fn from_program(
-        program: Program<'query>,
+        program: Cow<'query, Program<'query>>,
         capacity: Option<usize>,
         indexing_mode: Option<IndexingMode>,
     ) -> Self {
