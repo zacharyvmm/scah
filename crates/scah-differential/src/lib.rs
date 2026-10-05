@@ -102,9 +102,8 @@ impl Case {
         // tag differs between releases on purpose (#93).
         html.push_str("end");
 
-        let queries = (0..1 + rng.below(3))
-            .map(|_| generate_section(rng, false, 0))
-            .collect();
+        let count = 1 + rng.below(3);
+        let queries = generate_sections(rng, count, false, 0);
         Self { html, queries }
     }
 
@@ -243,6 +242,23 @@ fn generate_complex(rng: &mut Rng, scoped: bool) -> String {
     selector
 }
 
+/// Sibling sections with distinct selectors: 0.1.0 merged the results of
+/// sections that shared a selector string (#91), so the releases only agree
+/// when they do not.
+fn generate_sections(rng: &mut Rng, count: usize, scoped: bool, depth: usize) -> Vec<SectionSpec> {
+    let mut sections: Vec<SectionSpec> = Vec::with_capacity(count);
+    while sections.len() < count {
+        let section = generate_section(rng, scoped, depth);
+        if sections
+            .iter()
+            .all(|existing| existing.selector != section.selector)
+        {
+            sections.push(section);
+        }
+    }
+    sections
+}
+
 fn generate_section(rng: &mut Rng, scoped: bool, depth: usize) -> SectionSpec {
     let mut selector = generate_complex(rng, scoped);
     if rng.chance(15) {
@@ -250,9 +266,8 @@ fn generate_section(rng: &mut Rng, scoped: bool, depth: usize) -> SectionSpec {
         selector.push_str(&generate_complex(rng, scoped));
     }
     let children = if depth < 2 && rng.chance(50) {
-        (0..1 + rng.below(2))
-            .map(|_| generate_section(rng, true, depth + 1))
-            .collect()
+        let count = 1 + rng.below(2);
+        generate_sections(rng, count, true, depth + 1)
     } else {
         Vec::new()
     };

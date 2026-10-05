@@ -66,7 +66,7 @@ pub enum TraceEvent<'html, 'query> {
     },
     ParseFinished {
         element_count: usize,
-        query_node_count: usize,
+        result_count: usize,
         attribute_count: usize,
         raw_text_len: usize,
         text_len: usize,
@@ -141,14 +141,14 @@ impl<'html, 'query> TraceEvent<'html, 'query> {
             }
             Self::ParseFinished {
                 element_count,
-                query_node_count,
+                result_count,
                 attribute_count,
                 raw_text_len,
                 text_len,
             } => {
                 write!(
                     output,
-                    "\"event\":\"ParseFinished\",\"element_count\":{element_count},\"query_node_count\":{query_node_count},\"attribute_count\":{attribute_count},\"raw_text_len\":{raw_text_len},\"text_len\":{text_len}"
+                    "\"event\":\"ParseFinished\",\"element_count\":{element_count},\"result_count\":{result_count},\"attribute_count\":{attribute_count},\"raw_text_len\":{raw_text_len},\"text_len\":{text_len}"
                 )
                 .unwrap();
             }

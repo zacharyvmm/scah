@@ -41,7 +41,10 @@ export declare class QueryFactory {
 export type JsQueryFactory = QueryFactory
 
 export declare class Store {
+  /** Results of the first query whose selector is `query`. */
   get(query: string): Array<JsElement> | null
+  /** Results of the query at `index` in the list given to `parse`. */
+  query(index: number): Array<JsElement> | null
   get length(): number
 }
 export type JSStore = Store
