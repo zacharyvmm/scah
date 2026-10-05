@@ -1,9 +1,8 @@
 use crate::Reader;
 use crate::query::compiler::SelectorParseError;
 use crate::query::selector::{
-    self, Combinator, ElementPredicate, IElement, Lexer, LocalLogicalPredicate,
-    MAX_SELECTOR_NESTING_DEPTH, StructuralMatchContext, StructuralPredicate,
-    is_css_whitespace_char, require_modeled_syntax,
+    self, Combinator, ElementPredicate, Lexer, LocalLogicalPredicate, MAX_SELECTOR_NESTING_DEPTH,
+    StructuralPredicate, is_css_whitespace_char, require_modeled_syntax,
 };
 
 #[inline]
@@ -614,83 +613,6 @@ impl<'query> Transition<'query> {
 
         Ok(states)
     }
-
-    pub fn next<'html, E: IElement<'html>>(
-        &self,
-        element: &E,
-        current_depth: u16,
-        last_depth: u16,
-    ) -> bool {
-        assert!(
-            current_depth >= last_depth,
-            "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
-        );
-        self.guard.evaluate(last_depth, current_depth) && self.predicate.matches_element(element)
-    }
-
-    /// Evaluate a transition whose predicate has already been proven not to
-    /// require structural context.
-    #[doc(hidden)]
-    #[inline(always)]
-    pub fn next_local_unchecked<'html, E: IElement<'html>>(
-        &self,
-        element: &E,
-        current_depth: u16,
-        last_depth: u16,
-    ) -> bool {
-        assert!(
-            current_depth >= last_depth,
-            "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
-        );
-        self.guard.evaluate(last_depth, current_depth)
-            && if self.metadata.local_name_only() {
-                self.predicate.matches_name(element.name())
-            } else {
-                self.predicate.matches_local_element_unchecked(element)
-            }
-    }
-
-    /// Evaluate a local transition after the caller has already matched the
-    /// only active cursor's element name during parser preflight.
-    #[doc(hidden)]
-    #[inline(always)]
-    pub fn next_local_with_name_prechecked<'html, E: IElement<'html>>(
-        &self,
-        element: &E,
-        current_depth: u16,
-        last_depth: u16,
-    ) -> bool {
-        assert!(
-            current_depth >= last_depth,
-            "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
-        );
-        self.guard.evaluate(last_depth, current_depth)
-            && (self.metadata.local_name_only()
-                || self.predicate.matches_local_element_unchecked(element))
-    }
-
-    #[inline(always)]
-    pub fn next_with_context<'html, E: IElement<'html>>(
-        &self,
-        element: &E,
-        current_depth: u16,
-        last_depth: u16,
-        structural: Option<&StructuralMatchContext<'_>>,
-    ) -> bool {
-        assert!(
-            current_depth >= last_depth,
-            "Current depth is smaller than last depth: {current_depth} >= {last_depth}"
-        );
-        self.guard.evaluate(last_depth, current_depth)
-            && self
-                .predicate
-                .matches_element_with_context(element, structural)
-    }
-
-    #[allow(clippy::needless_lifetimes)]
-    pub fn back<'html>(&self, _element: &'html str, current_depth: u16, last_depth: u16) -> bool {
-        last_depth == current_depth
-    }
 }
 
 fn split_selector_list(source: &str) -> Result<Vec<&str>, SelectorParseError> {
@@ -758,37 +680,10 @@ const fn is_metadata_attribute(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::query::selector::{
-        Attribute, AttributeSelection, AttributeSelectionKind, AttributeSelections,
-        ClassSelections, IElement,
+        AttributeSelection, AttributeSelectionKind, AttributeSelections, ClassSelections,
     };
 
     use super::*;
-
-    #[derive(Debug)]
-    struct FakeElement<'a> {
-        name: &'a str,
-        id: Option<&'a str>,
-        class: Option<&'a str>,
-        attributes: &'a [Attribute<'a>],
-    }
-
-    impl<'a> IElement<'a> for FakeElement<'a> {
-        fn name(&self) -> &'a str {
-            self.name
-        }
-
-        fn id(&self) -> Option<&'a str> {
-            self.id
-        }
-
-        fn class(&self) -> Option<&'a str> {
-            self.class
-        }
-
-        fn attributes(&self) -> &[Attribute<'a>] {
-            self.attributes
-        }
-    }
 
     #[test]
     fn predicate_metadata_compiles_unique_attribute_interests() {
@@ -981,118 +876,6 @@ mod tests {
     }
 
     #[test]
-    fn test_fsm_next_descendant() {
-        let state = Transition::new(
-            Combinator::Descendant,
-            ElementPredicate {
-                name: Some("a"),
-                id: None,
-                classes: ClassSelections::from_static(&[]),
-                attributes: AttributeSelections::from_static(&[]),
-                logical: crate::LogicalPredicates::from_static(&[]),
-                structural: crate::StructuralPredicates::from_static(&[]),
-            },
-        );
-        assert!(state.next(
-            &FakeElement {
-                name: "a",
-                id: None,
-                class: None,
-                attributes: &[],
-            },
-            4,
-            1,
-        ));
-    }
-
-    #[test]
-    fn test_fsm_next_child() {
-        let state = Transition::new(
-            Combinator::Child,
-            ElementPredicate {
-                name: Some("a"),
-                id: None,
-                classes: ClassSelections::from_static(&[]),
-                attributes: AttributeSelections::from_static(&[]),
-                logical: crate::LogicalPredicates::from_static(&[]),
-                structural: crate::StructuralPredicates::from_static(&[]),
-            },
-        );
-        assert!(state.next(
-            &FakeElement {
-                name: "a",
-                id: None,
-                class: None,
-                attributes: &[],
-            },
-            2,
-            1,
-        ));
-    }
-
-    #[test]
-    fn test_fsm_next_child_failed() {
-        let state = Transition::new(
-            Combinator::Child,
-            ElementPredicate {
-                name: Some("a"),
-                id: None,
-                classes: ClassSelections::from_static(&[]),
-                attributes: AttributeSelections::from_static(&[]),
-                logical: crate::LogicalPredicates::from_static(&[]),
-                structural: crate::StructuralPredicates::from_static(&[]),
-            },
-        );
-        assert!(!state.next(
-            &FakeElement {
-                name: "a",
-                id: None,
-                class: None,
-                attributes: &[],
-            },
-            4,
-            1,
-        ));
-    }
-
-    #[test]
-    fn test_fsm_next_sibling_same_depth() {
-        let adjacent = Transition::new(
-            Combinator::NextSibling,
-            ElementPredicate {
-                name: Some("p"),
-                id: None,
-                classes: ClassSelections::from_static(&[]),
-                attributes: AttributeSelections::from_static(&[]),
-                logical: crate::LogicalPredicates::from_static(&[]),
-                structural: crate::StructuralPredicates::from_static(&[]),
-            },
-        );
-        let subsequent = Transition::new(
-            Combinator::SubsequentSibling,
-            ElementPredicate {
-                name: Some("p"),
-                id: None,
-                classes: ClassSelections::from_static(&[]),
-                attributes: AttributeSelections::from_static(&[]),
-                logical: crate::LogicalPredicates::from_static(&[]),
-                structural: crate::StructuralPredicates::from_static(&[]),
-            },
-        );
-        let element = FakeElement {
-            name: "p",
-            id: None,
-            class: None,
-            attributes: &[],
-        };
-
-        assert!(adjacent.next(&element, 3, 3));
-        assert!(subsequent.next(&element, 3, 3));
-        assert!(!adjacent.next(&element, 4, 3));
-        assert!(!subsequent.next(&element, 4, 3));
-    }
-
-    #[test]
     fn sibling_selectors_compile_to_expected_guards() {
         let states = Transition::generate_transitions_from_string("main > div ~ p > span").unwrap();
         let guards: Vec<_> = states.iter().map(|s| s.guard.clone()).collect();
@@ -1216,37 +999,6 @@ mod tests {
         assert!(transition.metadata().needs_id());
         assert!(transition.metadata().needs_class());
         assert_eq!(transition.metadata().attribute_names(), &["data-card"]);
-    }
-
-    #[test]
-    fn public_next_requires_context_for_structural_predicates() {
-        let transition = Transition::generate_transitions_from_string("li:first-child")
-            .unwrap()
-            .pop()
-            .unwrap();
-        let element = FakeElement {
-            name: "li",
-            id: None,
-            class: None,
-            attributes: &[],
-        };
-
-        assert!(
-            transition
-                .predicate()
-                .matches_local_element_unchecked(&element)
-        );
-        assert!(!transition.predicate().matches_element(&element));
-        assert!(!transition.next(&element, 1, 0));
-
-        let context = StructuralMatchContext {
-            child_index: 1,
-            type_index: 1,
-            filtered_child_indices: Default::default(),
-            is_document_root: false,
-            is_scope_root: false,
-        };
-        assert!(transition.next_with_context(&element, 1, 0, Some(&context)));
     }
 
     #[test]
