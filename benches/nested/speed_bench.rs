@@ -323,6 +323,21 @@ fn bench_nested_first(c: &mut Criterion) {
             })
         });
 
+        let first_queries = [comparison_first_query()];
+        let first_program = scah::Program::compile(&first_queries);
+        group.bench_with_input(
+            BenchmarkId::new("scah_compiled", size),
+            &content,
+            |b, html| {
+                b.iter(|| {
+                    let store = scah::parse_compiled(html, &first_program).unwrap();
+                    let product = store.get(PRODUCT_SELECTOR).unwrap().next().unwrap();
+                    black_box(product.inner_html);
+                    black_box(product.text(&store));
+                })
+            },
+        );
+
         group.bench_with_input(BenchmarkId::new("tl", size), &content, |b, html| {
             b.iter(|| {
                 let dom = tl::parse(html, ParserOptions::default()).unwrap();
