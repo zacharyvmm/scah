@@ -46,7 +46,7 @@ jobs:
         run: cargo test --release -p scah
       - name: Compare results with the last release
         run: cargo test --release --manifest-path crates/scah-differential/Cargo.toml
-      - name: Test cursor instrumentation
+      - name: Test benchmark instrumentation
         run: cargo test -p scah --features bench-internals
       - name: Test optimized implied-close preflight
         run: cargo test -p scah --release implied_close_preflight_matches_reactivated_attribute_cursor
@@ -128,8 +128,6 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: ./benches/gates/check-text-performance.sh "$BASE_SHA"
-      - name: Run cursor stats report
-        run: cargo run -p scah --release --features bench-internals --example cursor_stats
 
   docs:
     name: Rust Docs
