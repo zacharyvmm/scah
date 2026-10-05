@@ -3,7 +3,7 @@ use lexbor_css::HtmlDocument;
 use lol_html::errors::RewritingError;
 use lol_html::{HtmlRewriter, Settings, element};
 use lxml::HtmlDocument as LxmlDocument;
-use scah::{Query, Save, parse};
+use scah::{Program, Query, Save, parse, parse_compiled};
 use scraper::{Html, Selector};
 use std::error::Error;
 use std::fmt;
@@ -43,6 +43,13 @@ fn generate_html(count: usize) -> String {
     html
 }
 
+fn consume_scah_result(store: &scah::Store<'_, '_>) {
+    let element = store.get(QUERY).unwrap().next().unwrap();
+    black_box(&element.attributes(store));
+    black_box(&element.inner_html);
+    black_box(&element.text(store));
+}
+
 fn bench_comparison(c: &mut Criterion) {
     let mut group = c.benchmark_group("simple_first_selection_comparison");
 
@@ -57,14 +64,24 @@ fn bench_comparison(c: &mut Criterion) {
                     .build()];
 
                 let store = parse(html, queries).unwrap();
-
-                let element = store.get(QUERY).unwrap().next().unwrap();
-
-                black_box(&element.attributes(&store));
-                black_box(&element.inner_html);
-                black_box(&element.text(&store));
+                consume_scah_result(&store);
             })
         });
+
+        let compiled_queries = [Query::first(QUERY, COMPARISON_SAVE)
+            .expect("simple bench selector should parse")
+            .build()];
+        let program = Program::compile(&compiled_queries);
+        group.bench_with_input(
+            BenchmarkId::new("scah_compiled", size),
+            &content,
+            |b, html| {
+                b.iter(|| {
+                    let store = parse_compiled(html, &program).unwrap();
+                    consume_scah_result(&store);
+                })
+            },
+        );
 
         group.bench_with_input(BenchmarkId::new("tl", size), &content, |b, html| {
             b.iter(|| {
