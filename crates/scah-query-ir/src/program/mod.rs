@@ -28,6 +28,10 @@ use crate::query::compiler::{
 use crate::query::selector::{
     Combinator, ElementPredicate, LocalLogicalPredicate, LocalSelectorList, StructuralPredicate,
 };
+use crate::tag::TagId;
+
+/// Marks a known tag that no type selector names.
+const NO_NAME: u16 = u16::MAX;
 
 /// A step-wide mask stored once per program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,6 +193,8 @@ pub struct Program<'q> {
     /// Bit `n` is set when some type name is `n` bytes long (`n < 63`; longer
     /// names share bit 63). Most tags have a length no query name has.
     name_lengths: u64,
+    /// Type-name entry of each known tag, so known tags skip name lookup.
+    tag_names: [u16; TagId::COUNT],
 
     /// Attributes `:nth-child(An+B of S)` filters inspect on every element.
     filter_interest: AttributeMask,
@@ -392,6 +398,13 @@ impl<'q> Program<'q> {
         let name_lengths = strings
             .iter()
             .fold(0, |lengths, name| lengths | (1 << name.len().min(63)));
+        let mut tag_names = [NO_NAME; TagId::COUNT];
+        for (entry, name) in strings.iter().enumerate() {
+            let tag = TagId::of(name);
+            if tag.is_known() {
+                tag_names[tag.index()] = entry as u16;
+            }
+        }
 
         // Attribute names, shared by step and filter interest masks.
         let attributes_start = strings.len();
@@ -437,6 +450,7 @@ impl<'q> Program<'q> {
             name_keys: packed.into_boxed_slice(),
             hashes_start,
             name_lengths,
+            tag_names,
             filter_interest,
             features,
         }
@@ -471,6 +485,22 @@ impl<'q> Program<'q> {
         let entry = self.find_name(name)?;
         let start = self.name_masks_start + entry * self.words;
         Some(&self.masks[start..start + self.words])
+    }
+
+    /// [`Program::name_mask`] for a tag already resolved to `tag`: known tags
+    /// are a table lookup, other names fall back to comparing `name`.
+    #[inline(always)]
+    pub fn tag_mask(&self, tag: TagId, name: &str) -> Option<&[u64]> {
+        if !tag.is_known() {
+            return self.name_mask(name);
+        }
+        match self.tag_names[tag.index()] {
+            NO_NAME => None,
+            entry => {
+                let start = self.name_masks_start + entry as usize * self.words;
+                Some(&self.masks[start..start + self.words])
+            }
+        }
     }
 
     #[inline(always)]
@@ -900,6 +930,33 @@ mod tests {
                 keys: 0b100
             }
         );
+    }
+
+    #[test]
+    fn tag_lookup_agrees_with_name_lookup() {
+        let queries = [Query::all("DIV p, my-widget, svg rect", Save::none())
+            .unwrap()
+            .build()];
+        let program = Program::compile(&queries);
+
+        for name in [
+            "div",
+            "Div",
+            "p",
+            "span",
+            "my-widget",
+            "MY-WIDGET",
+            "svg",
+            "rect",
+            "x",
+        ] {
+            assert_eq!(
+                program.tag_mask(TagId::of(name), name),
+                program.name_mask(name),
+                "{name}"
+            );
+        }
+        assert!(program.tag_mask(TagId::of("span"), "span").is_none());
     }
 
     #[test]

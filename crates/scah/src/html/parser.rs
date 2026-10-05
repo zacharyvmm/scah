@@ -1,7 +1,7 @@
 use super::element::builder::XHtmlTag;
 use super::indexer::{AutoTagIndexer, IndexingMode, TagEvent, TagIndexer, TagKind};
 use super::open_elements::{OpenElement, OpenElementStack, SavedElement};
-use super::tag::{ClassifiedTag, TagFlags, TextTagFlags};
+use super::tag::{ClassifiedTag, TextTagFlags};
 use super::text_edge::TextEdgePolicy;
 use super::text_state::{
     ParserTextState, PendingSeparator, TextCaptureMode, TextElementBehavior, TextElementFlags,
@@ -20,6 +20,7 @@ use crate::engine::{DepthSize, MAX_ELEMENT_DEPTH};
 use crate::store::{Store, trim_collapsed_range};
 use crate::{LocalSelectorList, Program, QuerySpec};
 use scah_query_ir::AttributeMask;
+use scah_query_ir::TagId;
 use smallvec::SmallVec;
 
 /// Where the parser is in the document.
@@ -433,6 +434,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         let source = reader.source();
         let mut finished = false;
         let mut open_tag_flags = None;
+        let mut open_tag_id = TagId::UNKNOWN;
         let mut open_text_tag_flags = TextTagFlags::default();
         let tag = loop {
             let Some(span) = self.indexer.next(source, reader.get_position()) else {
@@ -461,13 +463,15 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                     self.element.set_name(name);
                     self.temp_state.attribute_start = self.store.attributes.len();
 
-                    let (tag_flags, text_tag_flags) =
-                        if CAPTURE && self.capture_mode.captures_text() {
-                            let classified = ClassifiedTag::classify(name);
-                            (classified.parser, classified.text)
-                        } else {
-                            (TagFlags::classify(name), TextTagFlags::default())
-                        };
+                    let tag_id = TagId::of(name);
+                    let classified = ClassifiedTag::of(tag_id);
+                    let tag_flags = classified.parser;
+                    let text_tag_flags = if CAPTURE && self.capture_mode.captures_text() {
+                        classified.text
+                    } else {
+                        TextTagFlags::default()
+                    };
+                    open_tag_id = tag_id;
                     if CAPTURE && (self.raw_active_count > 0 || self.text_active_count > 0) {
                         self.flush_source_text(reader, open.start);
                     }
@@ -485,7 +489,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
 
                     let interest = &mut self.temp_state.attribute_interest;
                     interest.clear();
-                    if self.matcher.prepare(name) {
+                    if self.matcher.prepare(tag_id, name) {
                         interest.add(self.matcher.attribute_mask());
                     }
                     if let Some(structural) = self.temp_state.structural.as_ref() {
@@ -580,6 +584,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                     self.position.element_depth = depth;
                 } else if let Err(err) = self.open_elements.push_classified(
                     self.element.name,
+                    open_tag_id,
                     tag,
                     self.temp_state.saved_elements.len(),
                     text_flags,
@@ -875,13 +880,23 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         // The outcome is identical, because `pop_elements` suppresses the
         // implied-close trace when the popped name matches `expected_tag` and
         // derives the same `close_depth` for a single popped element.
-        if let Some(open_element) = self.open_elements.pop_matching_top(closing_tag) {
+        // Well-formed markup repeats the open tag's exact name, so try that
+        // before resolving the close tag's id.
+        if let Some(open_element) = self.open_elements.pop_exact_top(closing_tag) {
+            let close_depth = self.open_elements.depth().saturating_add(1);
+            return self.pop_open_element::<CAPTURE>(open_element, close_depth, reader);
+        }
+        let id = TagId::of(closing_tag);
+        if let Some(open_element) = self.open_elements.pop_matching_top(closing_tag, id) {
             let close_depth = self.open_elements.depth().saturating_add(1);
             return self.pop_open_element::<CAPTURE>(open_element, close_depth, reader);
         }
 
-        self.open_elements
-            .close_by_end_tag_into(closing_tag, &mut self.temp_state.closing_elements);
+        self.open_elements.close_by_end_tag_into(
+            closing_tag,
+            id,
+            &mut self.temp_state.closing_elements,
+        );
         let mut elements = std::mem::take(&mut self.temp_state.closing_elements);
         let finished = self.pop_elements::<CAPTURE>(
             &mut elements,
