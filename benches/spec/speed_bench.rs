@@ -6,7 +6,7 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use lexbor_css::HtmlDocument;
 use lol_html::{HtmlRewriter, Settings, element};
 use lxml::HtmlDocument as LxmlDocument;
-use scah::{Query, Save, parse};
+use scah::{Program, Query, Save, parse, parse_compiled};
 use scraper::{Html, Selector};
 use std::hint::black_box;
 use tl::ParserOptions;
@@ -90,12 +90,18 @@ fn bench_spec_links(c: &mut Criterion) {
                 .expect("spec selector should parse")
                 .build()];
             let store = parse(&content, queries).unwrap();
+            consume_scah_results(&store);
+        })
+    });
 
-            for element in store.get(QUERY).unwrap() {
-                black_box(&element.attributes(&store));
-                black_box(&element.inner_html);
-                black_box(&element.text(&store));
-            }
+    let compiled_queries = [Query::all(QUERY, COMPARISON_SAVE)
+        .expect("spec selector should parse")
+        .build()];
+    let program = Program::compile(&compiled_queries);
+    group.bench_function("scah_compiled", |b| {
+        b.iter(|| {
+            let store = parse_compiled(&content, &program).unwrap();
+            consume_scah_results(&store);
         })
     });
 
