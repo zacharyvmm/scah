@@ -60,6 +60,10 @@ for a in store.get("a[href]").unwrap() {
 // Two: /two
 ```
 
+`store.get` looks results up by selector string. When two queries share a
+selector, `store.query(index)` returns the results of the query at that
+position in the slice passed to `parse`.
+
 #### Structured queries with `.then()`
 
 Child queries only run within the context of their parent match:

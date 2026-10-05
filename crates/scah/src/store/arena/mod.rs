@@ -1,11 +1,6 @@
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 pub mod id;
-mod iter;
-pub mod span;
-pub(crate) use iter::Node;
-
-use span::Span;
 
 #[derive(Debug, PartialEq)]
 pub struct Arena<T, I> {
@@ -36,10 +31,6 @@ impl<T, I: From<usize>> Arena<T, I> {
         let index = unsafe { ptr.offset_from_unsigned(list_ptr_range.start) };
         I::from(index)
     }
-
-    pub fn iter_from<'a>(&'a self, from: I) -> iter::ArenaIterator<'a, T, I> {
-        iter::ArenaIterator::new(self, from)
-    }
 }
 
 impl<T, I: From<usize>> Default for Arena<T, I> {
@@ -59,14 +50,6 @@ impl<T, I> Deref for Arena<T, I> {
 impl<T, I> DerefMut for Arena<T, I> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
-    }
-}
-
-impl<T> Index<Span<u32>> for Arena<T, u32> {
-    type Output = [T];
-
-    fn index(&self, index: Span<u32>) -> &Self::Output {
-        &self.inner[std::ops::Range::from(index)]
     }
 }
 

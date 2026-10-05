@@ -94,20 +94,15 @@ impl PyElement {
     }
 
     pub fn get(&self, query: String) -> PyResult<Vec<PyElement>> {
-        let element = self
-            .store
-            .elements
-            .get(self.id.index())
-            .expect("The Element ID should be valid");
-        let children = element.get(&self.store, &query);
-        match children {
+        match self.store.child_results(self.id, &query) {
             None => Err(PyValueError::new_err(format!(
                 "This Element does not have children selected with `{query}`"
             ))),
             Some(children) => Ok(children
-                .map(|e| PyElement {
+                .iter()
+                .map(|&id| PyElement {
                     store: self.store.clone(),
-                    id: unsafe { self.store.elements.index_of(e) },
+                    id,
                 })
                 .collect()),
         }
@@ -152,18 +147,30 @@ pub(crate) struct PyStore {
 #[gen_stub_pymethods]
 #[pymethods]
 impl PyStore {
+    /// Results of the first query whose selector is `query`.
     fn get(&self, query: String) -> Option<Vec<PyElement>> {
-        self.store.get(&query).map(|iter| {
-            iter.map(|e| unsafe { self.store.elements.index_of(e) })
-                .map(|i| PyElement {
-                    store: self.store.clone(),
-                    id: i,
-                })
-                .collect()
-        })
+        self.store.results(&query).map(|ids| self.elements(ids))
+    }
+
+    /// Results of the query at `index` in the list given to `parse`.
+    fn query(&self, index: usize) -> Option<Vec<PyElement>> {
+        self.store
+            .query_results(index)
+            .map(|ids| self.elements(ids))
     }
 
     fn __len__(&self) -> usize {
         self.store.elements.len()
+    }
+}
+
+impl PyStore {
+    fn elements(&self, ids: &[ElementId]) -> Vec<PyElement> {
+        ids.iter()
+            .map(|&id| PyElement {
+                store: self.store.clone(),
+                id,
+            })
+            .collect()
     }
 }
