@@ -134,7 +134,7 @@ fn first_context_waits_for_required_child_before_early_exit() {
             first("> h1", Save::all()),
         }
     }];
-    assert_eq!(queries[0].exit_at_section_end.unwrap().index(), 1);
+    assert!(scah::Program::compile(queries).features().all_roots_first);
     let store = parse(FIRST_CONTEXT_WITH_REQUIRED_CHILD, queries).unwrap();
 
     let products = store

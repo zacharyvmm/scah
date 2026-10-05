@@ -1576,8 +1576,8 @@ mod tests {
         let mut reader = Reader::from_bytes(html.as_bytes());
 
         let query = Query::first("a", Save::all()).unwrap().build();
-        assert_eq!(query.exit_at_section_end, Some(crate::QuerySectionId(0)));
         let queries = &[query];
+        assert!(Program::compile(queries).features().all_roots_first);
 
         let mut parser = XHtmlParser::new(queries);
 

@@ -1,10 +1,8 @@
-use smallvec::SmallVec;
 use std::ops::Range;
 
 use super::builder::{QueryBuilder, Save, SelectionKind};
 use super::error::SelectorParseError;
 use super::transition::Transition;
-use crate::query::selector::{Combinator, LocalSelectorList};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 pub struct TransitionId(pub usize);
@@ -50,339 +48,15 @@ impl TextRequirements {
     }
 }
 
+/// A compiled query, as read by [`Program::compile`](crate::Program::compile).
+///
+/// Sections own contiguous ranges of transitions. Each selector-list
+/// alternative of a section is one sub-range, its consecutive compound
+/// selectors.
 pub trait QuerySpec<'query> {
     fn states(&self) -> &[Transition<'query>];
     fn queries(&self) -> &[QuerySection<'query>];
-    fn exit_at_section_end(&self) -> Option<QuerySectionId>;
-
     fn selection_ranges(&self, section: QuerySectionId) -> &[Range<TransitionId>];
-
-    /// Whether `state` ends an alternative other than the last one of its
-    /// section. Out of line so ordinary save-point checks stay small.
-    #[inline(never)]
-    fn ends_earlier_alternative(&self, position: &Position) -> bool {
-        self.selection_ranges(position.selection)
-            .split_last()
-            .is_some_and(|(_, earlier)| {
-                earlier
-                    .iter()
-                    .any(|range| range.end.index() == position.state.index() + 1)
-            })
-    }
-
-    fn root_positions(&self) -> Vec<Position> {
-        self.selection_ranges(QuerySectionId(0))
-            .iter()
-            .map(|range| Position {
-                selection: QuerySectionId(0),
-                state: range.start,
-            })
-            .collect()
-    }
-
-    fn child_positions(&self, position: &Position) -> SmallVec<[Position; 4]> {
-        let mut positions = SmallVec::new();
-        if position.selection.index() + 1 >= self.queries().len() {
-            return positions;
-        }
-        let mut child = QuerySectionId(position.selection.index() + 1);
-        loop {
-            if self.get_selection(child).parent != Some(position.selection) {
-                break;
-            }
-            for range in self.selection_ranges(child) {
-                positions.push(Position {
-                    selection: child,
-                    state: range.start,
-                });
-            }
-            let Some(next) = self.get_selection(child).next_sibling else {
-                break;
-            };
-            child = next;
-        }
-        positions
-    }
-
-    fn has_child_positions(&self, position: &Position) -> bool {
-        let Some(child) = self.queries().get(position.selection.index() + 1) else {
-            return false;
-        };
-        child.parent == Some(position.selection)
-    }
-    fn previous_positions(&self, position: &Position) -> Vec<Position> {
-        let Some(range) = self
-            .selection_ranges(position.selection)
-            .iter()
-            .find(|range| range.contains(&position.state))
-        else {
-            return Vec::new();
-        };
-
-        if position.state.index() > range.start.index() {
-            return vec![Position {
-                selection: position.selection,
-                state: TransitionId(position.state.index() - 1),
-            }];
-        }
-
-        let Some(parent) = self.get_selection(position.selection).parent else {
-            return Vec::new();
-        };
-        self.selection_ranges(parent)
-            .iter()
-            .filter_map(|range| {
-                range.end.index().checked_sub(1).map(|state| Position {
-                    selection: parent,
-                    state: TransitionId(state),
-                })
-            })
-            .collect()
-    }
-
-    /// Whether any compiled transition uses `+` or `~`.
-    fn has_sibling_combinator(&self) -> bool {
-        self.states().iter().any(|transition| {
-            matches!(
-                transition.guard,
-                Combinator::NextSibling | Combinator::SubsequentSibling
-            )
-        })
-    }
-
-    fn has_structural_queries(&self) -> bool {
-        self.states()
-            .iter()
-            .any(|transition| transition.predicate().requires_structural())
-    }
-
-    fn structural_filters(&'query self) -> Vec<&'query LocalSelectorList<'query>> {
-        fn collect<'query>(
-            predicate: &'query crate::query::selector::ElementPredicate<'query>,
-            filters: &mut Vec<&'query LocalSelectorList<'query>>,
-        ) {
-            for structural in predicate.structural.as_slice() {
-                if let crate::query::selector::StructuralPredicate::NthChildOf(_, filter) =
-                    structural
-                    && !filters
-                        .iter()
-                        .any(|existing| std::ptr::eq(*existing, filter))
-                {
-                    filters.push(filter);
-                }
-            }
-            for logical in predicate.logical.as_slice() {
-                let list = match logical {
-                    crate::query::selector::LocalLogicalPredicate::Not(list)
-                    | crate::query::selector::LocalLogicalPredicate::Any(list) => list,
-                };
-                for nested in list.as_slice() {
-                    collect(nested, filters);
-                }
-            }
-        }
-
-        let mut filters: Vec<&'query LocalSelectorList<'query>> = Vec::new();
-        for transition in self.states() {
-            collect(transition.predicate(), &mut filters);
-        }
-        filters
-    }
-
-    fn text_requirements(&self) -> TextRequirements {
-        let mut req = TextRequirements::default();
-        for section in self.queries() {
-            req.raw_text |= section.save.raw_text;
-            req.text |= section.save.text;
-        }
-        req
-    }
-
-    fn requires_attribute_storage(&self) -> bool {
-        self.queries().iter().any(|section| section.save.attributes)
-    }
-
-    fn requires_attribute_parsing(&self) -> bool {
-        self.requires_attribute_storage()
-            || self
-                .states()
-                .iter()
-                .any(|transition| transition.predicate().requires_attributes())
-    }
-
-    fn get_transition(&self, state: TransitionId) -> &Transition<'query> {
-        &self.states()[state.index()]
-    }
-
-    fn get_section_selection_kind(&self, section_index: QuerySectionId) -> SelectionKind {
-        self.queries()[section_index.index()].kind
-    }
-
-    fn get_selection(&self, section_index: QuerySectionId) -> &QuerySection<'query> {
-        &self.queries()[section_index.index()]
-    }
-
-    fn is_descendant(&self, state: TransitionId) -> bool {
-        self.get_transition(state).guard == Combinator::Descendant
-    }
-
-    fn needs_descendant_anchor(&self, position: Position) -> bool {
-        if !self.is_descendant(position.state) {
-            return false;
-        }
-
-        if self.is_save_point(&position) {
-            let kind = self.get_section_selection_kind(position.selection);
-            // Each All match with child sections creates a distinct output scope.
-            return matches!(kind, SelectionKind::All) && self.has_child_positions(&position);
-        }
-
-        let next = position
-            .next_transition(self)
-            .expect("non-save-point must have a next transition");
-
-        // Descendant continuations already cover nested rematches.
-        !self.is_descendant(next)
-    }
-
-    fn is_save_point(&self, position: &Position) -> bool {
-        let section = self.get_selection(position.selection);
-        let section_end = section.range.end;
-        debug_assert!(
-            self.get_selection(position.selection)
-                .range
-                .contains(&position.state)
-        );
-        debug_assert_eq!(
-            self.selection_ranges(position.selection)
-                .last()
-                .map(|range| range.end),
-            Some(section_end),
-            "the last selector alternative must end its query section"
-        );
-        // The last alternative always ends the section, so only selector lists
-        // need to look up the ends of their earlier alternatives.
-        position.state.index() + 1 == section_end.index()
-            || (section.has_selector_alternatives && self.ends_earlier_alternative(position))
-    }
-
-    fn is_last_save_point(&self, position: &Position) -> bool {
-        debug_assert!(position.selection.index() < self.queries().len());
-        let is_last_query = self.queries().len() - 1 == position.selection.index();
-        is_last_query && self.is_save_point(position)
-    }
-
-    fn children(&'query self, position: &Position) -> Option<impl Iterator<Item = Position>>
-    where
-        Self: Sized,
-    {
-        let positions = self.child_positions(position);
-        (!positions.is_empty()).then(|| positions.into_iter())
-    }
-}
-
-#[derive(PartialEq, Debug, Clone, Copy)]
-pub struct Position {
-    pub selection: QuerySectionId,
-    pub state: TransitionId,
-}
-
-impl Position {
-    pub fn next_transition<'query, Q: QuerySpec<'query> + ?Sized>(
-        &self,
-        query: &Q,
-    ) -> Option<TransitionId> {
-        debug_assert!(self.selection.index() < query.queries().len());
-        debug_assert!(
-            query
-                .selection_ranges(self.selection)
-                .iter()
-                .any(|range| range.contains(&self.state))
-        );
-        // Alternatives are disjoint and non-empty, so a state ends its own
-        // alternative exactly when it is a save point.
-        let section = query.get_selection(self.selection);
-        if self.state.index() + 1 < section.range.end.index()
-            && !(section.has_selector_alternatives && query.ends_earlier_alternative(self))
-        {
-            Some(TransitionId(self.state.index() + 1))
-        } else {
-            None
-        }
-    }
-
-    /// Returns the first selector alternative in the first child query section.
-    ///
-    /// Use [`QuerySpec::child_positions`] to traverse every child section and
-    /// selector-list alternative.
-    #[deprecated(note = "use QuerySpec::child_positions")]
-    pub fn next_child<'query, Q: QuerySpec<'query> + ?Sized>(&self, query: &Q) -> Option<Self> {
-        debug_assert!(self.selection.index() < query.queries().len());
-        debug_assert!(
-            query
-                .selection_ranges(self.selection)
-                .iter()
-                .any(|range| range.contains(&self.state))
-        );
-
-        if self.selection.index() == query.queries().len() - 1 {
-            return None;
-        }
-
-        let next_selection_index = QuerySectionId(self.selection.index() + 1);
-        let next_selection = query.get_selection(next_selection_index);
-        if next_selection.parent.is_some_and(|p| p == self.selection) {
-            let first_alternative = query.selection_ranges(next_selection_index).first()?;
-            return Some(Self {
-                selection: next_selection_index,
-                state: first_alternative.start,
-            });
-        }
-
-        None
-    }
-
-    /// Returns the first selector alternative in the next sibling query section.
-    ///
-    /// This method does not traverse selector-list alternatives. Prefer
-    /// [`QuerySpec::child_positions`] when enumerating a section's children.
-    #[deprecated(note = "use QuerySpec::child_positions")]
-    pub fn next_sibling<'query, Q: QuerySpec<'query> + ?Sized>(&self, query: &Q) -> Option<Self> {
-        debug_assert!(self.selection.index() < query.queries().len());
-        debug_assert!(
-            query
-                .selection_ranges(self.selection)
-                .iter()
-                .any(|range| range.contains(&self.state))
-        );
-
-        let sibling = query.get_selection(self.selection).next_sibling?;
-        let first_alternative = query.selection_ranges(sibling).first()?;
-        Some(Self {
-            selection: sibling,
-            state: first_alternative.start,
-        })
-    }
-
-    /// Moves to one predecessor, choosing the first parent alternative at a
-    /// query-section boundary.
-    ///
-    /// Use [`QuerySpec::previous_positions`] when every valid predecessor is
-    /// required.
-    #[deprecated(note = "use QuerySpec::previous_positions")]
-    pub fn back<'query, Q: QuerySpec<'query> + ?Sized>(&mut self, query: &Q) {
-        debug_assert!(self.selection.index() < query.queries().len());
-        debug_assert!(
-            query
-                .selection_ranges(self.selection)
-                .iter()
-                .any(|range| range.contains(&self.state))
-        );
-
-        if let Some(previous) = query.previous_positions(self).first() {
-            *self = *previous;
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -393,11 +67,6 @@ pub struct QuerySection<'query> {
     pub next_sibling: Option<QuerySectionId>,
     pub save: Save,
     pub kind: SelectionKind,
-    /// Whether this section is a selector list with more than one
-    /// alternative. Derived from the query's alternatives by `Query::new` and
-    /// `StaticQuery::new`; it sits next to `range` so ordinary save-point
-    /// checks skip the alternative lookup without touching extra memory.
-    pub(crate) has_selector_alternatives: bool,
 }
 
 impl<'query> QuerySection<'query> {
@@ -415,7 +84,6 @@ impl<'query> QuerySection<'query> {
             range,
             parent,
             next_sibling: None,
-            has_selector_alternatives: false,
         }
     }
 
@@ -434,7 +102,6 @@ impl<'query> QuerySection<'query> {
             range,
             parent,
             next_sibling,
-            has_selector_alternatives: false,
         }
     }
 }
@@ -443,7 +110,6 @@ impl<'query> QuerySection<'query> {
 pub struct Query<'query> {
     pub states: Box<[Transition<'query>]>,
     pub queries: Box<[QuerySection<'query>]>,
-    pub exit_at_section_end: Option<QuerySectionId>,
     pub alternatives: Box<[Box<[Range<TransitionId>]>]>,
 }
 
@@ -451,17 +117,11 @@ impl<'query> Query<'query> {
     pub fn new(
         states: Box<[Transition<'query>]>,
         queries: Box<[QuerySection<'query>]>,
-        exit_at_section_end: Option<QuerySectionId>,
         alternatives: Box<[Box<[Range<TransitionId>]>]>,
     ) -> Self {
-        let mut queries = queries;
-        for (section, ranges) in queries.iter_mut().zip(alternatives.iter()) {
-            section.has_selector_alternatives = ranges.len() > 1;
-        }
         Self {
             states,
             queries,
-            exit_at_section_end,
             alternatives,
         }
     }
@@ -476,30 +136,16 @@ impl<'query> QuerySpec<'query> for Query<'query> {
         &self.queries
     }
 
-    fn exit_at_section_end(&self) -> Option<QuerySectionId> {
-        self.exit_at_section_end
-    }
-
     fn selection_ranges(&self, section: QuerySectionId) -> &[Range<TransitionId>] {
         &self.alternatives[section.index()]
     }
-
-    fn root_positions(&self) -> Vec<Position> {
-        self.selection_ranges(QuerySectionId(0))
-            .iter()
-            .map(|range| Position {
-                selection: QuerySectionId(0),
-                state: range.start,
-            })
-            .collect()
-    }
 }
 
+/// A query built at compile time by the `query!` macro.
 #[derive(Debug, PartialEq, Clone)]
 pub struct StaticQuery<'query, const N_STATES: usize, const N_SECTIONS: usize> {
     pub states: [Transition<'query>; N_STATES],
     pub queries: [QuerySection<'query>; N_SECTIONS],
-    pub exit_at_section_end: Option<QuerySectionId>,
     pub alternatives: &'query [&'query [Range<TransitionId>]],
 }
 
@@ -509,19 +155,11 @@ impl<'query, const N_STATES: usize, const N_SECTIONS: usize>
     pub const fn new(
         states: [Transition<'query>; N_STATES],
         queries: [QuerySection<'query>; N_SECTIONS],
-        exit_at_section_end: Option<QuerySectionId>,
         alternatives: &'query [&'query [Range<TransitionId>]],
     ) -> Self {
-        let mut queries = queries;
-        let mut index = 0;
-        while index < N_SECTIONS && index < alternatives.len() {
-            queries[index].has_selector_alternatives = alternatives[index].len() > 1;
-            index += 1;
-        }
         Self {
             states,
             queries,
-            exit_at_section_end,
             alternatives,
         }
     }
@@ -536,10 +174,6 @@ impl<'query, const N_STATES: usize, const N_SECTIONS: usize> QuerySpec<'query>
 
     fn queries(&self) -> &[QuerySection<'query>] {
         &self.queries
-    }
-
-    fn exit_at_section_end(&self) -> Option<QuerySectionId> {
-        self.exit_at_section_end
     }
 
     fn selection_ranges(&self, section: QuerySectionId) -> &[Range<TransitionId>] {
@@ -605,19 +239,7 @@ mod tests {
     use crate::query::selector::ClassSelections;
     use crate::query::selector::Combinator;
     use crate::query::selector::ElementPredicate;
-    use crate::{
-        Position, Query, QuerySection, QuerySectionId, QuerySpec, Save, SelectionKind, TransitionId,
-    };
-
-    #[test]
-    fn sibling_feature_scan_tracks_public_guard_mutation() {
-        let mut query = Query::all("div p", Save::none()).unwrap().build();
-        assert!(!query.has_sibling_combinator());
-
-        query.states[1].guard = Combinator::NextSibling;
-
-        assert!(query.has_sibling_combinator());
-    }
+    use crate::{Query, QuerySection, QuerySectionId, Save, SelectionKind, TransitionId};
 
     #[test]
     fn test_query_builder_one_selection() {
@@ -647,7 +269,6 @@ mod tests {
                 parent: None,
                 range: TransitionId(0)..TransitionId(1),
                 next_sibling: None,
-                has_selector_alternatives: false,
             }]
         );
     }
@@ -733,157 +354,5 @@ mod tests {
         assert_eq!(query.queries.len(), 3);
         assert_eq!(query.queries[1].next_sibling, Some(QuerySectionId(2)));
         assert_eq!(query.queries[2].next_sibling, None);
-    }
-
-    #[test]
-    fn previous_positions_include_every_parent_selector_alternative() {
-        let query = Query::all("article > p, section > div", Save::none())
-            .unwrap()
-            .all("span", Save::none())
-            .unwrap()
-            .build();
-        let position = query.child_positions(&Position {
-            selection: QuerySectionId(0),
-            state: TransitionId(1),
-        })[0];
-
-        assert_eq!(
-            query.previous_positions(&position),
-            vec![
-                Position {
-                    selection: QuerySectionId(0),
-                    state: TransitionId(1),
-                },
-                Position {
-                    selection: QuerySectionId(0),
-                    state: TransitionId(3),
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn save_points_and_next_transitions_follow_each_selector_alternative() {
-        let paths =
-            Transition::generate_transition_paths_from_string("article > p, div, section > ul li")
-                .unwrap();
-        let mut states = Vec::new();
-        let mut alternatives = Vec::new();
-        for path in paths {
-            let start = TransitionId(states.len());
-            states.extend(path);
-            alternatives.push(start..TransitionId(states.len()));
-        }
-        let state_end = TransitionId(states.len());
-        let query = Query::new(
-            states.into_boxed_slice(),
-            vec![QuerySection::new(
-                "article > p, div, section > ul li",
-                Save::none(),
-                SelectionKind::All,
-                TransitionId(0)..state_end,
-                None,
-            )]
-            .into_boxed_slice(),
-            None,
-            vec![alternatives.into_boxed_slice()].into_boxed_slice(),
-        );
-
-        let expected = [
-            (false, Some(TransitionId(1))),
-            (true, None),
-            (true, None),
-            (false, Some(TransitionId(4))),
-            (false, Some(TransitionId(5))),
-            (true, None),
-        ];
-        for (state, (save_point, next)) in expected.into_iter().enumerate() {
-            let position = Position {
-                selection: QuerySectionId(0),
-                state: TransitionId(state),
-            };
-            assert_eq!(query.is_save_point(&position), save_point, "state {state}");
-            assert_eq!(
-                query.is_last_save_point(&position),
-                save_point,
-                "state {state}"
-            );
-            assert_eq!(position.next_transition(&query), next, "state {state}");
-        }
-
-        // `StaticQuery::new` derives the same per-section flag in const code.
-        let static_query = super::StaticQuery::<6, 1>::new(
-            query.states.to_vec().try_into().unwrap(),
-            [QuerySection::new(
-                "article > p, div, section > ul li",
-                Save::none(),
-                SelectionKind::All,
-                TransitionId(0)..state_end,
-                None,
-            )],
-            None,
-            &[&[
-                TransitionId(0)..TransitionId(2),
-                TransitionId(2)..TransitionId(3),
-                TransitionId(3)..TransitionId(6),
-            ]],
-        );
-        assert_eq!(static_query.queries(), query.queries());
-        for (state, (save_point, next)) in expected.into_iter().enumerate() {
-            let position = Position {
-                selection: QuerySectionId(0),
-                state: TransitionId(state),
-            };
-            assert_eq!(
-                static_query.is_save_point(&position),
-                save_point,
-                "state {state}"
-            );
-            assert_eq!(
-                position.next_transition(&static_query),
-                next,
-                "state {state}"
-            );
-        }
-    }
-
-    #[test]
-    fn position_traversal_visits_every_child_selector_alternative() {
-        let query = Query::all("main", Save::none())
-            .unwrap()
-            .then(|main| {
-                Ok([
-                    main.all("h1, h2", Save::none())?,
-                    main.all("p, aside", Save::none())?,
-                ])
-            })
-            .unwrap()
-            .build();
-        let root = query.root_positions()[0];
-        let expected = query.child_positions(&root);
-        let traversed: Vec<_> = query.children(&root).unwrap().collect();
-
-        assert_eq!(traversed, expected.as_slice());
-        assert_eq!(
-            traversed,
-            vec![
-                Position {
-                    selection: QuerySectionId(1),
-                    state: TransitionId(1),
-                },
-                Position {
-                    selection: QuerySectionId(1),
-                    state: TransitionId(2),
-                },
-                Position {
-                    selection: QuerySectionId(2),
-                    state: TransitionId(3),
-                },
-                Position {
-                    selection: QuerySectionId(2),
-                    state: TransitionId(4),
-                },
-            ]
-        );
     }
 }
