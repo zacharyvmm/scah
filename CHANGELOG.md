@@ -11,6 +11,17 @@ Rust crates and the Python and npm packages together.
 - The cursor engine and `QueryMultiplexer` are removed. `XHtmlParser::new` and
   `XHtmlParser::with_capacity` take the query slice directly, and debug trace
   events describe compiled steps instead of cursors. ([#95])
+- Results are stored in flat tables. `Element` no longer has `next_sibling` or
+  `first_child_query`, and `Store::push`, `Store::queries`, `QueryNode`, and
+  `QueryId` are removed. An element saved by a nested query under several
+  parent matches is stored once and listed under each of them. ([#97])
+
+### Added
+
+- `Store::query(index)` and `Element::nested(&store, index)` select results by
+  query position, and `Store::results`, `query_results`, `child_results`, and
+  `nested_results` return element ids. Python and Node gain `Store.query`.
+  ([#97])
 
 ### Changed
 
@@ -30,6 +41,8 @@ Rust crates and the Python and npm packages together.
   ([#96])
 - Elements left open when the input ends right after a tag, optionally
   followed by whitespace, keep their saved content. ([#93], [#96])
+- Queries with the same selector string keep separate results; `Store::get`
+  returns the first query with that selector. ([#91], [#97])
 
 ## [0.1.0] - 2026-10-01
 
@@ -144,3 +157,5 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#92]: https://github.com/zacharyvmm/scah/issues/92
 [#93]: https://github.com/zacharyvmm/scah/issues/93
 [#96]: https://github.com/zacharyvmm/scah/pull/96
+[#91]: https://github.com/zacharyvmm/scah/issues/91
+[#97]: https://github.com/zacharyvmm/scah/pull/97
