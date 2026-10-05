@@ -1,0 +1,13 @@
+[package]
+name = "scah-differential"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Differential tests of the current scah engine against the last release."
+
+[dependencies]
+scah.workspace = true
+# The last published engine, used as the reference implementation.
+scah_reference = { package = "scah", version = "=0.1.0", registry = "crates-io" }

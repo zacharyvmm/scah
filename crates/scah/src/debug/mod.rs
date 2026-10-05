@@ -1,4 +1,4 @@
-use crate::{ElementId, QuerySectionId, TransitionId};
+use crate::ElementId;
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -87,44 +87,16 @@ pub enum TraceEvent<'html, 'query> {
         depth: u16,
         reason: ImpliedCloseReason,
     },
-    TransitionMatched {
-        runner_index: usize,
-        cursor: CursorTraceKind,
+    /// A candidate step whose tag name matched but whose predicate
+    /// (id, class, attribute, or pseudo-class) rejected the element.
+    StepRejected {
         selector: &'query str,
         element: &'html str,
         depth: u16,
-        selection: QuerySectionId,
-        state: TransitionId,
-    },
-    TransitionRejected {
-        runner_index: usize,
-        cursor: CursorTraceKind,
-        selector: &'query str,
-        element: &'html str,
-        depth: u16,
-        selection: QuerySectionId,
-        state: TransitionId,
-        reason: TransitionRejectReason,
-    },
-    ScopedCursorCreated {
-        runner_index: usize,
-        depth: u16,
-        scope_depth: u16,
-        parent: ElementId,
-        selection: QuerySectionId,
-        state: TransitionId,
-        reason: ScopedCursorReason,
-    },
-    ScopedCursorPruned {
-        runner_index: usize,
-        cursor_index: usize,
-        scope_depth: u16,
-        close_depth: u16,
-        selection: QuerySectionId,
-        state: TransitionId,
+        step: usize,
     },
     ElementSaved {
-        runner_index: usize,
+        section: usize,
         selector: &'query str,
         element: &'html str,
         element_id: ElementId,
@@ -140,35 +112,10 @@ pub enum TraceEvent<'html, 'query> {
         has_raw_text: bool,
         has_text: bool,
     },
+    /// Parsing stopped because no later tag can change the results.
     EarlyExit {
-        runner_index: usize,
-        selector: &'query str,
-        section: QuerySectionId,
+        reader_position: usize,
     },
-    CursorSuppressed {
-        runner_index: usize,
-        parent: ElementId,
-        selection: QuerySectionId,
-        state: TransitionId,
-        candidate_base_depth: u16,
-        dominating_base_depth: u16,
-        reason: CursorSuppressionReason,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CursorTraceKind {
-    Root,
-    Scoped { index: usize },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopedCursorReason {
-    DescendantFork,
-    BranchSibling,
-    ChildSelection,
-    AdjacentSiblingActivated,
-    SubsequentSiblingActivated,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,20 +123,6 @@ pub enum ImpliedCloseReason {
     OpenTagRule,
     MismatchedEndTag,
     EofDrain,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransitionRejectReason {
-    DepthGuardFailed,
-    PredicateFailed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CursorSuppressionReason {
-    DescendantDominated,
-    ExactDuplicate,
-    /// A completed First winner already owns this `(section, output parent)`.
-    FirstScopeClaimed,
 }
 
 impl<'html, 'query> TraceEvent<'html, 'query> {
@@ -252,83 +185,22 @@ impl<'html, 'query> TraceEvent<'html, 'query> {
                 )
                 .unwrap();
             }
-            Self::TransitionMatched {
-                runner_index,
-                cursor,
+            Self::StepRejected {
                 selector,
                 element,
                 depth,
-                selection,
-                state,
+                step,
             } => {
                 write!(
                     output,
-                    "\"event\":\"TransitionMatched\",\"runner_index\":{runner_index},\"cursor\":{},\"selector\":{},\"element\":{},\"depth\":{depth},\"selection\":{},\"state\":{}",
-                    JsonString(&format!("{cursor:?}")),
+                    "\"event\":\"StepRejected\",\"selector\":{},\"element\":{},\"depth\":{depth},\"step\":{step}",
                     JsonString(selector),
-                    JsonString(element),
-                    selection.index(),
-                    state.index()
-                )
-                .unwrap();
-            }
-            Self::TransitionRejected {
-                runner_index,
-                cursor,
-                selector,
-                element,
-                depth,
-                selection,
-                state,
-                reason,
-            } => {
-                write!(
-                    output,
-                    "\"event\":\"TransitionRejected\",\"runner_index\":{runner_index},\"cursor\":{},\"selector\":{},\"element\":{},\"depth\":{depth},\"selection\":{},\"state\":{},\"reason\":\"{reason:?}\"",
-                    JsonString(&format!("{cursor:?}")),
-                    JsonString(selector),
-                    JsonString(element),
-                    selection.index(),
-                    state.index()
-                )
-                .unwrap();
-            }
-            Self::ScopedCursorCreated {
-                runner_index,
-                depth,
-                scope_depth,
-                parent,
-                selection,
-                state,
-                reason,
-            } => {
-                write!(
-                    output,
-                    "\"event\":\"ScopedCursorCreated\",\"runner_index\":{runner_index},\"depth\":{depth},\"scope_depth\":{scope_depth},\"parent\":{},\"selection\":{},\"state\":{},\"reason\":\"{reason:?}\"",
-                    parent.index(),
-                    selection.index(),
-                    state.index()
-                )
-                .unwrap();
-            }
-            Self::ScopedCursorPruned {
-                runner_index,
-                cursor_index,
-                scope_depth,
-                close_depth,
-                selection,
-                state,
-            } => {
-                write!(
-                    output,
-                    "\"event\":\"ScopedCursorPruned\",\"runner_index\":{runner_index},\"cursor_index\":{cursor_index},\"scope_depth\":{scope_depth},\"close_depth\":{close_depth},\"selection\":{},\"state\":{}",
-                    selection.index(),
-                    state.index()
+                    JsonString(element)
                 )
                 .unwrap();
             }
             Self::ElementSaved {
-                runner_index,
+                section,
                 selector,
                 element,
                 element_id,
@@ -339,7 +211,7 @@ impl<'html, 'query> TraceEvent<'html, 'query> {
             } => {
                 write!(
                     output,
-                    "\"event\":\"ElementSaved\",\"runner_index\":{runner_index},\"selector\":{},\"element\":{},\"element_id\":{},\"parent_id\":{},\"save_inner_html\":{save_inner_html},\"save_raw_text\":{save_raw_text},\"save_text\":{save_text}",
+                    "\"event\":\"ElementSaved\",\"section\":{section},\"selector\":{},\"element\":{},\"element_id\":{},\"parent_id\":{},\"save_inner_html\":{save_inner_html},\"save_raw_text\":{save_raw_text},\"save_text\":{save_text}",
                     JsonString(selector),
                     JsonString(element),
                     element_id.index(),
@@ -362,34 +234,10 @@ impl<'html, 'query> TraceEvent<'html, 'query> {
                 )
                 .unwrap();
             }
-            Self::EarlyExit {
-                runner_index,
-                selector,
-                section,
-            } => {
+            Self::EarlyExit { reader_position } => {
                 write!(
                     output,
-                    "\"event\":\"EarlyExit\",\"runner_index\":{runner_index},\"selector\":{},\"section\":{}",
-                    JsonString(selector),
-                    section.index()
-                )
-                .unwrap();
-            }
-            Self::CursorSuppressed {
-                runner_index,
-                parent,
-                selection,
-                state,
-                candidate_base_depth,
-                dominating_base_depth,
-                reason,
-            } => {
-                write!(
-                    output,
-                    "\"event\":\"CursorSuppressed\",\"runner_index\":{runner_index},\"parent\":{},\"selection\":{},\"state\":{},\"candidate_base_depth\":{candidate_base_depth},\"dominating_base_depth\":{dominating_base_depth},\"reason\":\"{reason:?}\"",
-                    parent.index(),
-                    selection.index(),
-                    state.index()
+                    "\"event\":\"EarlyExit\",\"reader_position\":{reader_position}"
                 )
                 .unwrap();
             }
@@ -424,8 +272,8 @@ impl std::fmt::Display for JsonString<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::ElementId;
     use crate::debug::{TraceEvent, TraceStore};
-    use crate::{ElementId, QuerySectionId, TransitionId};
 
     #[test]
     fn trace_store_formats_jsonl() {
@@ -437,7 +285,7 @@ mod tests {
             self_closing: false,
         });
         trace.push(TraceEvent::ElementSaved {
-            runner_index: 0,
+            section: 0,
             selector: "main > a",
             element: "a",
             element_id: ElementId::from(1),
@@ -461,18 +309,13 @@ mod tests {
     fn trace_store_writes_jsonl_file() {
         let mut trace = TraceStore::new();
         trace.push(TraceEvent::EarlyExit {
-            runner_index: 3,
-            selector: "a[href]",
-            section: QuerySectionId::from(2),
+            reader_position: 42,
         });
-        trace.push(TraceEvent::TransitionMatched {
-            runner_index: 0,
-            cursor: super::CursorTraceKind::Root,
+        trace.push(TraceEvent::StepRejected {
             selector: "a[href]",
             element: "a",
             depth: 1,
-            selection: QuerySectionId::from(0),
-            state: TransitionId::from(1),
+            step: 0,
         });
 
         let path = std::env::temp_dir().join(format!("scah-trace-{}.jsonl", std::process::id()));
@@ -480,8 +323,8 @@ mod tests {
 
         let written = std::fs::read_to_string(&path).unwrap();
         assert!(written.contains(r#""event":"EarlyExit""#));
-        assert!(written.contains(r#""section":2"#));
-        assert!(written.contains(r#""event":"TransitionMatched""#));
+        assert!(written.contains(r#""reader_position":42"#));
+        assert!(written.contains(r#""event":"StepRejected""#));
 
         std::fs::remove_file(path).unwrap();
     }

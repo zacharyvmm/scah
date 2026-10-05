@@ -1,10 +1,7 @@
 pub(crate) mod attribute_interest;
-pub mod cursor;
-pub mod executor;
-pub mod multiplexer;
-//pub mod tree;
+pub(crate) mod matcher;
 
 pub(crate) type DepthSize = u16;
 
-/// Maximum real element depth; [`DepthSize::MAX`] is reserved for cursor sentinels.
+/// Maximum real element depth.
 pub(crate) const MAX_ELEMENT_DEPTH: DepthSize = DepthSize::MAX - 1;

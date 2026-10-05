@@ -332,10 +332,6 @@ fn skip_html_comment(reader: &mut Reader<'_>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        AttributeSelection, AttributeSelectionKind, AttributeSelections, ClassSelections,
-        ElementPredicate,
-    };
 
     #[test]
     fn test_key_no_quote_and_value_with_quote() {
@@ -757,19 +753,10 @@ mod tests {
 
     #[test]
     fn selected_attribute_parsing_retains_only_query_fields() {
-        let mut interest = AttributeInterest::default();
-        interest.add_predicate(&ElementPredicate {
-            name: Some("a"),
-            id: None,
-            classes: ClassSelections::from_static(&["promoted"]),
-            attributes: AttributeSelections::from(vec![AttributeSelection {
-                name: "href",
-                value: None,
-                kind: AttributeSelectionKind::Presence,
-                case_sensitivity: crate::AttributeCaseSensitivity::Default,
-            }]),
-            logical: Default::default(),
-            structural: Default::default(),
+        let mut interest = AttributeInterest::new(&["href"]);
+        interest.add(scah_query_ir::AttributeMask {
+            flags: scah_query_ir::AttributeMask::CLASS,
+            keys: 0b1,
         });
 
         let mut reader =

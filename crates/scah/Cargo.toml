@@ -33,10 +33,6 @@ bench-internals = []
 simd-bench-internals = []
 otel = ["dep:tracing"]
 
-[[example]]
-name = "cursor_stats"
-required-features = ["bench-internals"]
-
 [dev-dependencies]
 pretty_assertions = "1.4.1"
 

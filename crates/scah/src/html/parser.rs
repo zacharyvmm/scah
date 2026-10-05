@@ -14,14 +14,22 @@ use crate::XHtmlElement;
 use crate::debug::ImpliedCloseReason;
 #[cfg(any(debug_assertions, test))]
 use crate::debug::TraceEvent;
-use crate::engine::MAX_ELEMENT_DEPTH;
 use crate::engine::attribute_interest::AttributeInterest;
-use crate::engine::multiplexer::{
-    DocumentPosition, ElementPreflight, QueryMultiplexer, SaveHit, SiblingCallback,
-};
+use crate::engine::matcher::{AnyMatcher, SaveHit};
+use crate::engine::{DepthSize, MAX_ELEMENT_DEPTH};
 use crate::store::{Store, trim_collapsed_range};
-use crate::{LocalSelectorList, QuerySpec};
+use crate::{LocalSelectorList, Program, QuerySpec};
+use scah_query_ir::AttributeMask;
 use smallvec::SmallVec;
+
+/// Where the parser is in the document.
+#[derive(Debug, Default)]
+struct DocumentPosition {
+    /// End of the current open tag (inner HTML start) on open events, start
+    /// of the current close tag (inner HTML end) on close events.
+    reader_position: usize,
+    element_depth: DepthSize,
+}
 
 #[derive(Default)]
 struct ParserTempState<'html, 'query> {
@@ -31,9 +39,7 @@ struct ParserTempState<'html, 'query> {
     attributes: Vec<Attribute<'html>>,
     attribute_start: usize,
     save_hits: Vec<SaveHit>,
-    preflight: ElementPreflight<'query>,
-
-    sibling: Option<Box<SiblingParserState>>,
+    attribute_interest: AttributeInterest<'query>,
     structural: Option<Box<StructuralParserState<'html, 'query>>>,
 }
 
@@ -42,13 +48,48 @@ type TypeCounts<'html> = SmallVec<[(&'html str, u32); 4]>;
 struct StructuralParserState<'html, 'query> {
     child_counts: Option<Vec<u32>>,
     type_counts: Option<Vec<TypeCounts<'html>>>,
-    tracked_type_names: Option<SmallVec<[&'query str; 4]>>,
+    tracked_type_names: Option<Vec<&'query str>>,
     filters: Vec<(&'query LocalSelectorList<'query>, Vec<u32>)>,
-    attribute_interest: AttributeInterest<'query>,
+    attribute_interest: AttributeMask,
     root_seen: bool,
 }
 
 impl<'html, 'query> StructuralParserState<'html, 'query> {
+    fn new(program: &Program<'query>) -> Self {
+        let features = program.features();
+        let filters: Vec<_> = program
+            .structural_filters()
+            .into_iter()
+            // Filter lists are evaluated without a structural context. The
+            // selector parser rejects structural pseudo-classes inside `of S`,
+            // but hand-built predicates can still contain them. Leaving such a
+            // filter uncounted makes its ordinal fail closed instead of
+            // counting siblings that do not match.
+            .filter(|filter| {
+                !filter
+                    .as_slice()
+                    .iter()
+                    .any(|predicate| predicate.requires_structural())
+            })
+            .collect();
+        Self {
+            // Keep a virtual document parent so fragment roots participate in
+            // ordinal selectors consistently.
+            child_counts: features.needs_child_ordinals.then(|| vec![0]),
+            type_counts: features.needs_type_ordinals.then(|| vec![SmallVec::new()]),
+            tracked_type_names: features
+                .needs_type_ordinals
+                .then(|| program.type_ordinal_names())
+                .flatten(),
+            filters: filters
+                .into_iter()
+                .map(|filter| (filter, vec![0]))
+                .collect(),
+            attribute_interest: program.filter_interest(),
+            root_seen: false,
+        }
+    }
+
     fn open(
         &mut self,
         name: &'html str,
@@ -134,35 +175,9 @@ impl<'html, 'query> StructuralParserState<'html, 'query> {
     }
 }
 
-#[derive(Default)]
-struct SiblingParserState {
-    // Reused scratch output from the current open-tag query dispatch.
-    pending: Vec<SiblingCallback>,
-
-    // Persistent storage for callbacks belonging to currently open elements.
-    arena: Vec<SiblingCallback>,
-
-    // Callback arena starts aligned with the open-element stack.
-    callback_starts: Vec<usize>,
-}
-
-impl<'html, 'query> ParserTempState<'html, 'query> {
-    fn sibling(&self) -> &SiblingParserState {
-        self.sibling
-            .as_deref()
-            .expect("sibling parser state requires sibling queries")
-    }
-
-    fn sibling_mut(&mut self) -> &mut SiblingParserState {
-        self.sibling
-            .as_deref_mut()
-            .expect("sibling parser state requires sibling queries")
-    }
-}
-
-pub struct XHtmlParser<'html, 'query, Q> {
+pub struct XHtmlParser<'html, 'query> {
     position: DocumentPosition,
-    pub selectors: QueryMultiplexer<'query, Q>,
+    matcher: AnyMatcher<'query>,
     store: Store<'html, 'query>,
     element: crate::XHtmlElement<'html>,
     open_elements: OpenElementStack<'html>,
@@ -174,6 +189,8 @@ pub struct XHtmlParser<'html, 'query, Q> {
     raw_active_count: usize,
     text_active_count: usize,
     persist_attributes: bool,
+    /// Every root query is `First`, so parsing may stop early.
+    can_finish: bool,
     raw_text_close: Option<&'static str>,
     eof_drained: bool,
     parse_error: Option<ParseError>,
@@ -226,36 +243,32 @@ fn text_behavior_for(
     }
 }
 
-impl<'html, 'query: 'html, Q> XHtmlParser<'html, 'query, Q>
-where
-    Q: QuerySpec<'query>,
-{
-    pub fn new(selectors: QueryMultiplexer<'query, Q>) -> Self {
-        let indexing_mode = if selectors.allows_early_exit() {
+impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
+    pub fn new<Q: QuerySpec<'query>>(queries: &'query [Q]) -> Self {
+        Self::from_program(Program::compile(queries), None, None)
+    }
+
+    /// Like [`XHtmlParser::new`], but reserves result storage for an input of
+    /// `capacity` bytes.
+    pub fn with_capacity<Q: QuerySpec<'query>>(queries: &'query [Q], capacity: usize) -> Self {
+        Self::from_program(Program::compile(queries), Some(capacity), None)
+    }
+
+    pub(crate) fn from_program(
+        program: Program<'query>,
+        capacity: Option<usize>,
+        indexing_mode: Option<IndexingMode>,
+    ) -> Self {
+        let features = *program.features();
+        let requirements = features.text;
+        let text_state = ParserTextState::new(requirements);
+        let persist_attributes = features.stores_attributes;
+        let parse_attributes = features.parses_attributes || requirements.text;
+        let indexing_mode = indexing_mode.unwrap_or(if features.all_roots_first {
             IndexingMode::Rolling
         } else {
             IndexingMode::FullDocument
-        };
-        Self::with_indexing_mode(selectors, None, indexing_mode)
-    }
-
-    pub(crate) fn with_indexing_mode(
-        selectors: QueryMultiplexer<'query, Q>,
-        capacity: Option<usize>,
-        indexing_mode: IndexingMode,
-    ) -> Self {
-        let requirements = selectors.text_requirements();
-        let text_state = ParserTextState::new(requirements);
-        let persist_attributes = selectors.requires_attribute_storage();
-        let parse_attributes = selectors.requires_attribute_parsing() || requirements.text;
-        let features = selectors.features();
-        let has_sibling_queries = features.has_sibling_queries;
-        let structural_filters = selectors.structural_filters();
-        let tracked_type_names = features
-            .needs_type_ordinals
-            .then(|| selectors.type_ordinal_names())
-            .flatten();
-        let structural_attribute_interest = selectors.structural_attribute_interest();
+        });
         let store = capacity.map_or_else(Store::default, |capacity| {
             Store::with_capacity_requirements(
                 capacity,
@@ -268,45 +281,19 @@ where
                 false,
             )
         });
+        let structural = features
+            .has_structural
+            .then(|| Box::new(StructuralParserState::new(&program)));
+        let attribute_interest = AttributeInterest::new(program.attribute_names());
 
         Self {
-            position: DocumentPosition {
-                element_depth: 0,
-                reader_position: 0, // for inner_html
-                self_closing: false,
-            },
-            selectors,
+            position: DocumentPosition::default(),
+            matcher: AnyMatcher::new(program),
             element: XHtmlElement::default(),
             open_elements: OpenElementStack::default(),
             temp_state: ParserTempState {
-                sibling: has_sibling_queries.then(Box::default),
-                structural: features.has_structural_queries.then(|| {
-                    Box::new(StructuralParserState {
-                        // Keep a virtual document parent so fragment roots
-                        // participate in ordinal selectors consistently.
-                        child_counts: features.needs_child_ordinals.then(|| vec![0]),
-                        type_counts: features.needs_type_ordinals.then(|| vec![SmallVec::new()]),
-                        tracked_type_names,
-                        // Filter lists are evaluated without a structural
-                        // context. The selector parser rejects structural
-                        // pseudo-classes inside `of S`, but hand-built
-                        // predicates can still contain them. Leaving such a
-                        // filter uncounted makes its ordinal fail closed
-                        // instead of counting siblings that do not match.
-                        filters: structural_filters
-                            .into_iter()
-                            .filter(|filter| {
-                                !filter
-                                    .as_slice()
-                                    .iter()
-                                    .any(|predicate| predicate.requires_structural())
-                            })
-                            .map(|filter| (filter, vec![0]))
-                            .collect(),
-                        attribute_interest: structural_attribute_interest.unwrap_or_default(),
-                        root_seen: false,
-                    })
-                }),
+                attribute_interest,
+                structural,
                 ..ParserTempState::default()
             },
             capture_mode: text_state.mode,
@@ -315,6 +302,7 @@ where
             raw_active_count: 0,
             text_active_count: 0,
             persist_attributes,
+            can_finish: features.all_roots_first,
             raw_text_close: None,
             eof_drained: false,
             parse_error: None,
@@ -325,15 +313,6 @@ where
             selected_attribute_count: 0,
             store,
         }
-    }
-
-    pub fn with_capacity(selectors: QueryMultiplexer<'query, Q>, capacity: usize) -> Self {
-        let indexing_mode = if selectors.allows_early_exit() {
-            IndexingMode::Rolling
-        } else {
-            IndexingMode::FullDocument
-        };
-        Self::with_indexing_mode(selectors, Some(capacity), indexing_mode)
     }
 
     fn flush_source_text(&mut self, reader: &Reader<'html>, end: usize) {
@@ -369,35 +348,16 @@ where
         }
     }
 
+    /// Process the next tag. Returns `false` once parsing is complete.
     pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
         if self.parse_error.is_some() {
             return false;
         }
         self.indexer.prepare(reader.source());
-        let features = self.selectors.features();
-        let extended = features.has_structural_queries || features.has_selector_lists;
-        match (
-            self.capture_mode.captures_any(),
-            features.has_sibling_queries,
-            features.has_retiring_runners,
-            extended,
-        ) {
-            (false, false, false, false) => self.next_mode::<false, false, false, false>(reader),
-            (false, false, false, true) => self.next_mode::<false, false, false, true>(reader),
-            (false, false, true, false) => self.next_mode::<false, false, true, false>(reader),
-            (false, false, true, true) => self.next_mode::<false, false, true, true>(reader),
-            (false, true, false, false) => self.next_mode::<false, true, false, false>(reader),
-            (false, true, false, true) => self.next_mode::<false, true, false, true>(reader),
-            (false, true, true, false) => self.next_mode::<false, true, true, false>(reader),
-            (false, true, true, true) => self.next_mode::<false, true, true, true>(reader),
-            (true, false, false, false) => self.next_mode::<true, false, false, false>(reader),
-            (true, false, false, true) => self.next_mode::<true, false, false, true>(reader),
-            (true, false, true, false) => self.next_mode::<true, false, true, false>(reader),
-            (true, false, true, true) => self.next_mode::<true, false, true, true>(reader),
-            (true, true, false, false) => self.next_mode::<true, true, false, false>(reader),
-            (true, true, false, true) => self.next_mode::<true, true, false, true>(reader),
-            (true, true, true, false) => self.next_mode::<true, true, true, false>(reader),
-            (true, true, true, true) => self.next_mode::<true, true, true, true>(reader),
+        if self.capture_mode.captures_any() {
+            self.next_mode::<true>(reader)
+        } else {
+            self.next_mode::<false>(reader)
         }
     }
 
@@ -409,52 +369,10 @@ where
         // preparation once. `next` prepares per call because its caller owns
         // the Reader and may step a different source between calls.
         self.indexer.prepare(reader.source());
-        let features = self.selectors.features();
-        let extended = features.has_structural_queries || features.has_selector_lists;
-        match (
-            self.capture_mode.captures_any(),
-            features.has_sibling_queries,
-            features.has_retiring_runners,
-            extended,
-        ) {
-            (false, false, false, false) => {
-                while self.next_mode::<false, false, false, false>(reader) {}
-            }
-            (false, false, false, true) => {
-                while self.next_mode::<false, false, false, true>(reader) {}
-            }
-            (false, false, true, false) => {
-                while self.next_mode::<false, false, true, false>(reader) {}
-            }
-            (false, false, true, true) => {
-                while self.next_mode::<false, false, true, true>(reader) {}
-            }
-            (false, true, false, false) => {
-                while self.next_mode::<false, true, false, false>(reader) {}
-            }
-            (false, true, false, true) => {
-                while self.next_mode::<false, true, false, true>(reader) {}
-            }
-            (false, true, true, false) => {
-                while self.next_mode::<false, true, true, false>(reader) {}
-            }
-            (false, true, true, true) => while self.next_mode::<false, true, true, true>(reader) {},
-            (true, false, false, false) => {
-                while self.next_mode::<true, false, false, false>(reader) {}
-            }
-            (true, false, false, true) => {
-                while self.next_mode::<true, false, false, true>(reader) {}
-            }
-            (true, false, true, false) => {
-                while self.next_mode::<true, false, true, false>(reader) {}
-            }
-            (true, false, true, true) => while self.next_mode::<true, false, true, true>(reader) {},
-            (true, true, false, false) => {
-                while self.next_mode::<true, true, false, false>(reader) {}
-            }
-            (true, true, false, true) => while self.next_mode::<true, true, false, true>(reader) {},
-            (true, true, true, false) => while self.next_mode::<true, true, true, false>(reader) {},
-            (true, true, true, true) => while self.next_mode::<true, true, true, true>(reader) {},
+        if self.capture_mode.captures_any() {
+            while self.next_mode::<true>(reader) {}
+        } else {
+            self.run_without_text_capture(reader);
         }
     }
 
@@ -464,34 +382,18 @@ where
             return;
         }
         self.indexer.prepare(reader.source());
-        let features = self.selectors.features();
-        let extended = features.has_structural_queries || features.has_selector_lists;
-        match (
-            features.has_sibling_queries,
-            features.has_retiring_runners,
-            extended,
-        ) {
-            (false, false, false) => while self.next_mode::<false, false, false, false>(reader) {},
-            (false, false, true) => while self.next_mode::<false, false, false, true>(reader) {},
-            (false, true, false) => while self.next_mode::<false, false, true, false>(reader) {},
-            (false, true, true) => while self.next_mode::<false, false, true, true>(reader) {},
-            (true, false, false) => while self.next_mode::<false, true, false, false>(reader) {},
-            (true, false, true) => while self.next_mode::<false, true, false, true>(reader) {},
-            (true, true, false) => while self.next_mode::<false, true, true, false>(reader) {},
-            (true, true, true) => while self.next_mode::<false, true, true, true>(reader) {},
-        }
+        while self.next_mode::<false>(reader) {}
+    }
+
+    /// Whether no later tag can change the results: every query is done and
+    /// no saved element is waiting for its close tag.
+    #[inline]
+    fn finished(&self) -> bool {
+        self.can_finish && self.temp_state.saved_elements.is_empty() && self.matcher.finished()
     }
 
     #[inline(always)]
-    fn next_mode<
-        const CAPTURE: bool,
-        const SIBLINGS: bool,
-        const RETIREMENT: bool,
-        const EXTENDED: bool,
-    >(
-        &mut self,
-        reader: &mut Reader<'html>,
-    ) -> bool {
+    fn next_mode<const CAPTURE: bool>(&mut self, reader: &mut Reader<'html>) -> bool {
         if let Some(close_tag) = self.raw_text_close {
             let source = reader.source();
             let Some(close_position) =
@@ -499,7 +401,7 @@ where
                     .find_raw_text_close(source, reader.get_position(), close_tag)
             else {
                 reader.advance_to(source.len());
-                self.drain_open_elements::<CAPTURE, SIBLINGS, RETIREMENT>(reader);
+                self.drain_open_elements::<CAPTURE>(reader);
                 return false;
             };
             reader.advance_to(close_position);
@@ -521,22 +423,21 @@ where
             if CAPTURE && self.capture_mode.captures_text() {
                 self.text_state.cancel_initial_newline();
             }
-            let early_exit =
-                self.handle_close_tag::<CAPTURE, SIBLINGS, RETIREMENT>(closing_tag, reader);
+            let finished = self.handle_close_tag::<CAPTURE>(closing_tag, reader);
             if CAPTURE && self.capture_mode.captures_any() {
                 self.mark_active_source_start(reader.get_position());
             }
-            return !early_exit && !reader.eof();
+            return !finished && !reader.eof();
         }
 
         let source = reader.source();
-        let mut early_exit = false;
+        let mut finished = false;
         let mut open_tag_flags = None;
         let mut open_text_tag_flags = TextTagFlags::default();
         let tag = loop {
             let Some(span) = self.indexer.next(source, reader.get_position()) else {
                 reader.advance_to(source.len());
-                self.drain_open_elements::<CAPTURE, SIBLINGS, RETIREMENT>(reader);
+                self.drain_open_elements::<CAPTURE>(reader);
                 return false;
             };
 
@@ -574,40 +475,30 @@ where
                         self.open_elements
                             .prepare_for_open_into(tag_flags, &mut self.temp_state.implied_closes);
                         if !self.temp_state.implied_closes.is_empty() {
-                            early_exit =
-                                self.drain_implied_closes::<CAPTURE, SIBLINGS, RETIREMENT>(
-                                    reader,
-                                    Some(ImpliedCloseReason::OpenTagRule),
-                                    None,
-                                    true,
-                                ) || early_exit;
+                            finished = self.drain_implied_closes::<CAPTURE>(
+                                reader,
+                                Some(ImpliedCloseReason::OpenTagRule),
+                                None,
+                            ) || finished;
                         }
                     }
 
-                    if EXTENDED && let Some(structural) = self.temp_state.structural.as_ref() {
-                        self.selectors
-                            .prepare_element_with_structural_interest::<SIBLINGS, RETIREMENT>(
-                                name,
-                                &mut self.temp_state.preflight,
-                                &structural.attribute_interest,
-                            );
-                    } else {
-                        self.selectors.prepare_element::<SIBLINGS, RETIREMENT>(
-                            name,
-                            &mut self.temp_state.preflight,
-                        );
+                    let interest = &mut self.temp_state.attribute_interest;
+                    interest.clear();
+                    if self.matcher.prepare(name) {
+                        interest.add(self.matcher.attribute_mask());
+                    }
+                    if let Some(structural) = self.temp_state.structural.as_ref() {
+                        interest.add(structural.attribute_interest);
                     }
                     if CAPTURE && self.capture_mode.captures_text() {
-                        self.temp_state
-                            .preflight
-                            .attribute_interest
-                            .require_hidden();
+                        interest.require_hidden();
                     }
                     // A tag ending immediately after its name cannot carry
                     // selector attributes or hidden-text suppression.
                     let end = if CAPTURE && source.get(open.attributes_start) == Some(&b'>') {
                         open.attributes_start + 1
-                    } else if !self.temp_state.preflight.attribute_interest.is_empty() {
+                    } else if !interest.is_empty() {
                         #[cfg(test)]
                         {
                             self.attribute_parse_count += 1;
@@ -617,14 +508,14 @@ where
                             self.element.parse_attributes(
                                 &mut attributes,
                                 &mut self.store.attributes,
-                                &self.temp_state.preflight.attribute_interest,
+                                &self.temp_state.attribute_interest,
                             );
                         } else {
                             self.temp_state.attributes.clear();
                             self.element.parse_attributes(
                                 &mut attributes,
                                 &mut self.temp_state.attributes,
-                                &self.temp_state.preflight.attribute_interest,
+                                &self.temp_state.attribute_interest,
                             );
                         }
                         #[cfg(test)]
@@ -653,17 +544,15 @@ where
 
         match tag {
             XHtmlTag::Open => {
-                let tag = open_tag_flags.expect("opening tags are classified before preflight");
+                let tag = open_tag_flags.expect("opening tags are classified before matching");
 
                 if let Some(close_tag) = tag.raw_text_close_tag() {
                     self.raw_text_close = Some(close_tag);
                 }
 
-                self.position.reader_position = tag_start_position;
                 self.position.reader_position = reader.get_position();
 
                 let is_self_closing = tag.is_void();
-                self.position.self_closing = is_self_closing;
 
                 let (text_behavior, text_edge_policy) = if CAPTURE
                     && self.capture_mode.captures_text()
@@ -698,20 +587,12 @@ where
                     self.record_parse_error(err);
                     return false;
                 } else {
-                    if SIBLINGS {
-                        let sibling = self.temp_state.sibling_mut();
-                        sibling.callback_starts.push(sibling.arena.len());
-                    }
                     self.position.element_depth = self.open_elements.depth();
                 }
-                let structural = if EXTENDED {
-                    self.temp_state
-                        .structural
-                        .as_deref_mut()
-                        .map(|state| state.open(self.element.name, !is_self_closing, &self.element))
-                } else {
-                    None
-                };
+                let structural =
+                    self.temp_state.structural.as_deref_mut().map(|state| {
+                        state.open(self.element.name, !is_self_closing, &self.element)
+                    });
 
                 crate::scah_trace!(
                     self.store,
@@ -723,56 +604,12 @@ where
                     }
                 );
 
-                if SIBLINGS {
-                    let ParserTempState {
-                        save_hits,
-                        preflight,
-                        sibling,
-                        ..
-                    } = &mut self.temp_state;
-                    let sibling = sibling
-                        .as_deref_mut()
-                        .expect("sibling parser state requires sibling queries");
-                    if EXTENDED {
-                        self.selectors.next_with_siblings_into_with_context(
-                            &self.element,
-                            &self.position,
-                            &mut self.store,
-                            save_hits,
-                            preflight,
-                            &mut sibling.pending,
-                            structural.as_ref(),
-                        );
-                    } else {
-                        self.selectors.next_with_siblings_into(
-                            &self.element,
-                            &self.position,
-                            &mut self.store,
-                            save_hits,
-                            preflight,
-                            &mut sibling.pending,
-                        );
-                    }
-                } else {
-                    if EXTENDED {
-                        self.selectors.next_plain_into_with_context(
-                            &self.element,
-                            &self.position,
-                            &mut self.store,
-                            &mut self.temp_state.save_hits,
-                            &self.temp_state.preflight,
-                            structural.as_ref(),
-                        );
-                    } else {
-                        self.selectors.next_plain_into(
-                            &self.element,
-                            &self.position,
-                            &mut self.store,
-                            &mut self.temp_state.save_hits,
-                            &self.temp_state.preflight,
-                        );
-                    }
-                }
+                self.matcher.open(
+                    &self.element,
+                    structural.as_ref(),
+                    &mut self.store,
+                    &mut self.temp_state.save_hits,
+                );
                 if self.persist_attributes {
                     let attributes_saved = match self.temp_state.save_hits.as_slice() {
                         [] => false,
@@ -840,22 +677,7 @@ where
                     {
                         self.text_state.queue_separator(PendingSeparator::LineBreak);
                     }
-                    let source_depth = self.position.element_depth;
-                    if SIBLINGS {
-                        let sibling = self.temp_state.sibling_mut();
-                        self.selectors.activate_sibling_callbacks(
-                            &sibling.pending,
-                            source_depth,
-                            &mut self.store,
-                        );
-                        sibling.pending.clear();
-                    }
-                    early_exit = self.selectors.back::<RETIREMENT>(
-                        self.element.name,
-                        &self.position,
-                        reader,
-                        &mut self.store,
-                    ) || early_exit;
+                    self.matcher.close();
                 } else {
                     for hit in &self.temp_state.save_hits {
                         if !hit.needs_close_finalization() {
@@ -875,16 +697,12 @@ where
                         self.raw_active_count += new_raw_count;
                         self.text_active_count += new_text_count;
                     }
-                    if SIBLINGS {
-                        let sibling = self.temp_state.sibling_mut();
-                        self.open_elements
-                            .attach_sibling_callbacks(&mut sibling.pending, &mut sibling.arena);
-                    }
                     if let Some(behavior) = text_behavior {
                         self.text_state
                             .after_open_element(behavior, self.position.element_depth);
                     }
                 }
+                finished = finished || self.finished();
 
                 self.element.clear();
                 if CAPTURE && self.capture_mode.captures_any() {
@@ -900,16 +718,22 @@ where
                 if CAPTURE && self.capture_mode.captures_text() {
                     self.text_state.cancel_initial_newline();
                 }
-                early_exit = self
-                    .handle_close_tag::<CAPTURE, SIBLINGS, RETIREMENT>(closing_tag, reader)
-                    || early_exit;
+                finished = self.handle_close_tag::<CAPTURE>(closing_tag, reader) || finished;
                 if CAPTURE && self.capture_mode.captures_any() {
                     self.mark_active_source_start(reader.get_position());
                 }
             }
         }
 
-        !early_exit && !reader.eof()
+        if finished {
+            crate::scah_trace!(
+                self.store,
+                TraceEvent::EarlyExit {
+                    reader_position: reader.get_position(),
+                }
+            );
+        }
+        !finished && !reader.eof()
     }
 
     pub fn matches(self) -> Store<'html, 'query> {
@@ -956,12 +780,13 @@ where
         self.store
     }
 
-    fn pop_open_element<const CAPTURE: bool, const SIBLINGS: bool, const RETIREMENT: bool>(
+    /// Close an element popped from the open-element stack. Returns whether
+    /// parsing is finished.
+    fn pop_open_element<const CAPTURE: bool>(
         &mut self,
         open_element: OpenElement<'html>,
-        close_depth: crate::engine::DepthSize,
+        close_depth: DepthSize,
         reader: &Reader<'html>,
-        activate_sibling_callbacks: bool,
     ) -> bool {
         let saved_range = OpenElementStack::saved_range(&open_element);
         debug_assert_eq!(saved_range.end, self.temp_state.saved_elements.len());
@@ -991,98 +816,28 @@ where
             }
         }
         self.position.element_depth = close_depth;
-        let early_exit = self.selectors.back::<RETIREMENT>(
-            open_element.name,
-            &self.position,
-            reader,
-            &mut self.store,
-        );
-
-        if SIBLINGS {
-            let callback_start = self
-                .temp_state
-                .sibling_mut()
-                .callback_starts
-                .pop()
-                .expect("open sibling scope requires a callback range");
-            self.finish_sibling_callback_range(
-                callback_start,
-                close_depth,
-                activate_sibling_callbacks,
-            );
-        }
-
-        early_exit
-    }
-
-    fn finish_sibling_callback_range(
-        &mut self,
-        start: usize,
-        source_depth: crate::engine::DepthSize,
-        activate: bool,
-    ) {
-        let end = self.temp_state.sibling().arena.len();
-
-        debug_assert!(start <= end, "invalid sibling callback arena range");
-
-        if activate {
-            for index in start..end {
-                let callback = self.temp_state.sibling().arena[index];
-                self.selectors
-                    .activate_sibling_callback(callback, source_depth, &mut self.store);
-            }
-        }
-
-        self.temp_state.sibling_mut().arena.truncate(start);
+        self.matcher.close();
+        self.finished()
     }
 
     /// Drain the implied-closes vector, finalizing each element, and restore
-    /// the vector's capacity for reuse. Returns `true` on early exit.
-    fn drain_implied_closes<const CAPTURE: bool, const SIBLINGS: bool, const RETIREMENT: bool>(
+    /// the vector's capacity for reuse. Returns whether parsing is finished.
+    fn drain_implied_closes<const CAPTURE: bool>(
         &mut self,
         reader: &Reader<'html>,
         implied_close_reason: Option<ImpliedCloseReason>,
         expected_tag: Option<&'html str>,
-        activate_sibling_callbacks: bool,
     ) -> bool {
-        let base_depth = self.open_elements.depth();
-        let mut elems = std::mem::take(&mut self.temp_state.implied_closes);
-        let total = elems.len();
-        let mut early_exit = false;
-
-        for (index, open_element) in elems.drain(..).enumerate() {
-            let close_depth =
-                base_depth.saturating_add((total - index) as crate::engine::DepthSize);
-            if implied_close_reason.is_some_and(|_| {
-                expected_tag
-                    .is_none_or(|expected| !open_element.name.eq_ignore_ascii_case(expected))
-            }) {
-                crate::scah_trace!(
-                    self.store,
-                    TraceEvent::ImpliedClose {
-                        tag: open_element.name,
-                        depth: close_depth,
-                        reason: implied_close_reason.unwrap(),
-                    }
-                );
-            }
-            // Only the final pop in a batch can have later siblings under its parent.
-            let parent_survives_batch = activate_sibling_callbacks && index + 1 == total;
-            early_exit = self.pop_open_element::<CAPTURE, SIBLINGS, RETIREMENT>(
-                open_element,
-                close_depth,
-                reader,
-                parent_survives_batch,
-            ) || early_exit;
-        }
-
-        self.temp_state.implied_closes = elems;
-        early_exit
+        let mut elements = std::mem::take(&mut self.temp_state.implied_closes);
+        let finished =
+            self.pop_elements::<CAPTURE>(&mut elements, reader, implied_close_reason, expected_tag);
+        self.temp_state.implied_closes = elements;
+        finished
     }
 
     /// Apply a close tag: trace, pop from the open-element stack, and run
-    /// the close-element path. Returns `true` on early exit.
-    fn handle_close_tag<const CAPTURE: bool, const SIBLINGS: bool, const RETIREMENT: bool>(
+    /// the close-element path. Returns whether parsing is finished.
+    fn handle_close_tag<const CAPTURE: bool>(
         &mut self,
         closing_tag: &'html str,
         reader: &Reader<'html>,
@@ -1099,42 +854,41 @@ where
         // Well-formed markup closes the element on top of the stack. Handling
         // that here duplicates `close_by_end_tag_into`'s fast path on purpose:
         // it keeps the common case off `temp_state.closing_elements` entirely.
-        // The outcome is identical, because `pop_closing_elements` suppresses
-        // the implied-close trace when the popped name matches `expected_tag`
-        // and derives the same `close_depth` for a single popped element.
+        // The outcome is identical, because `pop_elements` suppresses the
+        // implied-close trace when the popped name matches `expected_tag` and
+        // derives the same `close_depth` for a single popped element.
         if let Some(open_element) = self.open_elements.pop_matching_top(closing_tag) {
             let close_depth = self.open_elements.depth().saturating_add(1);
-            return self.pop_open_element::<CAPTURE, SIBLINGS, RETIREMENT>(
-                open_element,
-                close_depth,
-                reader,
-                true,
-            );
+            return self.pop_open_element::<CAPTURE>(open_element, close_depth, reader);
         }
 
         self.open_elements
             .close_by_end_tag_into(closing_tag, &mut self.temp_state.closing_elements);
-        self.pop_closing_elements::<CAPTURE, SIBLINGS, RETIREMENT>(
+        let mut elements = std::mem::take(&mut self.temp_state.closing_elements);
+        let finished = self.pop_elements::<CAPTURE>(
+            &mut elements,
             reader,
             Some(ImpliedCloseReason::MismatchedEndTag),
             Some(closing_tag),
-        )
+        );
+        self.temp_state.closing_elements = elements;
+        finished
     }
 
-    fn pop_closing_elements<const CAPTURE: bool, const SIBLINGS: bool, const RETIREMENT: bool>(
+    /// Close a batch of elements popped together, innermost first.
+    fn pop_elements<const CAPTURE: bool>(
         &mut self,
+        elements: &mut Vec<OpenElement<'html>>,
         reader: &Reader<'html>,
         implied_close_reason: Option<ImpliedCloseReason>,
         expected_tag: Option<&'html str>,
     ) -> bool {
         let base_depth = self.open_elements.depth();
-        let mut closing_elements = std::mem::take(&mut self.temp_state.closing_elements);
-        let total = closing_elements.len();
-        let mut early_exit = false;
+        let total = elements.len();
+        let mut finished = false;
 
-        for (index, open_element) in closing_elements.drain(..).enumerate() {
-            let close_depth =
-                base_depth.saturating_add((total - index) as crate::engine::DepthSize);
+        for (index, open_element) in elements.drain(..).enumerate() {
+            let close_depth = base_depth.saturating_add((total - index) as DepthSize);
             if implied_close_reason.is_some_and(|_| {
                 expected_tag
                     .is_none_or(|expected| !open_element.name.eq_ignore_ascii_case(expected))
@@ -1148,17 +902,10 @@ where
                     }
                 );
             }
-            let parent_survives_batch = index + 1 == total;
-            early_exit = self.pop_open_element::<CAPTURE, SIBLINGS, RETIREMENT>(
-                open_element,
-                close_depth,
-                reader,
-                parent_survives_batch,
-            ) || early_exit;
+            finished =
+                self.pop_open_element::<CAPTURE>(open_element, close_depth, reader) || finished;
         }
-
-        self.temp_state.closing_elements = closing_elements;
-        early_exit
+        finished
     }
 
     fn finalize_open_element<const CAPTURE: bool>(
@@ -1198,10 +945,7 @@ where
         (raw_count, text_count)
     }
 
-    fn drain_open_elements<const CAPTURE: bool, const SIBLINGS: bool, const RETIREMENT: bool>(
-        &mut self,
-        reader: &Reader<'html>,
-    ) {
+    fn drain_open_elements<const CAPTURE: bool>(&mut self, reader: &Reader<'html>) {
         if self.eof_drained {
             return;
         }
@@ -1212,22 +956,7 @@ where
         self.position.reader_position = reader.get_position();
         self.open_elements
             .close_all_at_eof_into(&mut self.temp_state.implied_closes);
-        self.drain_implied_closes::<CAPTURE, SIBLINGS, RETIREMENT>(
-            reader,
-            Some(ImpliedCloseReason::EofDrain),
-            None,
-            false,
-        );
-        if SIBLINGS {
-            debug_assert!(
-                self.temp_state.sibling().arena.is_empty(),
-                "sibling callback arena leaked callbacks after EOF"
-            );
-            debug_assert!(
-                self.temp_state.sibling().callback_starts.is_empty(),
-                "sibling callback range stack leaked entries after EOF"
-            );
-        }
+        self.drain_implied_closes::<CAPTURE>(reader, Some(ImpliedCloseReason::EofDrain), None);
         self.eof_drained = true;
     }
 }
@@ -1237,7 +966,6 @@ mod tests {
 
     use super::*;
     use crate::Attribute;
-    use crate::engine::multiplexer::QueryMultiplexer;
     use crate::store::Element;
     use crate::{Query, Reader, Save, parse};
     use pretty_assertions::assert_eq;
@@ -1252,57 +980,14 @@ mod tests {
         "#;
 
     #[test]
-    fn sibling_state_is_allocated_only_for_sibling_queries() {
-        let plain_queries = &[Query::all("div", Save::none()).unwrap().build()];
-        let plain_parser = XHtmlParser::new(QueryMultiplexer::new(plain_queries));
-        assert!(plain_parser.temp_state.sibling.is_none());
-
-        let sibling_queries = &[Query::all("div + p", Save::none()).unwrap().build()];
-        let sibling_parser = XHtmlParser::new(QueryMultiplexer::new(sibling_queries));
-        assert!(sibling_parser.temp_state.sibling.is_some());
-    }
-
-    #[test]
-    fn sibling_executor_path_matches_plain_path_for_plain_queries() {
-        let html = r#"
-            <main>
-                <article><h1>one</h1><p class="hit">alpha</p></article>
-                <article><h1>two</h1><br><p class="hit">beta</p></article>
-                <section><p class="hit">malformed</section>
-            </main>
-        "#;
-        let queries = [
-            Query::all("article > p.hit", Save::all()).unwrap().build(),
-            Query::all("main p", Save::only_text()).unwrap().build(),
-        ];
-
-        let mut plain = XHtmlParser::new(QueryMultiplexer::new(&queries));
-        let mut plain_reader = Reader::new(html);
-        plain.run(&mut plain_reader);
-
-        let mut forced_sibling = XHtmlParser::new(QueryMultiplexer::new(&queries));
-        forced_sibling.temp_state.sibling = Some(Box::default());
-        let mut sibling_reader = Reader::new(html);
-        while forced_sibling.next_mode::<true, true, false, false>(&mut sibling_reader) {}
-
-        assert_eq!(forced_sibling.finish(), plain.finish());
-    }
-
-    #[test]
-    fn specialized_sibling_modes_match_parse_results_across_retirement() {
+    fn stepped_sibling_parses_match_parse_results_for_all_and_first() {
         let html = "<main><h1></h1><p id='one'></p><p id='two'></p></main>";
 
         let all_queries = &[Query::all("h1 ~ p", Save::none()).unwrap().build()];
-        assert!(
-            !QueryMultiplexer::new(all_queries)
-                .features()
-                .has_retiring_runners
-        );
         let expected_all = parse(html, all_queries).unwrap();
-        let mut all_parser = XHtmlParser::new(QueryMultiplexer::new(all_queries));
+        let mut all_parser = XHtmlParser::new(all_queries);
         let mut all_reader = Reader::new(html);
         while all_parser.next(&mut all_reader) {}
-        assert!(all_parser.selectors.active_set_is_dense());
         let actual_all = all_parser.matches();
         assert_eq!(actual_all.get("h1 ~ p").unwrap().count(), 2);
         assert_eq!(
@@ -1311,13 +996,8 @@ mod tests {
         );
 
         let first_queries = &[Query::first("h1 ~ p", Save::none()).unwrap().build()];
-        assert!(
-            QueryMultiplexer::new(first_queries)
-                .features()
-                .has_retiring_runners
-        );
         let expected_first = parse(html, first_queries).unwrap();
-        let mut first_parser = XHtmlParser::new(QueryMultiplexer::new(first_queries));
+        let mut first_parser = XHtmlParser::new(first_queries);
         let mut first_reader = Reader::new(html);
         while first_parser.next(&mut first_reader) {}
         let actual_first = first_parser.matches();
@@ -1336,18 +1016,14 @@ mod tests {
             .unwrap()
             .build()];
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         // STEP 1
         //let mut continue_parser = parser.next(&mut reader);
 
         println!("{:?}", queries);
 
-        while parser.next(&mut reader) {
-            // println!("{:?}", parser.selectors);
-        }
+        while parser.next(&mut reader) {}
 
         let store = parser.matches();
 
@@ -1378,8 +1054,7 @@ mod tests {
         let html = "<div><a href='x'>Hello <b>World</b></a></div>";
         let mut reader = Reader::new(html);
         let queries = &[Query::all("a", Save::only_inner_html()).unwrap().build()];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -1394,7 +1069,7 @@ mod tests {
     fn unmatched_text_query_leaves_both_tapes_empty() {
         let html = "<main>outside &amp; text<div>more text</div></main>";
         let queries = &[Query::all(".missing", Save::all()).unwrap().build()];
-        let mut parser = XHtmlParser::new(QueryMultiplexer::new(queries));
+        let mut parser = XHtmlParser::new(queries);
         let mut reader = Reader::new(html);
 
         parser.run(&mut reader);
@@ -1435,8 +1110,7 @@ mod tests {
             Query::all("a", Save::only_inner_html()).unwrap().build(),
             Query::all("b", Save::only_text()).unwrap().build(),
         ];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -1459,9 +1133,7 @@ mod tests {
             Query::all(".indent #name", Save::none()).unwrap().build(),
         ];
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         // STEP 1
         //let mut continue_parser = parser.next(&mut reader);
@@ -1510,9 +1182,7 @@ mod tests {
             })
             .unwrap();
         let queries = &[queries.build()];
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         // STEP 1
         //let mut continue_parser = parser.next(&mut reader);
@@ -1578,18 +1248,14 @@ mod tests {
 
         let queries = &[Query::all("div", Save::none()).unwrap().build()];
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         // STEP 1
         //let mut continue_parser = parser.next(&mut reader);
 
         println!("{:?}", queries);
 
-        while parser.next(&mut reader) {
-            // println!("{:?}", parser.selectors);
-        }
+        while parser.next(&mut reader) {}
 
         let store = parser.matches();
 
@@ -1669,9 +1335,7 @@ mod tests {
             .unwrap()
             .build()];
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         println!("{:?}", queries);
 
@@ -1702,18 +1366,14 @@ mod tests {
 
         let queries = &[Query::all("form > p > input", Save::all()).unwrap().build()];
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         // STEP 1
         //let mut continue_parser = parser.next(&mut reader);
 
         println!("{:?}", queries);
 
-        while parser.next(&mut reader) {
-            // println!("{:?}", parser.selectors);
-        }
+        while parser.next(&mut reader) {}
 
         let store = parser.matches();
 
@@ -1738,9 +1398,7 @@ mod tests {
 
         let queries = &[Query::all("a", Save::all()).unwrap().build()];
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -1762,9 +1420,7 @@ mod tests {
 
         let queries = &[Query::first("div.article a", Save::all()).unwrap().build()];
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -1803,9 +1459,7 @@ mod tests {
         //     exit_at_section_end: None,
         // }]);
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -1890,9 +1544,7 @@ mod tests {
         assert_eq!(query.exit_at_section_end, Some(crate::QuerySectionId(0)));
         let queries = &[query];
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -1917,8 +1569,7 @@ mod tests {
         let html = "<div><p>Hello<div>World</div></div>";
         let mut reader = Reader::new(html);
         let queries = &[Query::all("p", Save::all()).unwrap().build()];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -1946,8 +1597,7 @@ mod tests {
             Query::all("div", Save::all()).unwrap().build(),
             Query::all("span", Save::all()).unwrap().build(),
         ];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -1966,8 +1616,7 @@ mod tests {
         let html = "<div><span>Hello</bogus></span></div>";
         let mut reader = Reader::new(html);
         let queries = &[Query::all("div span", Save::all()).unwrap().build()];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -1985,8 +1634,7 @@ mod tests {
             Query::all("section", Save::all()).unwrap().build(),
             Query::all("a", Save::all()).unwrap().build(),
         ];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2005,8 +1653,7 @@ mod tests {
         let html = "<ul><li>One<li>Two</ul>";
         let mut reader = Reader::new(html);
         let queries = &[Query::all("li", Save::all()).unwrap().build()];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2036,8 +1683,7 @@ mod tests {
             Query::all("dt", Save::all()).unwrap().build(),
             Query::all("dd", Save::all()).unwrap().build(),
         ];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2057,8 +1703,7 @@ mod tests {
         let html = "<select><option>One<option>Two</select>";
         let mut reader = Reader::new(html);
         let queries = &[Query::all("option", Save::all()).unwrap().build()];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2077,8 +1722,7 @@ mod tests {
             Query::all("optgroup", Save::all()).unwrap().build(),
             Query::all("option", Save::all()).unwrap().build(),
         ];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2099,8 +1743,7 @@ mod tests {
         let html = "<table><tr><td>One<td>Two</tr></table>";
         let mut reader = Reader::new(html);
         let queries = &[Query::all("td", Save::all()).unwrap().build()];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2119,8 +1762,7 @@ mod tests {
             Query::all("div", Save::all()).unwrap().build(),
             Query::all(".x", Save::all()).unwrap().build(),
         ];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2142,8 +1784,7 @@ mod tests {
             Query::all("div span", Save::all()).unwrap().build(),
             Query::all("div > span", Save::all()).unwrap().build(),
         ];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2204,8 +1845,7 @@ mod tests {
         let html = "intro<div>Hello</div>";
         let mut reader = Reader::new(html);
         let queries = &[Query::all("div", Save::all()).unwrap().build()];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2268,9 +1908,7 @@ mod tests {
             .unwrap()
             .build()];
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2359,9 +1997,7 @@ mod tests {
             .unwrap()
             .build()];
 
-        let manager = QueryMultiplexer::new(queries);
-
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2474,7 +2110,7 @@ mod tests {
         );
         let queries = &[Query::all("main a", Save::none()).unwrap().build()];
         let mut reader = Reader::new(html);
-        let mut parser = XHtmlParser::new(QueryMultiplexer::new(queries));
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2501,7 +2137,7 @@ mod tests {
             Query::all("a[href]", Save::none()).unwrap().build(),
         ];
         let mut reader = Reader::new(html);
-        let mut parser = XHtmlParser::new(QueryMultiplexer::new(&queries));
+        let mut parser = XHtmlParser::new(&queries);
 
         while parser.next(&mut reader) {}
 
@@ -2515,7 +2151,7 @@ mod tests {
         let html = "<main><div class='miss'></div><div class='hit'></div></main>";
         let queries = &[Query::all("div.hit", Save::none()).unwrap().build()];
         let mut reader = Reader::new(html);
-        let mut parser = XHtmlParser::new(QueryMultiplexer::new(queries));
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2535,7 +2171,7 @@ mod tests {
                 .build(),
         ];
         let mut reader = Reader::new(html);
-        let mut parser = XHtmlParser::new(QueryMultiplexer::new(queries));
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
 
@@ -2555,44 +2191,32 @@ mod tests {
     }
 
     #[test]
-    fn sibling_callback_arena_empty_after_eof_drain() {
-        let html = "<main><h1></h1>";
+    fn sibling_queries_leave_no_frames_after_eof_drain() {
+        let html = "<main><h1></h1>text";
         let mut reader = Reader::new(html);
         let queries = &[
             Query::all("h1 + p", Save::none()).unwrap().build(),
             Query::all("h1 ~ p", Save::none()).unwrap().build(),
         ];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
-
-        assert!(
-            parser.temp_state.sibling().arena.is_empty(),
-            "EOF must truncate every callback range"
-        );
-        assert!(parser.temp_state.sibling().pending.is_empty());
+        assert_eq!(parser.matcher.depth(), 0, "EOF must close every frame");
     }
 
     #[test]
-    fn void_sibling_source_bypasses_callback_arena() {
+    fn void_sibling_source_matches_the_next_element() {
         let html = "<main><br><p id='hit'></p></main>";
         let mut reader = Reader::new(html);
         let queries = &[Query::all("br + p", Save::none()).unwrap().build()];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         // Open <main>
         assert!(parser.next(&mut reader));
-        assert!(parser.temp_state.sibling().arena.is_empty());
 
-        // Void <br>: callback activates immediately and must not enter the arena.
+        // Void <br> opens and closes at once, so it is <p>'s previous sibling.
         assert!(parser.next(&mut reader));
-        assert!(
-            parser.temp_state.sibling().arena.is_empty(),
-            "void sources must not append callbacks to the arena"
-        );
-        assert!(parser.temp_state.sibling().pending.is_empty());
+        assert_eq!(parser.matcher.depth(), 1);
 
         while parser.next(&mut reader) {}
 
@@ -2606,22 +2230,14 @@ mod tests {
     }
 
     #[test]
-    fn chained_void_sibling_keeps_callback_arena_empty() {
-        // div + br + p: matching <br> registers a continuation that activates
-        // immediately, so the void middle element never parks a callback range.
+    fn chained_void_sibling_matches() {
+        // div + br + p: the void <br> is both a match and the previous sibling.
         let html = "<main><div></div><br><p id='hit'></p></main>";
         let mut reader = Reader::new(html);
         let queries = &[Query::all("div + br + p", Save::none()).unwrap().build()];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
-
-        assert!(
-            parser.temp_state.sibling().arena.is_empty(),
-            "chained void activation must leave the arena empty"
-        );
-        assert!(parser.temp_state.sibling().pending.is_empty());
 
         let store = parser.matches();
         let hits: Vec<_> = store
@@ -2633,9 +2249,9 @@ mod tests {
     }
 
     #[test]
-    fn same_batch_discard_truncates_callback_arena() {
-        // Closing </main> pops section then div then main. Discarded callback
-        // ranges must still be truncated from the arena.
+    fn same_batch_closes_do_not_leak_siblings_out_of_their_parent() {
+        // Closing </main> pops section then div then main. Their sibling state
+        // dies with their parents, so the later <p> matches nothing.
         let html = r#"
         <main>
           <div>
@@ -2648,15 +2264,9 @@ mod tests {
             Query::all("section + p", Save::none()).unwrap().build(),
             Query::all("div ~ p", Save::none()).unwrap().build(),
         ];
-        let manager = QueryMultiplexer::new(queries);
-        let mut parser = XHtmlParser::new(manager);
+        let mut parser = XHtmlParser::new(queries);
 
         while parser.next(&mut reader) {}
-
-        assert!(
-            parser.temp_state.sibling().arena.is_empty(),
-            "same-batch discards must still truncate arena ranges"
-        );
         let store = parser.matches();
         assert_eq!(
             store

@@ -117,9 +117,9 @@ fn trace_records_first_query_early_exit() {
 
 #[test]
 #[cfg(debug_assertions)]
-fn trace_records_transition_rejections() {
-    let html = "<main><span>no</span><a>yes</a></main>";
-    let query = Query::all("main > a", Save::all()).unwrap().build();
+fn trace_records_step_rejections() {
+    let html = "<main><a class='no'>no</a><a class='yes'>yes</a></main>";
+    let query = Query::all("main > a.yes", Save::all()).unwrap().build();
     let queries = [query];
 
     let store = parse(html, &queries).unwrap();
@@ -127,9 +127,9 @@ fn trace_records_transition_rejections() {
     assert!(store.trace.events().iter().any(|event| {
         matches!(
             event,
-            debug::TraceEvent::TransitionRejected {
-                element: "span",
-                reason: debug::TransitionRejectReason::PredicateFailed,
+            debug::TraceEvent::StepRejected {
+                element: "a",
+                selector: "main > a.yes",
                 ..
             }
         )

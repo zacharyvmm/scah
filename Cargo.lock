@@ -1633,11 +1633,23 @@ name = "scah"
 version = "0.1.0"
 dependencies = [
  "pretty_assertions",
- "scah-macros",
- "scah-query-ir",
- "scah-reader",
+ "scah-macros 0.1.0",
+ "scah-query-ir 0.1.0",
+ "scah-reader 0.1.0",
  "smallvec",
  "tracing",
+]
+
+[[package]]
+name = "scah"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21e2ca17793b0129c1e050726ac06aaa2d61896cad24065daca018974dac9728"
+dependencies = [
+ "scah-macros 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "scah-query-ir 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "scah-reader 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "smallvec",
 ]
 
 [[package]]
@@ -1650,9 +1662,17 @@ dependencies = [
  "lol_html",
  "memchr",
  "rlibxml",
- "scah",
+ "scah 0.1.0",
  "scraper",
  "tl",
+]
+
+[[package]]
+name = "scah-differential"
+version = "0.0.0"
+dependencies = [
+ "scah 0.1.0",
+ "scah 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1661,7 +1681,19 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "scah-query-ir",
+ "scah-query-ir 0.1.0",
+ "syn",
+]
+
+[[package]]
+name = "scah-macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94dbf415cf9939569473dd5b96069b81132e700e4163ac10762410f40ee7b3a7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "scah-query-ir 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "syn",
 ]
 
@@ -1672,7 +1704,7 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
- "scah",
+ "scah 0.1.0",
 ]
 
 [[package]]
@@ -1681,7 +1713,7 @@ version = "0.1.0"
 dependencies = [
  "pyo3",
  "pyo3-stub-gen",
- "scah",
+ "scah 0.1.0",
 ]
 
 [[package]]
@@ -1689,13 +1721,29 @@ name = "scah-query-ir"
 version = "0.1.0"
 dependencies = [
  "pretty_assertions",
- "scah-reader",
+ "scah-reader 0.1.0",
+ "smallvec",
+]
+
+[[package]]
+name = "scah-query-ir"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48d2ed2c64cd940a2a32ca341d632089371168039a50991ee8dad9e0a4ab20b3"
+dependencies = [
+ "scah-reader 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec",
 ]
 
 [[package]]
 name = "scah-reader"
 version = "0.1.0"
+
+[[package]]
+name = "scah-reader"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32b092b587ee15027ab003aec183b5a3891d3cd39876e1571f42f4ce77fcb01e"
 
 [[package]]
 name = "scopeguard"
