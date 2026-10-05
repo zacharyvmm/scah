@@ -15,6 +15,9 @@ Rust crates and the Python and npm packages together.
   `first_child_query`, and `Store::push`, `Store::queries`, `QueryNode`, and
   `QueryId` are removed. An element saved by a nested query under several
   parent matches is stored once and listed under each of them. ([#97])
+- `Position`, the `QuerySpec` navigation methods, `Transition::next`, and
+  `exit_at_section_end` are removed from the query IR; `QuerySpec` only exposes
+  query data. ([#98])
 
 ### Added
 
@@ -22,6 +25,9 @@ Rust crates and the Python and npm packages together.
   query position, and `Store::results`, `query_results`, `child_results`, and
   `nested_results` return element ids. Python and Node gain `Store.query`.
   ([#97])
+- `parse_compiled` and `parse_compiled_without_text_capture` run a `Program`
+  compiled once with `Program::compile`, for parsing many documents with the
+  same queries. ([#98])
 
 ### Changed
 
@@ -159,3 +165,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#96]: https://github.com/zacharyvmm/scah/pull/96
 [#91]: https://github.com/zacharyvmm/scah/issues/91
 [#97]: https://github.com/zacharyvmm/scah/pull/97
+[#98]: https://github.com/zacharyvmm/scah/pull/98
