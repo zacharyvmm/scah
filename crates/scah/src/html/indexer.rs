@@ -369,13 +369,7 @@ impl<'source> FusedMaskStream<'source> {
                         .find_greater_than(content_start)
                         .unwrap_or(self.source.len());
                     let (name_start, name_end) = close_tag_name(self.source, content_start, gt);
-                    let end = if close_tag_quotes_before(self.source, name_end, gt) {
-                        self.find_unquoted_tag_end(name_end)
-                    } else if gt < self.source.len() {
-                        gt + 1
-                    } else {
-                        gt
-                    };
+                    let end = close_tag_end(self.source, name_end, gt);
                     IndexedEvent {
                         start: start as u32,
                         end: end as u32,
@@ -768,17 +762,56 @@ fn close_tag_name(source: &[u8], content_start: usize, gt: usize) -> (usize, usi
     (name_start, name_end)
 }
 
-/// Whether a quote follows a close tag's name before its first `>` at `gt`.
+/// The end of a close tag whose name ends at `name_end` and whose first `>`
+/// at or after it is at `gt` (the source length if there is none).
 ///
 /// End tags tokenize attributes like start tags do, so `</div title=">">`
-/// ends at its last `>`; the caller then needs a quote-aware search, which
-/// close tags without attributes skip.
+/// ends at its last `>`. Close tags without a quote before `gt` end there.
 #[inline]
-fn close_tag_quotes_before(source: &[u8], name_end: usize, gt: usize) -> bool {
-    name_end < gt
+fn close_tag_end(source: &[u8], name_end: usize, gt: usize) -> usize {
+    if name_end < gt
         && source[name_end..gt]
             .iter()
             .any(|&byte| matches!(byte, b'\'' | b'"'))
+    {
+        quoted_close_tag_end(source, name_end)
+    } else {
+        (gt + 1).min(source.len())
+    }
+}
+
+/// [`close_tag_end`] past attribute values, following the tokenizer's
+/// attribute states: a quote opens a value only right after `=` (and any
+/// whitespace), so the `'` of `data=can't` or `a'b` is an ordinary byte.
+#[cold]
+fn quoted_close_tag_end(source: &[u8], mut position: usize) -> usize {
+    // After `=`, before the value starts.
+    let mut before_value = false;
+    // Inside an unquoted value, where `=` is an ordinary byte.
+    let mut unquoted_value = false;
+    while let Some(&byte) = source.get(position) {
+        match byte {
+            b'>' => return position + 1,
+            b'\'' | b'"' if before_value => {
+                match source[position + 1..]
+                    .iter()
+                    .position(|&other| other == byte)
+                {
+                    Some(offset) => position += offset + 1,
+                    None => return source.len(),
+                }
+                before_value = false;
+            }
+            _ if is_html_whitespace(byte) => unquoted_value = false,
+            b'=' if !before_value && !unquoted_value => before_value = true,
+            _ => {
+                unquoted_value |= before_value;
+                before_value = false;
+            }
+        }
+        position += 1;
+    }
+    source.len()
 }
 
 /// Ends an opening or closing tag name. Both kinds share it so that a close
@@ -883,13 +916,7 @@ fn next_event(search: &mut impl StructuralSearch, source: &[u8], from: usize) ->
                     .find_byte(source, content_start, b'>')
                     .unwrap_or(source.len());
                 let (name_start, name_end) = close_tag_name(source, content_start, gt);
-                let end = if close_tag_quotes_before(source, name_end, gt) {
-                    search.find_tag_end(source, name_end)
-                } else if gt < source.len() {
-                    gt + 1
-                } else {
-                    gt
-                };
+                let end = close_tag_end(source, name_end, gt);
                 Some(TagEvent::Complete(TagSpan {
                     start,
                     end,
@@ -1527,6 +1554,8 @@ mod tests {
             "text ending in repeated <<<",
             "close </  div  > after",
             r#"<div>a</div title=">" x='>'><p>b</p>"#,
+            r#"<div>a</bogus data=can't><span>b</span>"#,
+            r#"<p></p a"b x = 'y>z' c=d=e"f><i>"#,
             "<x/y id=a>t</x/y><p>c</p>",
             "multibyte é☃ <article data-name='é'>text</article>",
         ] {
@@ -1733,6 +1762,8 @@ mod tests {
             "text ending in repeated <<<",
             "close </  div  > after",
             r#"<div>a</div title=">" x='>'><p>b</p>"#,
+            r#"<div>a</bogus data=can't><span>b</span>"#,
+            r#"<p></p a"b x = 'y>z' c=d=e"f><i>"#,
             "<x/y id=a>t</x/y><p>c</p>",
             "multibyte é☃ <article data-name='é'>text</article>",
         ] {

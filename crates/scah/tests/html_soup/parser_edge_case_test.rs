@@ -110,8 +110,14 @@ fn quoted_gt_in_end_tag_attributes_does_not_end_the_tag() {
     assert_eq!(super::helpers::elements(&store, "div span").len(), 0);
     assert_eq!(super::helpers::inner_htmls(&store, "span"), vec![Some("b")]);
 
+    // A quote opens a value only right after `=`.
+    let html = r#"<div>a</bogus data=can't><span>b</span><em x='y'>c</em a'b>"#;
+    let store = super::helpers::parse_all(html, &["span", "em"]);
+    assert_eq!(super::helpers::inner_htmls(&store, "span"), vec![Some("b")]);
+    assert_eq!(super::helpers::inner_htmls(&store, "em"), vec![Some("c")]);
+
     let queries = &[Query::all("body", Save::only_text()).unwrap().build()];
-    let html = r#"<body>a</p title='>'>b</body>"#;
+    let html = r#"<body>a</p title = '>'>b</body>"#;
     let store = parse(html, queries).unwrap();
     let body = store.get("body").unwrap().next().unwrap();
     assert_eq!(body.text(&store), Some("ab"));
