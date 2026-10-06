@@ -9,6 +9,7 @@ mod arena;
 mod attributes;
 mod columns;
 mod element;
+mod spare;
 
 pub use arena::{
     Arena,
@@ -181,23 +182,32 @@ fn same_selector(section: &str, selector: &str) -> bool {
 
 impl<'html, 'query: 'html> Default for Store<'html, 'query> {
     fn default() -> Self {
-        Self {
-            html: "",
-            columns: Columns::default(),
-            text: TextStore::new(),
-            attributes: Arena::new(),
-            overflowed: false,
-            sections: Box::default(),
-            roots: Box::default(),
-            children: Box::default(),
-            edges: Vec::new(),
-            record_edges: true,
-            slot_starts: Vec::new(),
-            slot_offsets: Vec::new(),
-            results: Vec::new(),
-            #[cfg(any(debug_assertions, test))]
-            trace: crate::debug::TraceStore::new(),
+        Self::from_buffers(spare::take().unwrap_or_default(), 0)
+    }
+}
+
+impl Drop for Store<'_, '_> {
+    /// Keep the store's allocations for the next parse on this thread.
+    fn drop(&mut self) {
+        fn emptied<T>(vec: &mut Vec<T>) -> Vec<T> {
+            let mut vec = std::mem::take(vec);
+            vec.clear();
+            vec
         }
+        let mut columns = std::mem::take(&mut self.columns);
+        columns.clear();
+        let mut text = std::mem::take(&mut self.text);
+        text.raw_text.clear();
+        text.text.clear();
+        spare::keep(spare::StoreBuffers {
+            columns,
+            attributes: spare::detach(std::mem::take(&mut self.attributes.inner)),
+            text,
+            edges: emptied(&mut self.edges),
+            slot_starts: emptied(&mut self.slot_starts),
+            slot_offsets: emptied(&mut self.slot_offsets),
+            results: emptied(&mut self.results),
+        });
     }
 }
 
@@ -248,41 +258,52 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         let attribute_divisor = options.attribute_bytes_per_slot.max(1);
         let element_slots = capacity / element_divisor;
 
-        let mut columns = Columns::default();
-        columns.rows.reserve(element_slots);
+        // Reuse the buffers of a store dropped earlier on this thread; the
+        // reservations below then only allocate when this document needs
+        // more room.
+        let mut buffers = spare::take().unwrap_or_default();
+        buffers.columns.rows.reserve(element_slots);
+        if reserve_text_buffers && options.reserve_raw_text {
+            buffers.text.raw_text.reserve(capacity);
+        }
+        if reserve_text_buffers && options.reserve_text {
+            buffers.text.text.reserve(capacity);
+        }
+        if reserve_attributes {
+            buffers.attributes.reserve(capacity / attribute_divisor);
+        }
+        Self::from_buffers(buffers, element_slots.min(options.trace_capacity_limit))
+    }
+
+    /// An empty store on `buffers`, which must be empty.
+    fn from_buffers(buffers: spare::StoreBuffers, trace_capacity: usize) -> Self {
+        let spare::StoreBuffers {
+            columns,
+            attributes,
+            text,
+            edges,
+            slot_starts,
+            slot_offsets,
+            results,
+        } = buffers;
+        #[cfg(not(any(debug_assertions, test)))]
+        let _ = trace_capacity;
         Self {
             html: "",
             columns,
             overflowed: false,
-            text: TextStore::with_capacity(
-                if reserve_text_buffers && options.reserve_raw_text {
-                    capacity
-                } else {
-                    0
-                },
-                if reserve_text_buffers && options.reserve_text {
-                    capacity
-                } else {
-                    0
-                },
-            ),
-            attributes: if reserve_attributes {
-                Arena::with_capacity(capacity / attribute_divisor)
-            } else {
-                Arena::new()
-            },
+            text,
+            attributes: Arena::from_vec(attributes),
             sections: Box::default(),
             roots: Box::default(),
             children: Box::default(),
-            edges: Vec::new(),
+            edges,
             record_edges: true,
-            slot_starts: Vec::new(),
-            slot_offsets: Vec::new(),
-            results: Vec::new(),
+            slot_starts,
+            slot_offsets,
+            results,
             #[cfg(any(debug_assertions, test))]
-            trace: crate::debug::TraceStore::with_capacity(
-                element_slots.min(options.trace_capacity_limit),
-            ),
+            trace: crate::debug::TraceStore::with_capacity(trace_capacity),
         }
     }
 
@@ -1029,6 +1050,46 @@ mod tests {
         let item = store.nested_results(full, 0).unwrap()[0];
         assert_eq!(store.nested_results(item, 0), None);
         assert_eq!(store.child_results(item, "a"), None);
+    }
+
+    #[test]
+    fn a_dropped_store_lends_its_buffers_to_the_next_parse() {
+        let queries = [Query::all("p", Save::all()).unwrap().build()];
+        let html = "<p class='a'>one</p><p>two</p>".repeat(50);
+        let (rows, text) = {
+            let store = crate::parse(&html, &queries).unwrap();
+            (
+                store.columns.rows.as_ptr(),
+                store.text.text.as_bytes().as_ptr(),
+            )
+        };
+        let store = crate::parse(&html, &queries).unwrap();
+        assert_eq!(store.columns.rows.as_ptr(), rows);
+        assert_eq!(store.text.text.as_bytes().as_ptr(), text);
+    }
+
+    #[test]
+    fn reused_buffers_start_empty() {
+        let text_queries = [Query::all("p", Save::all()).unwrap().build()];
+        drop(crate::parse("<p id=x class=y z=1>first</p><p>second</p>", &text_queries).unwrap());
+
+        let html = String::from("<div><p>third</p></div>");
+        let name_queries = [Query::all("p", Save::name_only()).unwrap().build()];
+        let store = crate::parse(&html, &name_queries).unwrap();
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.attribute_count(), 0);
+        let p = store.get("p").unwrap().next().unwrap();
+        assert_eq!((p.name(), p.id(), p.class()), ("p", None, None));
+        assert_eq!(
+            (p.attributes(), p.text(), p.inner_html()),
+            (None, None, None)
+        );
+        drop(store);
+
+        let store = crate::parse(&html, &text_queries).unwrap();
+        let p = store.get("p").unwrap().next().unwrap();
+        assert_eq!(p.text(), Some("third"));
+        assert_eq!(store.text.text.as_bytes(), b"third");
     }
 
     #[test]

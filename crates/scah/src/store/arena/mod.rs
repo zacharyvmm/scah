@@ -16,9 +16,9 @@ impl<T, I: From<usize>> Arena<T, I> {
         }
     }
 
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub(crate) fn from_vec(inner: Vec<T>) -> Self {
         Self {
-            inner: Vec::with_capacity(capacity),
+            inner,
             _marker: PhantomData,
         }
     }

@@ -11,15 +11,10 @@ pub(crate) struct TextTape {
 }
 
 impl TextTape {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self {
             content: Vec::new(),
-        }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            content: Vec::with_capacity(capacity),
         }
     }
 
@@ -43,6 +38,16 @@ impl TextTape {
     #[inline]
     pub fn slice(&self, range: Range<usize>) -> &str {
         unsafe { str::from_utf8_unchecked(&self.content[range]) }
+    }
+
+    /// Empty the tape, keeping its allocation.
+    pub fn clear(&mut self) {
+        self.content.clear();
+    }
+
+    /// Make room for `additional` more bytes.
+    pub fn reserve(&mut self, additional: usize) {
+        self.content.reserve(additional);
     }
 
     #[inline]
@@ -76,30 +81,6 @@ impl TextTape {
 pub(crate) struct TextStore {
     pub raw_text: TextTape,
     pub text: TextTape,
-}
-
-impl TextStore {
-    pub fn new() -> Self {
-        Self {
-            raw_text: TextTape::new(),
-            text: TextTape::new(),
-        }
-    }
-
-    pub fn with_capacity(raw_capacity: usize, text_capacity: usize) -> Self {
-        Self {
-            raw_text: if raw_capacity == 0 {
-                TextTape::new()
-            } else {
-                TextTape::with_capacity(raw_capacity)
-            },
-            text: if text_capacity == 0 {
-                TextTape::new()
-            } else {
-                TextTape::with_capacity(text_capacity)
-            },
-        }
-    }
 }
 
 /// Trim leading/trailing collapsible separators from a normalized range
