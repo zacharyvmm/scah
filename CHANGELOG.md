@@ -26,6 +26,8 @@ Rust crates and the Python and npm packages together.
 
 - End tags with attributes, such as `</div class=x>`, close their element.
   ([#92], [#96])
+- A `/` ends a tag name, so `<x/y>` opens `x` and `</x/y>` closes it.
+  ([#96])
 - Elements left open when the input ends right after a tag, optionally
   followed by whitespace, keep their saved content. ([#93], [#96])
 

@@ -87,3 +87,16 @@ fn end_tag_attributes_do_not_change_the_closed_element() {
     assert_eq!(super::helpers::inner_htmls(&store, "p"), vec![Some("c")]);
     assert_eq!(super::helpers::inner_htmls(&store, "em"), vec![Some("d")]);
 }
+
+#[test]
+fn solidus_ends_open_and_close_tag_names_alike() {
+    // `<x/foo>` opens `x` (the solidus starts attributes), so `</x/foo>` must
+    // close it rather than leave it open around the following `<p>`.
+    let html = r#"<x/foo id="a">t</x/foo><p>c</p>"#;
+    let store = super::helpers::parse_all(html, &["x", "x p", "p", "x#a"]);
+
+    assert_eq!(super::helpers::inner_htmls(&store, "x"), vec![Some("t")]);
+    assert_eq!(super::helpers::elements(&store, "x#a").len(), 1);
+    assert_eq!(super::helpers::elements(&store, "x p").len(), 0);
+    assert_eq!(super::helpers::inner_htmls(&store, "p"), vec![Some("c")]);
+}
