@@ -195,6 +195,8 @@ pub struct XHtmlParser<'html, 'query> {
     can_finish: bool,
     raw_text_close: Option<&'static str>,
     eof_drained: bool,
+    /// The first `next` or `run` bound the store to its reader's source.
+    source_bound: bool,
     parse_error: Option<ParseError>,
     indexer: AutoTagIndexer,
     #[cfg(test)]
@@ -309,6 +311,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             can_finish: features.all_roots_first,
             raw_text_close: None,
             eof_drained: false,
+            source_bound: false,
             parse_error: None,
             indexer: AutoTagIndexer::new(indexing_mode, parse_attributes),
             #[cfg(test)]
@@ -398,12 +401,16 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     }
 
     /// Point the store at the document being parsed, which saved strings
-    /// borrow from.
+    /// borrow from. Later calls must read the same document: the matcher and
+    /// open elements carry its state, whether or not any row was saved yet.
     #[inline]
     fn bind_source(&mut self, reader: &Reader<'html>) {
         let source = reader.source();
-        if !self.store.bound_to(source) {
+        if self.source_bound {
+            assert!(self.store.bound_to(source), "a parser reads one document");
+        } else {
             self.store.set_html(reader.slice(0..source.len()));
+            self.source_bound = true;
         }
     }
 
@@ -2333,7 +2340,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "a store's results borrow from one document")]
+    #[should_panic(expected = "a parser reads one document")]
     fn stepping_a_second_document_after_saving_panics() {
         let first = "<p>one</p>";
         let second = String::from("<p>two</p>");
@@ -2341,6 +2348,22 @@ mod tests {
         let mut parser = XHtmlParser::new(&queries);
         let mut reader = Reader::new(first);
         while parser.next(&mut reader) {}
+        let mut reader = Reader::new(&second);
+        parser.next(&mut reader);
+    }
+
+    #[test]
+    #[should_panic(expected = "a parser reads one document")]
+    fn stepping_a_second_document_before_saving_panics() {
+        // Nothing is saved after `<div>`, but the matcher already holds the
+        // open `div`, so a `<p>` from another document must not match.
+        let first = "<div><p>one</p></div>";
+        let second = String::from("<p>two</p>");
+        let queries = [Query::all("div p", Save::none()).unwrap().build()];
+        let mut parser = XHtmlParser::new(&queries);
+        let mut reader = Reader::new(first);
+        parser.next(&mut reader);
+        assert!(parser.store.is_empty());
         let mut reader = Reader::new(&second);
         parser.next(&mut reader);
     }

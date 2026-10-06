@@ -263,6 +263,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         // more room.
         let mut buffers = spare::take().unwrap_or_default();
         buffers.columns.rows.reserve(element_slots);
+        buffers.columns.reserved_rows = element_slots;
         if reserve_text_buffers && options.reserve_raw_text {
             buffers.text.raw_text.reserve(capacity);
         }
@@ -604,7 +605,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             plan.add(program.section(SectionIndex(index as u32)).save);
         }
         self.columns.plan = plan;
-        // Give the optional columns the rows reserved so far.
+        // Give the optional columns the rows this parse reserved.
         self.columns.reserve_optional();
     }
 
@@ -1066,6 +1067,21 @@ mod tests {
         let store = crate::parse(&html, &queries).unwrap();
         assert_eq!(store.columns.rows.as_ptr(), rows);
         assert_eq!(store.text.text.as_bytes().as_ptr(), text);
+    }
+
+    #[test]
+    fn optional_columns_do_not_copy_reused_row_capacity() {
+        let names = [Query::all("p", Save::name_only()).unwrap().build()];
+        drop(crate::parse(&"<p>x</p>".repeat(5_000), &names).unwrap());
+
+        // An early-exit parse reserves no rows, so its optional columns grow
+        // with the rows it saves, not with the rows the last parse kept.
+        let first = [Query::first("p", Save::all()).unwrap().build()];
+        let store = crate::parse("<p>one</p><p>two</p>", &first).unwrap();
+        assert!(store.columns.rows.capacity() >= 5_000);
+        assert!(store.columns.attributes.capacity() < 100);
+        assert!(store.columns.inner_html.capacity() < 100);
+        assert!(store.columns.text.capacity() < 100);
     }
 
     #[test]

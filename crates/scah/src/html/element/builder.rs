@@ -31,7 +31,7 @@ use scah_query_ir::{Attribute, IElement};
 ///
 /// This is the *parser-level* representation used during streaming.
 /// Once an element is matched by a query, its data is copied into an
-/// [`Element`](crate::Element) inside the [`Store`](crate::Store).
+/// [`Store`](crate::Store) row, read back through [`ElementRef`](crate::ElementRef).
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct XHtmlElement<'html> {
     /// The tag name (e.g. `"div"`, `"a"`, `"section"`).
