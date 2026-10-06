@@ -26,6 +26,10 @@ Rust crates and the Python and npm packages together.
   `Store::elements` and `Store::attributes` fields give way to
   `Store::element(id)`, `Store::elements()`, and `Store::len()`. ([#100])
 - HTML of 4 GiB or more returns `ParseError::InputTooLarge`. ([#100])
+- `XHtmlParser::next` panics if stepped over a different source than its
+  first call, or over a `Reader::from_bytes` source that is not UTF-8.
+  `Reader::source_str` returns the source as a string when it is valid.
+  ([#100])
 
 ### Added
 
