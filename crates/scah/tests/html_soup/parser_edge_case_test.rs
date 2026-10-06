@@ -102,6 +102,25 @@ fn solidus_ends_open_and_close_tag_names_alike() {
 }
 
 #[test]
+fn solidus_after_a_tag_name_starts_its_attributes() {
+    let html = "<div/id=x>a</div><div/hidden>b</div><a / href=/c/>c</a>";
+    let store = super::helpers::parse_all(html, &["div#x", "div[hidden]", "a[href='/c/']"]);
+
+    assert_eq!(
+        super::helpers::inner_htmls(&store, "div#x"),
+        vec![Some("a")]
+    );
+    assert_eq!(
+        super::helpers::inner_htmls(&store, "div[hidden]"),
+        vec![Some("b")]
+    );
+    assert_eq!(
+        super::helpers::inner_htmls(&store, "a[href='/c/']"),
+        vec![Some("c")]
+    );
+}
+
+#[test]
 fn quoted_gt_in_end_tag_attributes_does_not_end_the_tag() {
     let html = r#"<div>a</div title=">"><span>b</span>"#;
     let store = super::helpers::parse_all(html, &["div", "span", "div span"]);
