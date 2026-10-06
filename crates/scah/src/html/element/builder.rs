@@ -21,7 +21,7 @@ use scah_query_ir::{Attribute, IElement};
 /// let store = parse(html, queries).expect("parse succeeds");
 ///
 /// let a = store.get("a").unwrap().next().unwrap();
-/// let attrs = a.attributes(&store).unwrap();
+/// let attrs = a.attributes().unwrap();
 /// assert_eq!(attrs[0].key, "href");
 /// assert_eq!(attrs[0].value, Some("https://example.com"));
 /// assert_eq!(attrs[1].key, "target");

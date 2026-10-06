@@ -18,37 +18,27 @@ pub struct PyElement {
 impl PyElement {
     #[getter]
     pub fn name(&self) -> Option<&str> {
-        self.store.elements.get(self.id.index()).map(|e| e.name)
+        self.store.element(self.id).map(|e| e.name())
     }
 
     #[getter]
     pub fn class_name(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.class)
+        self.store.element(self.id).and_then(|e| e.class())
     }
 
     #[getter]
     pub fn id(&self) -> Option<&str> {
-        self.store.elements.get(self.id.index()).and_then(|e| e.id)
+        self.store.element(self.id).and_then(|e| e.id())
     }
 
     pub fn get_attribute(&self, key: String) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.attribute(&self.store, &key))
+        self.store.element(self.id).and_then(|e| e.attribute(&key))
     }
 
     #[getter]
     pub fn attributes<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyDict>> {
         let object = PyDict::new(py);
-        let attributes = self
-            .store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.attributes(&self.store));
+        let attributes = self.store.element(self.id).and_then(|e| e.attributes());
 
         if let Some(attrs) = attributes {
             for Attribute { key, value } in attrs {
@@ -60,26 +50,17 @@ impl PyElement {
 
     #[getter]
     pub fn inner_html(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.inner_html)
+        self.store.element(self.id).and_then(|e| e.inner_html())
     }
 
     #[getter]
     pub fn raw_text(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.raw_text(&self.store))
+        self.store.element(self.id).and_then(|e| e.raw_text())
     }
 
     #[getter]
     pub fn text(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.text(&self.store))
+        self.store.element(self.id).and_then(|e| e.text())
     }
 
     #[getter]
@@ -160,7 +141,7 @@ impl PyStore {
     }
 
     fn __len__(&self) -> usize {
-        self.store.elements.len()
+        self.store.len()
     }
 }
 

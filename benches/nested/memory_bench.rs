@@ -81,33 +81,29 @@ fn bench_scah_all(html: String) {
     let store = parse(&html, &queries).unwrap();
 
     for product in store.get(PRODUCT_SELECTOR).unwrap() {
-        black_box(product.attribute(&store, "class"));
+        black_box(product.attribute("class"));
         black_box(product.inner_html);
-        black_box(product.text(&store));
+        black_box(product.text());
 
-        let title = product
-            .get(&store, PRODUCT_TITLE_SELECTOR)
-            .unwrap()
-            .next()
-            .unwrap();
+        let title = product.get(PRODUCT_TITLE_SELECTOR).unwrap().next().unwrap();
         black_box(title.inner_html);
-        black_box(title.text(&store));
+        black_box(title.text());
 
         let rating = product
-            .get(&store, PRODUCT_RATING_SELECTOR)
+            .get(PRODUCT_RATING_SELECTOR)
             .unwrap()
             .next()
             .unwrap();
         black_box(rating.inner_html);
-        black_box(rating.text(&store));
+        black_box(rating.text());
 
         let description = product
-            .get(&store, PRODUCT_DESCRIPTION_SELECTOR)
+            .get(PRODUCT_DESCRIPTION_SELECTOR)
             .unwrap()
             .next()
             .unwrap();
         black_box(description.inner_html);
-        black_box(description.text(&store));
+        black_box(description.text());
     }
 }
 
@@ -279,33 +275,29 @@ fn bench_scah_first(html: String) {
     let store = parse(&html, &queries).unwrap();
     let product = store.get(PRODUCT_SELECTOR).unwrap().next().unwrap();
 
-    black_box(product.attribute(&store, "class"));
+    black_box(product.attribute("class"));
     black_box(product.inner_html);
-    black_box(product.text(&store));
+    black_box(product.text());
 
-    let title = product
-        .get(&store, PRODUCT_TITLE_SELECTOR)
-        .unwrap()
-        .next()
-        .unwrap();
+    let title = product.get(PRODUCT_TITLE_SELECTOR).unwrap().next().unwrap();
     black_box(title.inner_html);
-    black_box(title.text(&store));
+    black_box(title.text());
 
     let rating = product
-        .get(&store, PRODUCT_RATING_SELECTOR)
+        .get(PRODUCT_RATING_SELECTOR)
         .unwrap()
         .next()
         .unwrap();
     black_box(rating.inner_html);
-    black_box(rating.text(&store));
+    black_box(rating.text());
 
     let description = product
-        .get(&store, PRODUCT_DESCRIPTION_SELECTOR)
+        .get(PRODUCT_DESCRIPTION_SELECTOR)
         .unwrap()
         .next()
         .unwrap();
     black_box(description.inner_html);
-    black_box(description.text(&store));
+    black_box(description.text());
 }
 
 #[library_benchmark]

@@ -22,16 +22,6 @@ impl<T, I: From<usize>> Arena<T, I> {
             _marker: PhantomData,
         }
     }
-
-    #[inline]
-    pub unsafe fn index_of(&self, item: &T) -> I {
-        let list_ptr_range = self.inner.as_ptr_range();
-        let ptr = std::ptr::from_ref(item);
-        assert!(list_ptr_range.contains(&ptr));
-
-        let index = unsafe { ptr.offset_from_unsigned(list_ptr_range.start) };
-        I::from(index)
-    }
 }
 
 impl<T, I: From<usize>> Default for Arena<T, I> {

@@ -40,21 +40,18 @@ fn html_scope_problem_intro_example() {
     let store = parse(HTML_SCOPE_PROBLEM_INTRO_EXAMPLE, &queries).unwrap();
     let intro = store.get("div#project-intro").unwrap().next().unwrap();
 
-    let overview_paragraphs = intro
-        .get(&store, "article.overview p")
-        .unwrap()
-        .collect::<Vec<_>>();
+    let overview_paragraphs = intro.get("article.overview p").unwrap().collect::<Vec<_>>();
     assert_eq!(overview_paragraphs.len(), 2);
-    assert_eq!(overview_paragraphs[0].name, "p");
-    assert_eq!(overview_paragraphs[1].name, "p");
+    assert_eq!(overview_paragraphs[0].name(), "p");
+    assert_eq!(overview_paragraphs[1].name(), "p");
 
     let existing_bindings = intro
-        .get(&store, "aside.ecosystem li.existing")
+        .get("aside.ecosystem li.existing")
         .unwrap()
         .collect::<Vec<_>>();
     assert_eq!(existing_bindings.len(), 2);
-    assert_eq!(existing_bindings[0].text(&store), Some("Python"));
-    assert_eq!(existing_bindings[1].text(&store), Some("Node.js"));
+    assert_eq!(existing_bindings[0].text(), Some("Python"));
+    assert_eq!(existing_bindings[1].text(), Some("Node.js"));
 }
 
 const FIRST_SELECTION_AS_ROOT_EARLY_EXIT: &str = r#"
@@ -81,45 +78,41 @@ fn first_selection_as_root_early_exit() {
     assert_eq!(store.get(PRODUCT_SELECTOR).unwrap().count(), 1);
 
     let product = store.get(PRODUCT_SELECTOR).unwrap().next().unwrap();
-    assert_eq!(product.name, "div");
-    assert_eq!(product.class, Some("product"));
-    assert_eq!(product.attribute(&store, "class"), None);
+    assert_eq!(product.name(), "div");
+    assert_eq!(product.class(), Some("product"));
+    assert_eq!(product.attribute("class"), None);
     assert_eq!(
-        product.inner_html,
+        product.inner_html(),
         Some(
             r#"<h1>Product 0</h1><span class="rating">3/5</span><p class="description">Description</p>"#
         )
     );
-    assert_eq!(product.text(&store), Some("Product 0\n3/5\nDescription"));
+    assert_eq!(product.text(), Some("Product 0\n3/5\nDescription"));
 
-    let title = product
-        .get(&store, PRODUCT_TITLE_SELECTOR)
-        .unwrap()
-        .next()
-        .unwrap();
-    assert_eq!(title.name, "h1");
-    assert_eq!(title.inner_html, Some("Product 0"));
-    assert_eq!(title.text(&store), Some("Product 0"));
+    let title = product.get(PRODUCT_TITLE_SELECTOR).unwrap().next().unwrap();
+    assert_eq!(title.name(), "h1");
+    assert_eq!(title.inner_html(), Some("Product 0"));
+    assert_eq!(title.text(), Some("Product 0"));
 
     let rating = product
-        .get(&store, PRODUCT_RATING_SELECTOR)
+        .get(PRODUCT_RATING_SELECTOR)
         .unwrap()
         .next()
         .unwrap();
-    assert_eq!(rating.name, "span");
-    assert_eq!(rating.class, Some("rating"));
-    assert_eq!(rating.inner_html, Some("3/5"));
-    assert_eq!(rating.text(&store), Some("3/5"));
+    assert_eq!(rating.name(), "span");
+    assert_eq!(rating.class(), Some("rating"));
+    assert_eq!(rating.inner_html(), Some("3/5"));
+    assert_eq!(rating.text(), Some("3/5"));
 
     let description = product
-        .get(&store, PRODUCT_DESCRIPTION_SELECTOR)
+        .get(PRODUCT_DESCRIPTION_SELECTOR)
         .unwrap()
         .next()
         .unwrap();
-    assert_eq!(description.name, "p");
-    assert_eq!(description.class, Some("description"));
-    assert_eq!(description.inner_html, Some("Description"));
-    assert_eq!(description.text(&store), Some("Description"));
+    assert_eq!(description.name(), "p");
+    assert_eq!(description.class(), Some("description"));
+    assert_eq!(description.inner_html(), Some("Description"));
+    assert_eq!(description.text(), Some("Description"));
 }
 
 const FIRST_CONTEXT_WITH_REQUIRED_CHILD: &str = r#"
@@ -143,9 +136,9 @@ fn first_context_waits_for_required_child_before_early_exit() {
         .unwrap_or_default();
     let titles = products
         .iter()
-        .filter_map(|product| product.get(&store, "> h1"))
+        .filter_map(|product| product.get("> h1"))
         .flatten()
         .collect::<Vec<_>>();
     assert_eq!(titles.len(), 1);
-    assert_eq!(titles[0].text(&store), Some("Product 1"));
+    assert_eq!(titles[0].text(), Some("Product 1"));
 }

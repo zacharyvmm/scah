@@ -13,8 +13,8 @@ fn inline_boundaries_preserve_source_spacing() {
         let queries = [query];
         let store = parse(html, &queries).unwrap();
         let p = store.get("p").unwrap().next().unwrap();
-        assert_eq!(p.raw_text(&store), Some(expected));
-        assert_eq!(p.text(&store), Some(expected));
+        assert_eq!(p.raw_text(), Some(expected));
+        assert_eq!(p.text(), Some(expected));
     }
 }
 
@@ -25,7 +25,7 @@ fn search_uses_structural_block_boundaries() {
     let store = parse(html, &queries).unwrap();
     let div = store.get("div").unwrap().next().unwrap();
 
-    assert_eq!(div.text(&store), Some("A\nB\nC"));
+    assert_eq!(div.text(), Some("A\nB\nC"));
 }
 
 #[test]
@@ -36,8 +36,8 @@ fn br_inserts_normalized_line_break() {
     let store = parse(html, &queries).unwrap();
     let p = store.get("p").unwrap().next().unwrap();
 
-    assert_eq!(p.raw_text(&store), Some("Helloworld"));
-    assert_eq!(p.text(&store), Some("Hello\nworld"));
+    assert_eq!(p.raw_text(), Some("Helloworld"));
+    assert_eq!(p.text(), Some("Hello\nworld"));
 }
 
 #[test]
@@ -48,9 +48,9 @@ fn pre_strips_initial_newline_in_normalized_text() {
     let store = parse(html, &queries).unwrap();
     let pre = store.get("pre").unwrap().next().unwrap();
 
-    assert_eq!(pre.raw_text(&store), Some("\n  alpha\n    beta\n"));
+    assert_eq!(pre.raw_text(), Some("\n  alpha\n    beta\n"));
     // Initial newline removed; indentation and trailing newline preserved.
-    assert_eq!(pre.text(&store), Some("  alpha\n    beta\n"));
+    assert_eq!(pre.text(), Some("  alpha\n    beta\n"));
 }
 
 #[test]
@@ -65,10 +65,10 @@ fn overlapping_parent_and_child_ranges_share_tape() {
     let section = store.get("section").unwrap().next().unwrap();
     let strong = store.get("strong").unwrap().next().unwrap();
 
-    assert_eq!(section.raw_text(&store), Some("before inside after"));
-    assert_eq!(strong.raw_text(&store), Some("inside"));
-    assert_eq!(section.text(&store), Some("before inside after"));
-    assert_eq!(strong.text(&store), Some("inside"));
+    assert_eq!(section.raw_text(), Some("before inside after"));
+    assert_eq!(strong.raw_text(), Some("inside"));
+    assert_eq!(section.text(), Some("before inside after"));
+    assert_eq!(strong.text(), Some("inside"));
 }
 
 #[test]
@@ -80,8 +80,8 @@ fn first_with_normalized_text_captures_before_early_exit() {
     let store = parse(&html, &queries).unwrap();
 
     let hit = store.get("#hit").unwrap().next().unwrap();
-    assert_eq!(hit.text(&store), Some("important text"));
-    assert_eq!(hit.raw_text(&store), None);
+    assert_eq!(hit.text(), Some("important text"));
+    assert_eq!(hit.raw_text(), None);
 }
 
 #[test]
@@ -98,10 +98,10 @@ fn first_with_all_text_fields_finalizes_block_newlines() {
     let store = parse(html, queries).unwrap();
 
     let product = store.get("div.product").unwrap().next().unwrap();
-    assert_eq!(product.text(&store), Some("Product 0\n3/5\nDescription"));
+    assert_eq!(product.text(), Some("Product 0\n3/5\nDescription"));
 
-    let title = product.get(&store, "> h1").unwrap().next().unwrap();
-    assert_eq!(title.text(&store), Some("Product 0"));
+    let title = product.get("> h1").unwrap().next().unwrap();
+    assert_eq!(title.text(), Some("Product 0"));
 }
 
 #[test]
@@ -115,12 +115,12 @@ fn first_with_raw_text_only_skips_normalized_tape() {
     let store = parse(html, queries).unwrap();
 
     let product = store.get("div.product").unwrap().next().unwrap();
-    assert_eq!(product.raw_text(&store), Some("Product 0tail"));
-    assert_eq!(product.text(&store), None);
+    assert_eq!(product.raw_text(), Some("Product 0tail"));
+    assert_eq!(product.text(), None);
 
-    let title = product.get(&store, "> h1").unwrap().next().unwrap();
-    assert_eq!(title.raw_text(&store), Some("Product 0"));
-    assert_eq!(title.text(&store), None);
+    let title = product.get("> h1").unwrap().next().unwrap();
+    assert_eq!(title.raw_text(), Some("Product 0"));
+    assert_eq!(title.text(), None);
 }
 
 /// Assert generated/collapsed separator canonicalization.
@@ -144,7 +144,7 @@ fn text_of(html: &str, selector: &str) -> String {
         .unwrap()
         .next()
         .unwrap()
-        .text(&store)
+        .text()
         .unwrap()
         .to_string()
 }
@@ -155,8 +155,8 @@ fn raw_and_text(html: &str, selector: &str) -> (Option<String>, Option<String>) 
     let store = parse(html, &queries).unwrap();
     let el = store.get(selector).unwrap().next().unwrap();
     (
-        el.raw_text(&store).map(str::to_string),
-        el.text(&store).map(str::to_string),
+        el.raw_text().map(str::to_string),
+        el.text().map(str::to_string),
     )
 }
 
@@ -302,7 +302,7 @@ fn legacy_rust_text_content_aliases_use_new_text_semantics() {
     let store = parse(html, &queries).unwrap();
     let p = store.get("p").unwrap().next().unwrap();
 
-    assert_eq!(p.text_content(&store), Some("A\u{00A0}& B"));
+    assert_eq!(p.text_content(), Some("A\u{00A0}& B"));
 }
 
 #[test]
@@ -352,9 +352,9 @@ fn parent_of_pre_may_trim_outer_edges() {
     let store = parse(html, queries).unwrap();
     let section = store.get("section").unwrap().next().unwrap();
     let pre = store.get("pre").unwrap().next().unwrap();
-    assert_eq!(pre.text(&store), Some("  A\n"));
+    assert_eq!(pre.text(), Some("  A\n"));
     // Ordinary parent applies collapsed-edge trimming.
-    assert_eq!(section.text(&store), Some("A"));
+    assert_eq!(section.text(), Some("A"));
 }
 
 #[test]
@@ -389,8 +389,8 @@ fn raw_only_skips_normalized_tape() {
     let queries = [query];
     let store = parse(html, &queries).unwrap();
     let div = store.get("div").unwrap().next().unwrap();
-    assert_eq!(div.raw_text(&store), Some("A&amp;B"));
-    assert_eq!(div.text(&store), None);
+    assert_eq!(div.raw_text(), Some("A&amp;B"));
+    assert_eq!(div.text(), None);
 }
 
 #[test]
@@ -400,8 +400,8 @@ fn text_only_skips_raw_tape() {
     let queries = [query];
     let store = parse(html, &queries).unwrap();
     let div = store.get("div").unwrap().next().unwrap();
-    assert_eq!(div.text(&store), Some("A&B"));
-    assert_eq!(div.raw_text(&store), None);
+    assert_eq!(div.text(), Some("A&B"));
+    assert_eq!(div.raw_text(), None);
 }
 
 #[test]
@@ -411,8 +411,8 @@ fn no_content_skips_both_tapes() {
     let queries = [query];
     let store = parse(html, &queries).unwrap();
     let div = store.get("div").unwrap().next().unwrap();
-    assert_eq!(div.text(&store), None);
-    assert_eq!(div.raw_text(&store), None);
+    assert_eq!(div.text(), None);
+    assert_eq!(div.raw_text(), None);
 }
 
 #[test]
@@ -426,14 +426,14 @@ fn save_none_matches_remain_in_store_without_content() {
 
     let sections: Vec<_> = store.get("section").unwrap().collect();
     assert_eq!(sections.len(), 2);
-    assert_eq!(sections[0].id, Some("s1"));
-    assert_eq!(sections[1].id, Some("s2"));
+    assert_eq!(sections[0].id(), Some("s1"));
+    assert_eq!(sections[1].id(), Some("s2"));
     for section in &sections {
-        assert!(section.inner_html.is_none());
-        assert!(!section.has_raw_text(&store));
-        assert!(!section.has_text(&store));
-        assert_eq!(section.raw_text(&store), None);
-        assert_eq!(section.text(&store), None);
+        assert!(section.inner_html().is_none());
+        assert!(!section.has_raw_text());
+        assert!(!section.has_text());
+        assert_eq!(section.raw_text(), None);
+        assert_eq!(section.text(), None);
     }
 }
 
@@ -448,12 +448,12 @@ fn save_none_first_completes_after_element_lifecycle() {
 
     let hits: Vec<_> = store.get("div").unwrap().collect();
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].id, Some("hit"));
-    assert!(hits[0].inner_html.is_none());
-    assert!(!hits[0].has_raw_text(&store));
-    assert!(!hits[0].has_text(&store));
-    assert_eq!(hits[0].raw_text(&store), None);
-    assert_eq!(hits[0].text(&store), None);
+    assert_eq!(hits[0].id(), Some("hit"));
+    assert!(hits[0].inner_html().is_none());
+    assert!(!hits[0].has_raw_text());
+    assert!(!hits[0].has_text());
+    assert_eq!(hits[0].raw_text(), None);
+    assert_eq!(hits[0].text(), None);
 }
 
 #[test]
@@ -471,19 +471,19 @@ fn save_none_nested_first_completes_with_parent_child() {
 
     let products: Vec<_> = store.get("div.product").unwrap().collect();
     assert_eq!(products.len(), 1);
-    assert!(products[0].inner_html.is_none());
-    assert!(!products[0].has_raw_text(&store));
-    assert!(!products[0].has_text(&store));
-    assert_eq!(products[0].raw_text(&store), None);
-    assert_eq!(products[0].text(&store), None);
+    assert!(products[0].inner_html().is_none());
+    assert!(!products[0].has_raw_text());
+    assert!(!products[0].has_text());
+    assert_eq!(products[0].raw_text(), None);
+    assert_eq!(products[0].text(), None);
 
-    let title = products[0].get(&store, "> h1").unwrap().next().unwrap();
-    assert_eq!(title.name, "h1");
-    assert!(title.inner_html.is_none());
-    assert!(!title.has_raw_text(&store));
-    assert!(!title.has_text(&store));
-    assert_eq!(title.raw_text(&store), None);
-    assert_eq!(title.text(&store), None);
+    let title = products[0].get("> h1").unwrap().next().unwrap();
+    assert_eq!(title.name(), "h1");
+    assert!(title.inner_html().is_none());
+    assert!(!title.has_raw_text());
+    assert!(!title.has_text());
+    assert_eq!(title.raw_text(), None);
+    assert_eq!(title.text(), None);
 }
 
 #[test]
@@ -507,8 +507,8 @@ fn finalized_pre_range_survives_following_block() {
     let store = parse(html, queries).unwrap();
     let pre = store.get("pre").unwrap().next().unwrap();
     let div = store.get("div").unwrap().next().unwrap();
-    assert_eq!(pre.text(&store), Some("A   "));
-    assert_eq!(div.text(&store), Some(""));
+    assert_eq!(pre.text(), Some("A   "));
+    assert_eq!(div.text(), Some(""));
 }
 
 #[test]
@@ -520,11 +520,11 @@ fn finalized_pre_range_survives_following_section() {
     ];
     let store = parse(html, queries).unwrap();
     assert_eq!(
-        store.get("pre").unwrap().next().unwrap().text(&store),
+        store.get("pre").unwrap().next().unwrap().text(),
         Some("A   ")
     );
     assert_eq!(
-        store.get("section").unwrap().next().unwrap().text(&store),
+        store.get("section").unwrap().next().unwrap().text(),
         Some("B")
     );
 }
@@ -540,10 +540,10 @@ fn finalized_pre_range_survives_following_hidden_block() {
     let mut divs = store.get("div").unwrap();
     let outer = divs.next().unwrap();
     assert_eq!(
-        store.get("pre").unwrap().next().unwrap().text(&store),
+        store.get("pre").unwrap().next().unwrap().text(),
         Some("A   ")
     );
-    assert_eq!(outer.text(&store), Some(""));
+    assert_eq!(outer.text(), Some(""));
 }
 
 #[test]
@@ -561,14 +561,14 @@ fn multiple_finalized_pre_ranges_survive_following_div() {
     let div = store.get("div").unwrap().next().unwrap();
 
     // Access-order independence: read div first, then reverse pre order.
-    assert_eq!(div.text(&store), Some("C"));
-    assert_eq!(second_pre.text(&store), Some("B  "));
-    assert_eq!(first_pre.text(&store), Some("A   "));
+    assert_eq!(div.text(), Some("C"));
+    assert_eq!(second_pre.text(), Some("B  "));
+    assert_eq!(first_pre.text(), Some("A   "));
 
     // And again in original order.
-    assert_eq!(first_pre.text(&store), Some("A   "));
-    assert_eq!(second_pre.text(&store), Some("B  "));
-    assert_eq!(div.text(&store), Some("C"));
+    assert_eq!(first_pre.text(), Some("A   "));
+    assert_eq!(second_pre.text(), Some("B  "));
+    assert_eq!(div.text(), Some("C"));
 }
 
 #[test]
@@ -603,14 +603,8 @@ fn suppressed_descendant_inside_pre_stays_empty() {
         Query::all("span", Save::only_text()).unwrap().build(),
     ];
     let store = parse(html, queries).unwrap();
-    assert_eq!(
-        store.get("span").unwrap().next().unwrap().text(&store),
-        Some("")
-    );
-    assert_eq!(
-        store.get("pre").unwrap().next().unwrap().text(&store),
-        Some("AB")
-    );
+    assert_eq!(store.get("span").unwrap().next().unwrap().text(), Some(""));
+    assert_eq!(store.get("pre").unwrap().next().unwrap().text(), Some("AB"));
 }
 
 #[test]
@@ -671,11 +665,11 @@ fn parent_and_child_selected_inside_pre_preserve_whitespace() {
     ];
     let store = parse(html, queries).unwrap();
     assert_eq!(
-        store.get("pre").unwrap().next().unwrap().text(&store),
+        store.get("pre").unwrap().next().unwrap().text(),
         Some("  A  ")
     );
     assert_eq!(
-        store.get("span").unwrap().next().unwrap().text(&store),
+        store.get("span").unwrap().next().unwrap().text(),
         Some("  A  ")
     );
 }
@@ -692,13 +686,10 @@ fn pre_followed_by_block_keeps_literal_spaces_before_newline() {
     ];
     let store = parse(html, queries).unwrap();
     assert_eq!(
-        store.get("pre").unwrap().next().unwrap().text(&store),
+        store.get("pre").unwrap().next().unwrap().text(),
         Some("A   ")
     );
-    assert_eq!(
-        store.get("div").unwrap().next().unwrap().text(&store),
-        Some("B")
-    );
+    assert_eq!(store.get("div").unwrap().next().unwrap().text(), Some("B"));
 }
 
 // --- Range ownership: parent separators must not leak into Preserve ranges ---
@@ -733,8 +724,8 @@ fn parent_still_contains_separator_excluded_from_child() {
     let pre = store.get("pre").unwrap().next().unwrap();
     let span = store.get("span").unwrap().next().unwrap();
 
-    assert_eq!(pre.text(&store), Some("A\nB"));
-    assert_eq!(span.text(&store), Some("B"));
+    assert_eq!(pre.text(), Some("A\nB"));
+    assert_eq!(span.text(), Some("B"));
 }
 
 #[test]
@@ -764,10 +755,10 @@ fn nested_pre_strips_its_own_initial_newline() {
     let outer = pres.next().unwrap();
     let inner = pres.next().unwrap();
 
-    assert_eq!(inner.text(&store), Some("B"));
+    assert_eq!(inner.text(), Some("B"));
     // Inner `pre` is a block, so its opening boundary contributes a newline
     // to the outer preformatted parent; closing contributes another before C.
-    assert_eq!(outer.text(&store), Some("A\nB\nC"));
+    assert_eq!(outer.text(), Some("A\nB\nC"));
 }
 
 #[test]
@@ -781,7 +772,7 @@ fn child_inside_nested_pre_cancels_initial_newline() {
     let mut pres = store.get("pre").unwrap();
     let _outer = pres.next().unwrap();
     let inner = pres.next().unwrap();
-    assert_eq!(inner.text(&store), Some("\nB"));
+    assert_eq!(inner.text(), Some("\nB"));
 }
 
 #[test]
@@ -793,7 +784,7 @@ fn comment_inside_nested_pre_cancels_initial_newline() {
     let mut pres = store.get("pre").unwrap();
     let _outer = pres.next().unwrap();
     let inner = pres.next().unwrap();
-    assert_eq!(inner.text(&store), Some("\nB"));
+    assert_eq!(inner.text(), Some("\nB"));
 }
 
 #[test]
@@ -845,13 +836,13 @@ fn selected_table_cells_exclude_neighbor_separators() {
     let store = parse(html, queries).unwrap();
 
     let table = store.get("table").unwrap().next().unwrap();
-    assert_eq!(table.text(&store), Some("A\t\tB"));
+    assert_eq!(table.text(), Some("A\t\tB"));
 
     let cells: Vec<_> = store.get("td").unwrap().collect();
     assert_eq!(cells.len(), 3);
-    assert_eq!(cells[0].text(&store), Some("A"));
-    assert_eq!(cells[1].text(&store), Some(""));
-    assert_eq!(cells[2].text(&store), Some("B"));
+    assert_eq!(cells[0].text(), Some("A"));
+    assert_eq!(cells[1].text(), Some(""));
+    assert_eq!(cells[2].text(), Some("B"));
 }
 
 #[test]
@@ -899,12 +890,12 @@ fn selected_cells_after_preserved_whitespace_exclude_neighbor_tabs() {
     let store = parse(html, queries).unwrap();
 
     let table = store.get("table").unwrap().next().unwrap();
-    assert_eq!(table.text(&store), Some("A \tB"));
+    assert_eq!(table.text(), Some("A \tB"));
 
     let cells: Vec<_> = store.get("td").unwrap().collect();
     assert_eq!(cells.len(), 2);
-    assert_eq!(cells[0].text(&store), Some("A "));
-    assert_eq!(cells[1].text(&store), Some("B"));
+    assert_eq!(cells[0].text(), Some("A "));
+    assert_eq!(cells[1].text(), Some("B"));
 }
 
 #[test]
@@ -917,12 +908,12 @@ fn selected_cells_after_preserved_newline_exclude_neighbor_tabs() {
     let store = parse(html, queries).unwrap();
 
     let table = store.get("table").unwrap().next().unwrap();
-    assert_eq!(table.text(&store), Some("A\n\tB"));
+    assert_eq!(table.text(), Some("A\n\tB"));
 
     let cells: Vec<_> = store.get("td").unwrap().collect();
     assert_eq!(cells.len(), 2);
-    assert_eq!(cells[0].text(&store), Some("A\n"));
-    assert_eq!(cells[1].text(&store), Some("B"));
+    assert_eq!(cells[0].text(), Some("A\n"));
+    assert_eq!(cells[1].text(), Some("B"));
 }
 
 // --- Generated block newlines at cell boundaries must become tabs ---
@@ -960,12 +951,12 @@ fn block_cell_boundary_does_not_leak_into_selected_cells() {
     let store = parse(html, queries).unwrap();
 
     let table = store.get("table").unwrap().next().unwrap();
-    assert_eq!(table.text(&store), Some("A\tB"));
+    assert_eq!(table.text(), Some("A\tB"));
 
     let cells: Vec<_> = store.get("td").unwrap().collect();
     assert_eq!(cells.len(), 2);
-    assert_eq!(cells[0].text(&store), Some("A"));
-    assert_eq!(cells[1].text(&store), Some("B"));
+    assert_eq!(cells[0].text(), Some("A"));
+    assert_eq!(cells[1].text(), Some("B"));
 }
 
 #[test]
@@ -986,8 +977,8 @@ fn void_save_none_still_stores_match() {
     let breaks: Vec<_> = store.get("br").unwrap().collect();
 
     assert_eq!(breaks.len(), 2);
-    assert_eq!(breaks[0].text(&store), None);
-    assert_eq!(breaks[0].raw_text(&store), None);
+    assert_eq!(breaks[0].text(), None);
+    assert_eq!(breaks[0].raw_text(), None);
 }
 
 #[test]
@@ -999,8 +990,8 @@ fn void_text_capture_still_finalizes_empty_range() {
     let store = parse(html, &queries).unwrap();
     let br = store.get("br").unwrap().next().unwrap();
 
-    assert_eq!(br.text(&store), Some(""));
-    assert_eq!(br.raw_text(&store), None);
+    assert_eq!(br.text(), Some(""));
+    assert_eq!(br.raw_text(), None);
 }
 
 #[test]
@@ -1012,8 +1003,8 @@ fn void_raw_capture_still_finalizes_empty_range() {
     let store = parse(html, &queries).unwrap();
     let br = store.get("br").unwrap().next().unwrap();
 
-    assert_eq!(br.raw_text(&store), Some(""));
-    assert_eq!(br.text(&store), None);
+    assert_eq!(br.raw_text(), Some(""));
+    assert_eq!(br.text(), None);
 }
 
 #[test]
@@ -1084,36 +1075,32 @@ fn save_combinations_populate_only_requested_fields() {
         let empty = paragraphs[1];
 
         assert_eq!(
-            filled.inner_html.is_some(),
+            filled.inner_html().is_some(),
             *expect_inner,
             "{label} filled inner"
         );
-        assert_eq!(
-            filled.has_raw_text(&store),
-            *expect_raw,
-            "{label} filled raw"
-        );
-        assert_eq!(filled.has_text(&store), *expect_text, "{label} filled text");
+        assert_eq!(filled.has_raw_text(), *expect_raw, "{label} filled raw");
+        assert_eq!(filled.has_text(), *expect_text, "{label} filled text");
 
         if *expect_inner {
-            assert_eq!(filled.inner_html, Some("Hello <b>world</b>"));
+            assert_eq!(filled.inner_html(), Some("Hello <b>world</b>"));
         }
         if *expect_raw {
-            assert_eq!(filled.raw_text(&store), Some("Hello world"));
+            assert_eq!(filled.raw_text(), Some("Hello world"));
             // Captured empty content remains distinguishable from uncaptured.
-            assert_eq!(empty.raw_text(&store), Some(""));
-            assert!(empty.has_raw_text(&store));
+            assert_eq!(empty.raw_text(), Some(""));
+            assert!(empty.has_raw_text());
         } else {
-            assert_eq!(filled.raw_text(&store), None);
-            assert_eq!(empty.raw_text(&store), None);
+            assert_eq!(filled.raw_text(), None);
+            assert_eq!(empty.raw_text(), None);
         }
         if *expect_text {
-            assert_eq!(filled.text(&store), Some("Hello world"));
-            assert_eq!(empty.text(&store), Some(""));
-            assert!(empty.has_text(&store));
+            assert_eq!(filled.text(), Some("Hello world"));
+            assert_eq!(empty.text(), Some(""));
+            assert!(empty.has_text());
         } else {
-            assert_eq!(filled.text(&store), None);
-            assert_eq!(empty.text(&store), None);
+            assert_eq!(filled.text(), None);
+            assert_eq!(empty.text(), None);
         }
     }
 }
@@ -1129,10 +1116,10 @@ fn nested_elements_keep_independent_text_ranges() {
     let section = store.get("section").unwrap().next().unwrap();
     let strong = store.get("strong").unwrap().next().unwrap();
 
-    assert_eq!(section.raw_text(&store), Some("before inside after"));
-    assert_eq!(strong.raw_text(&store), Some("inside"));
-    assert_eq!(section.text(&store), Some("before inside after"));
-    assert_eq!(strong.text(&store), Some("inside"));
+    assert_eq!(section.raw_text(), Some("before inside after"));
+    assert_eq!(strong.raw_text(), Some("inside"));
+    assert_eq!(section.text(), Some("before inside after"));
+    assert_eq!(strong.text(), Some("inside"));
 }
 
 #[test]
@@ -1144,11 +1131,11 @@ fn text_sidecar_unallocated_for_inner_html_only() {
     let paragraphs: Vec<_> = store.get("p").unwrap().collect();
     assert_eq!(paragraphs.len(), 2);
     for p in paragraphs {
-        assert!(p.inner_html.is_some());
-        assert!(!p.has_raw_text(&store));
-        assert!(!p.has_text(&store));
-        assert_eq!(p.raw_text(&store), None);
-        assert_eq!(p.text(&store), None);
+        assert!(p.inner_html().is_some());
+        assert!(!p.has_raw_text());
+        assert!(!p.has_text());
+        assert_eq!(p.raw_text(), None);
+        assert_eq!(p.text(), None);
     }
 }
 
@@ -1160,14 +1147,14 @@ fn text_sidecar_aligned_for_multiple_matching_queries() {
         Query::all("p.x", Save::only_raw_text()).unwrap().build(),
     ];
     let store = parse(html, &queries).unwrap();
-    assert_eq!(store.elements.len(), 2);
+    assert_eq!(store.elements().len(), 2);
 
     let by_tag = store.get("p").unwrap().next().unwrap();
     let by_class = store.get("p.x").unwrap().next().unwrap();
-    assert_eq!(by_tag.text(&store), Some("A"));
-    assert_eq!(by_tag.raw_text(&store), None);
-    assert_eq!(by_class.raw_text(&store), Some("A"));
-    assert_eq!(by_class.text(&store), None);
+    assert_eq!(by_tag.text(), Some("A"));
+    assert_eq!(by_tag.raw_text(), None);
+    assert_eq!(by_class.raw_text(), Some("A"));
+    assert_eq!(by_class.text(), None);
 }
 
 use scah::{ParseError, Reader, Store, XHtmlParser, parse_without_text_capture};
@@ -1208,49 +1195,33 @@ fn parse_with_general_parser_new<'html>(
 
 /// Assert complete Store equivalence between general XHtmlParser and specialized NoTextParser.
 fn assert_store_equivalent(general: &Store, specialized: &Store, selectors_to_check: &[&str]) {
-    assert_eq!(
-        general.elements.len(),
-        specialized.elements.len(),
-        "element count mismatch"
-    );
+    assert_eq!(general.len(), specialized.len(), "element count mismatch");
 
     // Flat arena equality
-    for (g, s) in general.elements.iter().zip(specialized.elements.iter()) {
-        assert_eq!(g.name, s.name, "element name mismatch");
-        assert_eq!(g.id, s.id, "element id mismatch");
-        assert_eq!(g.inner_html, s.inner_html, "inner_html mismatch");
+    for (g, s) in general.elements().zip(specialized.elements()) {
+        assert_eq!(g.name(), s.name(), "element name mismatch");
+        assert_eq!(g.id(), s.id(), "element id mismatch");
+        assert_eq!(g.inner_html(), s.inner_html(), "inner_html mismatch");
+        assert_eq!(g.attributes(), s.attributes(), "attributes mismatch");
+        assert_eq!(g.has_raw_text(), s.has_raw_text(), "has_raw_text mismatch");
+        assert_eq!(g.has_text(), s.has_text(), "has_text mismatch");
         assert_eq!(
-            g.attributes(general),
-            s.attributes(specialized),
-            "attributes mismatch"
-        );
-        assert_eq!(
-            g.has_raw_text(general),
-            s.has_raw_text(specialized),
-            "has_raw_text mismatch"
-        );
-        assert_eq!(
-            g.has_text(general),
-            s.has_text(specialized),
-            "has_text mismatch"
-        );
-        assert_eq!(
-            g.raw_text(general),
+            g.raw_text(),
             None,
             "general raw_text must be None for no-text queries"
         );
         assert_eq!(
-            s.raw_text(specialized),
+            s.raw_text(),
             None,
             "specialized raw_text must be None for no-text queries"
         );
         assert_eq!(
-            g.text(general),
+            g.text(),
             None,
             "general text must be None for no-text queries"
         );
         assert_eq!(
-            s.text(specialized),
+            s.text(),
             None,
             "specialized text must be None for no-text queries"
         );
@@ -1273,20 +1244,23 @@ fn assert_store_equivalent(general: &Store, specialized: &Store, selectors_to_ch
         );
         for (g_el, s_el) in general_matches.iter().zip(spec_matches.iter()) {
             assert_eq!(
-                g_el.name, s_el.name,
+                g_el.name(),
+                s_el.name(),
                 "Store::get('{selector}') element name mismatch"
             );
             assert_eq!(
-                g_el.id, s_el.id,
+                g_el.id(),
+                s_el.id(),
                 "Store::get('{selector}') element id mismatch"
             );
             assert_eq!(
-                g_el.inner_html, s_el.inner_html,
+                g_el.inner_html(),
+                s_el.inner_html(),
                 "Store::get('{selector}') inner_html mismatch"
             );
             assert_eq!(
-                g_el.attributes(general),
-                s_el.attributes(specialized),
+                g_el.attributes(),
+                s_el.attributes(),
                 "Store::get('{selector}') attributes mismatch"
             );
         }
@@ -1387,8 +1361,8 @@ fn parity_implied_paragraph_closes() {
         assert_eq!(spec.get("p").unwrap().count(), 3);
 
         if save.inner_html {
-            let gen_inners: Vec<_> = general.get("p").unwrap().map(|p| p.inner_html).collect();
-            let spec_inners: Vec<_> = spec.get("p").unwrap().map(|p| p.inner_html).collect();
+            let gen_inners: Vec<_> = general.get("p").unwrap().map(|p| p.inner_html()).collect();
+            let spec_inners: Vec<_> = spec.get("p").unwrap().map(|p| p.inner_html()).collect();
             assert_eq!(gen_inners, vec![Some("one"), Some("two"), Some("three")]);
             assert_eq!(spec_inners, gen_inners);
         }
@@ -1484,14 +1458,14 @@ fn parity_nested_query_relative_lookup() {
     let gen_parent = general.get("div").unwrap().next().unwrap();
     let spec_parent = spec.get("div").unwrap().next().unwrap();
 
-    let gen_children: Vec<_> = gen_parent.get(&general, "p").unwrap().collect();
-    let spec_children: Vec<_> = spec_parent.get(&spec, "p").unwrap().collect();
+    let gen_children: Vec<_> = gen_parent.get("p").unwrap().collect();
+    let spec_children: Vec<_> = spec_parent.get("p").unwrap().collect();
 
     assert_eq!(gen_children.len(), spec_children.len());
     assert_eq!(gen_children.len(), 2);
     for (g_c, s_c) in gen_children.iter().zip(spec_children.iter()) {
-        assert_eq!(g_c.name, s_c.name);
-        assert_eq!(g_c.inner_html, s_c.inner_html);
+        assert_eq!(g_c.name(), s_c.name());
+        assert_eq!(g_c.inner_html(), s_c.inner_html());
     }
 }
 
@@ -1559,7 +1533,7 @@ fn parse_without_text_capture_accepts_inner_html() {
     let store = parse_without_text_capture("<p>x</p>", queries).unwrap();
     let element = store.get("p").unwrap().next().unwrap();
 
-    assert_eq!(element.inner_html, Some("x"));
+    assert_eq!(element.inner_html(), Some("x"));
 }
 
 #[test]
@@ -1569,8 +1543,8 @@ fn parse_without_text_capture_accepts_none() {
     let store = parse_without_text_capture("<p>x</p>", queries).unwrap();
     let element = store.get("p").unwrap().next().unwrap();
 
-    assert_eq!(element.name, "p");
-    assert!(element.inner_html.is_none());
+    assert_eq!(element.name(), "p");
+    assert!(element.inner_html().is_none());
 }
 
 #[test]
@@ -1578,32 +1552,22 @@ fn parse_dispatches_correctly_for_all_save_modes() {
     let raw_q = &[Query::all("p", Save::only_raw_text()).unwrap().build()];
     let store_raw = parse("<p>Hello</p>", raw_q).unwrap();
     assert_eq!(
-        store_raw
-            .get("p")
-            .unwrap()
-            .next()
-            .unwrap()
-            .raw_text(&store_raw),
+        store_raw.get("p").unwrap().next().unwrap().raw_text(),
         Some("Hello")
     );
 
     let text_q = &[Query::all("p", Save::only_text()).unwrap().build()];
     let store_text = parse("<p>Hello</p>", text_q).unwrap();
     assert_eq!(
-        store_text
-            .get("p")
-            .unwrap()
-            .next()
-            .unwrap()
-            .text(&store_text),
+        store_text.get("p").unwrap().next().unwrap().text(),
         Some("Hello")
     );
 
     let both_q = &[Query::all("p", Save::all()).unwrap().build()];
     let store_both = parse("<p>Hello</p>", both_q).unwrap();
     let p = store_both.get("p").unwrap().next().unwrap();
-    assert_eq!(p.raw_text(&store_both), Some("Hello"));
-    assert_eq!(p.text(&store_both), Some("Hello"));
+    assert_eq!(p.raw_text(), Some("Hello"));
+    assert_eq!(p.text(), Some("Hello"));
 }
 
 #[test]

@@ -7,15 +7,16 @@ mod text;
 pub(crate) use text::{TextStore, TextTape, trim_collapsed_range};
 mod arena;
 mod attributes;
+mod columns;
 mod element;
 
 pub use arena::{
     Arena,
     id::{AttributeId, ElementId},
 };
+use columns::{AttributeCells, ColumnPlan, Columns, RowHead, Span};
 
-pub use element::Element;
-pub(crate) use element::ElementTextRanges;
+pub use element::{ElementRef, Elements};
 
 /// A query section as the store sees it: enough to resolve lookups.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,12 +31,16 @@ struct StoreSection<'query> {
 
 /// The result set returned by [`parse`](crate::parse).
 ///
-/// A `Store` holds flat tables: one [`Element`] row per element and query
-/// section that saved it, the attributes and text those rows captured, and
-/// an index from each parent (the document, or a row of the parent section)
-/// to its results, grouped by section in document order. Look results up by
+/// A `Store` holds flat tables: one row per element and query section that
+/// saved it, stored as one column per field (name, attributes, inner HTML,
+/// text), and an index from each parent (the document, or a row of the
+/// parent section) to its results, grouped by section in document order.
+/// Rows are read through [`ElementRef`] handles. Look results up by
 /// selector string with [`Store::get`], or by position with
 /// [`Store::query`].
+///
+/// Strings are stored as 32-bit `(offset, len)` spans, so the parsed HTML
+/// must be shorter than 4 GiB.
 ///
 /// # Example
 ///
@@ -53,32 +58,28 @@ struct StoreSection<'query> {
 /// assert_eq!(anchors.len(), 2);
 ///
 /// // Access attributes
-/// assert_eq!(anchors[0].attribute(&store, "href"), Some("x"));
+/// assert_eq!(anchors[0].attribute("href"), Some("x"));
 /// ```
 #[derive(Debug, PartialEq)]
 pub struct Store<'html, 'query> {
+    /// The parsed HTML, which name, class, id and inner HTML spans index.
+    html: &'html str,
     /// One row per element and section that saved it. An element saved by a
     /// nested section under several parent matches has one row, listed
     /// under each parent.
-    pub elements: Arena<Element<'html>, ElementId>,
-    /// Arena of attributes belonging to matched elements.
-    pub attributes: Arena<Attribute<'html>, AttributeId>,
+    columns: Columns,
+    /// Attributes other than `class` and `id` of rows that saved them.
+    pub(crate) attributes: Arena<Attribute<'html>, AttributeId>,
     /// Accumulated raw-text and normalized-text buffers shared by all elements.
     pub(crate) text: TextStore,
-    /// Lazily allocated sidecar for raw/normalized text ranges.
-    ///
-    /// Remains unallocated (`None`) when no query requests text capture, so
-    /// inner-HTML-only / no-content workloads do not pay per-element text
-    /// range storage on [`Element`].
-    element_text_ranges: Option<Box<ElementTextRanges>>,
+    /// A text range did not fit a span.
+    overflowed: bool,
     /// Sections of the parsed queries, in declaration order.
     sections: Box<[StoreSection<'query>]>,
     /// Root sections, one per query, in query order.
     roots: Box<[u32]>,
     /// Nested sections of every section, in declaration order.
     children: Box<[u32]>,
-    /// Section of each row.
-    row_sections: Vec<u32>,
     /// `(parent group, row)` per save, in document order. Group 0 is the
     /// document; group `r + 1` is row `r`. Not recorded when every section
     /// is a root: then every row is a document result.
@@ -95,6 +96,27 @@ pub struct Store<'html, 'query> {
     results: Vec<ElementId>,
     #[cfg(any(debug_assertions, test))]
     pub trace: crate::debug::TraceStore<'html, 'query>,
+}
+
+/// Heap bytes a [`Store`] holds, by role, as reported by
+/// [`Store::heap_usage`]. Each figure is allocated capacity, not length.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HeapUsage {
+    /// Row columns and each row's section.
+    pub rows: usize,
+    /// The result index.
+    pub results: usize,
+    /// The attribute tape.
+    pub attributes: usize,
+    /// The raw-text and normalized-text buffers.
+    pub text: usize,
+}
+
+impl HeapUsage {
+    /// Sum of all roles.
+    pub fn total(&self) -> usize {
+        self.rows + self.results + self.attributes + self.text
+    }
 }
 
 /// Advanced allocation tuning for [`Store::with_capacity_options`].
@@ -160,14 +182,14 @@ fn same_selector(section: &str, selector: &str) -> bool {
 impl<'html, 'query: 'html> Default for Store<'html, 'query> {
     fn default() -> Self {
         Self {
-            elements: Arena::new(),
+            html: "",
+            columns: Columns::default(),
             text: TextStore::new(),
             attributes: Arena::new(),
-            element_text_ranges: None,
+            overflowed: false,
             sections: Box::default(),
             roots: Box::default(),
             children: Box::default(),
-            row_sections: Vec::new(),
             edges: Vec::new(),
             record_edges: true,
             slot_starts: Vec::new(),
@@ -203,9 +225,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     ///
     /// # Allocation policy
     ///
-    /// | Arena        | Reservation                        |
+    /// | Storage      | Reservation                        |
     /// |------------- |----------------------------------- |
-    /// | elements     | `capacity / element_bytes_per_slot` |
+    /// | element rows | `capacity / element_bytes_per_slot` |
     /// | attributes   | `capacity / attribute_bytes_per_slot`|
     /// | raw_text     | `capacity` if `reserve_raw_text`     |
     /// | text         | `capacity` if `reserve_text`         |
@@ -226,8 +248,12 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         let attribute_divisor = options.attribute_bytes_per_slot.max(1);
         let element_slots = capacity / element_divisor;
 
+        let mut columns = Columns::default();
+        columns.rows.reserve(element_slots);
         Self {
-            elements: Arena::with_capacity(element_slots),
+            html: "",
+            columns,
+            overflowed: false,
             text: TextStore::with_capacity(
                 if reserve_text_buffers && options.reserve_raw_text {
                     capacity
@@ -245,11 +271,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             } else {
                 Arena::new()
             },
-            element_text_ranges: None,
             sections: Box::default(),
             roots: Box::default(),
             children: Box::default(),
-            row_sections: Vec::with_capacity(element_slots),
             edges: Vec::new(),
             record_edges: true,
             slot_starts: Vec::new(),
@@ -294,12 +318,12 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     /// let store = parse(html, queries).expect("parse succeeds");
     ///
     /// for li in store.get("li").unwrap() {
-    ///     println!("{}", li.text(&store).unwrap_or_default());
+    ///     println!("{}", li.text().unwrap_or_default());
     /// }
     /// ```
     #[inline]
-    pub fn get(&self, selector: &str) -> Option<impl Iterator<Item = &Element<'html>>> {
-        self.elements_of(self.results(selector)?)
+    pub fn get(&self, selector: &str) -> Option<Elements<'_, 'html, 'query>> {
+        Some(Elements::new(self, self.results(selector)?))
     }
 
     /// Results saved for the query at `index` in the slice given to
@@ -307,8 +331,64 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     ///
     /// Returns `None` when there is no such query or it matched nothing.
     #[inline]
-    pub fn query(&self, index: usize) -> Option<impl Iterator<Item = &Element<'html>>> {
-        self.elements_of(self.query_results(index)?)
+    pub fn query(&self, index: usize) -> Option<Elements<'_, 'html, 'query>> {
+        Some(Elements::new(self, self.query_results(index)?))
+    }
+
+    /// The row with id `id`.
+    #[inline]
+    pub fn element(&self, id: ElementId) -> Option<ElementRef<'_, 'html, 'query>> {
+        (id.index() < self.len()).then(|| ElementRef::new(self, id))
+    }
+
+    /// Every row, in the order the rows were saved, regardless of query.
+    pub fn elements(&self) -> impl ExactSizeIterator<Item = ElementRef<'_, 'html, 'query>> {
+        (0..self.len()).map(|row| ElementRef::new(self, ElementId::from(row)))
+    }
+
+    /// Number of rows: elements saved, counting an element once per
+    /// section that saved it.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.columns.len()
+    }
+
+    /// Number of attributes saved, other than `class` and `id`.
+    pub fn attribute_count(&self) -> usize {
+        self.attributes.len()
+    }
+
+    /// Heap bytes held by this store, by role.
+    pub fn heap_usage(&self) -> HeapUsage {
+        fn bytes<T>(vec: &Vec<T>) -> usize {
+            vec.capacity() * std::mem::size_of::<T>()
+        }
+        let columns = &self.columns;
+        HeapUsage {
+            rows: bytes(&columns.rows)
+                + bytes(&columns.attributes)
+                + bytes(&columns.inner_html)
+                + bytes(&columns.raw_text)
+                + bytes(&columns.text),
+            results: bytes(&self.edges)
+                + bytes(&self.slot_starts)
+                + bytes(&self.slot_offsets)
+                + bytes(&self.results),
+            attributes: bytes(&*self.attributes),
+            text: self.text.raw_text.capacity() + self.text.text.capacity(),
+        }
+    }
+
+    /// Rows reserved in the name column.
+    #[cfg(test)]
+    pub(crate) fn row_capacity(&self) -> usize {
+        self.columns.rows.capacity()
+    }
+
+    /// Whether nothing was saved.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Row ids of [`Store::get`]'s results.
@@ -368,14 +448,83 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         Some(self.sections[section as usize].selector)
     }
 
-    fn elements_of(&self, ids: &[ElementId]) -> Option<impl Iterator<Item = &Element<'html>>> {
-        Some(ids.iter().map(|&id| &self.elements[id]))
+    /// The HTML a span of the name, class, id or inner HTML column covers.
+    #[inline(always)]
+    fn html_value(&self, span: Span) -> Option<&'html str> {
+        let range = span.range()?;
+        debug_assert!(self.html.get(range.clone()).is_some());
+        // SAFETY: these spans are only built by `html_span`, from `&str`
+        // subslices of `html`, so the range is in bounds and both ends are
+        // on character boundaries.
+        Some(unsafe { self.html.get_unchecked(range) })
+    }
+
+    /// Span of `value`, a string borrowed from the parsed HTML.
+    ///
+    /// Every string the parser hands over is a subslice of the input. An
+    /// empty string from elsewhere is stored as an empty span.
+    #[inline(always)]
+    fn html_span(&self, value: &str) -> Span {
+        let offset = value
+            .as_ptr()
+            .addr()
+            .wrapping_sub(self.html.as_ptr().addr());
+        if offset <= self.html.len() && value.len() <= self.html.len() - offset {
+            // The HTML is shorter than `u32::MAX` bytes (`set_html`).
+            Span::new(offset, value.len())
+        } else {
+            Self::foreign_span(value)
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn foreign_span(value: &str) -> Span {
+        assert!(
+            value.is_empty(),
+            "stored strings must borrow from the parsed HTML"
+        );
+        Span::new(0, 0)
+    }
+
+    #[inline(always)]
+    fn optional_html_span(&self, value: Option<&str>) -> Span {
+        value.map_or(Span::ABSENT, |value| self.html_span(value))
+    }
+
+    /// Record the HTML being parsed, which stored strings borrow from.
+    ///
+    /// # Panics
+    ///
+    /// If `html` is not shorter than `u32::MAX` bytes, or rows were already
+    /// saved from a different document.
+    pub(crate) fn set_html(&mut self, html: &'html str) {
+        assert!(
+            html.len() < u32::MAX as usize,
+            "the store indexes HTML with 32-bit offsets"
+        );
+        assert!(
+            self.is_empty() || self.bound_to(html.as_bytes()),
+            "a store's results borrow from one document"
+        );
+        self.html = html;
+    }
+
+    /// Whether the store reads strings from `source`.
+    #[inline]
+    pub(crate) fn bound_to(&self, source: &[u8]) -> bool {
+        std::ptr::eq(self.html.as_bytes(), source)
+    }
+
+    /// Whether a text range did not fit in 32 bits, so some text is missing.
+    pub(crate) fn overflowed(&self) -> bool {
+        self.overflowed
     }
 
     /// Nested sections of the section that saved `row`.
     #[inline]
     fn child_sections(&self, row: ElementId) -> &[u32] {
-        let (start, end) = self.sections[self.row_sections[row.index()] as usize].children;
+        let (start, end) = self.sections[self.columns.rows[row.index()].section as usize].children;
         &self.children[start as usize..end as usize]
     }
 
@@ -428,32 +577,48 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         self.roots = roots.into();
         self.children = children.into();
         self.record_edges = program.features().has_scoped_sections;
+
+        let mut plan = ColumnPlan::default();
+        for index in 0..count {
+            plan.add(program.section(SectionIndex(index as u32)).save);
+        }
+        self.columns.plan = plan;
+        // Give the optional columns the rows reserved so far.
+        self.columns.reserve_optional();
     }
 
     /// Save `element` as a new row of `section`.
     ///
     /// The row is not a result until [`Store::add_edge`] lists it under a
     /// parent.
+    #[inline]
     pub(crate) fn add_row(
         &mut self,
         section: SectionIndex,
         spec: &QuerySection<'query>,
         element: &crate::XHtmlElement<'html>,
     ) -> ElementId {
-        let attributes = spec.save.attributes;
-        let row = ElementId::from(self.elements.len());
-        self.elements.push(Element {
-            name: element.name,
-            class: if attributes { element.class } else { None },
-            id: if attributes { element.id } else { None },
-            attributes: if attributes {
-                self.attributes.attribute_slice_to_range(element.attributes)
-            } else {
-                None
-            },
-            inner_html: None,
-        });
-        self.row_sections.push(section.0);
+        let row = ElementId::from(self.len());
+        let attributes = if spec.save.attributes {
+            AttributeCells {
+                class: self.optional_html_span(element.class),
+                id: self.optional_html_span(element.id),
+                others: self
+                    .attributes
+                    .attribute_slice_to_range(element.attributes)
+                    .map_or(Span::ABSENT, |range| {
+                        // Each attribute spans at least one byte of the HTML.
+                        Span::new(range.start as usize, (range.end - range.start) as usize)
+                    }),
+            }
+        } else {
+            AttributeCells::ABSENT
+        };
+        let head = RowHead {
+            name: self.html_span(element.name),
+            section: section.0,
+        };
+        self.columns.push(head, attributes);
         row
     }
 
@@ -478,12 +643,12 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         if !self.slot_offsets.is_empty() {
             return;
         }
-        self.slot_starts.reserve(self.row_sections.len() + 2);
+        self.slot_starts.reserve(self.len() + 2);
         self.slot_starts.extend([0, self.roots.len() as u32]);
         if self.record_edges {
             let mut next = self.roots.len() as u32;
-            for &section in &self.row_sections {
-                let (start, end) = self.sections[section as usize].children;
+            for row in &self.columns.rows {
+                let (start, end) = self.sections[row.section as usize].children;
                 next += end - start;
                 self.slot_starts.push(next);
             }
@@ -493,13 +658,14 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
         if !self.record_edges {
             // Every row is a document result in its section's root slot.
-            let rows = self.row_sections.len() as u32;
+            let rows = self.len() as u32;
             if self.roots.len() == 1 {
                 self.slot_offsets[1] = rows;
                 self.results.extend((0..rows).map(ElementId));
                 return;
             }
-            let slot_of = |row: u32| self.sections[self.row_sections[row as usize] as usize].slot;
+            let slot_of =
+                |row: u32| self.sections[self.columns.rows[row as usize].section as usize].slot;
             for row in 0..rows {
                 self.slot_offsets[slot_of(row) as usize + 1] += 1;
             }
@@ -523,7 +689,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         let mut sorted = true;
         let mut previous = 0;
         for edge in &mut edges {
-            let section = self.row_sections[edge.1 as usize] as usize;
+            let section = self.columns.rows[edge.1 as usize].section as usize;
             let slot = self.slot_starts[edge.0 as usize] + self.sections[section].slot;
             sorted &= previous <= slot;
             previous = slot;
@@ -551,18 +717,21 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         }
     }
 
-    pub fn set_content(
+    /// Record the content of `element_id`, once its element closed.
+    pub(crate) fn set_content(
         &mut self,
         element_id: ElementId,
         inner_html: Option<&'html str>,
         raw_text: Option<Range<usize>>,
         text: Option<Range<usize>>,
     ) {
-        assert!(!self.elements.is_empty());
-        assert!(element_id.index() < self.elements.len());
+        let row = element_id.index();
+        assert!(row < self.len());
 
         #[cfg(any(debug_assertions, test))]
-        let tag = self.elements[element_id].name;
+        let tag = self
+            .html_value(self.columns.rows[row].name)
+            .unwrap_or_default();
         #[cfg(any(debug_assertions, test))]
         let has_inner_html = inner_html.is_some();
         #[cfg(any(debug_assertions, test))]
@@ -570,16 +739,19 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         #[cfg(any(debug_assertions, test))]
         let has_text = text.is_some();
 
-        self.elements[element_id].inner_html = inner_html;
-        if let Some(range) = raw_text {
-            self.element_text_ranges
-                .get_or_insert_with(Default::default)
-                .set_raw_text(element_id, range);
+        if inner_html.is_some() {
+            let span = self.optional_html_span(inner_html);
+            self.columns.inner_html[row] = span;
         }
-        if let Some(range) = text {
-            self.element_text_ranges
-                .get_or_insert_with(Default::default)
-                .set_text(element_id, range);
+        for (range, column) in [
+            (raw_text, &mut self.columns.raw_text),
+            (text, &mut self.columns.text),
+        ] {
+            let Some(range) = range else { continue };
+            match Span::of(range) {
+                Some(span) => column[row] = span,
+                None => self.overflowed = true,
+            }
         }
 
         crate::scah_trace!(
@@ -593,39 +765,6 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             }
         );
     }
-
-    #[inline]
-    pub(crate) fn raw_text_range(&self, element_id: ElementId) -> Option<&Range<usize>> {
-        self.element_text_ranges
-            .as_ref()
-            .and_then(|ranges| ranges.raw_text(element_id))
-    }
-
-    #[inline]
-    pub(crate) fn text_range(&self, element_id: ElementId) -> Option<&Range<usize>> {
-        self.element_text_ranges
-            .as_ref()
-            .and_then(|ranges| ranges.text(element_id))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn tracks_element_text_ranges(&self) -> bool {
-        self.element_text_ranges.is_some()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn tracks_raw_text_ranges(&self) -> bool {
-        self.element_text_ranges
-            .as_ref()
-            .is_some_and(|ranges| ranges.tracks_raw_text())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn tracks_text_ranges(&self) -> bool {
-        self.element_text_ranges
-            .as_ref()
-            .is_some_and(|ranges| ranges.tracks_text())
-    }
 }
 
 #[cfg(test)]
@@ -633,15 +772,26 @@ mod tests {
     use super::*;
     use crate::{Query, Save};
 
+    /// Source of the element names the table tests store.
+    static HTML: &str = "section a div span";
+
+    fn tracks_text(store: &Store) -> bool {
+        !store.columns.text.is_empty()
+    }
+
+    fn tracks_raw_text(store: &Store) -> bool {
+        !store.columns.raw_text.is_empty()
+    }
+
     #[test]
     fn with_capacity_reserves_arenas_conservatively() {
         let store = Store::with_capacity(30_000);
 
-        assert_eq!(store.elements.capacity(), 30_000 / 48);
+        assert_eq!(store.columns.rows.capacity(), 30_000 / 48);
         assert_eq!(store.attributes.capacity(), 30_000 / 24);
         assert_eq!(store.text.raw_text.capacity(), 30_000);
         assert_eq!(store.text.text.capacity(), 30_000);
-        assert!(!store.tracks_element_text_ranges());
+        assert!(!tracks_text(&store) && !tracks_raw_text(&store));
     }
 
     #[test]
@@ -655,11 +805,11 @@ mod tests {
             },
         );
 
-        assert_eq!(store.elements.capacity(), 30_000 / 48);
+        assert_eq!(store.columns.rows.capacity(), 30_000 / 48);
         assert_eq!(store.attributes.capacity(), 30_000 / 24);
         assert_eq!(store.text.raw_text.capacity(), 0);
         assert_eq!(store.text.text.capacity(), 0);
-        assert!(!store.tracks_element_text_ranges());
+        assert!(!tracks_text(&store) && !tracks_raw_text(&store));
     }
 
     #[test]
@@ -673,11 +823,11 @@ mod tests {
             },
         );
 
-        assert_eq!(store.elements.capacity(), 30_000 / 48);
+        assert_eq!(store.columns.rows.capacity(), 30_000 / 48);
         assert_eq!(store.attributes.capacity(), 30_000 / 24);
         assert_eq!(store.text.raw_text.capacity(), 30_000);
         assert_eq!(store.text.text.capacity(), 30_000);
-        assert!(!store.tracks_element_text_ranges());
+        assert!(!tracks_text(&store) && !tracks_raw_text(&store));
     }
 
     #[test]
@@ -693,7 +843,7 @@ mod tests {
 
         assert_eq!(store.text.raw_text.capacity(), 30_000);
         assert_eq!(store.text.text.capacity(), 0);
-        assert!(!store.tracks_element_text_ranges());
+        assert!(!tracks_text(&store) && !tracks_raw_text(&store));
     }
 
     #[test]
@@ -702,8 +852,8 @@ mod tests {
         let query = Query::all("p", Save::only_inner_html()).unwrap().build();
         let queries = [query];
         let store = crate::parse(html, &queries).unwrap();
-        assert!(!store.tracks_element_text_ranges());
-        assert_eq!(store.elements.len(), 2);
+        assert!(!tracks_text(&store) && !tracks_raw_text(&store));
+        assert_eq!(store.len(), 2);
     }
 
     #[test]
@@ -714,10 +864,10 @@ mod tests {
             Query::all("p.x", Save::only_raw_text()).unwrap().build(),
         ];
         let store = crate::parse(html, &queries).unwrap();
-        assert!(store.tracks_element_text_ranges());
-        assert!(store.tracks_raw_text_ranges());
-        assert!(store.tracks_text_ranges());
-        assert_eq!(store.elements.len(), 3);
+        assert!(tracks_text(&store) || tracks_raw_text(&store));
+        assert!(tracks_raw_text(&store));
+        assert!(tracks_text(&store));
+        assert_eq!(store.len(), 3);
     }
 
     #[test]
@@ -729,7 +879,7 @@ mod tests {
 
         assert_eq!(store.text.raw_text.capacity(), 0);
         assert_eq!(store.text.text.capacity(), 0);
-        assert!(!store.tracks_element_text_ranges());
+        assert!(!tracks_text(&store) && !tracks_raw_text(&store));
     }
 
     #[test]
@@ -739,22 +889,14 @@ mod tests {
         let queries = [query];
         let store = crate::parse(html, &queries).unwrap();
 
-        assert!(!store.tracks_raw_text_ranges());
-        assert!(store.tracks_text_ranges());
+        assert!(!tracks_raw_text(&store));
+        assert!(tracks_text(&store));
     }
 
     #[test]
-    fn element_layout_drops_inactive_text_range_fields() {
-        use std::mem::size_of;
-        if size_of::<usize>() == 8 {
-            // main Element was 136 with one Option<Range>; with text ranges moved
-            // to the sidecar, Element should be smaller than that.
-            assert!(
-                size_of::<Element>() <= 128,
-                "Element unexpectedly large: {}",
-                size_of::<Element>()
-            );
-        }
+    fn row_cells_are_compact() {
+        assert_eq!(std::mem::size_of::<Span>(), 8);
+        assert_eq!(std::mem::size_of::<AttributeCells>(), 24);
     }
 
     #[test]
@@ -768,7 +910,7 @@ mod tests {
             },
         );
 
-        assert_eq!(store.elements.capacity(), 100);
+        assert_eq!(store.columns.rows.capacity(), 100);
         assert_eq!(store.attributes.capacity(), 200);
     }
 
@@ -783,19 +925,21 @@ mod tests {
             },
         );
 
-        assert_eq!(store.elements.capacity(), 16);
+        assert_eq!(store.columns.rows.capacity(), 16);
         assert_eq!(store.attributes.capacity(), 16);
     }
 
     fn store_for<'q>(queries: &'q [Query<'q>]) -> Store<'q, 'q> {
         let mut store = Store::default();
+        store.set_html(HTML);
         store.set_sections(&Program::compile(queries));
         store
     }
 
-    fn element(name: &str) -> crate::XHtmlElement<'_> {
+    fn element(name: &str) -> crate::XHtmlElement<'static> {
+        let start = HTML.find(name).expect("name in HTML");
         crate::XHtmlElement {
-            name,
+            name: &HTML[start..start + name.len()],
             ..Default::default()
         }
     }
@@ -905,7 +1049,7 @@ mod tests {
         store.add_edge(Some(inner), link);
         store.finish();
 
-        assert_eq!(store.elements.len(), 3);
+        assert_eq!(store.len(), 3);
         assert_eq!(store.child_results(outer, "a"), Some(&[link][..]));
         assert_eq!(store.child_results(inner, "a"), Some(&[link][..]));
     }
@@ -920,10 +1064,10 @@ mod tests {
 
         assert_eq!(store.query(0).unwrap().count(), 2);
         assert_eq!(store.query(1).unwrap().count(), 2);
-        assert!(store.query(0).unwrap().all(|a| a.inner_html.is_none()));
-        assert!(store.query(1).unwrap().all(|a| a.inner_html.is_some()));
+        assert!(store.query(0).unwrap().all(|a| a.inner_html().is_none()));
+        assert!(store.query(1).unwrap().all(|a| a.inner_html().is_some()));
         // `get` resolves a shared selector to the first query.
-        assert!(store.get("a").unwrap().all(|a| a.inner_html.is_none()));
+        assert!(store.get("a").unwrap().all(|a| a.inner_html().is_none()));
         assert!(store.query(2).is_none());
     }
 
@@ -943,6 +1087,6 @@ mod tests {
 
         assert_eq!(store.get("span").unwrap().count(), 1);
         assert_eq!(store.get("a").unwrap().count(), 1);
-        assert_eq!(store.query(1).unwrap().next().unwrap().name, "a");
+        assert_eq!(store.query(1).unwrap().next().unwrap().name(), "a");
     }
 }

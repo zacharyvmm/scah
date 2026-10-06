@@ -4,7 +4,7 @@ use scah::{Query, Save, parse};
 fn ids<'a>(store: &'a scah::Store<'a, 'a>, selector: &str) -> Vec<Option<&'a str>> {
     elements(store, selector)
         .into_iter()
-        .map(|element| element.id)
+        .map(|element| element.id())
         .collect()
 }
 
@@ -93,18 +93,18 @@ fn child_section_created_through_then_matches_only_direct_anchors() {
     let mains: Vec<_> = store.get("main").unwrap().collect();
     assert_eq!(mains.len(), 2);
 
-    let m1 = mains.iter().find(|m| m.id == Some("m1")).unwrap();
-    let m2 = mains.iter().find(|m| m.id == Some("m2")).unwrap();
+    let m1 = mains.iter().find(|m| m.id() == Some("m1")).unwrap();
+    let m2 = mains.iter().find(|m| m.id() == Some("m2")).unwrap();
 
-    let m1_anchors: Vec<_> = m1.get(&store, "> a").unwrap().collect();
+    let m1_anchors: Vec<_> = m1.get("> a").unwrap().collect();
     assert_eq!(
-        m1_anchors.iter().map(|a| a.id).collect::<Vec<_>>(),
+        m1_anchors.iter().map(|a| a.id()).collect::<Vec<_>>(),
         [Some("direct-1"), Some("direct-2")]
     );
 
-    let m2_anchors: Vec<_> = m2.get(&store, "> a").unwrap().collect();
+    let m2_anchors: Vec<_> = m2.get("> a").unwrap().collect();
     assert_eq!(
-        m2_anchors.iter().map(|a| a.id).collect::<Vec<_>>(),
+        m2_anchors.iter().map(|a| a.id()).collect::<Vec<_>>(),
         [Some("direct-3")]
     );
 }
@@ -227,15 +227,15 @@ fn mixed_child_and_descendant_sections_do_not_leak_depth_rules() {
     assert_eq!(mains.len(), 1);
     let main = &mains[0];
 
-    let direct: Vec<_> = main.get(&store, "> p").unwrap().collect();
+    let direct: Vec<_> = main.get("> p").unwrap().collect();
     assert_eq!(
-        direct.iter().map(|p| p.id).collect::<Vec<_>>(),
+        direct.iter().map(|p| p.id()).collect::<Vec<_>>(),
         [Some("direct")]
     );
 
-    let nested: Vec<_> = main.get(&store, "section p").unwrap().collect();
+    let nested: Vec<_> = main.get("section p").unwrap().collect();
     assert_eq!(
-        nested.iter().map(|p| p.id).collect::<Vec<_>>(),
+        nested.iter().map(|p| p.id()).collect::<Vec<_>>(),
         [Some("nested")]
     );
 }

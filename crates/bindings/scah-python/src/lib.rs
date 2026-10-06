@@ -57,6 +57,11 @@ fn parse(html: String, queries: Vec<PyRef<PyQuery>>) -> PyResult<PyStore> {
                 "internal error: unexpected TextCaptureRequired from parse",
             ));
         }
+        Err(scah_core::ParseError::InputTooLarge) => {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "HTML input must be shorter than 4 GiB",
+            ));
+        }
     };
 
     Ok(PyStore {
