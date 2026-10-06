@@ -31,7 +31,7 @@ use crate::query::selector::{
 use crate::tag::TagId;
 
 /// Marks a known tag that no type selector names.
-const NO_NAME: u16 = u16::MAX;
+const NO_NAME: u32 = u32::MAX;
 
 /// A step-wide mask stored once per program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,7 +194,7 @@ pub struct Program<'q> {
     /// names share bit 63). Most tags have a length no query name has.
     name_lengths: u64,
     /// Type-name entry of each known tag, so known tags skip name lookup.
-    tag_names: [u16; TagId::COUNT],
+    tag_names: [u32; TagId::COUNT],
 
     /// Attributes `:nth-child(An+B of S)` filters inspect on every element.
     filter_interest: AttributeMask,
@@ -402,7 +402,7 @@ impl<'q> Program<'q> {
         for (entry, name) in strings.iter().enumerate() {
             let tag = TagId::of(name);
             if tag.is_known() {
-                tag_names[tag.index()] = entry as u16;
+                tag_names[tag.index()] = entry as u32;
             }
         }
 

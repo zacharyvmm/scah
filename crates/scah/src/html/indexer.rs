@@ -412,12 +412,7 @@ impl<'source> FusedMaskStream<'source> {
                     {
                         position += 1;
                     }
-                    let mut name_end = position;
-                    if self.source.get(position) == Some(&b'>')
-                        && self.source.get(name_end.wrapping_sub(1)) == Some(&b'/')
-                    {
-                        name_end -= 1;
-                    }
+                    let name_end = position;
                     if name_start == name_end {
                         from = self.find_unquoted_tag_end(position).max(start + 1);
                         continue;
@@ -754,9 +749,9 @@ fn is_html_whitespace(byte: u8) -> bool {
 
 /// The name of a close tag whose content spans `content_start..gt`.
 ///
-/// Like the HTML tokenizer, the name ends at whitespace or `/`: anything
-/// after it (`</div class=x>`) is ignored rather than becoming part of the
-/// name. Leading whitespace is skipped.
+/// The name ends where an opening tag's name would (see [`is_name_boundary`]):
+/// anything after it (`</div class=x>`, `</x/y>`) is ignored rather than
+/// becoming part of the name. Leading whitespace is skipped.
 #[inline]
 fn close_tag_name(source: &[u8], content_start: usize, gt: usize) -> (usize, usize) {
     let mut name_start = content_start;
@@ -764,15 +759,17 @@ fn close_tag_name(source: &[u8], content_start: usize, gt: usize) -> (usize, usi
         name_start += 1;
     }
     let mut name_end = name_start;
-    while name_end < gt && !is_html_whitespace(source[name_end]) && source[name_end] != b'/' {
+    while name_end < gt && !is_name_boundary(source[name_end]) {
         name_end += 1;
     }
     (name_start, name_end)
 }
 
+/// Ends an opening or closing tag name. Both kinds share it so that a close
+/// tag always names the element its matching open tag created.
 #[inline]
 fn is_name_boundary(byte: u8) -> bool {
-    is_html_whitespace(byte) || matches!(byte, b'\'' | b'"' | b'=' | b'>')
+    is_html_whitespace(byte) || matches!(byte, b'\'' | b'"' | b'=' | b'>' | b'/')
 }
 
 fn find_unquoted_tag_end(source: &[u8], mut position: usize) -> usize {
@@ -906,12 +903,7 @@ fn next_event(search: &mut impl StructuralSearch, source: &[u8], from: usize) ->
                     position += 1;
                 }
 
-                let mut name_end = position;
-                if source.get(position) == Some(&b'>')
-                    && source.get(name_end.wrapping_sub(1)) == Some(&b'/')
-                {
-                    name_end -= 1;
-                }
+                let name_end = position;
                 if name_start == name_end {
                     from = search.find_tag_end(source, position).max(start + 1);
                     continue;
