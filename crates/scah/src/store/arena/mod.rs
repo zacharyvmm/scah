@@ -23,6 +23,7 @@ impl<T, I: From<usize>> Arena<T, I> {
         }
     }
 
+    #[inline]
     pub unsafe fn index_of(&self, item: &T) -> I {
         let list_ptr_range = self.inner.as_ptr_range();
         let ptr = std::ptr::from_ref(item);
