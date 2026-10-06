@@ -624,10 +624,13 @@ fn test_macro_query_matches_runtime_query_structure() {
     }
 
     assert_eq!(static_query.queries(), runtime_query.queries());
-    assert_eq!(
-        static_query.exit_at_section_end(),
-        runtime_query.exit_at_section_end()
-    );
+    for section in 0..static_query.queries().len() {
+        let section = scah::QuerySectionId(section);
+        assert_eq!(
+            static_query.selection_ranges(section),
+            runtime_query.selection_ranges(section)
+        );
+    }
 }
 
 #[test]

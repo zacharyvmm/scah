@@ -61,9 +61,16 @@ pub enum StepMask {
     Filter,
     /// Steps without a type selector (`*`, `.x`, `[href]`, ...).
     Universal,
+    /// Steps read by a child or later sibling: followed by `>`, `+`, or `~`.
+    ChildRead,
+    /// Steps read by descendants: followed by ` `.
+    DescendantRead,
+    /// Steps only descendants read that neither save nor are scoped:
+    /// matching one again under an ancestor that matched it adds nothing.
+    RedundantIfInherited,
 }
 
-const STEP_MASK_COUNT: usize = StepMask::Universal as usize + 1;
+const STEP_MASK_COUNT: usize = StepMask::RedundantIfInherited as usize + 1;
 
 /// A mask stored once per section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,9 +84,48 @@ pub enum SectionMask {
     EntryDescendant,
     /// First steps entered from a scope element through `>`.
     EntryChild,
+    /// [`SectionMask::EntryDescendant`] of every child section: what an open
+    /// scope of this section enables in its subtree.
+    ChildEntryDescendant,
+    /// [`SectionMask::EntryChild`] of every child section: what an open scope
+    /// of this section enables for its children.
+    ChildEntryChild,
 }
 
-const SECTION_MASK_COUNT: usize = SectionMask::EntryChild as usize + 1;
+const SECTION_MASK_COUNT: usize = SectionMask::ChildEntryChild as usize + 1;
+
+/// How a nested-section step learns which scopes its match is anchored in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaneSource {
+    /// First step, entered through ` ` from any open scope.
+    EntryDescendant,
+    /// First step, entered through `>` from a scope that is the parent.
+    EntryChild,
+    /// From the previous step's lane in the nearest ancestor.
+    Descendant,
+    /// From the previous step's lane in the parent.
+    Child,
+    /// From the previous step's lane in the previous sibling.
+    Adjacent,
+    /// From the previous step's lane in any earlier sibling.
+    Sibling,
+    /// Root-section steps, and steps that never match.
+    Never,
+}
+
+/// What a matcher does with a step: everything it needs, in one row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StepPlan {
+    pub section: SectionIndex,
+    /// Lane index among scoped steps; `u32::MAX` for root-section steps.
+    pub lane: u32,
+    pub lane_source: LaneSource,
+    /// Position of the section in its parent's child list.
+    pub child: u32,
+    pub root: bool,
+    pub first: bool,
+    pub has_children: bool,
+}
 
 /// Index of a section across the whole program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -152,7 +198,7 @@ pub struct ProgramFeatures {
 #[derive(Debug, Clone, Copy)]
 struct StepInfo<'q> {
     transition: &'q Transition<'q>,
-    section: SectionIndex,
+    plan: StepPlan,
     interest: AttributeMask,
 }
 
@@ -198,6 +244,10 @@ pub struct Program<'q> {
 
     /// Attributes `:nth-child(An+B of S)` filters inspect on every element.
     filter_interest: AttributeMask,
+    /// Steps of nested sections, each with a lane.
+    lane_count: usize,
+    /// Most child sections of any section, in words of a claims bitset.
+    claim_words: usize,
     features: ProgramFeatures,
 }
 
@@ -347,6 +397,25 @@ impl<'q> Program<'q> {
         features.all_roots_first &= !roots.is_empty();
         features.parses_attributes |= features.stores_attributes;
 
+        // Which steps later steps read, from the incoming-combinator masks.
+        let row = |mask: StepMask| mask as usize * words..(mask as usize + 1) * words;
+        for word in 0..words {
+            let read_by = |masks: &[u64], mask: StepMask| {
+                let mask = &masks[row(mask)];
+                (mask[word] >> 1) | (mask.get(word + 1).copied().unwrap_or(0) << 63)
+            };
+            let child_read = read_by(&masks, StepMask::ChildIn)
+                | read_by(&masks, StepMask::AdjacentIn)
+                | read_by(&masks, StepMask::SiblingIn);
+            let descendant_read = read_by(&masks, StepMask::DescendantIn);
+            masks[row(StepMask::ChildRead)][word] = child_read;
+            masks[row(StepMask::DescendantRead)][word] = descendant_read;
+            masks[row(StepMask::RedundantIfInherited)][word] = descendant_read
+                & !child_read
+                & !masks[row(StepMask::Save)][word]
+                & !masks[row(StepMask::Scoped)][word];
+        }
+
         // Section children, then the root sections, in one list.
         let mut links = Vec::with_capacity(section_count);
         for index in 0..section_count {
@@ -362,6 +431,33 @@ impl<'q> Program<'q> {
         }
         let roots_start = links.len();
         links.extend(roots);
+
+        // What each section's open scopes enable: its children's entries.
+        let section_row = |section: usize, mask: SectionMask| {
+            let start =
+                section_masks_start + (section * SECTION_MASK_COUNT + mask as usize) * words;
+            start..start + words
+        };
+        let mut claim_words = 1;
+        for (section, info) in sections.iter().enumerate() {
+            let (start, end) = info.children;
+            claim_words = claim_words.max(bits::words_for((end - start) as usize));
+            for &child in &links[start as usize..end as usize] {
+                for (entry, union) in [
+                    (
+                        SectionMask::EntryDescendant,
+                        SectionMask::ChildEntryDescendant,
+                    ),
+                    (SectionMask::EntryChild, SectionMask::ChildEntryChild),
+                ] {
+                    let source = section_row(child.index(), entry);
+                    let target = section_row(section, union);
+                    for word in 0..words {
+                        masks[target.start + word] |= masks[source.start + word];
+                    }
+                }
+            }
+        }
 
         // Type names, their masks, and their lookup keys.
         let mut strings: Vec<&'q str> = Vec::new();
@@ -408,6 +504,7 @@ impl<'q> Program<'q> {
 
         // Attribute names, shared by step and filter interest masks.
         let attributes_start = strings.len();
+        let mut lane_count = 0;
         let steps = transitions
             .iter()
             .zip(step_sections)
@@ -415,12 +512,55 @@ impl<'q> Program<'q> {
             .map(|(step, (transition, section))| {
                 let mut interest =
                     attribute_mask(transition.metadata(), &mut strings, attributes_start);
-                if bits::contains(&masks[StepMask::SaveAttributes as usize * words..], step) {
+                if bits::contains(&masks[row(StepMask::SaveAttributes)], step) {
                     interest.flags |= AttributeMask::ALL;
                 }
+                let info = &sections[section.index()];
+                let parent = info.parent;
+                let in_step_mask = |mask: StepMask| bits::contains(&masks[row(mask)], step);
+                let in_section_mask = |mask: SectionMask| {
+                    bits::contains(&masks[section_row(section.index(), mask)], step)
+                };
+                let (lane, lane_source) = if parent.is_none() {
+                    (u32::MAX, LaneSource::Never)
+                } else {
+                    lane_count += 1;
+                    let source = if in_section_mask(SectionMask::EntryDescendant) {
+                        LaneSource::EntryDescendant
+                    } else if in_section_mask(SectionMask::EntryChild) {
+                        LaneSource::EntryChild
+                    } else if in_step_mask(StepMask::DescendantIn) {
+                        LaneSource::Descendant
+                    } else if in_step_mask(StepMask::ChildIn) {
+                        LaneSource::Child
+                    } else if in_step_mask(StepMask::AdjacentIn) {
+                        LaneSource::Adjacent
+                    } else if in_step_mask(StepMask::SiblingIn) {
+                        LaneSource::Sibling
+                    } else {
+                        LaneSource::Never
+                    };
+                    (lane_count as u32 - 1, source)
+                };
+                let child = parent.map_or(0, |parent| {
+                    let (start, end) = sections[parent.index()].children;
+                    links[start as usize..end as usize]
+                        .iter()
+                        .position(|&child| child == section)
+                        .expect("nested section is a child of its parent")
+                        as u32
+                });
                 StepInfo {
                     transition,
-                    section,
+                    plan: StepPlan {
+                        section,
+                        lane,
+                        lane_source,
+                        child,
+                        root: parent.is_none(),
+                        first: info.spec.kind == SelectionKind::First,
+                        has_children: info.children.0 != info.children.1,
+                    },
                     interest,
                 }
             })
@@ -452,6 +592,8 @@ impl<'q> Program<'q> {
             name_lengths,
             tag_names,
             filter_interest,
+            lane_count,
+            claim_words,
             features,
         }
     }
@@ -470,6 +612,29 @@ impl<'q> Program<'q> {
     #[inline(always)]
     pub fn features(&self) -> &ProgramFeatures {
         &self.features
+    }
+
+    /// Word `word` of a step mask, for callers that know the width
+    /// statically: `words` must equal [`Program::words`].
+    #[inline(always)]
+    pub fn mask_word(&self, mask: StepMask, word: usize, words: usize) -> u64 {
+        debug_assert_eq!(words, self.words);
+        self.masks[mask as usize * words + word]
+    }
+
+    /// Word `word` of a section mask; see [`Program::mask_word`].
+    #[inline(always)]
+    pub fn section_mask_word(
+        &self,
+        section: SectionIndex,
+        mask: SectionMask,
+        word: usize,
+        words: usize,
+    ) -> u64 {
+        debug_assert_eq!(words, self.words);
+        self.masks[STEP_MASK_COUNT * words
+            + (section.index() * SECTION_MASK_COUNT + mask as usize) * words
+            + word]
     }
 
     #[inline(always)]
@@ -579,7 +744,25 @@ impl<'q> Program<'q> {
 
     #[inline(always)]
     pub fn step_section(&self, step: usize) -> SectionIndex {
-        self.steps[step].section
+        self.steps[step].plan.section
+    }
+
+    /// Everything a matcher does with `step`.
+    #[inline(always)]
+    pub fn plan(&self, step: usize) -> StepPlan {
+        self.steps[step].plan
+    }
+
+    /// Number of nested-section steps, each with a lane.
+    #[inline(always)]
+    pub fn lane_count(&self) -> usize {
+        self.lane_count
+    }
+
+    /// Words of a bitset over the child sections of any section.
+    #[inline(always)]
+    pub fn claim_words(&self) -> usize {
+        self.claim_words
     }
 
     #[inline(always)]

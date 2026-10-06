@@ -208,7 +208,6 @@ impl<S: AsRef<str>> LazyQueryBuilder<S> {
                 parent: query.parent,
                 next_sibling: query.next_sibling,
                 // Derived from `alternatives` when the builder builds.
-                has_selector_alternatives: false,
             });
         }
 
@@ -459,7 +458,6 @@ mod tests {
                     ),
                 ]
                 .into_boxed_slice(),
-                None,
                 vec![
                     vec![TransitionId(0)..TransitionId(1)].into_boxed_slice(),
                     vec![TransitionId(1)..TransitionId(2)].into_boxed_slice(),
@@ -482,49 +480,6 @@ mod tests {
         let result = unsafe { LazyQuery::all("li:nth-child(2)", Save::none()).try_to_query() };
 
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_early_exit() {
-        let (_, query) = unsafe { LazyQuery::all("a", Save::all()).to_query() };
-        assert_eq!(query.exit_at_section_end, None);
-
-        let (_, query) = unsafe { LazyQuery::all("a", Save::none()).to_query() };
-        assert_eq!(query.exit_at_section_end, None);
-
-        let (_, query) = unsafe { LazyQuery::first("a", Save::all()).to_query() };
-        assert_eq!(query.exit_at_section_end, Some(QuerySectionId(0)));
-
-        let (_, query) = unsafe { LazyQuery::first("a", Save::none()).to_query() };
-        assert_eq!(query.exit_at_section_end, Some(QuerySectionId(0)));
-
-        let (_, query) = unsafe {
-            LazyQuery::all("p", Save::all())
-                .first("a", Save::all())
-                .to_query()
-        };
-        assert_eq!(query.exit_at_section_end, None);
-
-        let (_, query) = unsafe {
-            LazyQuery::first("p", Save::all())
-                .all("a", Save::all())
-                .to_query()
-        };
-        assert_eq!(query.exit_at_section_end, Some(QuerySectionId(0)));
-
-        let (_, query) = unsafe {
-            LazyQuery::first("p", Save::all())
-                .first("a", Save::all())
-                .to_query()
-        };
-        assert_eq!(query.exit_at_section_end, Some(QuerySectionId(0)));
-
-        let (_, query) = unsafe {
-            LazyQuery::first("p", Save::none())
-                .first("a", Save::none())
-                .to_query()
-        };
-        assert_eq!(query.exit_at_section_end, Some(QuerySectionId(1)));
     }
 
     const NESTING_ERROR: &str = "selector nesting exceeds the maximum depth";

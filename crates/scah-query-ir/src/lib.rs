@@ -2,10 +2,13 @@ pub mod program;
 mod query;
 mod tag;
 
-pub use program::{AttributeMask, Program, ProgramFeatures, SectionIndex, SectionMask, StepMask};
+pub use program::{
+    AttributeMask, LaneSource, Program, ProgramFeatures, SectionIndex, SectionMask, StepMask,
+    StepPlan,
+};
 pub use query::compiler::lazy;
 pub use query::compiler::{
-    AttributeNames, Position, PredicateMetadata, Query, QueryBuilder, QueryFactory, QuerySection,
+    AttributeNames, PredicateMetadata, Query, QueryBuilder, QueryFactory, QuerySection,
     QuerySectionId, QuerySpec, Save, SelectionKind, SelectorParseError, StaticQuery,
     TextRequirements, Transition, TransitionId, ascii_case_insensitive_hash,
 };

@@ -8,7 +8,7 @@ use lol_html::{HtmlRewriter, Settings, element, text};
 use lxml::HtmlDocument as LxmlDocument;
 #[allow(unused_imports)]
 use scah::Save;
-use scah::{Query, parse};
+use scah::{Program, Query, parse, parse_compiled};
 use scraper::{Html, Selector};
 use std::error::Error;
 use std::fmt;
@@ -71,6 +71,32 @@ fn comparison_first_query() -> Query<'static> {
         .build()
 }
 
+fn consume_product(store: &scah::Store<'_, '_>, product: &scah::Element<'_>) {
+    black_box(product.attribute(store, "class"));
+    black_box(product.inner_html);
+    black_box(product.text(store));
+
+    for selector in [
+        PRODUCT_TITLE_SELECTOR,
+        PRODUCT_RATING_SELECTOR,
+        PRODUCT_DESCRIPTION_SELECTOR,
+    ] {
+        let child = product.get(store, selector).unwrap().next().unwrap();
+        black_box(child.inner_html);
+        black_box(child.text(store));
+    }
+}
+
+fn consume_all_results(store: &scah::Store<'_, '_>) {
+    for product in store.get(PRODUCT_SELECTOR).unwrap() {
+        consume_product(store, product);
+    }
+}
+
+fn consume_first_result(store: &scah::Store<'_, '_>) {
+    consume_product(store, store.get(PRODUCT_SELECTOR).unwrap().next().unwrap());
+}
+
 fn bench_nested_all(c: &mut Criterion) {
     let mut group = c.benchmark_group("nested_all_selection_comparison");
 
@@ -83,37 +109,22 @@ fn bench_nested_all(c: &mut Criterion) {
                 let queries = [comparison_all_query()];
                 let store = parse(html, &queries).unwrap();
 
-                for product in store.get(PRODUCT_SELECTOR).unwrap() {
-                    black_box(product.attribute(&store, "class"));
-                    black_box(product.inner_html);
-                    black_box(product.text(&store));
-
-                    let title = product
-                        .get(&store, PRODUCT_TITLE_SELECTOR)
-                        .unwrap()
-                        .next()
-                        .unwrap();
-                    black_box(title.inner_html);
-                    black_box(title.text(&store));
-
-                    let rating = product
-                        .get(&store, PRODUCT_RATING_SELECTOR)
-                        .unwrap()
-                        .next()
-                        .unwrap();
-                    black_box(rating.inner_html);
-                    black_box(rating.text(&store));
-
-                    let description = product
-                        .get(&store, PRODUCT_DESCRIPTION_SELECTOR)
-                        .unwrap()
-                        .next()
-                        .unwrap();
-                    black_box(description.inner_html);
-                    black_box(description.text(&store));
-                }
+                consume_all_results(&store);
             })
         });
+
+        let all_queries = [comparison_all_query()];
+        let all_program = Program::compile(&all_queries);
+        group.bench_with_input(
+            BenchmarkId::new("scah_compiled", size),
+            &content,
+            |b, html| {
+                b.iter(|| {
+                    let store = parse_compiled(html, &all_program).unwrap();
+                    consume_all_results(&store);
+                })
+            },
+        );
 
         group.bench_with_input(BenchmarkId::new("tl", size), &content, |b, html| {
             b.iter(|| {
@@ -292,36 +303,22 @@ fn bench_nested_first(c: &mut Criterion) {
                 let queries = [comparison_first_query()];
                 let store = parse(html, &queries).unwrap();
 
-                let product = store.get(PRODUCT_SELECTOR).unwrap().next().unwrap();
-                black_box(product.attribute(&store, "class"));
-                black_box(product.inner_html);
-                black_box(product.text(&store));
-
-                let title = product
-                    .get(&store, PRODUCT_TITLE_SELECTOR)
-                    .unwrap()
-                    .next()
-                    .unwrap();
-                black_box(title.inner_html);
-                black_box(title.text(&store));
-
-                let rating = product
-                    .get(&store, PRODUCT_RATING_SELECTOR)
-                    .unwrap()
-                    .next()
-                    .unwrap();
-                black_box(rating.inner_html);
-                black_box(rating.text(&store));
-
-                let description = product
-                    .get(&store, PRODUCT_DESCRIPTION_SELECTOR)
-                    .unwrap()
-                    .next()
-                    .unwrap();
-                black_box(description.inner_html);
-                black_box(description.text(&store));
+                consume_first_result(&store);
             })
         });
+
+        let first_queries = [comparison_first_query()];
+        let first_program = Program::compile(&first_queries);
+        group.bench_with_input(
+            BenchmarkId::new("scah_compiled", size),
+            &content,
+            |b, html| {
+                b.iter(|| {
+                    let store = parse_compiled(html, &first_program).unwrap();
+                    consume_first_result(&store);
+                })
+            },
+        );
 
         group.bench_with_input(BenchmarkId::new("tl", size), &content, |b, html| {
             b.iter(|| {
