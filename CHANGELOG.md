@@ -48,6 +48,9 @@ Rust crates and the Python and npm packages together.
   text, and selector lookups. ([#96])
 - Saved elements are stored as columns of 32-bit spans, one per saved field,
   and a column exists only if some query saves that field. ([#100])
+- A dropped `Store` keeps its allocations, up to 32 MiB, for the next parse on
+  the same thread, so parsing many documents in a loop no longer allocates
+  and page-faults a fresh store each time. ([#100])
 
 ### Fixed
 

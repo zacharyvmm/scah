@@ -113,6 +113,16 @@ impl Columns {
         self.rows.len()
     }
 
+    /// Remove every row and the plan, keeping the allocations.
+    pub(crate) fn clear(&mut self) {
+        self.plan = ColumnPlan::default();
+        self.rows.clear();
+        self.attributes.clear();
+        self.inner_html.clear();
+        self.raw_text.clear();
+        self.text.clear();
+    }
+
     /// Reserve as many rows in every optional column the plan uses as
     /// `rows` has room for.
     pub(crate) fn reserve_optional(&mut self) {
