@@ -105,7 +105,7 @@ pub struct Store<'html, 'query> {
 pub struct HeapUsage {
     /// Row columns and each row's section.
     pub rows: usize,
-    /// The result index.
+    /// The result index, including the tables of query sections.
     pub results: usize,
     /// The attribute tape.
     pub attributes: usize,
@@ -385,6 +385,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         fn bytes<T>(vec: &Vec<T>) -> usize {
             vec.capacity() * std::mem::size_of::<T>()
         }
+        fn boxed<T>(slice: &[T]) -> usize {
+            std::mem::size_of_val(slice)
+        }
         let columns = &self.columns;
         HeapUsage {
             rows: bytes(&columns.rows)
@@ -392,7 +395,10 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
                 + bytes(&columns.inner_html)
                 + bytes(&columns.raw_text)
                 + bytes(&columns.text),
-            results: bytes(&self.edges)
+            results: boxed(&self.sections)
+                + boxed(&self.roots)
+                + boxed(&self.children)
+                + bytes(&self.edges)
                 + bytes(&self.slot_starts)
                 + bytes(&self.slot_offsets)
                 + bytes(&self.results),
@@ -1067,6 +1073,37 @@ mod tests {
         let store = crate::parse(&html, &queries).unwrap();
         assert_eq!(store.columns.rows.as_ptr(), rows);
         assert_eq!(store.text.text.as_bytes().as_ptr(), text);
+    }
+
+    #[test]
+    fn heap_usage_counts_the_section_tables() {
+        let queries: Vec<_> = (0..100)
+            .map(|_| Query::all("p", Save::none()).unwrap().build())
+            .collect();
+        let store = crate::parse("", &queries).unwrap();
+        assert!(
+            store.heap_usage().results >= 100 * std::mem::size_of::<StoreSection<'_>>(),
+            "{:?}",
+            store.heap_usage()
+        );
+    }
+
+    #[test]
+    fn reservations_do_not_affect_equality() {
+        let html = "<p class=a>one</p><p>two</p>";
+        let queries = [Query::all("p", Save::all()).unwrap().build()];
+        fn parse<'html, 'query: 'html>(
+            mut parser: crate::XHtmlParser<'html, 'query>,
+            html: &'html str,
+        ) -> Store<'html, 'query> {
+            let mut reader = crate::Reader::new(html);
+            while parser.next(&mut reader) {}
+            parser.matches()
+        }
+        let plain = parse(crate::XHtmlParser::new(&queries), html);
+        let reserved = parse(crate::XHtmlParser::with_capacity(&queries, 1 << 16), html);
+        assert_ne!(plain.columns.reserved_rows, reserved.columns.reserved_rows);
+        assert_eq!(plain, reserved);
     }
 
     #[test]

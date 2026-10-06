@@ -97,7 +97,7 @@ impl ColumnPlan {
 /// `rows` always has a value per row. An optional column is empty when
 /// the plan leaves it off, and otherwise holds one value per row,
 /// [`Span::ABSENT`] where the row's section does not save that field.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default)]
 pub(crate) struct Columns {
     pub(crate) plan: ColumnPlan,
     /// Rows this parse asked to reserve. Reused buffers can hold more, which
@@ -108,6 +108,19 @@ pub(crate) struct Columns {
     pub(crate) inner_html: Vec<Span>,
     pub(crate) raw_text: Vec<Span>,
     pub(crate) text: Vec<Span>,
+}
+
+/// Equal when the plan and every column's values are, whatever was
+/// reserved.
+impl PartialEq for Columns {
+    fn eq(&self, other: &Self) -> bool {
+        self.plan == other.plan
+            && self.rows == other.rows
+            && self.attributes == other.attributes
+            && self.inner_html == other.inner_html
+            && self.raw_text == other.raw_text
+            && self.text == other.text
+    }
 }
 
 impl Columns {
