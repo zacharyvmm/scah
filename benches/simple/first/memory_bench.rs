@@ -51,7 +51,7 @@ fn bench_scah(html: String) {
     let element = store.get(QUERY).unwrap().next().unwrap();
 
     black_box(&element.attributes());
-    black_box(&element.inner_html);
+    black_box(&element.inner_html());
     black_box(&element.text());
 }
 

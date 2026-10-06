@@ -82,11 +82,11 @@ fn bench_scah_all(html: String) {
 
     for product in store.get(PRODUCT_SELECTOR).unwrap() {
         black_box(product.attribute("class"));
-        black_box(product.inner_html);
+        black_box(product.inner_html());
         black_box(product.text());
 
         let title = product.get(PRODUCT_TITLE_SELECTOR).unwrap().next().unwrap();
-        black_box(title.inner_html);
+        black_box(title.inner_html());
         black_box(title.text());
 
         let rating = product
@@ -94,7 +94,7 @@ fn bench_scah_all(html: String) {
             .unwrap()
             .next()
             .unwrap();
-        black_box(rating.inner_html);
+        black_box(rating.inner_html());
         black_box(rating.text());
 
         let description = product
@@ -102,7 +102,7 @@ fn bench_scah_all(html: String) {
             .unwrap()
             .next()
             .unwrap();
-        black_box(description.inner_html);
+        black_box(description.inner_html());
         black_box(description.text());
     }
 }
@@ -276,11 +276,11 @@ fn bench_scah_first(html: String) {
     let product = store.get(PRODUCT_SELECTOR).unwrap().next().unwrap();
 
     black_box(product.attribute("class"));
-    black_box(product.inner_html);
+    black_box(product.inner_html());
     black_box(product.text());
 
     let title = product.get(PRODUCT_TITLE_SELECTOR).unwrap().next().unwrap();
-    black_box(title.inner_html);
+    black_box(title.inner_html());
     black_box(title.text());
 
     let rating = product
@@ -288,7 +288,7 @@ fn bench_scah_first(html: String) {
         .unwrap()
         .next()
         .unwrap();
-    black_box(rating.inner_html);
+    black_box(rating.inner_html());
     black_box(rating.text());
 
     let description = product
@@ -296,7 +296,7 @@ fn bench_scah_first(html: String) {
         .unwrap()
         .next()
         .unwrap();
-    black_box(description.inner_html);
+    black_box(description.inner_html());
     black_box(description.text());
 }
 
