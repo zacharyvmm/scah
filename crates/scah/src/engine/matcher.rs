@@ -1100,6 +1100,29 @@ mod tests {
     use crate::{Query, QuerySpec, Save};
     use pretty_assertions::assert_eq;
 
+    /// Every tag name, id and class the tests use, space-separated. The
+    /// store keeps strings as spans of the parsed document, so the driver's
+    /// elements borrow from this one.
+    static VOCABULARY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        let mut words = String::from(
+            " a b c d d1 d2 d3 div e h1 h2 li one p row s1 s2 section span two u u1 u2 ul w x y z ",
+        );
+        for index in 0..100 {
+            words.push_str(&format!("d{index} ad{index} "));
+        }
+        words
+    });
+
+    /// `token` as a slice of [`VOCABULARY`].
+    fn word(token: &str) -> &'static str {
+        let vocabulary: &'static str = &VOCABULARY;
+        let start = vocabulary
+            .find(&format!(" {token} "))
+            .unwrap_or_else(|| panic!("add {token:?} to the test vocabulary"))
+            + 1;
+        &vocabulary[start..start + token.len()]
+    }
+
     /// Feeds synthetic open/close events. Elements are written as
     /// `name#id.class`.
     struct Driver<'q> {
@@ -1112,6 +1135,7 @@ mod tests {
         fn new<Q: QuerySpec<'q>>(queries: &'q [Q]) -> Self {
             let program = Program::compile(queries);
             let mut store = Store::default();
+            store.set_html(&VOCABULARY);
             store.set_sections(&program);
             Self {
                 matcher: AnyMatcher::new(Cow::Owned(program)),
@@ -1128,9 +1152,9 @@ mod tests {
                 .split_once('#')
                 .map_or((rest, None), |(l, r)| (l, Some(r)));
             let element = XHtmlElement {
-                name,
-                id,
-                class,
+                name: word(name),
+                id: id.map(word),
+                class: class.map(word),
                 attributes: &[],
             };
             self.matcher.prepare(TagId::of(name), name);
@@ -1180,14 +1204,14 @@ mod tests {
 
         /// Results as `selector[elem{child[...]}, ...]`, elements by id.
         fn render(&mut self) -> String {
-            fn label(element: &crate::Element<'_>) -> String {
-                element.id.unwrap_or(element.name).to_string()
+            fn label(element: crate::ElementRef<'_, '_, '_>) -> String {
+                element.id().unwrap_or(element.name()).to_string()
             }
             fn rows(store: &Store<'_, '_>, ids: &[ElementId], out: &mut String) {
                 let items: Vec<String> = ids
                     .iter()
                     .map(|&id| {
-                        let mut item = label(&store.elements[id]);
+                        let mut item = label(store.element(id).expect("saved row"));
                         let mut children = Vec::new();
                         let mut index = 0;
                         while let Some(selector) = store.nested_selector(id, index) {
@@ -1453,7 +1477,7 @@ mod tests {
         let tree: &'static str = Box::leak(tree.into_boxed_str());
         let mut driver = Driver::new(&queries);
         driver.feed(tree);
-        assert_eq!(driver.store.elements.len(), 1);
+        assert_eq!(driver.store.len(), 1);
     }
 
     #[test]

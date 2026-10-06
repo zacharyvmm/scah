@@ -57,7 +57,7 @@ fn flat_descendant_single_element_multiple_ancestors() {
         1,
         "single <a> with multiple <div> ancestors must appear once"
     );
-    assert_eq!(anchors[0].text(&store), Some("X"));
+    assert_eq!(anchors[0].text(), Some("X"));
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn flat_descendant_deep_nesting_single_leaf() {
     let store = parse_all(html, &["div span"]);
     let spans = elements(&store, "div span");
     assert_eq!(spans.len(), 1, "deeply nested single span must appear once");
-    assert_eq!(spans[0].text(&store), Some("deep"));
+    assert_eq!(spans[0].text(), Some("deep"));
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn child_combinator_nested_returns_each_direct_child() {
     let store = parse_all(html, &["div > a"]);
     let anchors = elements(&store, "div > a");
     assert_eq!(anchors.len(), 2);
-    let text: Vec<_> = anchors.iter().map(|a| a.text(&store)).collect();
+    let text: Vec<_> = anchors.iter().map(|a| a.text()).collect();
     assert!(text.contains(&Some("1")));
     assert!(text.contains(&Some("2")));
 }
@@ -86,7 +86,7 @@ fn flat_descendant_multiple_sections_distinct() {
     let store = parse_all(html, &["section div a"]);
     let anchors = elements(&store, "section div a");
     assert_eq!(anchors.len(), 2);
-    let text: Vec<_> = anchors.iter().map(|a| a.text(&store)).collect();
+    let text: Vec<_> = anchors.iter().map(|a| a.text()).collect();
     assert!(text.contains(&Some("A1")));
     assert!(text.contains(&Some("A2")));
 }
@@ -104,9 +104,9 @@ fn then_descendant_dedup_within_parent_scope() {
 
     let sections: Vec<_> = store.get("section").unwrap().collect();
     assert_eq!(sections.len(), 1);
-    let anchors: Vec<_> = sections[0].get(&store, "div a").unwrap().collect();
+    let anchors: Vec<_> = sections[0].get("div a").unwrap().collect();
     assert_eq!(anchors.len(), 2, "each <a> once even with nested ancestors");
-    let text: Vec<_> = anchors.iter().map(|a| a.text(&store)).collect();
+    let text: Vec<_> = anchors.iter().map(|a| a.text()).collect();
     assert!(text.contains(&Some("1")));
     assert!(text.contains(&Some("2")));
 }
@@ -123,12 +123,12 @@ fn then_same_element_appears_under_each_parent() {
 
     let divs: Vec<_> = store.get("div").unwrap().collect();
     assert_eq!(divs.len(), 2);
-    let outer: Vec<_> = divs[0].get(&store, "a").unwrap().collect();
-    let inner: Vec<_> = divs[1].get(&store, "a").unwrap().collect();
+    let outer: Vec<_> = divs[0].get("a").unwrap().collect();
+    let inner: Vec<_> = divs[1].get("a").unwrap().collect();
     assert_eq!(outer.len(), 1, "outer div sees <a> as descendant");
     assert_eq!(inner.len(), 1, "inner div sees <a> as descendant");
-    assert_eq!(outer[0].text(&store), Some("X"));
-    assert_eq!(inner[0].text(&store), Some("X"));
+    assert_eq!(outer[0].text(), Some("X"));
+    assert_eq!(inner[0].text(), Some("X"));
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn then_first_completes_per_parent_scope() {
     let divs: Vec<_> = store.get("div").unwrap().collect();
     assert_eq!(divs.len(), 2);
     for div in &divs {
-        let children: Vec<_> = div.get(&store, "> a").unwrap().collect();
+        let children: Vec<_> = div.get("> a").unwrap().collect();
         assert_eq!(children.len(), 1, "each div yields exactly its first <a>");
     }
 }
@@ -155,7 +155,7 @@ fn id_presence_attribute_selector() {
     let store = parse_with_saves(html, &[("div[id]", Save::only_text())]);
     let divs = elements(&store, "div[id]");
     assert_eq!(divs.len(), 1);
-    assert_eq!(divs[0].text(&store), Some("A"));
+    assert_eq!(divs[0].text(), Some("A"));
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn class_presence_attribute_selector() {
     let store = parse_with_saves(html, &[("div[class]", Save::only_text())]);
     let divs = elements(&store, "div[class]");
     assert_eq!(divs.len(), 1);
-    assert_eq!(divs[0].text(&store), Some("A"));
+    assert_eq!(divs[0].text(), Some("A"));
 }
 
 #[test]
@@ -173,7 +173,7 @@ fn id_exact_attribute_selector() {
     let store = parse_with_saves(html, &[(r#"div[id="x"]"#, Save::only_text())]);
     let divs = elements(&store, r#"div[id="x"]"#);
     assert_eq!(divs.len(), 1);
-    assert_eq!(divs[0].text(&store), Some("A"));
+    assert_eq!(divs[0].text(), Some("A"));
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn class_tilde_attribute_selector() {
     let store = parse_with_saves(html, &[(r#"div[class~="foo"]"#, Save::only_text())]);
     let divs = elements(&store, r#"div[class~="foo"]"#);
     assert_eq!(divs.len(), 1);
-    assert_eq!(divs[0].text(&store), Some("A"));
+    assert_eq!(divs[0].text(), Some("A"));
 }
 
 #[test]
@@ -287,7 +287,7 @@ fn cursor_canonicalization_g_then_scopes_distinct_parents() {
     assert_eq!(divs.len(), 3);
     let parents_with_p = divs
         .iter()
-        .filter(|div| div.get(&store, "p").unwrap().next().is_some())
+        .filter(|div| div.get("p").unwrap().next().is_some())
         .count();
     assert_eq!(
         parents_with_p, 3,
@@ -311,7 +311,7 @@ fn cursor_canonicalization_h_first_flat_and_then() {
         .build()];
     let store2 = parse(html2, queries2).unwrap();
     let divs: Vec<_> = store2.get("div").unwrap().collect();
-    assert_eq!(divs[0].get(&store2, "p").unwrap().count(), 1);
+    assert_eq!(divs[0].get("p").unwrap().count(), 1);
 }
 
 #[test]

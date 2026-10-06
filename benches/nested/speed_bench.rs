@@ -71,30 +71,30 @@ fn comparison_first_query() -> Query<'static> {
         .build()
 }
 
-fn consume_product(store: &scah::Store<'_, '_>, product: &scah::Element<'_>) {
-    black_box(product.attribute(store, "class"));
-    black_box(product.inner_html);
-    black_box(product.text(store));
+fn consume_product(product: scah::ElementRef<'_, '_, '_>) {
+    black_box(product.attribute("class"));
+    black_box(product.inner_html());
+    black_box(product.text());
 
     for selector in [
         PRODUCT_TITLE_SELECTOR,
         PRODUCT_RATING_SELECTOR,
         PRODUCT_DESCRIPTION_SELECTOR,
     ] {
-        let child = product.get(store, selector).unwrap().next().unwrap();
-        black_box(child.inner_html);
-        black_box(child.text(store));
+        let child = product.get(selector).unwrap().next().unwrap();
+        black_box(child.inner_html());
+        black_box(child.text());
     }
 }
 
 fn consume_all_results(store: &scah::Store<'_, '_>) {
     for product in store.get(PRODUCT_SELECTOR).unwrap() {
-        consume_product(store, product);
+        consume_product(product);
     }
 }
 
 fn consume_first_result(store: &scah::Store<'_, '_>) {
-    consume_product(store, store.get(PRODUCT_SELECTOR).unwrap().next().unwrap());
+    consume_product(store.get(PRODUCT_SELECTOR).unwrap().next().unwrap());
 }
 
 fn bench_nested_all(c: &mut Criterion) {

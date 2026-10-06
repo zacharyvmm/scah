@@ -36,9 +36,9 @@ fn bench_scah(html: String) {
     let store = parse(&html, queries).unwrap();
 
     for element in store.get(QUERY).unwrap() {
-        black_box(&element.attributes(&store));
+        black_box(&element.attributes());
         black_box(&element.inner_html);
-        black_box(&element.text(&store));
+        black_box(&element.text());
     }
 }
 

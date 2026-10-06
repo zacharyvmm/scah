@@ -4,7 +4,7 @@ use scah::{Query, Save, parse};
 fn ids<'a>(store: &'a scah::Store<'a, 'a>, selector: &str) -> Vec<Option<&'a str>> {
     elements(store, selector)
         .into_iter()
-        .map(|element| element.id)
+        .map(|element| element.id())
         .collect()
 }
 
@@ -266,18 +266,18 @@ fn subsequent_sibling_structured_then_scopes_independently() {
     let articles: Vec<_> = store.get("article").unwrap().collect();
     assert_eq!(articles.len(), 2);
 
-    let article_a = articles.iter().find(|a| a.id == Some("a")).unwrap();
-    let article_b = articles.iter().find(|a| a.id == Some("b")).unwrap();
+    let article_a = articles.iter().find(|a| a.id() == Some("a")).unwrap();
+    let article_b = articles.iter().find(|a| a.id() == Some("b")).unwrap();
 
-    let a_ps: Vec<_> = article_a.get(&store, "div ~ p").unwrap().collect();
+    let a_ps: Vec<_> = article_a.get("div ~ p").unwrap().collect();
     assert_eq!(a_ps.len(), 2);
-    assert_eq!(a_ps[0].id, Some("a1"));
-    assert_eq!(a_ps[1].id, Some("a2"));
+    assert_eq!(a_ps[0].id(), Some("a1"));
+    assert_eq!(a_ps[1].id(), Some("a2"));
 
-    let b_ps: Vec<_> = article_b.get(&store, "div ~ p").unwrap().collect();
+    let b_ps: Vec<_> = article_b.get("div ~ p").unwrap().collect();
     assert_eq!(b_ps.len(), 2);
-    assert_eq!(b_ps[0].id, Some("b1"));
-    assert_eq!(b_ps[1].id, Some("b2"));
+    assert_eq!(b_ps[0].id(), Some("b1"));
+    assert_eq!(b_ps[1].id(), Some("b2"));
 }
 
 #[test]
@@ -421,13 +421,13 @@ fn sibling_callbacks_keep_stable_runner_identity_after_earlier_runner_exits() {
     let p_ids: Vec<_> = store
         .get("section + p")
         .unwrap()
-        .map(|element| element.id)
+        .map(|element| element.id())
         .collect();
 
     let footer_ids: Vec<_> = store
         .get("aside + footer")
         .unwrap()
-        .map(|element| element.id)
+        .map(|element| element.id())
         .collect();
 
     assert_eq!(p_ids, [Some("p-hit")]);

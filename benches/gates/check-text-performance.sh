@@ -32,6 +32,15 @@ if grep -Fq 'pub raw_text: bool' \
   legacy_base=0
   cp "$repo_root/benches/text_extraction/gate.rs" \
     "$base_tree/benches/text_extraction/gate.rs"
+  if ! grep -Fq 'pub struct ElementRef' "$base_tree/crates/scah/src/store/element.rs"; then
+    # Before the columnar store, element accessors took the store.
+    sed -i.bak \
+      -e 's/element\.raw_text()/element.raw_text(store)/' \
+      -e 's/element\.text()/element.text(store)/' \
+      "$base_tree/benches/text_extraction/gate.rs"
+    rm "$base_tree/benches/text_extraction/gate.rs.bak"
+    grep -Fq 'element.text(store)' "$base_tree/benches/text_extraction/gate.rs"
+  fi
 else
   legacy_base=1
   cp "$repo_root/benches/text_extraction/gate_legacy.rs" \

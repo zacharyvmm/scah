@@ -9,7 +9,7 @@ fn empty_elements_do_not_panic() {
     let divs: Vec<_> = store.get("div").unwrap().collect();
     assert_eq!(divs.len(), 3);
     for div in &divs {
-        assert_eq!(div.text(&store), Some(""));
+        assert_eq!(div.text(), Some(""));
     }
 }
 
@@ -19,7 +19,7 @@ fn comment_with_gt_does_not_leak_elements() {
     let store = parse_all(html, &["a"]);
     let links = elements(&store, "a");
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].attribute(&store, "href"), Some("real"));
+    assert_eq!(links[0].attribute("href"), Some("real"));
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn tab_and_newline_whitespace_in_tags() {
     let store = parse_all(html, &["a.link"]);
     let links = elements(&store, "a.link");
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].attribute(&store, "href"), Some("x"));
+    assert_eq!(links[0].attribute("href"), Some("x"));
 }
 
 #[test]
@@ -71,8 +71,8 @@ fn comment_with_multibyte_char_before_gt_does_not_leak_elements() {
     let links = elements(&store, "a");
 
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].attribute(&store, "href"), Some("real"));
-    assert_eq!(links[0].text(&store), Some("ok"));
+    assert_eq!(links[0].attribute("href"), Some("real"));
+    assert_eq!(links[0].text(), Some("ok"));
 }
 
 #[test]
@@ -145,5 +145,5 @@ fn quoted_gt_in_end_tag_attributes_does_not_end_the_tag() {
     let html = r#"<body>a</p title = '>'>b</body>"#;
     let store = parse(html, queries).unwrap();
     let body = store.get("body").unwrap().next().unwrap();
-    assert_eq!(body.text(&store), Some("ab"));
+    assert_eq!(body.text(), Some("ab"));
 }

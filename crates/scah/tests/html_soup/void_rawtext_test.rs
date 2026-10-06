@@ -105,7 +105,7 @@ fn raw_text_style_is_not_parsed_as_markup() {
     let store = parse_all(html, &["a"]);
     let links = elements(&store, "a");
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].attribute(&store, "href"), Some("real"));
+    assert_eq!(links[0].attribute("href"), Some("real"));
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn raw_text_textarea_is_not_parsed_as_markup() {
     let store = parse_all(html, &["a"]);
     let links = elements(&store, "a");
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].text(&store), Some("real"));
+    assert_eq!(links[0].text(), Some("real"));
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn raw_text_title_is_not_parsed_as_markup() {
     let store = parse_all(html, &["a"]);
     let links = elements(&store, "a");
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].text(&store), Some("real"));
+    assert_eq!(links[0].text(), Some("real"));
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn raw_text_uppercase_script_is_case_insensitive() {
     let store = parse_all(html, &["a"]);
     let links = elements(&store, "a");
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].attribute(&store, "href"), Some("real"));
+    assert_eq!(links[0].attribute("href"), Some("real"));
 }
 
 #[test]
@@ -141,7 +141,7 @@ fn raw_text_mixed_case_style_is_case_insensitive() {
     let store = parse_all(html, &["a"]);
     let links = elements(&store, "a");
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].attribute(&store, "href"), Some("real"));
+    assert_eq!(links[0].attribute("href"), Some("real"));
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn raw_text_close_tag_allows_whitespace_before_gt() {
         1,
         "`</style >` must terminate raw text so the trailing <a> is found"
     );
-    assert_eq!(links[0].attribute(&store, "href"), Some("ok"));
+    assert_eq!(links[0].attribute("href"), Some("ok"));
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn raw_text_close_tag_whitespace_is_case_insensitive() {
     let store = parse_all(html, &["a"]);
     let links = elements(&store, "a");
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].attribute(&store, "href"), Some("ok"));
+    assert_eq!(links[0].attribute("href"), Some("ok"));
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn raw_text_close_tag_tolerates_trailing_garbage_after_whitespace() {
     let store = parse_all(html, &["style", "div > a", "style > a"]);
 
     assert_eq!(
-        elements(&store, "style")[0].raw_text(&store),
+        elements(&store, "style")[0].raw_text(),
         Some("body { color: red; }")
     );
     assert_eq!(texts(&store, "style"), vec![Some("")]);
@@ -194,7 +194,7 @@ fn raw_text_near_miss_close_tag_does_not_terminate() {
         1,
         "`</styles>` is not a valid <style> end tag and must stay raw text"
     );
-    assert_eq!(links[0].attribute(&store, "href"), Some("real"));
+    assert_eq!(links[0].attribute("href"), Some("real"));
 }
 
 #[test]
@@ -223,10 +223,10 @@ fn trailing_solidus_is_not_exposed_as_attribute() {
     let hrs = elements(&store, "hr");
     assert_eq!(hrs.len(), 1);
     assert!(
-        hrs[0].attribute(&store, "/").is_none(),
+        hrs[0].attribute("/").is_none(),
         "trailing solidus must not become an attribute"
     );
-    assert!(hrs[0].attributes(&store).is_none() || hrs[0].attributes(&store).unwrap().is_empty());
+    assert!(hrs[0].attributes().is_none() || hrs[0].attributes().unwrap().is_empty());
 }
 
 #[test]
@@ -234,8 +234,8 @@ fn input_with_attribute_and_trailing_solidus_has_clean_attrs() {
     let store = parse_all("<input disabled />", &["input"]);
     let inputs = elements(&store, "input");
     assert_eq!(inputs.len(), 1);
-    assert!(inputs[0].attribute(&store, "/").is_none());
-    let attrs = inputs[0].attributes(&store).unwrap_or_default();
+    assert!(inputs[0].attribute("/").is_none());
+    let attrs = inputs[0].attributes().unwrap_or_default();
     let keys: Vec<_> = attrs.iter().map(|a| a.key).collect();
     assert_eq!(keys, vec!["disabled"]);
 }
@@ -248,16 +248,16 @@ fn non_void_trailing_solidus_is_not_self_closing() {
     let divs: Vec<_> = store.get("div").unwrap().collect();
     assert_eq!(divs.len(), 1);
     assert_eq!(
-        divs[0].text(&store),
+        divs[0].text(),
         Some("after"),
         "non-void <div /> must capture trailing content as text"
     );
     assert_eq!(
-        divs[0].inner_html.map(str::trim),
+        divs[0].inner_html().map(str::trim),
         Some("after"),
         "non-void <div /> must capture trailing content as inner_html"
     );
-    assert!(divs[0].attribute(&store, "/").is_none());
+    assert!(divs[0].attribute("/").is_none());
 }
 
 #[test]
@@ -268,16 +268,16 @@ fn unquoted_value_trailing_solidus_is_preserved() {
     let divs: Vec<_> = store.get("div").unwrap().collect();
     assert_eq!(divs.len(), 1);
     assert_eq!(
-        divs[0].attribute(&store, "data"),
+        divs[0].attribute("data"),
         Some("/foo/"),
         "a solidus inside an unquoted value must be preserved verbatim"
     );
     assert_eq!(
-        divs[0].text(&store),
+        divs[0].text(),
         Some("after"),
         "non-void <div> keeps capturing content after an unquoted /value/"
     );
-    assert!(divs[0].attribute(&store, "/").is_none());
+    assert!(divs[0].attribute("/").is_none());
 }
 
 #[test]
@@ -286,7 +286,7 @@ fn unquoted_url_value_with_slashes_is_preserved() {
     let store = parse_all(html, &["a"]);
     let links = elements(&store, "a");
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].attribute(&store, "href"), Some("/a/b/c"));
+    assert_eq!(links[0].attribute("href"), Some("/a/b/c"));
 }
 
 #[test]
