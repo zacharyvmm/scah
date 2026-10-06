@@ -263,3 +263,16 @@ test('Save is an options interface, not a runtime helper export', () => {
   const scah = require('../index')
   expect(scah.Save).toBeUndefined()
 })
+
+test('queries with the same selector keep separate results', () => {
+  const html = '<a href="x">one</a>'
+  const store = parse(html, [
+    Query.all('a', { innerHtml: false }).build(),
+    Query.all('a', { innerHtml: true }).build(),
+  ])
+
+  expect(store.query(0)?.map((a) => a.innerHtml)).toEqual([null])
+  expect(store.query(1)?.map((a) => a.innerHtml)).toEqual(['one'])
+  expect(store.get('a')?.length).toBe(1)
+  expect(store.query(2)).toBeNull()
+})

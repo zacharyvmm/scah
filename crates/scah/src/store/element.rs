@@ -1,6 +1,6 @@
 use std::ops::{Deref, Range};
 
-use super::arena::{Arena, Node, id};
+use super::arena::id;
 use super::{Attribute, Store};
 
 /// Lazily allocated, mode-specific text ranges indexed by element ID.
@@ -81,7 +81,7 @@ impl ElementTextRanges {
 /// | Raw text | [`element.raw_text(&store)`](Element::raw_text) |
 /// | All attributes | [`element.attributes(&store)`](Element::attributes) |
 /// | Single attribute | [`element.attribute(&store, "href")`](Element::attribute) |
-/// | Child query results | [`element.get(&store, "selector")`](Element::get) |
+/// | Child query results | [`element.get(&store, "selector")`](Element::get) or [`element.nested(&store, index)`](Element::nested) |
 #[derive(Default, Debug, PartialEq)]
 pub struct Element<'html> {
     /// The tag name (e.g. `"a"`, `"div"`, `"section"`).
@@ -96,26 +96,9 @@ pub struct Element<'html> {
     /// Internal range into the attribute arena.
     /// Use [`Element::attributes`] or [`Element::attribute`] instead.
     pub attributes: Option<Range<u32>>,
-
-    pub first_child_query: Option<id::QueryId>,
-    pub next_sibling: Option<id::ElementId>,
-}
-
-impl<'html> Node<id::ElementId> for Element<'html> {
-    fn next_sibling(&self) -> Option<id::ElementId> {
-        self.next_sibling
-    }
 }
 
 impl<'html> Element<'html> {
-    pub fn iter(
-        &self,
-        arena: &'html Arena<Element<'html>, id::ElementId>,
-    ) -> impl Iterator<Item = &'html Element<'html>> {
-        let index = unsafe { arena.index_of(self) };
-        arena.iter_from(index)
-    }
-
     /// Look up child elements matched by a **nested query** (one added
     /// via [`QueryBuilder::then`](crate::QueryBuilder::then)).
     ///
@@ -123,22 +106,35 @@ impl<'html> Element<'html> {
     ///
     /// Returns `None` if this element has no nested query results for the
     /// given selector.
+    #[inline]
     pub fn get(
         &self,
         dom: &'html Store,
         key: &str,
     ) -> Option<impl Iterator<Item = &'html Element<'html>>> {
-        let first_query_id = self.first_child_query;
-        first_query_id
-            .and_then(|id| dom.queries.iter_from(id).find(|q| q.query == key))
-            .map(|query_node| query_node.elements.start())
-            .map(|element_id| dom.elements.iter_from(element_id))
+        let element_id = unsafe { dom.elements.index_of(self) };
+        let ids = dom.child_results(element_id, key)?;
+        Some(ids.iter().map(|&id| &dom.elements[id]))
+    }
+
+    /// Look up child elements matched by this element's nested query at
+    /// `index`, in the order the nested queries were declared.
+    #[inline]
+    pub fn nested(
+        &self,
+        dom: &'html Store,
+        index: usize,
+    ) -> Option<impl Iterator<Item = &'html Element<'html>>> {
+        let element_id = unsafe { dom.elements.index_of(self) };
+        let ids = dom.nested_results(element_id, index)?;
+        Some(ids.iter().map(|&id| &dom.elements[id]))
     }
 
     /// Return all attributes of this element as a slice.
     ///
     /// Returns `None` if the element had no extra attributes beyond
     /// `class` and `id` (which are stored directly on the [`Element`]).
+    #[inline]
     pub fn attributes(&self, dom: &'html Store) -> Option<&'html [Attribute<'html>]> {
         self.attributes
             .as_ref()
@@ -163,6 +159,7 @@ impl<'html> Element<'html> {
     /// let a = store.get("a").unwrap().next().unwrap();
     /// assert_eq!(a.attribute(&store, "href"), Some("https://example.com"));
     /// ```
+    #[inline]
     pub fn attribute(&self, dom: &'html Store, key: &str) -> Option<&'html str> {
         self.attributes.as_ref().and_then(|range| {
             dom.attributes.deref()[(range.start as usize)..(range.end as usize)]
@@ -174,6 +171,7 @@ impl<'html> Element<'html> {
     /// Get the element's source-preserving descendant text.
     ///
     /// Only populated when [`Save::raw_text`](crate::Save::raw_text) was `true`.
+    #[inline]
     pub fn raw_text(&self, dom: &'html Store) -> Option<&'html str> {
         let element_id = unsafe { dom.elements.index_of(self) };
         dom.raw_text_range(element_id)
@@ -184,6 +182,7 @@ impl<'html> Element<'html> {
     ///
     /// Returns the whitespace-trimmed, concatenated text nodes within
     /// this element. Only populated when [`Save::text`](crate::Save::text) was `true`.
+    #[inline]
     pub fn text(&self, dom: &'html Store) -> Option<&'html str> {
         let element_id = unsafe { dom.elements.index_of(self) };
         dom.text_range(element_id)

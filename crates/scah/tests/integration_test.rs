@@ -1893,3 +1893,23 @@ fn attribute_pipes_and_quoted_pipes_match_in_macro_queries() {
     check!(5, r#"div:not(:is([data-x="a|b"]))"#);
     assert_eq!(PIPE_CASES.len(), 6);
 }
+
+#[test]
+fn nested_matches_are_stored_once_and_listed_under_every_scope() {
+    let html = "<div id='outer'><div id='inner'><a id='link'></a></div></div>";
+    let queries = [Query::all("div", Save::none())
+        .unwrap()
+        .all("a", Save::none())
+        .unwrap()
+        .build()];
+    let store = parse(html, &queries).unwrap();
+
+    // Two divs and one shared `a` row, rather than one `a` copy per div.
+    assert_eq!(store.elements.len(), 3);
+    for div in store.get("div").unwrap() {
+        let links: Vec<_> = div.get(&store, "a").unwrap().map(|a| a.id).collect();
+        assert_eq!(links, [Some("link")], "{:?}", div.id);
+        let by_index: Vec<_> = div.nested(&store, 0).unwrap().map(|a| a.id).collect();
+        assert_eq!(by_index, links);
+    }
+}

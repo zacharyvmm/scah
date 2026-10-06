@@ -232,9 +232,8 @@ impl Lanes {
 struct Scope {
     depth: u32,
     section: SectionIndex,
-    /// Store rows of the element for this section: one per parent scope row
-    /// it was saved under. Nested matches are saved under each of them.
-    rows: Range<u32>,
+    /// The element's row for `section`; nested matches are listed under it.
+    row: ElementId,
 }
 
 pub(crate) struct Matcher<'q, const W: usize> {
@@ -259,13 +258,11 @@ pub(crate) struct Matcher<'q, const W: usize> {
     lanes: Lanes,
 
     scopes: SmallVec<[Scope; 4]>,
-    scope_rows: SmallVec<[ElementId; 8]>,
     /// `claim_words` words per scope: which `First` child sections already
     /// matched inside it, by position in the parent's child list.
     scope_claims: SmallVec<[u64; 4]>,
     claim_words: usize,
 
-    saved_rows: SmallVec<[ElementId; 4]>,
     lane_steps: SmallVec<[usize; 8]>,
     slot_scratch: SmallVec<[u64; 2]>,
     lane_scratch: SmallVec<[u64; 8]>,
@@ -395,10 +392,8 @@ impl<'q, const W: usize> Matcher<'q, W> {
                 arena: SmallVec::new(),
             },
             scopes: SmallVec::new(),
-            scope_rows: SmallVec::new(),
             scope_claims: SmallVec::new(),
             claim_words,
-            saved_rows: SmallVec::new(),
             lane_steps: SmallVec::new(),
             slot_scratch: SmallVec::new(),
             lane_scratch: SmallVec::new(),
@@ -796,10 +791,11 @@ impl<'q, const W: usize> Matcher<'q, W> {
             self.claim_root(section);
         }
         let spec = self.program.section(section);
-        let element_id = push_row(store, ElementId::default(), (section, spec), element);
-        hits.push(save_hit(element_id, spec));
+        let row = store.add_row(section, spec, element);
+        add_edge(store, None, row, (section, spec), element);
+        hits.push(save_hit(row, spec));
         if info.has_children {
-            self.open_root_scope(section, element_id);
+            self.open_scope(section, row);
         }
     }
 
@@ -814,13 +810,6 @@ impl<'q, const W: usize> Matcher<'q, W> {
         for word in 0..words {
             self.masks[LIVE * words + word] &= !steps[word];
         }
-    }
-
-    #[inline(never)]
-    fn open_root_scope(&mut self, section: SectionIndex, element_id: ElementId) {
-        self.saved_rows.clear();
-        self.saved_rows.push(element_id);
-        self.open_scope(section);
     }
 
     #[inline(never)]
@@ -852,7 +841,8 @@ impl<'q, const W: usize> Matcher<'q, W> {
             }
         }
 
-        self.saved_rows.clear();
+        // One row for the element, listed under every scope it is saved in.
+        let mut row = None;
         let child = info.child as usize;
         for slot in bits::iter_ones(&self.slot_scratch) {
             if info.first {
@@ -862,25 +852,28 @@ impl<'q, const W: usize> Matcher<'q, W> {
                 }
                 bits::set(claims, child);
             }
-            for row in self.scopes[slot].rows.clone() {
-                let parent = self.scope_rows[row as usize];
-                let element_id = push_row(store, parent, (section, spec), element);
-                self.saved_rows.push(element_id);
-                hits.push(save_hit(element_id, spec));
-            }
+            let row = *row.get_or_insert_with(|| store.add_row(section, spec, element));
+            add_edge(
+                store,
+                Some(self.scopes[slot].row),
+                row,
+                (section, spec),
+                element,
+            );
         }
-        if info.has_children && !self.saved_rows.is_empty() {
-            self.open_scope(section);
+        if let Some(row) = row {
+            hits.push(save_hit(row, spec));
+            if info.has_children {
+                self.open_scope(section, row);
+            }
         }
     }
 
-    fn open_scope(&mut self, section: SectionIndex) {
-        let start = self.scope_rows.len() as u32;
-        self.scope_rows.extend_from_slice(&self.saved_rows);
+    fn open_scope(&mut self, section: SectionIndex, row: ElementId) {
         self.scopes.push(Scope {
             depth: self.depth as u32,
             section,
-            rows: start..self.scope_rows.len() as u32,
+            row,
         });
         self.scope_claims
             .resize(self.scope_claims.len() + self.claim_words, 0);
@@ -1000,7 +993,6 @@ impl<'q, const W: usize> Matcher<'q, W> {
             .is_some_and(|scope| scope.depth as usize == depth)
         {
             let scope = self.scopes.pop().unwrap();
-            self.scope_rows.truncate(scope.rows.start as usize);
             self.scope_claims
                 .truncate(self.scopes.len() * self.claim_words);
             let state = &mut self.sections[scope.section.index()];
@@ -1141,35 +1133,36 @@ fn save_hit(element_id: ElementId, spec: &scah_query_ir::QuerySection<'_>) -> Sa
     }
 }
 
-/// Save `element` for `section` under `parent` (the document when null).
-fn push_row<'html, 'q: 'html>(
+/// List `row` under `parent` (the document when `None`).
+#[inline(always)]
+fn add_edge<'html, 'q: 'html>(
     store: &mut Store<'html, 'q>,
-    parent: ElementId,
+    parent: Option<ElementId>,
+    row: ElementId,
     section: (SectionIndex, &'q scah_query_ir::QuerySection<'q>),
     element: &XHtmlElement<'html>,
-) -> ElementId {
-    let (_index, spec) = section;
-    let element_id = store.push(parent, spec, element.clone());
+) {
+    store.add_edge(parent, row);
+    let (_index, _spec) = section;
+    let _ = element;
     crate::scah_trace!(
         store,
         crate::debug::TraceEvent::ElementSaved {
             section: _index.index(),
-            selector: spec.source,
+            selector: _spec.source,
             element: element.name,
-            element_id,
-            parent_id: parent,
-            save_inner_html: spec.save.inner_html,
-            save_raw_text: spec.save.raw_text,
-            save_text: spec.save.text,
+            element_id: row,
+            parent_id: parent.unwrap_or_default(),
+            save_inner_html: _spec.save.inner_html,
+            save_raw_text: _spec.save.raw_text,
+            save_text: _spec.save.text,
         }
     );
-    element_id
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::QueryId;
     use crate::{Query, QuerySpec, Save};
     use pretty_assertions::assert_eq;
 
@@ -1183,9 +1176,12 @@ mod tests {
 
     impl<'q> Driver<'q> {
         fn new<Q: QuerySpec<'q>>(queries: &'q [Q]) -> Self {
+            let program = Program::compile(queries);
+            let mut store = Store::default();
+            store.set_sections(&program);
             Self {
-                matcher: AnyMatcher::new(Program::compile(queries)),
-                store: Store::default(),
+                matcher: AnyMatcher::new(program),
+                store,
                 hits: Vec::new(),
             }
         }
@@ -1249,31 +1245,43 @@ mod tests {
         }
 
         /// Results as `selector[elem{child[...]}, ...]`, elements by id.
-        fn render(&self) -> String {
+        fn render(&mut self) -> String {
             fn label(element: &crate::Element<'_>) -> String {
                 element.id.unwrap_or(element.name).to_string()
             }
-            fn queries(store: &Store<'_, '_>, first: Option<QueryId>, out: &mut Vec<String>) {
-                let mut query = first;
-                while let Some(id) = query {
-                    let node = &store.queries[id];
-                    let mut items = Vec::new();
-                    for element in store.elements.iter_from(node.elements.start()) {
-                        let mut item = label(element);
-                        if element.first_child_query.is_some() {
-                            let mut children = Vec::new();
-                            queries(store, element.first_child_query, &mut children);
+            fn rows(store: &Store<'_, '_>, ids: &[ElementId], out: &mut String) {
+                let items: Vec<String> = ids
+                    .iter()
+                    .map(|&id| {
+                        let mut item = label(&store.elements[id]);
+                        let mut children = Vec::new();
+                        let mut index = 0;
+                        while let Some(selector) = store.nested_selector(id, index) {
+                            if let Some(nested) = store.nested_results(id, index) {
+                                let mut list = String::new();
+                                rows(store, nested, &mut list);
+                                children.push(format!("{selector}[{list}]"));
+                            }
+                            index += 1;
+                        }
+                        if !children.is_empty() {
                             item.push_str(&format!("{{{}}}", children.join(" ")));
                         }
-                        items.push(item);
-                    }
-                    out.push(format!("{}[{}]", node.query, items.join(", ")));
-                    query = node.next_sibling;
-                }
+                        item
+                    })
+                    .collect();
+                out.push_str(&items.join(", "));
             }
+            self.store.finish();
             let mut out = Vec::new();
-            if !self.store.queries.is_empty() {
-                queries(&self.store, Some(QueryId(0)), &mut out);
+            let mut index = 0;
+            while let Some(selector) = self.store.query_selector(index) {
+                if let Some(ids) = self.store.query_results(index) {
+                    let mut list = String::new();
+                    rows(&self.store, ids, &mut list);
+                    out.push(format!("{selector}[{list}]"));
+                }
+                index += 1;
             }
             out.join(" ")
         }

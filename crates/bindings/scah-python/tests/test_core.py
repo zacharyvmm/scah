@@ -193,3 +193,16 @@ def test_legacy_text_content_aliases_warn_and_return_normalized_text():
         legacy_save = Save.only_text_content()
     legacy = parse("<p>x</p>", [Query.all("p", legacy_save).build()]).get("p")[0]
     assert legacy.text == "x"
+
+
+def test_queries_with_the_same_selector_keep_separate_results():
+    html = '<a href="x">one</a>'
+    store = parse(
+        html,
+        [Query.all("a", Save.none()).build(), Query.all("a", Save.all()).build()],
+    )
+
+    assert [a.inner_html for a in store.query(0)] == [None]
+    assert [a.inner_html for a in store.query(1)] == ["one"]
+    assert len(store.get("a")) == 1
+    assert store.query(2) is None

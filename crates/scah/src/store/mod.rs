@@ -1,5 +1,6 @@
 use crate::Attribute;
 use crate::QuerySection;
+use scah_query_ir::{Program, SectionIndex};
 use std::ops::Range;
 
 mod text;
@@ -7,24 +8,34 @@ pub(crate) use text::{TextStore, TextTape, trim_collapsed_range};
 mod arena;
 mod attributes;
 mod element;
-mod query_node;
 
-pub(crate) use arena::id::Nullable;
-use arena::span::Span;
 pub use arena::{
     Arena,
-    id::{AttributeId, ElementId, QueryId},
+    id::{AttributeId, ElementId},
 };
 
 pub use element::Element;
 pub(crate) use element::ElementTextRanges;
-pub use query_node::QueryNode;
+
+/// A query section as the store sees it: enough to resolve lookups.
+#[derive(Debug, Clone, PartialEq)]
+struct StoreSection<'query> {
+    selector: &'query str,
+    /// Position among its parent's nested sections, or among the root
+    /// sections: the result slot it fills in each parent group.
+    slot: u32,
+    /// This section's nested sections, as a range of `Store::children`.
+    children: (u32, u32),
+}
 
 /// The result set returned by [`parse`](crate::parse).
 ///
-/// A `Store` is an arena-based container that holds all elements, attributes,
-/// and text content captured during parsing. You query it by CSS selector
-/// string using [`Store::get`].
+/// A `Store` holds flat tables: one [`Element`] row per element and query
+/// section that saved it, the attributes and text those rows captured, and
+/// an index from each parent (the document, or a row of the parent section)
+/// to its results, grouped by section in document order. Look results up by
+/// selector string with [`Store::get`], or by position with
+/// [`Store::query`].
 ///
 /// # Example
 ///
@@ -46,12 +57,12 @@ pub use query_node::QueryNode;
 /// ```
 #[derive(Debug, PartialEq)]
 pub struct Store<'html, 'query> {
-    /// Arena of matched elements.
+    /// One row per element and section that saved it. An element saved by a
+    /// nested section under several parent matches has one row, listed
+    /// under each parent.
     pub elements: Arena<Element<'html>, ElementId>,
     /// Arena of attributes belonging to matched elements.
     pub attributes: Arena<Attribute<'html>, AttributeId>,
-    /// Arena of query nodes that link selectors to their matched elements.
-    pub queries: Arena<QueryNode<'query>, QueryId>,
     /// Accumulated raw-text and normalized-text buffers shared by all elements.
     pub(crate) text: TextStore,
     /// Lazily allocated sidecar for raw/normalized text ranges.
@@ -60,6 +71,28 @@ pub struct Store<'html, 'query> {
     /// inner-HTML-only / no-content workloads do not pay per-element text
     /// range storage on [`Element`].
     element_text_ranges: Option<Box<ElementTextRanges>>,
+    /// Sections of the parsed queries, in declaration order.
+    sections: Box<[StoreSection<'query>]>,
+    /// Root sections, one per query, in query order.
+    roots: Box<[u32]>,
+    /// Nested sections of every section, in declaration order.
+    children: Box<[u32]>,
+    /// Section of each row.
+    row_sections: Vec<u32>,
+    /// `(parent group, row)` per save, in document order. Group 0 is the
+    /// document; group `r + 1` is row `r`. Not recorded when every section
+    /// is a root: then every row is a document result.
+    edges: Vec<(u32, u32)>,
+    record_edges: bool,
+    /// Group `g` owns one result slot per section it can hold results of
+    /// (the roots for the document, the row section's nested sections
+    /// otherwise), starting at slot `slot_starts[g]`. Built by
+    /// [`Store::finish`].
+    slot_starts: Vec<u32>,
+    /// Results of slot `s` are `results[slot_offsets[s]..slot_offsets[s + 1]]`,
+    /// in document order.
+    slot_offsets: Vec<u32>,
+    results: Vec<ElementId>,
     #[cfg(any(debug_assertions, test))]
     pub trace: crate::debug::TraceStore<'html, 'query>,
 }
@@ -115,14 +148,31 @@ impl Default for CapacityOptions {
     }
 }
 
+/// Whether a looked-up selector names a section's selector. Callers usually
+/// pass the same string the query was built from, so compare addresses
+/// before bytes.
+#[inline]
+fn same_selector(section: &str, selector: &str) -> bool {
+    section.len() == selector.len()
+        && (std::ptr::eq(section.as_ptr(), selector.as_ptr()) || section == selector)
+}
+
 impl<'html, 'query: 'html> Default for Store<'html, 'query> {
     fn default() -> Self {
         Self {
             elements: Arena::new(),
-            queries: Arena::new(),
             text: TextStore::new(),
             attributes: Arena::new(),
             element_text_ranges: None,
+            sections: Box::default(),
+            roots: Box::default(),
+            children: Box::default(),
+            row_sections: Vec::new(),
+            edges: Vec::new(),
+            record_edges: true,
+            slot_starts: Vec::new(),
+            slot_offsets: Vec::new(),
+            results: Vec::new(),
             #[cfg(any(debug_assertions, test))]
             trace: crate::debug::TraceStore::new(),
         }
@@ -178,7 +228,6 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
         Self {
             elements: Arena::with_capacity(element_slots),
-            queries: Arena::new(),
             text: TextStore::with_capacity(
                 if reserve_text_buffers && options.reserve_raw_text {
                     capacity
@@ -197,6 +246,15 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
                 Arena::new()
             },
             element_text_ranges: None,
+            sections: Box::default(),
+            roots: Box::default(),
+            children: Box::default(),
+            row_sections: Vec::with_capacity(element_slots),
+            edges: Vec::new(),
+            record_edges: true,
+            slot_starts: Vec::new(),
+            slot_offsets: Vec::new(),
+            results: Vec::new(),
             #[cfg(any(debug_assertions, test))]
             trace: crate::debug::TraceStore::with_capacity(
                 element_slots.min(options.trace_capacity_limit),
@@ -216,13 +274,13 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         }
     }
 
-    /// Look up all elements that matched a given CSS selector string.
+    /// Results saved for the first query whose selector is `selector`.
     ///
-    /// The `query` parameter must be the **exact same string** used when
-    /// building the [`Query`](crate::Query) (e.g. `"main > section > a[href]"`).
+    /// The `selector` must be the **exact same string** used to build the
+    /// [`Query`](crate::Query) (e.g. `"main > section > a[href]"`). When
+    /// several queries share a selector, use [`Store::query`] to pick one.
     ///
-    /// Returns `None` if no elements were matched by any query, or if
-    /// the given selector string was not part of the executed queries.
+    /// Returns `None` when no query has that selector or it matched nothing.
     ///
     /// # Example
     ///
@@ -239,131 +297,258 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     ///     println!("{}", li.text(&store).unwrap_or_default());
     /// }
     /// ```
-    pub fn get(&'html self, query: &str) -> Option<impl Iterator<Item = &'html Element<'html>>> {
-        if self.queries.is_empty() {
+    #[inline]
+    pub fn get(&self, selector: &str) -> Option<impl Iterator<Item = &Element<'html>>> {
+        self.elements_of(self.results(selector)?)
+    }
+
+    /// Results saved for the query at `index` in the slice given to
+    /// [`parse`](crate::parse).
+    ///
+    /// Returns `None` when there is no such query or it matched nothing.
+    #[inline]
+    pub fn query(&self, index: usize) -> Option<impl Iterator<Item = &Element<'html>>> {
+        self.elements_of(self.query_results(index)?)
+    }
+
+    /// Row ids of [`Store::get`]'s results.
+    #[inline]
+    pub fn results(&self, selector: &str) -> Option<&[ElementId]> {
+        let root = self.roots.iter().position(|&section| {
+            same_selector(self.sections[section as usize].selector, selector)
+        })?;
+        self.slot_results(root)
+    }
+
+    /// Row ids of [`Store::query`]'s results.
+    #[inline]
+    pub fn query_results(&self, index: usize) -> Option<&[ElementId]> {
+        if index >= self.roots.len() {
             return None;
         }
-
-        self.queries
-            .iter_from(QueryId(0))
-            .find(|q| q.query == query)
-            .map(|query_node| query_node.elements.start())
-            .map(|element_id| self.elements.iter_from(element_id))
+        self.slot_results(index)
     }
 
-    fn link_query_to_query(&mut self, query: QueryId, mut root: QueryId) {
-        loop {
-            if root == query {
-                return;
+    /// Row ids saved under `parent` by its first nested section whose
+    /// selector is `selector`.
+    #[inline]
+    pub fn child_results(&self, parent: ElementId, selector: &str) -> Option<&[ElementId]> {
+        let child = self.child_sections(parent).iter().position(|&section| {
+            same_selector(self.sections[section as usize].selector, selector)
+        })?;
+        self.nested_results(parent, child)
+    }
+
+    /// Row ids saved under `parent` by its nested section at `index`, in
+    /// the order the sections were declared.
+    #[inline]
+    pub fn nested_results(&self, parent: ElementId, index: usize) -> Option<&[ElementId]> {
+        if index >= self.child_sections(parent).len() {
+            return None;
+        }
+        let start = *self.slot_starts.get(parent.index() + 1)? as usize;
+        self.slot_results(start + index)
+    }
+
+    /// Number of results across all parents; a row listed under several
+    /// parents counts once per parent.
+    pub fn result_count(&self) -> usize {
+        self.results.len()
+    }
+
+    /// Selector of the query at `index`.
+    pub fn query_selector(&self, index: usize) -> Option<&'query str> {
+        let section = *self.roots.get(index)?;
+        Some(self.sections[section as usize].selector)
+    }
+
+    /// Selector of `parent`'s nested section at `index`.
+    pub fn nested_selector(&self, parent: ElementId, index: usize) -> Option<&'query str> {
+        let section = *self.child_sections(parent).get(index)?;
+        Some(self.sections[section as usize].selector)
+    }
+
+    fn elements_of(&self, ids: &[ElementId]) -> Option<impl Iterator<Item = &Element<'html>>> {
+        Some(ids.iter().map(|&id| &self.elements[id]))
+    }
+
+    /// Nested sections of the section that saved `row`.
+    #[inline]
+    fn child_sections(&self, row: ElementId) -> &[u32] {
+        let (start, end) = self.sections[self.row_sections[row.index()] as usize].children;
+        &self.children[start as usize..end as usize]
+    }
+
+    /// Results of `slot`, or `None` when empty.
+    #[inline]
+    fn slot_results(&self, slot: usize) -> Option<&[ElementId]> {
+        let start = *self.slot_offsets.get(slot)? as usize;
+        let end = *self.slot_offsets.get(slot + 1)? as usize;
+        (start < end).then(|| &self.results[start..end])
+    }
+
+    /// Record the sections of the queries being parsed.
+    pub(crate) fn set_sections(&mut self, program: &Program<'query>) {
+        let count = program.section_count();
+        let parent = |index: usize| program.section_parent(SectionIndex(index as u32));
+
+        // Each section's nested sections form one run of `children`, in
+        // declaration order: count them, then place them.
+        let mut starts = vec![0_u32; count + 1];
+        for index in 0..count {
+            if let Some(parent) = parent(index) {
+                starts[parent.index() + 1] += 1;
             }
-            let query_node = &self.queries[root];
-            match query_node.next_sibling {
-                Some(sibling) => root = sibling,
+        }
+        Self::prefix_sum(&mut starts);
+        let mut next = starts.clone();
+        let mut children = vec![0_u32; starts[count] as usize];
+        let mut roots = Vec::new();
+        let mut sections = Vec::with_capacity(count);
+        for index in 0..count {
+            let slot = match parent(index) {
                 None => {
-                    self.queries[root].next_sibling = Some(query);
-                    break;
+                    roots.push(index as u32);
+                    roots.len() - 1
                 }
-            }
+                Some(parent) => {
+                    let position = &mut next[parent.index()];
+                    children[*position as usize] = index as u32;
+                    *position += 1;
+                    (*position - 1 - starts[parent.index()]) as usize
+                }
+            };
+            sections.push(StoreSection {
+                selector: program.section(SectionIndex(index as u32)).source,
+                slot: slot as u32,
+                children: (starts[index], starts[index + 1]),
+            });
         }
+        self.sections = sections.into();
+        self.roots = roots.into();
+        self.children = children.into();
+        self.record_edges = program.features().has_scoped_sections;
     }
 
-    fn link_query_to_element(&mut self, query: QueryId, element: ElementId) {
-        let id = self.elements[element].first_child_query;
-
-        match id {
-            Some(id) => {
-                self.link_query_to_query(query, id);
-            }
-            None => {
-                self.elements[element].first_child_query = Some(query);
-            }
-        }
-    }
-
-    fn link_element_to_query(&mut self, query: QueryId, element: ElementId) {
-        let id = self.queries[query].elements.end();
-
-        if id == element {
-            return;
-        }
-
-        assert!(self.elements[id].next_sibling.is_none());
-        self.elements[id].next_sibling = Some(element);
-        self.queries[query].elements.set_end(element);
-    }
-
-    pub fn push(
+    /// Save `element` as a new row of `section`.
+    ///
+    /// The row is not a result until [`Store::add_edge`] lists it under a
+    /// parent.
+    pub(crate) fn add_row(
         &mut self,
-        from: ElementId,
-        selection: &QuerySection<'query>,
-        element: crate::XHtmlElement<'html>,
+        section: SectionIndex,
+        spec: &QuerySection<'query>,
+        element: &crate::XHtmlElement<'html>,
     ) -> ElementId {
-        let new_element = Element {
+        let attributes = spec.save.attributes;
+        let row = ElementId::from(self.elements.len());
+        self.elements.push(Element {
             name: element.name,
-            class: selection.save.attributes.then_some(element.class).flatten(),
-            id: selection.save.attributes.then_some(element.id).flatten(),
-            attributes: if selection.save.attributes {
+            class: if attributes { element.class } else { None },
+            id: if attributes { element.id } else { None },
+            attributes: if attributes {
                 self.attributes.attribute_slice_to_range(element.attributes)
             } else {
                 None
             },
-            ..Default::default()
-        };
+            inner_html: None,
+        });
+        self.row_sections.push(section.0);
+        row
+    }
 
-        assert!(from.is_null() || from.0 < self.elements.len());
-
-        let existing_id = {
-            if !from.is_null() {
-                self.elements[from].first_child_query.and_then(|query| {
-                    self.queries
-                        .iter_from(query)
-                        .find(|q| q.query == selection.source)
-                        .map(|q| unsafe { self.queries.index_of(q) })
-                })
-            } else if !self.queries.is_empty() {
-                self.queries
-                    .iter_from(QueryId(0))
-                    .find(|q| q.query == selection.source)
-                    .map(|q| unsafe { self.queries.index_of(q) })
-            } else {
-                None
-            }
-        };
-
-        let index = ElementId(self.elements.len());
-        self.elements.push(new_element);
-
-        let query_id = match existing_id {
-            Some(id) => id,
-            None => {
-                self.queries.push(QueryNode {
-                    query: selection.source,
-                    elements: Span::new(index),
-                    next_sibling: None,
-                });
-
-                QueryId(self.queries.len() - 1)
-            }
-        };
-
-        assert!(!self.queries.is_empty());
-        assert!(query_id.index() < self.queries.len());
-
-        if !from.is_null() {
-            self.link_query_to_element(query_id, from);
+    /// List `row` among the results of `parent` (the document when `None`).
+    #[inline]
+    pub(crate) fn add_edge(&mut self, parent: Option<ElementId>, row: ElementId) {
+        if self.record_edges {
+            let group = parent.map_or(0, |parent| parent.0 + 1);
+            self.edges.push((group, row.0));
         } else {
-            self.link_query_to_query(query_id, QueryId(0));
+            debug_assert!(
+                parent.is_none(),
+                "root-only stores list rows under the document"
+            );
+        }
+    }
+
+    /// Build the result index: assign every group its slots, then place
+    /// each saved edge in its slot, keeping document order (one stable
+    /// counting sort).
+    pub(crate) fn finish(&mut self) {
+        if !self.slot_offsets.is_empty() {
+            return;
+        }
+        self.slot_starts.reserve(self.row_sections.len() + 2);
+        self.slot_starts.extend([0, self.roots.len() as u32]);
+        if self.record_edges {
+            let mut next = self.roots.len() as u32;
+            for &section in &self.row_sections {
+                let (start, end) = self.sections[section as usize].children;
+                next += end - start;
+                self.slot_starts.push(next);
+            }
+        }
+        let slots = *self.slot_starts.last().unwrap_or(&0) as usize;
+        self.slot_offsets.resize(slots + 1, 0);
+
+        if !self.record_edges {
+            // Every row is a document result in its section's root slot.
+            let rows = self.row_sections.len() as u32;
+            if self.roots.len() == 1 {
+                self.slot_offsets[1] = rows;
+                self.results.extend((0..rows).map(ElementId));
+                return;
+            }
+            let slot_of = |row: u32| self.sections[self.row_sections[row as usize] as usize].slot;
+            for row in 0..rows {
+                self.slot_offsets[slot_of(row) as usize + 1] += 1;
+            }
+            Self::prefix_sum(&mut self.slot_offsets);
+            if (1..rows).all(|row| slot_of(row - 1) <= slot_of(row)) {
+                self.results.extend((0..rows).map(ElementId));
+                return;
+            }
+            let mut next = self.slot_offsets.clone();
+            self.results.resize(rows as usize, ElementId(0));
+            for row in 0..rows {
+                let slot = &mut next[slot_of(row) as usize];
+                self.results[*slot as usize] = ElementId(row);
+                *slot += 1;
+            }
+            return;
         }
 
-        self.link_element_to_query(query_id, index);
+        // Replace each edge's group by its slot, counting slot sizes.
+        let mut edges = std::mem::take(&mut self.edges);
+        let mut sorted = true;
+        let mut previous = 0;
+        for edge in &mut edges {
+            let section = self.row_sections[edge.1 as usize] as usize;
+            let slot = self.slot_starts[edge.0 as usize] + self.sections[section].slot;
+            sorted &= previous <= slot;
+            previous = slot;
+            edge.0 = slot;
+            self.slot_offsets[slot as usize + 1] += 1;
+        }
+        Self::prefix_sum(&mut self.slot_offsets);
+        if sorted {
+            self.results
+                .extend(edges.iter().map(|&(_, row)| ElementId(row)));
+            return;
+        }
+        let mut next = self.slot_offsets.clone();
+        self.results.resize(edges.len(), ElementId(0));
+        for (slot, row) in edges {
+            let slot = &mut next[slot as usize];
+            self.results[*slot as usize] = ElementId(row);
+            *slot += 1;
+        }
+    }
 
-        //let query = &mut self.queries[query_id.0];
-
-        // let element = &mut self.elements[query.last_element.0];
-        // element.next_sibling = Some(index);
-        // children.last_element = index;
-
-        index
+    fn prefix_sum(counts: &mut [u32]) {
+        for index in 1..counts.len() {
+            counts[index] += counts[index - 1];
+        }
     }
 
     pub fn set_content(
@@ -602,222 +787,22 @@ mod tests {
         assert_eq!(store.attributes.capacity(), 16);
     }
 
-    #[test]
-    fn test_find_next_query() {
+    fn store_for<'q>(queries: &'q [Query<'q>]) -> Store<'q, 'q> {
         let mut store = Store::default();
-        store.queries.inner = vec![
-            QueryNode {
-                query: "1",
-                next_sibling: Some(QueryId(1)),
-                ..Default::default()
-            },
-            QueryNode {
-                query: "2",
-                next_sibling: Some(QueryId(2)),
-                ..Default::default()
-            },
-            QueryNode {
-                query: "3",
-                next_sibling: Some(QueryId(3)),
-                ..Default::default()
-            },
-            QueryNode {
-                // Shouldn't be possible, but still a giid test
-                query: "3",
-                next_sibling: None,
-                ..Default::default()
-            },
-        ];
+        store.set_sections(&Program::compile(queries));
+        store
+    }
 
-        assert_eq!(
-            store
-                .queries
-                .iter_from(QueryId(0))
-                .find(|q| q.query == "1")
-                .map(|q| unsafe { store.queries.index_of(q) }),
-            Some(QueryId(0))
-        );
-        assert_eq!(
-            store
-                .queries
-                .iter_from(QueryId(0))
-                .find(|q| q.query == "2")
-                .map(|q| unsafe { store.queries.index_of(q) }),
-            Some(QueryId(1))
-        );
-        assert_eq!(
-            store
-                .queries
-                .iter_from(QueryId(0))
-                .find(|q| q.query == "3")
-                .map(|q| unsafe { store.queries.index_of(q) }),
-            Some(QueryId(2))
-        );
-        assert_eq!(
-            store
-                .queries
-                .iter_from(QueryId(0))
-                .find(|q| q.query == "not in list")
-                .map(|q| unsafe { store.queries.index_of(q) }),
-            None
-        );
+    fn element(name: &str) -> crate::XHtmlElement<'_> {
+        crate::XHtmlElement {
+            name,
+            ..Default::default()
+        }
     }
 
     #[test]
-    fn test_link_query_to_element() {
-        let mut store = Store::default();
-
-        store.elements.inner = vec![
-            Element {
-                first_child_query: Some(QueryId(0)),
-                ..Default::default()
-            },
-            Element {
-                first_child_query: None,
-                ..Default::default()
-            },
-        ];
-
-        store.queries.inner = vec![
-            QueryNode {
-                next_sibling: Some(QueryId(1)),
-                ..Default::default()
-            },
-            QueryNode {
-                next_sibling: None,
-                ..Default::default()
-            },
-        ];
-
-        store.link_query_to_element(QueryId(0), ElementId(1));
-
-        assert_eq!(
-            store.queries.inner,
-            vec![
-                QueryNode {
-                    next_sibling: Some(QueryId(1)),
-                    ..Default::default()
-                },
-                QueryNode {
-                    next_sibling: None,
-                    // first_element: ElementId(1),
-                    // last_element: ElementId(1),
-                    ..Default::default()
-                }
-            ]
-        );
-    }
-
-    #[test]
-    fn test_branching_next_query() {
-        let mut store = Store::default();
-
-        let q = Query::all("a", Save::all())
-            .unwrap()
-            .then(|ctx| Ok([ctx.all("b", Save::all())?, ctx.all("c", Save::all())?]))
-            .unwrap();
-
-        // `1` MATCH
-        store.push(
-            ElementId::default(),
-            &q.selection[0],
-            crate::XHtmlElement::default(),
-        );
-
-        assert_eq!(
-            store.queries.inner,
-            vec![QueryNode {
-                query: "a",
-                next_sibling: None,
-                elements: Span::new(ElementId(0))
-            }]
-        );
-
-        assert_eq!(store.elements.inner, vec![Element::default(),]);
-
-        // `2` MATCH
-        store.push(
-            ElementId(0),
-            &q.selection[1],
-            crate::XHtmlElement::default(),
-        );
-
-        assert_eq!(
-            store.queries.inner,
-            vec![
-                QueryNode {
-                    query: "a",
-                    next_sibling: None,
-                    elements: Span::new(ElementId(0))
-                },
-                QueryNode {
-                    query: "b",
-                    next_sibling: None,
-                    elements: Span::new(ElementId(1))
-                }
-            ]
-        );
-
-        assert_eq!(
-            store.elements.inner,
-            vec![
-                Element {
-                    first_child_query: Some(QueryId(1)),
-                    ..Default::default()
-                },
-                Element {
-                    ..Default::default()
-                },
-            ]
-        );
-
-        // `3` MATCH
-        store.push(
-            ElementId(0),
-            &q.selection[2],
-            crate::XHtmlElement::default(),
-        );
-
-        assert_eq!(
-            store.queries.inner,
-            vec![
-                QueryNode {
-                    query: "a",
-                    next_sibling: None,
-                    elements: Span::new(ElementId(0))
-                },
-                QueryNode {
-                    query: "b",
-                    next_sibling: Some(QueryId(2)),
-                    elements: Span::new(ElementId(1))
-                },
-                QueryNode {
-                    query: "c",
-                    next_sibling: None,
-                    elements: Span::new(ElementId(2))
-                }
-            ]
-        );
-
-        assert_eq!(
-            store.elements.inner,
-            vec![
-                Element {
-                    first_child_query: Some(QueryId(1)),
-                    ..Default::default()
-                },
-                Element {
-                    ..Default::default()
-                },
-                Element {
-                    ..Default::default()
-                },
-            ]
-        );
-    }
-    #[test]
-    fn test_push_multi_section() {
-        let query = Query::all("main > section", Save::all())
+    fn results_are_grouped_by_parent_then_section_in_document_order() {
+        let queries = [Query::all("main > section", Save::all())
             .unwrap()
             .then(|section| {
                 Ok([
@@ -826,105 +811,120 @@ mod tests {
                 ])
             })
             .unwrap()
-            .build();
+            .build()];
+        let mut store = store_for(&queries);
+        let spec = |index: usize| &queries[0].queries[index];
 
-        let mut store = Store::default();
+        let first = store.add_row(SectionIndex(0), spec(0), &element("section"));
+        store.add_edge(None, first);
+        let deep = store.add_row(SectionIndex(2), spec(2), &element("a"));
+        store.add_edge(Some(first), deep);
+        let direct = store.add_row(SectionIndex(1), spec(1), &element("a"));
+        store.add_edge(Some(first), direct);
+        let second = store.add_row(SectionIndex(0), spec(0), &element("section"));
+        store.add_edge(None, second);
+        store.finish();
 
-        store.push(
-            ElementId::default(),
-            &query.queries[0],
-            crate::XHtmlElement {
-                name: "section",
-                ..Default::default()
-            },
-        );
-
+        assert_eq!(store.results("main > section"), Some(&[first, second][..]));
+        assert_eq!(store.child_results(first, "> a[href]"), Some(&[direct][..]));
+        assert_eq!(store.child_results(first, "div a"), Some(&[deep][..]));
+        assert_eq!(store.nested_results(first, 1), Some(&[deep][..]));
+        assert_eq!(store.child_results(second, "div a"), None);
         assert_eq!(
-            store
-                .queries
-                .iter_from(QueryId(0))
-                .find(|q| q.query == query.queries[0].source)
-                .map(|q| unsafe { store.queries.index_of(q) }),
-            Some(QueryId(0))
+            store.results("> a[href]"),
+            None,
+            "nested sections are not roots"
         );
+    }
 
-        store.push(
-            ElementId::default(),
-            &query.queries[0],
-            crate::XHtmlElement {
-                name: "section",
-                ..Default::default()
-            },
-        );
+    #[test]
+    fn positional_lookups_match_selector_lookups() {
+        let queries = [
+            Query::all("ul", Save::none())
+                .unwrap()
+                .then(|list| {
+                    Ok([
+                        list.all("> li", Save::none())?,
+                        list.first("a", Save::none())?,
+                    ])
+                })
+                .unwrap()
+                .build(),
+            Query::all("p", Save::none()).unwrap().build(),
+        ];
+        let store = crate::parse(
+            "<ul><li><a>1</a></li><li>2</li></ul><p></p><ul></ul>",
+            &queries,
+        )
+        .unwrap();
 
+        let lists: Vec<_> = store.query_results(0).unwrap().to_vec();
+        assert_eq!(lists.len(), 2);
+        assert_eq!(store.query_selector(0), Some("ul"));
+        assert_eq!(store.query_selector(1), Some("p"));
+        assert_eq!(store.query_selector(2), None);
+        assert_eq!(store.query_results(1), store.results("p"));
+        assert_eq!(store.query_results(2), None);
+
+        let [full, empty] = [lists[0], lists[1]];
+        assert_eq!(store.nested_results(full, 0).map(<[_]>::len), Some(2));
         assert_eq!(
-            store.elements.inner,
-            vec![
-                Element {
-                    name: "section",
-                    next_sibling: Some(ElementId(1)),
-                    ..Default::default()
-                },
-                Element {
-                    name: "section",
-                    ..Default::default()
-                },
-            ]
+            store.nested_results(full, 0),
+            store.child_results(full, "> li")
         );
-
         assert_eq!(
-            store.queries.inner,
-            vec![QueryNode {
-                query: "main > section",
-                next_sibling: None,
-                elements: Span::from(ElementId(0), ElementId(1))
-            },]
+            store.nested_results(full, 1),
+            store.child_results(full, "a")
         );
+        assert_eq!(store.nested_selector(full, 1), Some("a"));
+        assert_eq!(store.nested_results(full, 2), None);
+        assert_eq!(store.nested_selector(full, 2), None);
+        assert_eq!(store.nested_results(empty, 0), None);
 
-        store.push(
-            ElementId(1),
-            &query.queries[1],
-            crate::XHtmlElement {
-                name: "a",
-                ..Default::default()
-            },
-        );
+        // Leaf rows have no nested sections.
+        let item = store.nested_results(full, 0).unwrap()[0];
+        assert_eq!(store.nested_results(item, 0), None);
+        assert_eq!(store.child_results(item, "a"), None);
+    }
 
-        assert_eq!(
-            store.queries.inner,
-            vec![
-                QueryNode {
-                    query: "main > section",
-                    next_sibling: None,
-                    elements: Span::from(ElementId(0), ElementId(1))
-                },
-                QueryNode {
-                    query: "> a[href]",
-                    next_sibling: None,
-                    elements: Span::new(ElementId(2))
-                }
-            ]
-        );
+    #[test]
+    fn one_row_can_be_listed_under_several_parents() {
+        let queries = [Query::all("div", Save::none())
+            .unwrap()
+            .all("a", Save::none())
+            .unwrap()
+            .build()];
+        let mut store = store_for(&queries);
 
-        assert_eq!(
-            store.elements.inner,
-            vec![
-                Element {
-                    name: "section",
-                    next_sibling: Some(ElementId(1)),
-                    ..Default::default()
-                },
-                Element {
-                    name: "section",
-                    first_child_query: Some(QueryId(1)),
-                    ..Default::default()
-                },
-                Element {
-                    name: "a",
-                    ..Default::default()
-                },
-            ]
-        );
+        let outer = store.add_row(SectionIndex(0), &queries[0].queries[0], &element("div"));
+        store.add_edge(None, outer);
+        let inner = store.add_row(SectionIndex(0), &queries[0].queries[0], &element("div"));
+        store.add_edge(None, inner);
+        let link = store.add_row(SectionIndex(1), &queries[0].queries[1], &element("a"));
+        store.add_edge(Some(outer), link);
+        store.add_edge(Some(inner), link);
+        store.finish();
+
+        assert_eq!(store.elements.len(), 3);
+        assert_eq!(store.child_results(outer, "a"), Some(&[link][..]));
+        assert_eq!(store.child_results(inner, "a"), Some(&[link][..]));
+    }
+
+    #[test]
+    fn queries_with_the_same_selector_keep_separate_results() {
+        let queries = [
+            Query::all("a", Save::none()).unwrap().build(),
+            Query::all("a", Save::all()).unwrap().build(),
+        ];
+        let store = crate::parse("<a href=x>1</a><a>2</a>", &queries).unwrap();
+
+        assert_eq!(store.query(0).unwrap().count(), 2);
+        assert_eq!(store.query(1).unwrap().count(), 2);
+        assert!(store.query(0).unwrap().all(|a| a.inner_html.is_none()));
+        assert!(store.query(1).unwrap().all(|a| a.inner_html.is_some()));
+        // `get` resolves a shared selector to the first query.
+        assert!(store.get("a").unwrap().all(|a| a.inner_html.is_none()));
+        assert!(store.query(2).is_none());
     }
 
     #[test]
@@ -933,30 +933,16 @@ mod tests {
             Query::all("span", Save::all()).unwrap().build(),
             Query::all("a", Save::all()).unwrap().build(),
         ];
+        let mut store = store_for(queries);
 
-        let mut store = Store::default();
+        let span = store.add_row(SectionIndex(0), &queries[0].queries[0], &element("span"));
+        store.add_edge(None, span);
+        let a = store.add_row(SectionIndex(1), &queries[1].queries[0], &element("a"));
+        store.add_edge(None, a);
+        store.finish();
 
-        store.push(
-            ElementId::default(),
-            &queries[0].queries[0],
-            crate::XHtmlElement {
-                name: "span",
-                ..Default::default()
-            },
-        );
-        store.push(
-            ElementId::default(),
-            &queries[1].queries[0],
-            crate::XHtmlElement {
-                name: "a",
-                ..Default::default()
-            },
-        );
-
-        assert!(store.get("span").is_some());
-        assert_eq!(store.get("span").iter().count(), 1);
-
-        assert!(store.get("a").is_some());
-        assert_eq!(store.get("a").iter().count(), 1);
+        assert_eq!(store.get("span").unwrap().count(), 1);
+        assert_eq!(store.get("a").unwrap().count(), 1);
+        assert_eq!(store.query(1).unwrap().next().unwrap().name, "a");
     }
 }

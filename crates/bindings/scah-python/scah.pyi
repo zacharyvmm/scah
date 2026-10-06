@@ -80,7 +80,15 @@ class Save:
 
 @typing.final
 class Store:
-    def get(self, query: builtins.str) -> typing.Optional[builtins.list[Element]]: ...
+    def get(self, query: builtins.str) -> typing.Optional[builtins.list[Element]]:
+        r"""
+        Results of the first query whose selector is `query`.
+        """
+    def query(self, index: builtins.int) -> typing.Optional[builtins.list[Element]]:
+        r"""
+        Results of the query at `index` in the list given to `parse`.
+        """
     def __len__(self) -> builtins.int: ...
 
 def parse(html: builtins.str, queries: typing.Sequence[PyQuery]) -> Store: ...
+

@@ -119,21 +119,16 @@ impl JsElement {
 
     #[napi]
     pub fn get(&self, query: String) -> Result<Vec<JsElement>> {
-        let element = self
-            .store
-            .elements
-            .get(self.id.index())
-            .expect("The Element ID should be valid");
-        let children = element.get(&self.store, &query);
-        match children {
+        match self.store.child_results(self.id, &query) {
             None => Err(Error::new(
                 Status::GenericFailure,
                 format!("This Element does not have children selected with `{query}`"),
             )),
             Some(children) => Ok(children
-                .map(|e| JsElement {
+                .iter()
+                .map(|&id| JsElement {
                     store: self.store.clone(),
-                    id: unsafe { self.store.elements.index_of(e) },
+                    id,
                 })
                 .collect()),
         }
