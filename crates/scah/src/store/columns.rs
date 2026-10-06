@@ -100,6 +100,9 @@ impl ColumnPlan {
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct Columns {
     pub(crate) plan: ColumnPlan,
+    /// Rows this parse asked to reserve. Reused buffers can hold more, which
+    /// optional columns should not copy.
+    pub(crate) reserved_rows: usize,
     pub(crate) rows: Vec<RowHead>,
     pub(crate) attributes: Vec<AttributeCells>,
     pub(crate) inner_html: Vec<Span>,
@@ -113,9 +116,11 @@ impl Columns {
         self.rows.len()
     }
 
-    /// Remove every row and the plan, keeping the allocations.
+    /// Remove every row, the plan, and the reservation, keeping the
+    /// allocations.
     pub(crate) fn clear(&mut self) {
         self.plan = ColumnPlan::default();
+        self.reserved_rows = 0;
         self.rows.clear();
         self.attributes.clear();
         self.inner_html.clear();
@@ -123,10 +128,10 @@ impl Columns {
         self.text.clear();
     }
 
-    /// Reserve as many rows in every optional column the plan uses as
-    /// `rows` has room for.
+    /// Reserve the rows this parse asked for in every optional column the
+    /// plan uses.
     pub(crate) fn reserve_optional(&mut self) {
-        let rows = self.rows.capacity();
+        let rows = self.reserved_rows;
         if self.plan.attributes {
             self.attributes.reserve(rows);
         }
