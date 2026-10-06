@@ -74,3 +74,76 @@ fn comment_with_multibyte_char_before_gt_does_not_leak_elements() {
     assert_eq!(links[0].attribute(&store, "href"), Some("real"));
     assert_eq!(links[0].text(&store), Some("ok"));
 }
+
+#[test]
+fn end_tag_attributes_do_not_change_the_closed_element() {
+    // Regression test for #92: `</div class=x>` closes the div, as in browsers.
+    let html = "<div>a</div class=x><span>b</span><p>c</p   ><em>d</em/>";
+    let store = super::helpers::parse_all(html, &["div", "span", "div span", "p", "em"]);
+
+    assert_eq!(super::helpers::inner_htmls(&store, "div"), vec![Some("a")]);
+    assert_eq!(super::helpers::elements(&store, "div span").len(), 0);
+    assert_eq!(super::helpers::inner_htmls(&store, "span"), vec![Some("b")]);
+    assert_eq!(super::helpers::inner_htmls(&store, "p"), vec![Some("c")]);
+    assert_eq!(super::helpers::inner_htmls(&store, "em"), vec![Some("d")]);
+}
+
+#[test]
+fn solidus_ends_open_and_close_tag_names_alike() {
+    // `<x/foo>` opens `x` (the solidus starts attributes), so `</x/foo>` must
+    // close it rather than leave it open around the following `<p>`.
+    let html = r#"<x/foo id="a">t</x/foo><p>c</p>"#;
+    let store = super::helpers::parse_all(html, &["x", "x p", "p", "x#a"]);
+
+    assert_eq!(super::helpers::inner_htmls(&store, "x"), vec![Some("t")]);
+    assert_eq!(super::helpers::elements(&store, "x#a").len(), 1);
+    assert_eq!(super::helpers::elements(&store, "x p").len(), 0);
+    assert_eq!(super::helpers::inner_htmls(&store, "p"), vec![Some("c")]);
+}
+
+#[test]
+fn solidus_after_a_tag_name_starts_its_attributes() {
+    let html = "<div/id=x>a</div><div/hidden>b</div><a / href=/c/>c</a>";
+    let store = super::helpers::parse_all(html, &["div#x", "div[hidden]", "a[href='/c/']"]);
+
+    assert_eq!(
+        super::helpers::inner_htmls(&store, "div#x"),
+        vec![Some("a")]
+    );
+    assert_eq!(
+        super::helpers::inner_htmls(&store, "div[hidden]"),
+        vec![Some("b")]
+    );
+    assert_eq!(
+        super::helpers::inner_htmls(&store, "a[href='/c/']"),
+        vec![Some("c")]
+    );
+}
+
+#[test]
+fn quoted_gt_in_end_tag_attributes_does_not_end_the_tag() {
+    let html = r#"<div>a</div title=">"><span>b</span>"#;
+    let store = super::helpers::parse_all(html, &["div", "span", "div span"]);
+
+    assert_eq!(super::helpers::inner_htmls(&store, "div"), vec![Some("a")]);
+    assert_eq!(super::helpers::elements(&store, "div span").len(), 0);
+    assert_eq!(super::helpers::inner_htmls(&store, "span"), vec![Some("b")]);
+
+    // A quote opens a value only right after `=`.
+    let html = r#"<div>a</bogus data=can't><span>b</span><em x='y'>c</em a'b></x ="y>"#;
+    let store = super::helpers::parse_all(html, &["span", "em"]);
+    assert_eq!(super::helpers::inner_htmls(&store, "span"), vec![Some("b")]);
+    assert_eq!(super::helpers::inner_htmls(&store, "em"), vec![Some("c")]);
+    let html = r#"<div>a</bogus ="x><span>ok</span>"#;
+    let store = super::helpers::parse_all(html, &["span"]);
+    assert_eq!(
+        super::helpers::inner_htmls(&store, "span"),
+        vec![Some("ok")]
+    );
+
+    let queries = &[Query::all("body", Save::only_text()).unwrap().build()];
+    let html = r#"<body>a</p title = '>'>b</body>"#;
+    let store = parse(html, queries).unwrap();
+    let body = store.get("body").unwrap().next().unwrap();
+    assert_eq!(body.text(&store), Some("ab"));
+}

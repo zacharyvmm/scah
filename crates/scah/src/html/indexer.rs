@@ -368,21 +368,11 @@ impl<'source> FusedMaskStream<'source> {
                     let gt = self
                         .find_greater_than(content_start)
                         .unwrap_or(self.source.len());
-                    let mut name_start = content_start;
-                    let mut name_end = gt;
-                    while name_start < name_end && is_html_whitespace(self.source[name_start]) {
-                        name_start += 1;
-                    }
-                    while name_end > name_start && is_html_whitespace(self.source[name_end - 1]) {
-                        name_end -= 1;
-                    }
+                    let (name_start, name_end) = close_tag_name(self.source, content_start, gt);
+                    let end = close_tag_end(self.source, name_end, gt);
                     IndexedEvent {
                         start: start as u32,
-                        end: if gt < self.source.len() {
-                            (gt + 1) as u32
-                        } else {
-                            gt as u32
-                        },
+                        end: end as u32,
                         name_start: name_start as u32,
                         name_end: name_end as u32,
                         attributes_start: 0,
@@ -419,12 +409,7 @@ impl<'source> FusedMaskStream<'source> {
                     {
                         position += 1;
                     }
-                    let mut name_end = position;
-                    if self.source.get(position) == Some(&b'>')
-                        && self.source.get(name_end.wrapping_sub(1)) == Some(&b'/')
-                    {
-                        name_end -= 1;
-                    }
+                    let name_end = position;
                     if name_start == name_end {
                         from = self.find_unquoted_tag_end(position).max(start + 1);
                         continue;
@@ -759,9 +744,99 @@ fn is_html_whitespace(byte: u8) -> bool {
     matches!(byte, b' ' | b'\t' | b'\n' | 0x0C | b'\r')
 }
 
+/// The name of a close tag whose content spans `content_start..gt`.
+///
+/// The name ends where an opening tag's name would (see [`is_name_boundary`]):
+/// anything after it (`</div class=x>`, `</x/y>`) is ignored rather than
+/// becoming part of the name. Leading whitespace is skipped.
+#[inline]
+fn close_tag_name(source: &[u8], content_start: usize, gt: usize) -> (usize, usize) {
+    let mut name_start = content_start;
+    while name_start < gt && is_html_whitespace(source[name_start]) {
+        name_start += 1;
+    }
+    let mut name_end = name_start;
+    while name_end < gt && !is_name_boundary(source[name_end]) {
+        name_end += 1;
+    }
+    (name_start, name_end)
+}
+
+/// The end of a close tag whose name ends at `name_end` and whose first `>`
+/// at or after it is at `gt` (the source length if there is none).
+///
+/// End tags tokenize attributes like start tags do, so `</div title=">">`
+/// ends at its last `>`. Close tags without a quote before `gt` end there.
+#[inline]
+fn close_tag_end(source: &[u8], name_end: usize, gt: usize) -> usize {
+    if name_end < gt
+        && source[name_end..gt]
+            .iter()
+            .any(|&byte| matches!(byte, b'\'' | b'"'))
+    {
+        quoted_close_tag_end(source, name_end)
+    } else {
+        (gt + 1).min(source.len())
+    }
+}
+
+/// [`close_tag_end`] past attribute values, following the tokenizer's tag
+/// and attribute states: a quote opens a value only right after an
+/// attribute name's `=` (and any whitespace), so the `'` of `data=can't`,
+/// `a'b`, or `="x` (whose `=` starts a name) is an ordinary byte.
+#[cold]
+fn quoted_close_tag_end(source: &[u8], mut position: usize) -> usize {
+    #[derive(Clone, Copy)]
+    enum State {
+        TagName,
+        BeforeName,
+        Name,
+        AfterName,
+        BeforeValue,
+        UnquotedValue,
+    }
+
+    let mut state = State::TagName;
+    while let Some(&byte) = source.get(position) {
+        if byte == b'>' {
+            return position + 1;
+        }
+        let whitespace = is_html_whitespace(byte);
+        state = match state {
+            State::TagName if whitespace || byte == b'/' => State::BeforeName,
+            State::TagName => State::TagName,
+            State::BeforeName if whitespace || byte == b'/' => State::BeforeName,
+            // A leading `=` is part of the name.
+            State::BeforeName => State::Name,
+            State::Name | State::AfterName if byte == b'=' => State::BeforeValue,
+            State::Name | State::AfterName if byte == b'/' => State::BeforeName,
+            State::Name | State::AfterName if whitespace => State::AfterName,
+            State::Name | State::AfterName => State::Name,
+            State::BeforeValue if whitespace => State::BeforeValue,
+            State::BeforeValue if matches!(byte, b'\'' | b'"') => {
+                match source[position + 1..]
+                    .iter()
+                    .position(|&other| other == byte)
+                {
+                    Some(offset) => position += offset + 1,
+                    None => return source.len(),
+                }
+                State::BeforeName
+            }
+            State::BeforeValue => State::UnquotedValue,
+            State::UnquotedValue if whitespace => State::BeforeName,
+            State::UnquotedValue => State::UnquotedValue,
+        };
+        position += 1;
+    }
+    source.len()
+}
+
+/// Ends an opening or closing tag name. Both kinds share it so that a close
+/// tag always names the element its matching open tag created.
 #[inline]
 fn is_name_boundary(byte: u8) -> bool {
-    is_html_whitespace(byte) || matches!(byte, b'\'' | b'"' | b'=' | b'>')
+    is_html_whitespace(byte) || matches!(byte, b'\'' | b'"' | b'=' | b'>' | b'/')
 }
 
 fn find_unquoted_tag_end(source: &[u8], mut position: usize) -> usize {
@@ -858,17 +933,11 @@ fn next_event(search: &mut impl StructuralSearch, source: &[u8], from: usize) ->
                 let gt = search
                     .find_byte(source, content_start, b'>')
                     .unwrap_or(source.len());
-                let mut name_start = content_start;
-                let mut name_end = gt;
-                while name_start < name_end && is_html_whitespace(source[name_start]) {
-                    name_start += 1;
-                }
-                while name_end > name_start && is_html_whitespace(source[name_end - 1]) {
-                    name_end -= 1;
-                }
+                let (name_start, name_end) = close_tag_name(source, content_start, gt);
+                let end = close_tag_end(source, name_end, gt);
                 Some(TagEvent::Complete(TagSpan {
                     start,
-                    end: if gt < source.len() { gt + 1 } else { gt },
+                    end,
                     kind: TagKind::Close,
                     name: name_start..name_end,
                 }))
@@ -902,12 +971,7 @@ fn next_event(search: &mut impl StructuralSearch, source: &[u8], from: usize) ->
                     position += 1;
                 }
 
-                let mut name_end = position;
-                if source.get(position) == Some(&b'>')
-                    && source.get(name_end.wrapping_sub(1)) == Some(&b'/')
-                {
-                    name_end -= 1;
-                }
+                let name_end = position;
                 if name_start == name_end {
                     from = search.find_tag_end(source, position).max(start + 1);
                     continue;
@@ -1507,6 +1571,11 @@ mod tests {
             "text ending in a bare <",
             "text ending in repeated <<<",
             "close </  div  > after",
+            r#"<div>a</div title=">" x='>'><p>b</p>"#,
+            r#"<div>a</bogus data=can't><span>b</span>"#,
+            r#"<p></p a"b x = 'y>z' c=d=e"f><i>"#,
+            r#"<p></bogus ="x><span>ok</span>"#,
+            "<x/y id=a>t</x/y><p>c</p>",
             "multibyte é☃ <article data-name='é'>text</article>",
         ] {
             assert_packed_matches_scalar(source);
@@ -1711,6 +1780,11 @@ mod tests {
             "text ending in a bare <",
             "text ending in repeated <<<",
             "close </  div  > after",
+            r#"<div>a</div title=">" x='>'><p>b</p>"#,
+            r#"<div>a</bogus data=can't><span>b</span>"#,
+            r#"<p></p a"b x = 'y>z' c=d=e"f><i>"#,
+            r#"<p></bogus ="x><span>ok</span>"#,
+            "<x/y id=a>t</x/y><p>c</p>",
             "multibyte é☃ <article data-name='é'>text</article>",
         ] {
             let bytes = source.as_bytes();

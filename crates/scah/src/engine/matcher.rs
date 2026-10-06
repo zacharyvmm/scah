@@ -43,7 +43,7 @@ use std::ops::Range;
 use scah_query_ir::program::bits;
 use scah_query_ir::{
     AttributeMask, Program, SectionIndex, SectionMask, SelectionKind, StepMask,
-    StructuralMatchContext,
+    StructuralMatchContext, TagId,
 };
 use smallvec::{SmallVec, smallvec};
 
@@ -481,12 +481,12 @@ impl<'q, const W: usize> Matcher<'q, W> {
         self.lanes.truncate(meta.lanes.mark);
     }
 
-    /// Select the steps an element named `name` could match at the current
-    /// position. Returns whether there are any.
+    /// Select the steps an element named `name` (resolved to `tag`) could
+    /// match at the current position. Returns whether there are any.
     #[inline(always)]
-    pub(crate) fn prepare(&mut self, name: &str) -> bool {
+    pub(crate) fn prepare(&mut self, tag: TagId, name: &str) -> bool {
         let words = self.words();
-        let named = self.program.name_mask(name);
+        let named = self.program.tag_mask(tag, name);
         if named.is_none() && !self.has_universal {
             self.masks[CANDIDATES * words..(CANDIDATES + 1) * words].fill(0);
             return false;
@@ -1097,8 +1097,8 @@ impl<'q> AnyMatcher<'q> {
     }
 
     #[inline(always)]
-    pub(crate) fn prepare(&mut self, name: &str) -> bool {
-        dispatch!(self, matcher => matcher.prepare(name))
+    pub(crate) fn prepare(&mut self, tag: TagId, name: &str) -> bool {
+        dispatch!(self, matcher => matcher.prepare(tag, name))
     }
 
     #[inline(always)]
@@ -1203,7 +1203,7 @@ mod tests {
                 class,
                 attributes: &[],
             };
-            self.matcher.prepare(name);
+            self.matcher.prepare(TagId::of(name), name);
             self.matcher
                 .open(&element, None, &mut self.store, &mut self.hits);
             self
@@ -1535,18 +1535,18 @@ mod tests {
         ];
         let mut driver = Driver::new(&queries);
         driver.open("div");
-        assert!(driver.matcher.prepare("a"));
+        assert!(driver.matcher.prepare(TagId::A, "a"));
         let mask = driver.matcher.attribute_mask();
         assert_eq!(mask.keys, 0b1, "only `href` is inspected");
         assert_eq!(mask.flags & AttributeMask::ALL, 0);
 
-        assert!(driver.matcher.prepare("p"));
+        assert!(driver.matcher.prepare(TagId::P, "p"));
         assert_ne!(
             driver.matcher.attribute_mask().flags & AttributeMask::ALL,
             0
         );
 
-        assert!(!driver.matcher.prepare("span"));
+        assert!(!driver.matcher.prepare(TagId::SPAN, "span"));
         assert!(driver.matcher.attribute_mask().is_empty());
     }
 }
