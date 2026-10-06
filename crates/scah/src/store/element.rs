@@ -106,6 +106,7 @@ impl<'html> Element<'html> {
     ///
     /// Returns `None` if this element has no nested query results for the
     /// given selector.
+    #[inline]
     pub fn get(
         &self,
         dom: &'html Store,
@@ -118,6 +119,7 @@ impl<'html> Element<'html> {
 
     /// Look up child elements matched by this element's nested query at
     /// `index`, in the order the nested queries were declared.
+    #[inline]
     pub fn nested(
         &self,
         dom: &'html Store,
@@ -132,6 +134,7 @@ impl<'html> Element<'html> {
     ///
     /// Returns `None` if the element had no extra attributes beyond
     /// `class` and `id` (which are stored directly on the [`Element`]).
+    #[inline]
     pub fn attributes(&self, dom: &'html Store) -> Option<&'html [Attribute<'html>]> {
         self.attributes
             .as_ref()
@@ -156,6 +159,7 @@ impl<'html> Element<'html> {
     /// let a = store.get("a").unwrap().next().unwrap();
     /// assert_eq!(a.attribute(&store, "href"), Some("https://example.com"));
     /// ```
+    #[inline]
     pub fn attribute(&self, dom: &'html Store, key: &str) -> Option<&'html str> {
         self.attributes.as_ref().and_then(|range| {
             dom.attributes.deref()[(range.start as usize)..(range.end as usize)]
@@ -167,6 +171,7 @@ impl<'html> Element<'html> {
     /// Get the element's source-preserving descendant text.
     ///
     /// Only populated when [`Save::raw_text`](crate::Save::raw_text) was `true`.
+    #[inline]
     pub fn raw_text(&self, dom: &'html Store) -> Option<&'html str> {
         let element_id = unsafe { dom.elements.index_of(self) };
         dom.raw_text_range(element_id)
@@ -177,6 +182,7 @@ impl<'html> Element<'html> {
     ///
     /// Returns the whitespace-trimmed, concatenated text nodes within
     /// this element. Only populated when [`Save::text`](crate::Save::text) was `true`.
+    #[inline]
     pub fn text(&self, dom: &'html Store) -> Option<&'html str> {
         let element_id = unsafe { dom.elements.index_of(self) };
         dom.text_range(element_id)

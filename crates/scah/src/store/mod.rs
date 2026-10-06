@@ -21,13 +21,12 @@ pub(crate) use element::ElementTextRanges;
 #[derive(Debug, Clone, PartialEq)]
 struct StoreSection<'query> {
     selector: &'query str,
-    parent: Option<u32>,
-    /// Index of the query this section belongs to.
-    query: u32,
+    /// Position among its parent's nested sections, or among the root
+    /// sections: the result slot it fills in each parent group.
+    slot: u32,
+    /// This section's nested sections, as a range of `Store::children`.
+    children: (u32, u32),
 }
-
-/// Parent group of results saved directly under the document.
-const DOCUMENT: u32 = 0;
 
 /// The result set returned by [`parse`](crate::parse).
 ///
@@ -74,6 +73,10 @@ pub struct Store<'html, 'query> {
     element_text_ranges: Option<Box<ElementTextRanges>>,
     /// Sections of the parsed queries, in declaration order.
     sections: Box<[StoreSection<'query>]>,
+    /// Root sections, one per query, in query order.
+    roots: Box<[u32]>,
+    /// Nested sections of every section, in declaration order.
+    children: Box<[u32]>,
     /// Section of each row.
     row_sections: Vec<u32>,
     /// `(parent group, row)` per save, in document order. Group 0 is the
@@ -81,9 +84,14 @@ pub struct Store<'html, 'query> {
     /// is a root: then every row is a document result.
     edges: Vec<(u32, u32)>,
     record_edges: bool,
-    /// Results of group `g` are `results[offsets[g]..offsets[g + 1]]`,
-    /// sorted by section, then document order. Built by [`Store::finish`].
-    offsets: Vec<u32>,
+    /// Group `g` owns one result slot per section it can hold results of
+    /// (the roots for the document, the row section's nested sections
+    /// otherwise), starting at slot `slot_starts[g]`. Built by
+    /// [`Store::finish`].
+    slot_starts: Vec<u32>,
+    /// Results of slot `s` are `results[slot_offsets[s]..slot_offsets[s + 1]]`,
+    /// in document order.
+    slot_offsets: Vec<u32>,
     results: Vec<ElementId>,
     #[cfg(any(debug_assertions, test))]
     pub trace: crate::debug::TraceStore<'html, 'query>,
@@ -140,6 +148,15 @@ impl Default for CapacityOptions {
     }
 }
 
+/// Whether a looked-up selector names a section's selector. Callers usually
+/// pass the same string the query was built from, so compare addresses
+/// before bytes.
+#[inline]
+fn same_selector(section: &str, selector: &str) -> bool {
+    section.len() == selector.len()
+        && (std::ptr::eq(section.as_ptr(), selector.as_ptr()) || section == selector)
+}
+
 impl<'html, 'query: 'html> Default for Store<'html, 'query> {
     fn default() -> Self {
         Self {
@@ -148,10 +165,13 @@ impl<'html, 'query: 'html> Default for Store<'html, 'query> {
             attributes: Arena::new(),
             element_text_ranges: None,
             sections: Box::default(),
+            roots: Box::default(),
+            children: Box::default(),
             row_sections: Vec::new(),
             edges: Vec::new(),
             record_edges: true,
-            offsets: Vec::new(),
+            slot_starts: Vec::new(),
+            slot_offsets: Vec::new(),
             results: Vec::new(),
             #[cfg(any(debug_assertions, test))]
             trace: crate::debug::TraceStore::new(),
@@ -227,10 +247,13 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             },
             element_text_ranges: None,
             sections: Box::default(),
+            roots: Box::default(),
+            children: Box::default(),
             row_sections: Vec::with_capacity(element_slots),
             edges: Vec::new(),
             record_edges: true,
-            offsets: Vec::new(),
+            slot_starts: Vec::new(),
+            slot_offsets: Vec::new(),
             results: Vec::new(),
             #[cfg(any(debug_assertions, test))]
             trace: crate::debug::TraceStore::with_capacity(
@@ -274,6 +297,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     ///     println!("{}", li.text(&store).unwrap_or_default());
     /// }
     /// ```
+    #[inline]
     pub fn get(&self, selector: &str) -> Option<impl Iterator<Item = &Element<'html>>> {
         self.elements_of(self.results(selector)?)
     }
@@ -282,50 +306,48 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     /// [`parse`](crate::parse).
     ///
     /// Returns `None` when there is no such query or it matched nothing.
+    #[inline]
     pub fn query(&self, index: usize) -> Option<impl Iterator<Item = &Element<'html>>> {
         self.elements_of(self.query_results(index)?)
     }
 
     /// Row ids of [`Store::get`]'s results.
+    #[inline]
     pub fn results(&self, selector: &str) -> Option<&[ElementId]> {
-        let section = self
-            .sections
-            .iter()
-            .position(|section| section.parent.is_none() && section.selector == selector)?;
-        self.section_results(DOCUMENT, section as u32)
+        let root = self.roots.iter().position(|&section| {
+            same_selector(self.sections[section as usize].selector, selector)
+        })?;
+        self.slot_results(root)
     }
 
     /// Row ids of [`Store::query`]'s results.
+    #[inline]
     pub fn query_results(&self, index: usize) -> Option<&[ElementId]> {
-        let section = self
-            .sections
-            .iter()
-            .position(|section| section.parent.is_none() && section.query as usize == index)?;
-        self.section_results(DOCUMENT, section as u32)
+        if index >= self.roots.len() {
+            return None;
+        }
+        self.slot_results(index)
     }
 
     /// Row ids saved under `parent` by its first nested section whose
     /// selector is `selector`.
+    #[inline]
     pub fn child_results(&self, parent: ElementId, selector: &str) -> Option<&[ElementId]> {
-        let section = self.row_sections[parent.index()];
-        let child = self.sections.iter().position(|candidate| {
-            candidate.parent == Some(section) && candidate.selector == selector
+        let child = self.child_sections(parent).iter().position(|&section| {
+            same_selector(self.sections[section as usize].selector, selector)
         })?;
-        self.section_results(parent.index() as u32 + 1, child as u32)
+        self.nested_results(parent, child)
     }
 
     /// Row ids saved under `parent` by its nested section at `index`, in
     /// the order the sections were declared.
+    #[inline]
     pub fn nested_results(&self, parent: ElementId, index: usize) -> Option<&[ElementId]> {
-        let section = self.row_sections[parent.index()];
-        let child = self
-            .sections
-            .iter()
-            .enumerate()
-            .filter(|(_, candidate)| candidate.parent == Some(section))
-            .nth(index)?
-            .0;
-        self.section_results(parent.index() as u32 + 1, child as u32)
+        if index >= self.child_sections(parent).len() {
+            return None;
+        }
+        let start = *self.slot_starts.get(parent.index() + 1)? as usize;
+        self.slot_results(start + index)
     }
 
     /// Number of results across all parents; a row listed under several
@@ -336,53 +358,75 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
 
     /// Selector of the query at `index`.
     pub fn query_selector(&self, index: usize) -> Option<&'query str> {
-        self.sections
-            .iter()
-            .find(|section| section.parent.is_none() && section.query as usize == index)
-            .map(|section| section.selector)
+        let section = *self.roots.get(index)?;
+        Some(self.sections[section as usize].selector)
     }
 
     /// Selector of `parent`'s nested section at `index`.
     pub fn nested_selector(&self, parent: ElementId, index: usize) -> Option<&'query str> {
-        let section = self.row_sections[parent.index()];
-        self.sections
-            .iter()
-            .filter(|candidate| candidate.parent == Some(section))
-            .nth(index)
-            .map(|section| section.selector)
+        let section = *self.child_sections(parent).get(index)?;
+        Some(self.sections[section as usize].selector)
     }
 
     fn elements_of(&self, ids: &[ElementId]) -> Option<impl Iterator<Item = &Element<'html>>> {
         Some(ids.iter().map(|&id| &self.elements[id]))
     }
 
-    /// Results of `section` in parent group `group`, or `None` when empty.
-    fn section_results(&self, group: u32, section: u32) -> Option<&[ElementId]> {
-        let start = *self.offsets.get(group as usize)? as usize;
-        let end = *self.offsets.get(group as usize + 1)? as usize;
-        let group = &self.results[start..end];
-        let first = group.partition_point(|row| self.row_sections[row.index()] < section);
-        let last = group.partition_point(|row| self.row_sections[row.index()] <= section);
-        (first < last).then(|| &group[first..last])
+    /// Nested sections of the section that saved `row`.
+    #[inline]
+    fn child_sections(&self, row: ElementId) -> &[u32] {
+        let (start, end) = self.sections[self.row_sections[row.index()] as usize].children;
+        &self.children[start as usize..end as usize]
+    }
+
+    /// Results of `slot`, or `None` when empty.
+    #[inline]
+    fn slot_results(&self, slot: usize) -> Option<&[ElementId]> {
+        let start = *self.slot_offsets.get(slot)? as usize;
+        let end = *self.slot_offsets.get(slot + 1)? as usize;
+        (start < end).then(|| &self.results[start..end])
     }
 
     /// Record the sections of the queries being parsed.
     pub(crate) fn set_sections(&mut self, program: &Program<'query>) {
-        let mut query = 0;
-        self.sections = (0..program.section_count())
-            .map(|index| {
-                let section = SectionIndex(index as u32);
-                let parent = program.section_parent(section);
-                if parent.is_none() && index > 0 {
-                    query += 1;
+        let count = program.section_count();
+        let parent = |index: usize| program.section_parent(SectionIndex(index as u32));
+
+        // Each section's nested sections form one run of `children`, in
+        // declaration order: count them, then place them.
+        let mut starts = vec![0_u32; count + 1];
+        for index in 0..count {
+            if let Some(parent) = parent(index) {
+                starts[parent.index() + 1] += 1;
+            }
+        }
+        Self::prefix_sum(&mut starts);
+        let mut next = starts.clone();
+        let mut children = vec![0_u32; starts[count] as usize];
+        let mut roots = Vec::new();
+        let mut sections = Vec::with_capacity(count);
+        for index in 0..count {
+            let slot = match parent(index) {
+                None => {
+                    roots.push(index as u32);
+                    roots.len() - 1
                 }
-                StoreSection {
-                    selector: program.section(section).source,
-                    parent: parent.map(|parent| parent.0),
-                    query,
+                Some(parent) => {
+                    let position = &mut next[parent.index()];
+                    children[*position as usize] = index as u32;
+                    *position += 1;
+                    (*position - 1 - starts[parent.index()]) as usize
                 }
-            })
-            .collect();
+            };
+            sections.push(StoreSection {
+                selector: program.section(SectionIndex(index as u32)).source,
+                slot: slot as u32,
+                children: (starts[index], starts[index + 1]),
+            });
+        }
+        self.sections = sections.into();
+        self.roots = roots.into();
+        self.children = children.into();
         self.record_edges = program.features().has_scoped_sections;
     }
 
@@ -417,7 +461,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     #[inline]
     pub(crate) fn add_edge(&mut self, parent: Option<ElementId>, row: ElementId) {
         if self.record_edges {
-            let group = parent.map_or(DOCUMENT, |parent| parent.0 + 1);
+            let group = parent.map_or(0, |parent| parent.0 + 1);
             self.edges.push((group, row.0));
         } else {
             debug_assert!(
@@ -427,79 +471,84 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         }
     }
 
-    /// Group the saved edges by parent, then section, keeping document order
-    /// within each group (two stable counting sorts).
+    /// Build the result index: assign every group its slots, then place
+    /// each saved edge in its slot, keeping document order (one stable
+    /// counting sort).
     pub(crate) fn finish(&mut self) {
-        if !self.offsets.is_empty() {
+        if !self.slot_offsets.is_empty() {
             return;
         }
+        self.slot_starts.reserve(self.row_sections.len() + 2);
+        self.slot_starts.extend([0, self.roots.len() as u32]);
+        if self.record_edges {
+            let mut next = self.roots.len() as u32;
+            for &section in &self.row_sections {
+                let (start, end) = self.sections[section as usize].children;
+                next += end - start;
+                self.slot_starts.push(next);
+            }
+        }
+        let slots = *self.slot_starts.last().unwrap_or(&0) as usize;
+        self.slot_offsets.resize(slots + 1, 0);
+
         if !self.record_edges {
-            self.finish_roots();
+            // Every row is a document result in its section's root slot.
+            let rows = self.row_sections.len() as u32;
+            if self.roots.len() == 1 {
+                self.slot_offsets[1] = rows;
+                self.results.extend((0..rows).map(ElementId));
+                return;
+            }
+            let slot_of = |row: u32| self.sections[self.row_sections[row as usize] as usize].slot;
+            for row in 0..rows {
+                self.slot_offsets[slot_of(row) as usize + 1] += 1;
+            }
+            Self::prefix_sum(&mut self.slot_offsets);
+            if (1..rows).all(|row| slot_of(row - 1) <= slot_of(row)) {
+                self.results.extend((0..rows).map(ElementId));
+                return;
+            }
+            let mut next = self.slot_offsets.clone();
+            self.results.resize(rows as usize, ElementId(0));
+            for row in 0..rows {
+                let slot = &mut next[slot_of(row) as usize];
+                self.results[*slot as usize] = ElementId(row);
+                *slot += 1;
+            }
             return;
-        }
-        let groups = self.elements.len() + 1;
-        self.offsets.resize(groups + 1, 0);
-        for &(group, _) in &self.edges {
-            self.offsets[group as usize + 1] += 1;
-        }
-        for index in 1..self.offsets.len() {
-            self.offsets[index] += self.offsets[index - 1];
         }
 
-        // Edges usually arrive grouped by parent and section already: then
-        // the results are the edges in order.
-        let key = |&(group, row): &(u32, u32)| (group, self.row_sections[row as usize]);
-        let edges = std::mem::take(&mut self.edges);
-        if edges.windows(2).all(|pair| key(&pair[0]) <= key(&pair[1])) {
+        // Replace each edge's group by its slot, counting slot sizes.
+        let mut edges = std::mem::take(&mut self.edges);
+        let mut sorted = true;
+        let mut previous = 0;
+        for edge in &mut edges {
+            let section = self.row_sections[edge.1 as usize] as usize;
+            let slot = self.slot_starts[edge.0 as usize] + self.sections[section].slot;
+            sorted &= previous <= slot;
+            previous = slot;
+            edge.0 = slot;
+            self.slot_offsets[slot as usize + 1] += 1;
+        }
+        Self::prefix_sum(&mut self.slot_offsets);
+        if sorted {
             self.results
                 .extend(edges.iter().map(|&(_, row)| ElementId(row)));
             return;
         }
-
-        // Otherwise sort by section, then stably by parent group.
-        let mut by_section = vec![(0_u32, 0_u32); edges.len()];
-        let mut next = self.section_starts(edges.iter().map(|&(_, row)| row));
-        for &edge in &edges {
-            let slot = &mut next[self.row_sections[edge.1 as usize] as usize];
-            by_section[*slot as usize] = edge;
-            *slot += 1;
-        }
-        let mut next = self.offsets.clone();
-        self.results.resize(by_section.len(), ElementId(0));
-        for (group, row) in by_section {
-            let slot = &mut next[group as usize];
+        let mut next = self.slot_offsets.clone();
+        self.results.resize(edges.len(), ElementId(0));
+        for (slot, row) in edges {
+            let slot = &mut next[slot as usize];
             self.results[*slot as usize] = ElementId(row);
             *slot += 1;
         }
     }
 
-    /// Every row is a document result: group them by section.
-    fn finish_roots(&mut self) {
-        let rows = self.elements.len() as u32;
-        self.offsets.extend([0, rows]);
-        if self.row_sections.windows(2).all(|pair| pair[0] <= pair[1]) {
-            self.results.extend((0..rows).map(ElementId));
-            return;
+    fn prefix_sum(counts: &mut [u32]) {
+        for index in 1..counts.len() {
+            counts[index] += counts[index - 1];
         }
-        let mut next = self.section_starts(0..rows);
-        self.results.resize(rows as usize, ElementId(0));
-        for row in 0..rows {
-            let slot = &mut next[self.row_sections[row as usize] as usize];
-            self.results[*slot as usize] = ElementId(row);
-            *slot += 1;
-        }
-    }
-
-    /// Start of each section's run when `rows` are sorted by section.
-    fn section_starts(&self, rows: impl Iterator<Item = u32>) -> Vec<u32> {
-        let mut starts = vec![0_u32; self.sections.len().max(1) + 1];
-        for row in rows {
-            starts[self.row_sections[row as usize] as usize + 1] += 1;
-        }
-        for index in 1..starts.len() {
-            starts[index] += starts[index - 1];
-        }
-        starts
     }
 
     pub fn set_content(
@@ -786,6 +835,56 @@ mod tests {
             None,
             "nested sections are not roots"
         );
+    }
+
+    #[test]
+    fn positional_lookups_match_selector_lookups() {
+        let queries = [
+            Query::all("ul", Save::none())
+                .unwrap()
+                .then(|list| {
+                    Ok([
+                        list.all("> li", Save::none())?,
+                        list.first("a", Save::none())?,
+                    ])
+                })
+                .unwrap()
+                .build(),
+            Query::all("p", Save::none()).unwrap().build(),
+        ];
+        let store = crate::parse(
+            "<ul><li><a>1</a></li><li>2</li></ul><p></p><ul></ul>",
+            &queries,
+        )
+        .unwrap();
+
+        let lists: Vec<_> = store.query_results(0).unwrap().to_vec();
+        assert_eq!(lists.len(), 2);
+        assert_eq!(store.query_selector(0), Some("ul"));
+        assert_eq!(store.query_selector(1), Some("p"));
+        assert_eq!(store.query_selector(2), None);
+        assert_eq!(store.query_results(1), store.results("p"));
+        assert_eq!(store.query_results(2), None);
+
+        let [full, empty] = [lists[0], lists[1]];
+        assert_eq!(store.nested_results(full, 0).map(<[_]>::len), Some(2));
+        assert_eq!(
+            store.nested_results(full, 0),
+            store.child_results(full, "> li")
+        );
+        assert_eq!(
+            store.nested_results(full, 1),
+            store.child_results(full, "a")
+        );
+        assert_eq!(store.nested_selector(full, 1), Some("a"));
+        assert_eq!(store.nested_results(full, 2), None);
+        assert_eq!(store.nested_selector(full, 2), None);
+        assert_eq!(store.nested_results(empty, 0), None);
+
+        // Leaf rows have no nested sections.
+        let item = store.nested_results(full, 0).unwrap()[0];
+        assert_eq!(store.nested_results(item, 0), None);
+        assert_eq!(store.child_results(item, "a"), None);
     }
 
     #[test]
