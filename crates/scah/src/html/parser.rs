@@ -360,7 +360,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     /// # Panics
     ///
     /// If `reader` reads a different source than the first call did (the
-    /// results borrow from one document), or the source is 4 GiB or longer.
+    /// results borrow from one document), the source is not UTF-8, or it is
+    /// 4 GiB or longer.
     pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
         if self.parse_error.is_some() {
             return false;
@@ -409,7 +410,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         if self.source_bound {
             assert!(self.store.bound_to(source), "a parser reads one document");
         } else {
-            self.store.set_html(reader.slice(0..source.len()));
+            let html = reader.source_str().expect("a parser reads UTF-8 HTML");
+            self.store.set_html(html);
             self.source_bound = true;
         }
     }
@@ -2349,6 +2351,27 @@ mod tests {
         let mut reader = Reader::new(first);
         while parser.next(&mut reader) {}
         let mut reader = Reader::new(&second);
+        parser.next(&mut reader);
+    }
+
+    #[test]
+    fn utf8_byte_readers_parse_like_string_readers() {
+        let html = "<p>é</p>";
+        let queries = [Query::all("p", Save::all()).unwrap().build()];
+        let mut parser = XHtmlParser::new(&queries);
+        let mut reader = Reader::from_bytes(html.as_bytes());
+        while parser.next(&mut reader) {}
+        let store = parser.matches();
+        let p = store.get("p").unwrap().next().unwrap();
+        assert_eq!(p.inner_html(), Some("é"));
+    }
+
+    #[test]
+    #[should_panic(expected = "a parser reads UTF-8 HTML")]
+    fn non_utf8_byte_readers_panic_before_binding() {
+        let queries = [Query::all("p", Save::none()).unwrap().build()];
+        let mut parser = XHtmlParser::new(&queries);
+        let mut reader = Reader::from_bytes(b"\xff<p>");
         parser.next(&mut reader);
     }
 
