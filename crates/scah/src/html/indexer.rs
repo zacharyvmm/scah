@@ -780,19 +780,40 @@ fn close_tag_end(source: &[u8], name_end: usize, gt: usize) -> usize {
     }
 }
 
-/// [`close_tag_end`] past attribute values, following the tokenizer's
-/// attribute states: a quote opens a value only right after `=` (and any
-/// whitespace), so the `'` of `data=can't` or `a'b` is an ordinary byte.
+/// [`close_tag_end`] past attribute values, following the tokenizer's tag
+/// and attribute states: a quote opens a value only right after an
+/// attribute name's `=` (and any whitespace), so the `'` of `data=can't`,
+/// `a'b`, or `="x` (whose `=` starts a name) is an ordinary byte.
 #[cold]
 fn quoted_close_tag_end(source: &[u8], mut position: usize) -> usize {
-    // After `=`, before the value starts.
-    let mut before_value = false;
-    // Inside an unquoted value, where `=` is an ordinary byte.
-    let mut unquoted_value = false;
+    #[derive(Clone, Copy)]
+    enum State {
+        TagName,
+        BeforeName,
+        Name,
+        AfterName,
+        BeforeValue,
+        UnquotedValue,
+    }
+
+    let mut state = State::TagName;
     while let Some(&byte) = source.get(position) {
-        match byte {
-            b'>' => return position + 1,
-            b'\'' | b'"' if before_value => {
+        if byte == b'>' {
+            return position + 1;
+        }
+        let whitespace = is_html_whitespace(byte);
+        state = match state {
+            State::TagName if whitespace || byte == b'/' => State::BeforeName,
+            State::TagName => State::TagName,
+            State::BeforeName if whitespace || byte == b'/' => State::BeforeName,
+            // A leading `=` is part of the name.
+            State::BeforeName => State::Name,
+            State::Name | State::AfterName if byte == b'=' => State::BeforeValue,
+            State::Name | State::AfterName if byte == b'/' => State::BeforeName,
+            State::Name | State::AfterName if whitespace => State::AfterName,
+            State::Name | State::AfterName => State::Name,
+            State::BeforeValue if whitespace => State::BeforeValue,
+            State::BeforeValue if matches!(byte, b'\'' | b'"') => {
                 match source[position + 1..]
                     .iter()
                     .position(|&other| other == byte)
@@ -800,15 +821,12 @@ fn quoted_close_tag_end(source: &[u8], mut position: usize) -> usize {
                     Some(offset) => position += offset + 1,
                     None => return source.len(),
                 }
-                before_value = false;
+                State::BeforeName
             }
-            _ if is_html_whitespace(byte) => unquoted_value = false,
-            b'=' if !before_value && !unquoted_value => before_value = true,
-            _ => {
-                unquoted_value |= before_value;
-                before_value = false;
-            }
-        }
+            State::BeforeValue => State::UnquotedValue,
+            State::UnquotedValue if whitespace => State::BeforeName,
+            State::UnquotedValue => State::UnquotedValue,
+        };
         position += 1;
     }
     source.len()
@@ -1556,6 +1574,7 @@ mod tests {
             r#"<div>a</div title=">" x='>'><p>b</p>"#,
             r#"<div>a</bogus data=can't><span>b</span>"#,
             r#"<p></p a"b x = 'y>z' c=d=e"f><i>"#,
+            r#"<p></bogus ="x><span>ok</span>"#,
             "<x/y id=a>t</x/y><p>c</p>",
             "multibyte é☃ <article data-name='é'>text</article>",
         ] {
@@ -1764,6 +1783,7 @@ mod tests {
             r#"<div>a</div title=">" x='>'><p>b</p>"#,
             r#"<div>a</bogus data=can't><span>b</span>"#,
             r#"<p></p a"b x = 'y>z' c=d=e"f><i>"#,
+            r#"<p></bogus ="x><span>ok</span>"#,
             "<x/y id=a>t</x/y><p>c</p>",
             "multibyte é☃ <article data-name='é'>text</article>",
         ] {
