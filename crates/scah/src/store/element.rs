@@ -27,6 +27,8 @@ use crate::Attribute;
 #[derive(Clone, Copy)]
 pub struct ElementRef<'store, 'html, 'query> {
     store: &'store Store<'html, 'query>,
+    /// Always a row of `store`: handles are only made for the rows a store
+    /// lists, and a store does not change once borrowed.
     row: ElementId,
 }
 
@@ -46,9 +48,9 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// The tag name (e.g. `"a"`).
     #[inline]
     pub fn name(&self) -> &'html str {
-        self.store
-            .html_value(self.store.columns.rows[self.row.index()].name)
-            .unwrap_or_default()
+        // SAFETY: `row` is a row of `store` (see the field).
+        let head = unsafe { self.store.columns.rows.get_unchecked(self.row.index()) };
+        self.store.html_value(head.name).unwrap_or_default()
     }
 
     /// The `class` attribute value, if present and saved.
@@ -60,7 +62,7 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
         if !self.marked(&range, range.start, Span::CLASS_KEY) {
             return None;
         }
-        self.store.attribute_value(range.start)
+        self.value_at(range.start)
     }
 
     /// The `id` attribute value, if present and saved.
@@ -72,25 +74,43 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
         if !layout.id {
             return None;
         }
-        self.store
-            .attribute_value(layout.range.start + usize::from(layout.class))
+        self.value_at(layout.range.start + usize::from(layout.class))
     }
 
     /// Indexes of this row's attributes in the attribute columns.
     #[inline]
     fn attribute_range(&self) -> Range<usize> {
-        self.store.columns.attribute_range(self.row.index())
+        // SAFETY: `row` is a row of `store` (see the field).
+        unsafe {
+            self.store
+                .columns
+                .attribute_range_unchecked(self.row.index())
+        }
     }
 
-    /// Whether the saved attribute at `index` is named `name`, ASCII
+    /// Value of the attribute at `index`, which must be in
+    /// [`ElementRef::attribute_range`].
+    #[inline]
+    fn value_at(&self, index: usize) -> Option<&'html str> {
+        debug_assert!(self.attribute_range().contains(&index));
+        // SAFETY: the row's attribute indexes are in bounds.
+        let (_, value) = unsafe { self.store.columns.attribute_unchecked(index) };
+        self.store.html_value(value)
+    }
+
+    /// Whether the saved attribute at `index` (in
+    /// [`ElementRef::attribute_range`]) is named `name`, ASCII
     /// case-insensitively. Compares lengths, then exact bytes, before
     /// folding case.
     #[inline]
     fn key_is(&self, index: usize, name: &str) -> bool {
-        if self.store.columns.attribute_keys[index].len() != name.len() {
+        debug_assert!(self.attribute_range().contains(&index));
+        // SAFETY: the row's attribute indexes are in bounds.
+        let (key, _) = unsafe { self.store.columns.attribute_unchecked(index) };
+        if key.len() != name.len() {
             return false;
         }
-        let key = self.store.attribute_key(index);
+        let key = self.store.html_value(key).unwrap_or_default();
         key == name || key.eq_ignore_ascii_case(name)
     }
 
@@ -98,7 +118,10 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// `marker`.
     #[inline]
     fn marked(&self, range: &Range<usize>, index: usize, marker: Span) -> bool {
-        range.contains(&index) && self.store.columns.attribute_keys[index] == marker
+        // SAFETY: `range` is the row's attribute range, whose indexes are in
+        // bounds, and `index` is checked to be in it first.
+        range.contains(&index)
+            && unsafe { self.store.columns.attribute_unchecked(index) }.0 == marker
     }
 
     /// Where the row's attributes are: its `class` is saved first, then its
@@ -157,7 +180,7 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
             .layout()
             .others()
             .find(|&index| self.key_is(index, key))?;
-        self.store.attribute_value(index)
+        self.value_at(index)
     }
 
     /// The element's source-preserving descendant text.
@@ -324,15 +347,19 @@ impl AttributeLayout {
 #[derive(Clone)]
 pub struct Attributes<'store, 'html, 'query> {
     store: &'store Store<'html, 'query>,
+    /// Part of one row's attribute range, so every index is in bounds.
     range: Range<usize>,
 }
 
 impl<'html, 'query: 'html> Attributes<'_, 'html, 'query> {
+    /// The attribute at `index`, taken from `range`.
     #[inline]
     fn attribute(&self, index: usize) -> Attribute<'html> {
+        // SAFETY: `index` comes from `range`, whose indexes are in bounds.
+        let (key, value) = unsafe { self.store.columns.attribute_unchecked(index) };
         Attribute {
-            key: self.store.attribute_key(index),
-            value: self.store.attribute_value(index),
+            key: self.store.html_value(key).unwrap_or_default(),
+            value: self.store.html_value(value),
         }
     }
 }

@@ -187,14 +187,43 @@ impl Columns {
     }
 
     /// Indexes of `row`'s attributes in the attribute columns.
-    #[inline]
-    pub(crate) fn attribute_range(&self, row: usize) -> Range<usize> {
-        let start = self.rows[row].attributes as usize;
+    ///
+    /// # Safety
+    ///
+    /// `row` must be below [`Columns::len`].
+    #[inline(always)]
+    pub(crate) unsafe fn attribute_range_unchecked(&self, row: usize) -> Range<usize> {
+        debug_assert!(row < self.rows.len());
+        // SAFETY: the caller guarantees `row` is in bounds.
+        let start = unsafe { self.rows.get_unchecked(row) }.attributes as usize;
         let end = self
             .rows
             .get(row + 1)
             .map_or(self.attribute_keys.len(), |next| next.attributes as usize);
+        // Each row starts at the attribute count when it was saved, so starts
+        // never decrease and never pass the end of the columns.
+        debug_assert!(start <= end && end <= self.attribute_keys.len());
         start..end
+    }
+
+    /// Key and value spans of the attribute at `index`.
+    ///
+    /// # Safety
+    ///
+    /// `index` must be below the number of saved attributes, as every index
+    /// [`Columns::attribute_range_unchecked`] returns is.
+    #[inline(always)]
+    pub(crate) unsafe fn attribute_unchecked(&self, index: usize) -> (Span, Span) {
+        debug_assert!(index < self.attribute_keys.len());
+        debug_assert_eq!(self.attribute_keys.len(), self.attribute_values.len());
+        // SAFETY: the caller guarantees `index` is in bounds, and both columns
+        // gain one value per attribute together (`Store::save_attributes`).
+        unsafe {
+            (
+                *self.attribute_keys.get_unchecked(index),
+                *self.attribute_values.get_unchecked(index),
+            )
+        }
     }
 
     /// Value of `row` in an optional column, if the column is on and the
@@ -234,7 +263,8 @@ mod tests {
         };
         columns.push(head);
         assert_eq!(columns.len(), 1);
-        assert_eq!(columns.attribute_range(0), 0..0);
+        // SAFETY: row 0 exists.
+        assert_eq!(unsafe { columns.attribute_range_unchecked(0) }, 0..0);
         assert_eq!(Columns::cell(&columns.text, 0), None);
         assert_eq!(Columns::cell(&columns.inner_html, 0), None);
     }
