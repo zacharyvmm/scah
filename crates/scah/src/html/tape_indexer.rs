@@ -199,15 +199,20 @@ impl TagIndexer for TapeTagIndexer {
         self.bind(source);
     }
 
+    // Kept out of line so that adding this backend does not grow the
+    // dispatcher in `AutoTagIndexer`, whose rolling path is per-tag hot.
+    #[inline(never)]
     fn next(&mut self, source: &[u8], from: usize) -> Option<TagEvent> {
         next_event(self, source, from)
     }
 
+    #[inline(never)]
     fn finish_open(&mut self, source: &[u8], open: &OpenTagStart) -> usize {
         open.end_hint
             .unwrap_or_else(|| self.find_tag_end(source, open.attributes_start))
     }
 
+    #[inline(never)]
     fn find_raw_text_close(
         &mut self,
         source: &[u8],
