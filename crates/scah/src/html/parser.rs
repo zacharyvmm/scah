@@ -423,39 +423,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     #[inline(always)]
     fn next_mode<const CAPTURE: bool>(&mut self, reader: &mut Reader<'html>) -> bool {
         if let Some(close_tag) = self.raw_text_close {
-            let source = reader.source();
-            let Some(close_position) =
-                self.indexer
-                    .find_raw_text_close(source, reader.get_position(), close_tag)
-            else {
-                reader.advance_to(source.len());
-                self.drain_open_elements::<CAPTURE>(reader);
-                return false;
-            };
-            reader.advance_to(close_position);
-
-            // Consume an appropriate raw end tag here instead of delegating
-            // to `XHtmlTag::from`: that parser intentionally keeps text after
-            // `/` as part of the closing tag name, which would leave the raw
-            // element open for a tolerated form such as `</style ignored>`.
-            if CAPTURE && (self.raw_active_count > 0 || self.text_active_count > 0) {
-                self.flush_source_text(reader, reader.get_position());
-            }
-            self.raw_text_close = None;
-
-            self.position.reader_position = reader.get_position();
-            reader.next_until(b'>');
-            reader.skip();
-
-            let closing_tag = &close_tag[2..];
-            if CAPTURE && self.capture_mode.captures_text() {
-                self.text_state.cancel_initial_newline();
-            }
-            let finished = self.handle_close_tag::<CAPTURE>(closing_tag, reader);
-            if CAPTURE && self.capture_mode.captures_any() {
-                self.mark_active_source_start(reader.get_position());
-            }
-            return self.continue_after_tag::<CAPTURE>(finished, reader);
+            return self.next_after_raw_text::<CAPTURE>(reader, close_tag);
         }
 
         let source = reader.source();
@@ -743,6 +711,49 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         self.continue_after_tag::<CAPTURE>(finished, reader)
     }
 
+    /// Skip the raw text of a `script`, `style` or similar element to its
+    /// close tag, and close it. Out of line: most tags are not in raw text.
+    #[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]
+    fn next_after_raw_text<const CAPTURE: bool>(
+        &mut self,
+        reader: &mut Reader<'html>,
+        close_tag: &'static str,
+    ) -> bool {
+        let source = reader.source();
+        let Some(close_position) =
+            self.indexer
+                .find_raw_text_close(source, reader.get_position(), close_tag)
+        else {
+            reader.advance_to(source.len());
+            self.drain_open_elements::<CAPTURE>(reader);
+            return false;
+        };
+        reader.advance_to(close_position);
+
+        // Consume an appropriate raw end tag here instead of delegating
+        // to `XHtmlTag::from`: that parser intentionally keeps text after
+        // `/` as part of the closing tag name, which would leave the raw
+        // element open for a tolerated form such as `</style ignored>`.
+        if CAPTURE && (self.raw_active_count > 0 || self.text_active_count > 0) {
+            self.flush_source_text(reader, reader.get_position());
+        }
+        self.raw_text_close = None;
+
+        self.position.reader_position = reader.get_position();
+        reader.next_until(b'>');
+        reader.skip();
+
+        let closing_tag = &close_tag[2..];
+        if CAPTURE && self.capture_mode.captures_text() {
+            self.text_state.cancel_initial_newline();
+        }
+        let finished = self.handle_close_tag::<CAPTURE>(closing_tag, reader);
+        if CAPTURE && self.capture_mode.captures_any() {
+            self.mark_active_source_start(reader.get_position());
+        }
+        self.continue_after_tag::<CAPTURE>(finished, reader)
+    }
+
     /// Whether another tag should be processed. At the end of the input
     /// (trailing whitespace included) elements still open are closed, so
     /// their saved content is finalized.
@@ -792,6 +803,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         self.parse_error.take()
     }
 
+    #[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]
     fn record_parse_error(&mut self, err: ParseError) {
         if self.parse_error.is_none() {
             self.parse_error = Some(err);
@@ -855,6 +867,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
 
     /// Drain the implied-closes vector, finalizing each element, and restore
     /// the vector's capacity for reuse. Returns whether parsing is finished.
+    #[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]
     fn drain_implied_closes<const CAPTURE: bool>(
         &mut self,
         reader: &Reader<'html>,
@@ -902,6 +915,18 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             return self.pop_open_element::<CAPTURE>(open_element, close_depth, reader);
         }
 
+        self.close_mismatched::<CAPTURE>(closing_tag, id, reader)
+    }
+
+    /// Apply a close tag that does not close the top element: it closes an
+    /// element further down, or nothing.
+    #[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]
+    fn close_mismatched<const CAPTURE: bool>(
+        &mut self,
+        closing_tag: &'html str,
+        id: TagId,
+        reader: &Reader<'html>,
+    ) -> bool {
         self.open_elements.close_by_end_tag_into(
             closing_tag,
             id,
@@ -988,6 +1013,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         (raw_count, text_count)
     }
 
+    #[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]
     fn drain_open_elements<const CAPTURE: bool>(&mut self, reader: &Reader<'html>) {
         if self.eof_drained {
             return;
