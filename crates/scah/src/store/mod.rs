@@ -478,19 +478,6 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         Some(unsafe { self.html.get_unchecked(range) })
     }
 
-    /// Name of the saved attribute at `index` of the attribute columns.
-    #[inline]
-    pub(crate) fn attribute_key(&self, index: usize) -> &'html str {
-        self.html_value(self.columns.attribute_keys[index])
-            .unwrap_or_default()
-    }
-
-    /// Value of the saved attribute at `index` of the attribute columns.
-    #[inline]
-    pub(crate) fn attribute_value(&self, index: usize) -> Option<&'html str> {
-        self.html_value(self.columns.attribute_values[index])
-    }
-
     /// Span of `value`, a string borrowed from the parsed HTML.
     #[inline(always)]
     fn html_span(&self, value: &str) -> Span {
@@ -630,29 +617,29 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     fn save_attributes(&mut self, element: &crate::XHtmlElement<'html>) {
         let html = self.html;
         let attributes = element.attributes;
-        let start = self.columns.attribute_keys.len();
-        let keys = &mut self.columns.attribute_keys;
-        keys.extend(
-            attributes
-                .iter()
-                .map(|attribute| html_span(html, attribute.key)),
-        );
-        if element.class.is_some() {
-            debug_assert_eq!(attributes[0].value, element.class);
-            keys[start] = Span::CLASS_KEY;
+        let columns = &mut self.columns;
+        let start = columns.attribute_keys.len();
+        columns.attribute_keys.reserve(attributes.len());
+        columns.attribute_values.reserve(attributes.len());
+        for (offset, attribute) in attributes.iter().enumerate() {
+            let key = if offset == 0 && element.class.is_some() {
+                debug_assert_eq!(attribute.value, element.class);
+                Span::CLASS_KEY
+            } else if offset == usize::from(element.class.is_some()) && element.id.is_some() {
+                debug_assert_eq!(attribute.value, element.id);
+                Span::ID_KEY
+            } else {
+                html_span(html, attribute.key)
+            };
+            let value = attribute
+                .value
+                .map_or(Span::ABSENT, |value| html_span(html, value));
+            // Both spans are made before either is pushed, so the columns
+            // stay the same length even if a span panics.
+            columns.attribute_keys.push(key);
+            columns.attribute_values.push(value);
         }
-        if element.id.is_some() {
-            let id = start + usize::from(element.class.is_some());
-            debug_assert_eq!(attributes[id - start].value, element.id);
-            keys[id] = Span::ID_KEY;
-        }
-        self.columns
-            .attribute_values
-            .extend(attributes.iter().map(|attribute| {
-                attribute
-                    .value
-                    .map_or(Span::ABSENT, |value| html_span(html, value))
-            }));
+        debug_assert_eq!(columns.attribute_keys.len(), start + attributes.len());
     }
 
     /// List `row` among the results of `parent` (the document when `None`).
