@@ -32,9 +32,9 @@ fn generate_html(count: usize) -> String {
 fn consume_scah_results(store: &scah::Store<'_, '_>) {
     if let Some(elements) = store.get(QUERY) {
         for element in elements {
-            black_box(&element.attributes(store));
-            black_box(&element.inner_html);
-            black_box(&element.text(store));
+            black_box(&element.attributes());
+            black_box(&element.inner_html());
+            black_box(&element.text());
         }
     }
 }

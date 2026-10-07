@@ -280,7 +280,7 @@ fn generate_section(rng: &mut Rng, scoped: bool, depth: usize) -> SectionSpec {
 }
 
 macro_rules! engine {
-    ($name:ident, $krate:ident) => {
+    ($name:ident, $krate:ident, $render:ident) => {
         /// Parse `case` and render every result tree, or `None` when this
         /// engine rejects one of the selectors.
         pub fn $name(case: &Case) -> Option<String> {
@@ -320,44 +320,6 @@ macro_rules! engine {
                 })
             }
 
-            fn render(
-                store: &$krate::Store,
-                element: &$krate::Element,
-                section: &SectionSpec,
-                out: &mut String,
-            ) {
-                let _ = write!(out, "<{}", element.name);
-                if let Some(id) = element.id {
-                    let _ = write!(out, " id={id:?}");
-                }
-                if let Some(class) = element.class {
-                    let _ = write!(out, " class={class:?}");
-                }
-                for attribute in element.attributes(store).unwrap_or_default() {
-                    let _ = write!(out, " {}={:?}", attribute.key, attribute.value);
-                }
-                out.push('>');
-                if let Some(inner_html) = element.inner_html {
-                    let _ = write!(out, " inner_html={inner_html:?}");
-                }
-                if let Some(raw_text) = element.raw_text(store) {
-                    let _ = write!(out, " raw_text={raw_text:?}");
-                }
-                if let Some(text) = element.text(store) {
-                    let _ = write!(out, " text={text:?}");
-                }
-                for child in &section.children {
-                    let _ = write!(out, " {{{}:", child.selector);
-                    if let Some(elements) = element.get(store, child.selector) {
-                        for nested in elements {
-                            out.push(' ');
-                            render(store, nested, child, out);
-                        }
-                    }
-                    out.push('}');
-                }
-            }
-
             let mut queries = Vec::new();
             for section in &case.queries {
                 let builder = if section.first {
@@ -377,7 +339,7 @@ macro_rules! engine {
                 if let Some(elements) = store.get(section.selector) {
                     for element in elements {
                         out.push_str("\n  ");
-                        render(&store, element, section, &mut out);
+                        $render(&store, element, section, &mut out);
                     }
                 }
                 out.push('\n');
@@ -387,5 +349,84 @@ macro_rules! engine {
     };
 }
 
-engine!(run_current, scah);
-engine!(run_reference, scah_reference);
+/// Render one current-engine result and its nested results.
+fn render_current(
+    store: &scah::Store,
+    element: scah::ElementRef,
+    section: &SectionSpec,
+    out: &mut String,
+) {
+    let _ = write!(out, "<{}", element.name());
+    if let Some(id) = element.id() {
+        let _ = write!(out, " id={id:?}");
+    }
+    if let Some(class) = element.class() {
+        let _ = write!(out, " class={class:?}");
+    }
+    for attribute in element.attributes().into_iter().flatten() {
+        let _ = write!(out, " {}={:?}", attribute.key, attribute.value);
+    }
+    out.push('>');
+    if let Some(inner_html) = element.inner_html() {
+        let _ = write!(out, " inner_html={inner_html:?}");
+    }
+    if let Some(raw_text) = element.raw_text() {
+        let _ = write!(out, " raw_text={raw_text:?}");
+    }
+    if let Some(text) = element.text() {
+        let _ = write!(out, " text={text:?}");
+    }
+    for child in &section.children {
+        let _ = write!(out, " {{{}:", child.selector);
+        if let Some(elements) = element.get(child.selector) {
+            for nested in elements {
+                out.push(' ');
+                render_current(store, nested, child, out);
+            }
+        }
+        out.push('}');
+    }
+}
+
+/// Render one 0.1.0 result and its nested results, exactly like
+/// [`render_current`].
+fn render_reference(
+    store: &scah_reference::Store,
+    element: &scah_reference::Element,
+    section: &SectionSpec,
+    out: &mut String,
+) {
+    let _ = write!(out, "<{}", element.name);
+    if let Some(id) = element.id {
+        let _ = write!(out, " id={id:?}");
+    }
+    if let Some(class) = element.class {
+        let _ = write!(out, " class={class:?}");
+    }
+    for attribute in element.attributes(store).unwrap_or_default() {
+        let _ = write!(out, " {}={:?}", attribute.key, attribute.value);
+    }
+    out.push('>');
+    if let Some(inner_html) = element.inner_html {
+        let _ = write!(out, " inner_html={inner_html:?}");
+    }
+    if let Some(raw_text) = element.raw_text(store) {
+        let _ = write!(out, " raw_text={raw_text:?}");
+    }
+    if let Some(text) = element.text(store) {
+        let _ = write!(out, " text={text:?}");
+    }
+    for child in &section.children {
+        let _ = write!(out, " {{{}:", child.selector);
+        if let Some(elements) = element.get(store, child.selector) {
+            for nested in elements {
+                out.push(' ');
+                render_reference(store, nested, child, out);
+            }
+        }
+        out.push('}');
+    }
+}
+
+engine!(run_current, scah, render_current);
+engine!(run_reference, scah_reference, render_reference);

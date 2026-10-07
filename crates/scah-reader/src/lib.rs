@@ -3,6 +3,8 @@ use std::ops::Range;
 pub struct Reader<'a> {
     source: &'a [u8],
     position: usize,
+    /// The source came from a `&str`, so it is known to be UTF-8.
+    utf8: bool,
 }
 
 impl<'a> Reader<'a> {
@@ -10,6 +12,7 @@ impl<'a> Reader<'a> {
         Self {
             source: input.as_bytes(),
             position: 0,
+            utf8: true,
         }
     }
 
@@ -17,6 +20,7 @@ impl<'a> Reader<'a> {
         Self {
             source: input,
             position: 0,
+            utf8: false,
         }
     }
 
@@ -45,6 +49,21 @@ impl<'a> Reader<'a> {
             "reader can only advance to an in-bounds position"
         );
         self.position = position;
+    }
+
+    /// The complete source as a string, or `None` when it was given as bytes
+    /// that are not UTF-8.
+    ///
+    /// Free for readers made with [`Reader::new`]; byte sources are validated
+    /// on every call.
+    #[inline]
+    pub fn source_str(&self) -> Option<&'a str> {
+        if self.utf8 {
+            // SAFETY: the source is the bytes of a `&str`.
+            Some(unsafe { std::str::from_utf8_unchecked(self.source) })
+        } else {
+            std::str::from_utf8(self.source).ok()
+        }
     }
 
     #[inline]
@@ -368,5 +387,15 @@ mod tests {
 
         assert_eq!(reader.get_position(), 4);
         assert_eq!(reader.peek(), Some(b':'));
+    }
+
+    #[test]
+    fn source_str_validates_byte_sources() {
+        assert_eq!(Reader::new("<p>é").source_str(), Some("<p>é"));
+        assert_eq!(
+            Reader::from_bytes("<p>é".as_bytes()).source_str(),
+            Some("<p>é")
+        );
+        assert_eq!(Reader::from_bytes(b"<p>\xff").source_str(), None);
     }
 }

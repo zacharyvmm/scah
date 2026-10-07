@@ -33,8 +33,8 @@ fn sparse_matches_html(paragraphs: usize) -> String {
 fn consume_text(store: &scah::Store<'_, '_>, selector: &str) {
     if let Some(elements) = store.get(selector) {
         for element in elements {
-            black_box(element.raw_text(store));
-            black_box(element.text(store));
+            black_box(element.raw_text());
+            black_box(element.text());
         }
     }
 }

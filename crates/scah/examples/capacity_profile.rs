@@ -84,10 +84,9 @@ fn main() {
 }
 
 fn report(label: &str, size: usize, store: &scah::Store) {
-    let total_elements: usize = store.elements.iter().count();
-    let total_attrs: usize = store.attributes.iter().count();
-    let elem_cap = store.elements.capacity();
-    let attr_cap = store.attributes.capacity();
+    let total_elements = store.len();
+    let total_attrs = store.attribute_count();
+    let heap = store.heap_usage();
     let er = if total_elements > 0 {
         size as f64 / total_elements as f64
     } else {
@@ -99,11 +98,13 @@ fn report(label: &str, size: usize, store: &scah::Store) {
         f64::NAN
     };
     eprintln!(
-        "{label:>16} | html={size:>8} | elems={total_elements:>6} ecap={elem_cap:>6} \
-         r={er:>5.1} | attrs={total_attrs:>6} acap={attr_cap:>6} r={ar:>5.1}",
+        "{label:>16} | html={size:>8} | elems={total_elements:>6} rows={:>8}B \
+         r={er:>5.1} | attrs={total_attrs:>6} tape={:>8}B r={ar:>5.1} | heap={:>8}B",
+        heap.rows,
+        heap.attributes,
+        heap.total(),
     );
-    std::hint::black_box(&store.elements);
-    std::hint::black_box(&store.attributes);
+    std::hint::black_box(store);
 }
 
 fn text_heavy_html(count: usize) -> String {

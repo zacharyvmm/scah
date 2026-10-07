@@ -62,6 +62,12 @@ fn parse(html: String, queries: Vec<Reference<JsQuery>>) -> Result<JSStore> {
                 "internal error: unexpected TextCaptureRequired from parse".to_owned(),
             ));
         }
+        Err(ParseError::InputTooLarge) => {
+            return Err(napi::Error::new(
+                napi::Status::InvalidArg,
+                "HTML input must be shorter than 4 GiB".to_owned(),
+            ));
+        }
     };
 
     Ok(JSStore {

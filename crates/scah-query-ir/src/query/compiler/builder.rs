@@ -33,13 +33,13 @@ use super::transition::Transition;
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Save {
     /// When `true`, the raw HTML between the element's opening and closing
-    /// tags is stored as [`Element::inner_html`](https://docs.rs/scah/latest/scah/struct.Element.html#structfield.inner_html).
+    /// tags is stored as [`ElementRef::inner_html()`](https://docs.rs/scah/latest/scah/struct.ElementRef.html#method.inner_html).
     pub inner_html: bool,
     /// When `true`, source-preserving descendant text is stored and
-    /// retrievable via [`Element::raw_text()`](https://docs.rs/scah/latest/scah/struct.Element.html#method.raw_text).
+    /// retrievable via [`ElementRef::raw_text()`](https://docs.rs/scah/latest/scah/struct.ElementRef.html#method.raw_text).
     pub raw_text: bool,
     /// When `true`, normalized human-readable descendant text is stored and
-    /// retrievable via [`Element::text()`](https://docs.rs/scah/latest/scah/struct.Element.html#method.text).
+    /// retrievable via [`ElementRef::text()`](https://docs.rs/scah/latest/scah/struct.ElementRef.html#method.text).
     ///
     /// This is not layout-aware browser `innerText`.
     pub text: bool,

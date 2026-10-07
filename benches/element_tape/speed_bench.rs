@@ -1175,7 +1175,7 @@ fn bench_production_query_scaling(c: &mut Criterion) {
                     |b, html| {
                         b.iter(|| {
                             let store = parse(black_box(html), black_box(&queries)).unwrap();
-                            black_box(store.elements.len())
+                            black_box(store.elements().len())
                         })
                     },
                 );

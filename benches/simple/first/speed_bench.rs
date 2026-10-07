@@ -45,9 +45,9 @@ fn generate_html(count: usize) -> String {
 
 fn consume_scah_result(store: &scah::Store<'_, '_>) {
     let element = store.get(QUERY).unwrap().next().unwrap();
-    black_box(&element.attributes(store));
-    black_box(&element.inner_html);
-    black_box(&element.text(store));
+    black_box(&element.attributes());
+    black_box(&element.inner_html());
+    black_box(&element.text());
 }
 
 fn bench_comparison(c: &mut Criterion) {
