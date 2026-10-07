@@ -226,7 +226,7 @@ fn trailing_solidus_is_not_exposed_as_attribute() {
         hrs[0].attribute("/").is_none(),
         "trailing solidus must not become an attribute"
     );
-    assert!(hrs[0].attributes().is_none() || hrs[0].attributes().unwrap().is_empty());
+    assert!(hrs[0].attributes().is_none());
 }
 
 #[test]
@@ -235,8 +235,12 @@ fn input_with_attribute_and_trailing_solidus_has_clean_attrs() {
     let inputs = elements(&store, "input");
     assert_eq!(inputs.len(), 1);
     assert!(inputs[0].attribute("/").is_none());
-    let attrs = inputs[0].attributes().unwrap_or_default();
-    let keys: Vec<_> = attrs.iter().map(|a| a.key).collect();
+    let keys: Vec<_> = inputs[0]
+        .attributes()
+        .into_iter()
+        .flatten()
+        .map(|a| a.key)
+        .collect();
     assert_eq!(keys, vec!["disabled"]);
 }
 

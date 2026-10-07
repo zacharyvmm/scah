@@ -203,11 +203,11 @@ impl<'a> ElementPredicate<'a> {
         let attributes = self.attributes.as_slice();
         attributes.is_empty()
             || attributes.iter().all(|selector_attribute| {
-                // `id` and `class` live in dedicated element fields, not the
-                // generic attribute list, so route `[id]`/`[class]` selectors
-                // there. Attribute names are case-insensitive in HTML. A rare
-                // valueless `id`/`class` that landed in the attribute list is
-                // still matched via the fallback scan.
+                // `id` and `class` have dedicated element fields (the first
+                // of each with a value), so `[id]`/`[class]` selectors check
+                // those first. Attribute names are case-insensitive in HTML.
+                // Valueless or duplicate `id`/`class` attributes are matched
+                // by the fallback scan of the attribute list.
                 if selector_attribute.name.eq_ignore_ascii_case("id") {
                     selector_attribute.matches_field(other.id())
                         || other

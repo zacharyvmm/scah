@@ -363,7 +363,7 @@ fn render_current(
     if let Some(class) = element.class() {
         let _ = write!(out, " class={class:?}");
     }
-    for attribute in element.attributes().unwrap_or_default() {
+    for attribute in element.attributes().into_iter().flatten() {
         let _ = write!(out, " {}={:?}", attribute.key, attribute.value);
     }
     out.push('>');

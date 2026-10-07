@@ -38,8 +38,8 @@ struct ParserTempState<'html, 'query> {
     closing_elements: Vec<OpenElement<'html>>,
     implied_closes: Vec<OpenElement<'html>>,
     saved_elements: Vec<SavedElement>,
+    /// Attributes of the open tag being parsed, cleared for each tag.
     attributes: Vec<Attribute<'html>>,
-    attribute_start: usize,
     save_hits: Vec<SaveHit>,
     attribute_interest: AttributeInterest<'query>,
     structural: Option<Box<StructuralParserState<'html, 'query>>>,
@@ -190,7 +190,6 @@ pub struct XHtmlParser<'html, 'query> {
     raw_source_start: Option<usize>,
     raw_active_count: usize,
     text_active_count: usize,
-    persist_attributes: bool,
     /// Every root query is `First`, so parsing may stop early.
     can_finish: bool,
     raw_text_close: Option<&'static str>,
@@ -266,7 +265,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         let features = *program.features();
         let requirements = features.text;
         let text_state = ParserTextState::new(requirements);
-        let persist_attributes = features.stores_attributes;
         let parse_attributes = features.parses_attributes || requirements.text;
         let indexing_mode = indexing_mode.unwrap_or(if features.all_roots_first {
             IndexingMode::Rolling
@@ -281,7 +279,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                     reserve_text: requirements.text,
                     ..crate::CapacityOptions::default()
                 },
-                persist_attributes,
+                features.stores_attributes,
                 false,
             )
         });
@@ -307,7 +305,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             raw_source_start: None,
             raw_active_count: 0,
             text_active_count: 0,
-            persist_attributes,
             can_finish: features.all_roots_first,
             raw_text_close: None,
             eof_drained: false,
@@ -491,7 +488,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                     self.position.reader_position = open.start;
                     let name = open.name(source);
                     self.element.set_name(name);
-                    self.temp_state.attribute_start = self.store.attributes.len();
 
                     let tag_id = TagId::of(name);
                     let classified = ClassifiedTag::of(tag_id);
@@ -538,20 +534,14 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                             self.attribute_parse_count += 1;
                         }
                         let mut attributes = Reader::from_bytes(&source[open.attributes_start..]);
-                        if self.persist_attributes {
-                            self.element.parse_attributes(
-                                &mut attributes,
-                                &mut self.store.attributes,
-                                &self.temp_state.attribute_interest,
-                            );
-                        } else {
-                            self.temp_state.attributes.clear();
-                            self.element.parse_attributes(
-                                &mut attributes,
-                                &mut self.temp_state.attributes,
-                                &self.temp_state.attribute_interest,
-                            );
-                        }
+                        // The store copies the attributes of rows that save
+                        // them, so every tag parses into the same scratch list.
+                        self.temp_state.attributes.clear();
+                        self.element.parse_attributes(
+                            &mut attributes,
+                            &mut self.temp_state.attributes,
+                            &self.temp_state.attribute_interest,
+                        );
                         #[cfg(test)]
                         {
                             self.selected_attribute_count += self.element.attributes.len();
@@ -645,18 +635,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                     &mut self.store,
                     &mut self.temp_state.save_hits,
                 );
-                if self.persist_attributes {
-                    let attributes_saved = match self.temp_state.save_hits.as_slice() {
-                        [] => false,
-                        [hit] => hit.save_attributes,
-                        hits => hits.iter().any(|hit| hit.save_attributes),
-                    };
-                    if !attributes_saved {
-                        self.store
-                            .attributes
-                            .truncate(self.temp_state.attribute_start);
-                    }
-                }
                 let text_was_active = CAPTURE && self.text_active_count > 0;
                 let (new_raw_count, new_text_count) = if CAPTURE && !is_self_closing {
                     self.temp_state
@@ -825,7 +803,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             TraceEvent::ParseFinished {
                 element_count: self.store.len(),
                 result_count: self.store.result_count(),
-                attribute_count: self.store.attributes.len(),
+                attribute_count: self.store.attribute_count(),
                 raw_text_len: self.store.text.raw_text.len(),
                 text_len: self.store.text.text.len(),
             }
@@ -1025,7 +1003,17 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
 }
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
+
+    /// Attributes other than `class` and `id` of every saved row, in row
+    /// order.
+    fn saved_attributes<'html, 'query: 'html>(
+        store: &Store<'html, 'query>,
+    ) -> Vec<Attribute<'html>> {
+        store
+            .elements()
+            .flat_map(|element| element.attributes().into_iter().flatten())
+            .collect()
+    }
 
     use super::*;
     use crate::Attribute;
@@ -1266,7 +1254,7 @@ mod tests {
         assert_eq!(s1_div_a.len(), 1);
         assert_eq!(s1_div_a[0].text(), Some("World"));
         assert_eq!(
-            s1_div_a[0].attributes().unwrap()[0].value,
+            s1_div_a[0].attributes().unwrap().next().unwrap().value,
             Some("https://world.com")
         );
 
@@ -1276,7 +1264,7 @@ mod tests {
         assert_eq!(s1_direct_a.len(), 1);
         assert_eq!(s1_direct_a[0].text(), Some("Hello"));
         assert_eq!(
-            s1_direct_a[0].attributes().unwrap()[0].value,
+            s1_direct_a[0].attributes().unwrap().next().unwrap().value,
             Some("https://hello.com")
         );
 
@@ -1411,13 +1399,19 @@ mod tests {
 
         assert_eq!(inputs[0].name(), "input");
         assert_eq!(inputs[0].id(), Some("name"));
-        assert_eq!(inputs[0].attributes().unwrap()[0].key, "type");
-        assert_eq!(inputs[0].attributes().unwrap()[0].value, Some("text"));
+        assert_eq!(inputs[0].attributes().unwrap().next().unwrap().key, "type");
+        assert_eq!(
+            inputs[0].attributes().unwrap().next().unwrap().value,
+            Some("text")
+        );
 
         assert_eq!(inputs[1].name(), "input");
         assert_eq!(inputs[1].id(), Some("mail"));
-        assert_eq!(inputs[1].attributes().unwrap()[0].key, "type");
-        assert_eq!(inputs[1].attributes().unwrap()[0].value, Some("email"));
+        assert_eq!(inputs[1].attributes().unwrap().next().unwrap().key, "type");
+        assert_eq!(
+            inputs[1].attributes().unwrap().next().unwrap().value,
+            Some("email")
+        );
     }
 
     #[test]
@@ -1489,7 +1483,10 @@ mod tests {
         let anchor = store.get("div.article a").unwrap().next().unwrap();
 
         assert_eq!(anchor.name(), "a");
-        assert_eq!(anchor.attributes().unwrap()[0].value, Some("/post/0"));
+        assert_eq!(
+            anchor.attributes().unwrap().next().unwrap().value,
+            Some("/post/0")
+        );
         assert_eq!(anchor.inner_html(), Some("<b>Post</b> &lt;0&gt;"));
         assert_eq!(anchor.text(), Some("Post <0>"));
     }
@@ -1526,7 +1523,7 @@ mod tests {
         let store = parser.matches();
 
         assert_eq!(
-            store.attributes.deref().clone(),
+            saved_attributes(&store),
             vec![
                 Attribute {
                     key: "hello",
@@ -1547,7 +1544,7 @@ mod tests {
         assert_eq!(span.class(), Some("hello"));
         assert_eq!(span.id(), Some("world"));
         assert_eq!(
-            span.attributes().unwrap(),
+            span.attributes().unwrap().collect::<Vec<_>>(),
             &[Attribute {
                 key: "hello",
                 value: Some("world")
@@ -1571,7 +1568,7 @@ mod tests {
         assert_eq!(a.class(), None);
         assert_eq!(a.id(), None);
         assert_eq!(
-            a.attributes().unwrap(),
+            a.attributes().unwrap().collect::<Vec<_>>(),
             &[Attribute {
                 key: "href",
                 value: Some("https://www.example.com")
@@ -1613,7 +1610,7 @@ mod tests {
         let element = store.get("a").unwrap().next().unwrap();
 
         assert_eq!(
-            store.attributes.deref().clone(),
+            saved_attributes(&store),
             vec![Attribute {
                 key: "href",
                 value: Some("/post/0"),
@@ -1979,7 +1976,7 @@ mod tests {
         assert_eq!(store.elements().len(), 5);
 
         assert_eq!(
-            store.attributes.deref().clone(),
+            saved_attributes(&store),
             vec![Attribute {
                 key: "src",
                 value: Some("https://example.com/p1.png")
@@ -2068,7 +2065,7 @@ mod tests {
         assert_eq!(store.elements().len(), 9);
 
         assert_eq!(
-            store.attributes.deref().clone(),
+            saved_attributes(&store),
             vec![
                 Attribute {
                     key: "src",

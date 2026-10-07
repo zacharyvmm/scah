@@ -1,4 +1,3 @@
-use crate::Attribute;
 use crate::QuerySection;
 use scah_query_ir::{Program, SectionIndex};
 use std::ops::Range;
@@ -6,18 +5,14 @@ use std::ops::Range;
 mod text;
 pub(crate) use text::{TextStore, TextTape, trim_collapsed_range};
 mod arena;
-mod attributes;
 mod columns;
 mod element;
 mod spare;
 
-pub use arena::{
-    Arena,
-    id::{AttributeId, ElementId},
-};
-use columns::{AttributeCells, ColumnPlan, Columns, RowHead, Span};
+pub use arena::id::ElementId;
+use columns::{ColumnPlan, Columns, RowHead, Span};
 
-pub use element::{ElementRef, Elements};
+pub use element::{Attributes, ElementRef, Elements};
 
 /// A query section as the store sees it: enough to resolve lookups.
 #[derive(Debug, Clone, PartialEq)]
@@ -69,8 +64,6 @@ pub struct Store<'html, 'query> {
     /// nested section under several parent matches has one row, listed
     /// under each parent.
     columns: Columns,
-    /// Attributes other than `class` and `id` of rows that saved them.
-    pub(crate) attributes: Arena<Attribute<'html>, AttributeId>,
     /// Accumulated raw-text and normalized-text buffers shared by all elements.
     pub(crate) text: TextStore,
     /// A text range did not fit a span.
@@ -107,7 +100,7 @@ pub struct HeapUsage {
     pub rows: usize,
     /// The result index, including the tables of query sections.
     pub results: usize,
-    /// The attribute tape.
+    /// The attribute key and value columns.
     pub attributes: usize,
     /// The raw-text and normalized-text buffers.
     pub text: usize,
@@ -201,7 +194,6 @@ impl Drop for Store<'_, '_> {
         text.text.clear();
         spare::keep(spare::StoreBuffers {
             columns,
-            attributes: spare::detach(std::mem::take(&mut self.attributes.inner)),
             text,
             edges: emptied(&mut self.edges),
             slot_starts: emptied(&mut self.slot_starts),
@@ -271,7 +263,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             buffers.text.text.reserve(capacity);
         }
         if reserve_attributes {
-            buffers.attributes.reserve(capacity / attribute_divisor);
+            let attributes = capacity / attribute_divisor;
+            buffers.columns.attribute_keys.reserve(attributes);
+            buffers.columns.attribute_values.reserve(attributes);
         }
         Self::from_buffers(buffers, element_slots.min(options.trace_capacity_limit))
     }
@@ -280,7 +274,6 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     fn from_buffers(buffers: spare::StoreBuffers, trace_capacity: usize) -> Self {
         let spare::StoreBuffers {
             columns,
-            attributes,
             text,
             edges,
             slot_starts,
@@ -294,7 +287,6 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             columns,
             overflowed: false,
             text,
-            attributes: Arena::from_vec(attributes),
             sections: Box::default(),
             roots: Box::default(),
             children: Box::default(),
@@ -375,9 +367,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         self.columns.len()
     }
 
-    /// Number of attributes saved, other than `class` and `id`.
+    /// Number of attributes saved, `class` and `id` included.
     pub fn attribute_count(&self) -> usize {
-        self.attributes.len()
+        self.columns.attribute_keys.len()
     }
 
     /// Heap bytes held by this store, by role.
@@ -391,7 +383,6 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         let columns = &self.columns;
         HeapUsage {
             rows: bytes(&columns.rows)
-                + bytes(&columns.attributes)
                 + bytes(&columns.inner_html)
                 + bytes(&columns.raw_text)
                 + bytes(&columns.text),
@@ -402,7 +393,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
                 + bytes(&self.slot_starts)
                 + bytes(&self.slot_offsets)
                 + bytes(&self.results),
-            attributes: bytes(&*self.attributes),
+            attributes: bytes(&columns.attribute_keys) + bytes(&columns.attribute_values),
             text: self.text.raw_text.capacity() + self.text.text.capacity(),
         }
     }
@@ -476,7 +467,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         Some(self.sections[section as usize].selector)
     }
 
-    /// The HTML a span of the name, class, id or inner HTML column covers.
+    /// The HTML a span of the name, attribute or inner HTML columns covers.
     #[inline(always)]
     fn html_value(&self, span: Span) -> Option<&'html str> {
         let range = span.range()?;
@@ -487,32 +478,23 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         Some(unsafe { self.html.get_unchecked(range) })
     }
 
-    /// Span of `value`, a string borrowed from the parsed HTML.
-    ///
-    /// Every string the parser hands over is a subslice of the input. An
-    /// empty string from elsewhere is stored as an empty span.
-    #[inline(always)]
-    fn html_span(&self, value: &str) -> Span {
-        let offset = value
-            .as_ptr()
-            .addr()
-            .wrapping_sub(self.html.as_ptr().addr());
-        if offset <= self.html.len() && value.len() <= self.html.len() - offset {
-            // The HTML is shorter than `u32::MAX` bytes (`set_html`).
-            Span::new(offset, value.len())
-        } else {
-            Self::foreign_span(value)
-        }
+    /// Name of the saved attribute at `index` of the attribute columns.
+    #[inline]
+    pub(crate) fn attribute_key(&self, index: usize) -> &'html str {
+        self.html_value(self.columns.attribute_keys[index])
+            .unwrap_or_default()
     }
 
-    #[cold]
-    #[inline(never)]
-    fn foreign_span(value: &str) -> Span {
-        assert!(
-            value.is_empty(),
-            "stored strings must borrow from the parsed HTML"
-        );
-        Span::new(0, 0)
+    /// Value of the saved attribute at `index` of the attribute columns.
+    #[inline]
+    pub(crate) fn attribute_value(&self, index: usize) -> Option<&'html str> {
+        self.html_value(self.columns.attribute_values[index])
+    }
+
+    /// Span of `value`, a string borrowed from the parsed HTML.
+    #[inline(always)]
+    fn html_span(&self, value: &str) -> Span {
+        html_span(self.html, value)
     }
 
     #[inline(always)]
@@ -627,27 +609,50 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         element: &crate::XHtmlElement<'html>,
     ) -> ElementId {
         let row = ElementId::from(self.len());
-        let attributes = if spec.save.attributes {
-            AttributeCells {
-                class: self.optional_html_span(element.class),
-                id: self.optional_html_span(element.id),
-                others: self
-                    .attributes
-                    .attribute_slice_to_range(element.attributes)
-                    .map_or(Span::ABSENT, |range| {
-                        // Each attribute spans at least one byte of the HTML.
-                        Span::new(range.start as usize, (range.end - range.start) as usize)
-                    }),
-            }
-        } else {
-            AttributeCells::ABSENT
-        };
+        // Each saved attribute spans at least one byte of the HTML, which is
+        // shorter than `u32::MAX` bytes, so attribute indexes fit in `u32`.
+        let attributes = self.columns.attribute_keys.len() as u32;
+        if spec.save.attributes && !element.attributes.is_empty() {
+            self.save_attributes(element);
+        }
         let head = RowHead {
             name: self.html_span(element.name),
             section: section.0,
+            attributes,
         };
-        self.columns.push(head, attributes);
+        self.columns.push(head);
         row
+    }
+
+    /// Append `element`'s attributes to the attribute columns as spans of
+    /// the HTML. The parser lists its `class` and `id` first, as the columns
+    /// keep them, and their keys become markers (see [`Columns`]).
+    fn save_attributes(&mut self, element: &crate::XHtmlElement<'html>) {
+        let html = self.html;
+        let attributes = element.attributes;
+        let start = self.columns.attribute_keys.len();
+        let keys = &mut self.columns.attribute_keys;
+        keys.extend(
+            attributes
+                .iter()
+                .map(|attribute| html_span(html, attribute.key)),
+        );
+        if element.class.is_some() {
+            debug_assert_eq!(attributes[0].value, element.class);
+            keys[start] = Span::CLASS_KEY;
+        }
+        if element.id.is_some() {
+            let id = start + usize::from(element.class.is_some());
+            debug_assert_eq!(attributes[id - start].value, element.id);
+            keys[id] = Span::ID_KEY;
+        }
+        self.columns
+            .attribute_values
+            .extend(attributes.iter().map(|attribute| {
+                attribute
+                    .value
+                    .map_or(Span::ABSENT, |value| html_span(html, value))
+            }));
     }
 
     /// List `row` among the results of `parent` (the document when `None`).
@@ -795,6 +800,31 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     }
 }
 
+/// Span of `value` in `html`, which `value` borrows from.
+///
+/// Every string the parser hands over is a subslice of the input. An empty
+/// string from elsewhere is stored as an empty span.
+#[inline(always)]
+fn html_span(html: &str, value: &str) -> Span {
+    let offset = value.as_ptr().addr().wrapping_sub(html.as_ptr().addr());
+    if offset <= html.len() && value.len() <= html.len() - offset {
+        // The HTML is shorter than `u32::MAX` bytes (`set_html`).
+        Span::new(offset, value.len())
+    } else {
+        foreign_span(value)
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn foreign_span(value: &str) -> Span {
+    assert!(
+        value.is_empty(),
+        "stored strings must borrow from the parsed HTML"
+    );
+    Span::new(0, 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -816,7 +846,7 @@ mod tests {
         let store = Store::with_capacity(30_000);
 
         assert_eq!(store.columns.rows.capacity(), 30_000 / 48);
-        assert_eq!(store.attributes.capacity(), 30_000 / 24);
+        assert_eq!(store.columns.attribute_keys.capacity(), 30_000 / 24);
         assert_eq!(store.text.raw_text.capacity(), 30_000);
         assert_eq!(store.text.text.capacity(), 30_000);
         assert!(!tracks_text(&store) && !tracks_raw_text(&store));
@@ -834,7 +864,7 @@ mod tests {
         );
 
         assert_eq!(store.columns.rows.capacity(), 30_000 / 48);
-        assert_eq!(store.attributes.capacity(), 30_000 / 24);
+        assert_eq!(store.columns.attribute_keys.capacity(), 30_000 / 24);
         assert_eq!(store.text.raw_text.capacity(), 0);
         assert_eq!(store.text.text.capacity(), 0);
         assert!(!tracks_text(&store) && !tracks_raw_text(&store));
@@ -852,7 +882,7 @@ mod tests {
         );
 
         assert_eq!(store.columns.rows.capacity(), 30_000 / 48);
-        assert_eq!(store.attributes.capacity(), 30_000 / 24);
+        assert_eq!(store.columns.attribute_keys.capacity(), 30_000 / 24);
         assert_eq!(store.text.raw_text.capacity(), 30_000);
         assert_eq!(store.text.text.capacity(), 30_000);
         assert!(!tracks_text(&store) && !tracks_raw_text(&store));
@@ -924,7 +954,7 @@ mod tests {
     #[test]
     fn row_cells_are_compact() {
         assert_eq!(std::mem::size_of::<Span>(), 8);
-        assert_eq!(std::mem::size_of::<AttributeCells>(), 24);
+        assert_eq!(std::mem::size_of::<RowHead>(), 16);
     }
 
     #[test]
@@ -939,7 +969,7 @@ mod tests {
         );
 
         assert_eq!(store.columns.rows.capacity(), 100);
-        assert_eq!(store.attributes.capacity(), 200);
+        assert_eq!(store.columns.attribute_keys.capacity(), 200);
     }
 
     #[test]
@@ -954,7 +984,7 @@ mod tests {
         );
 
         assert_eq!(store.columns.rows.capacity(), 16);
-        assert_eq!(store.attributes.capacity(), 16);
+        assert_eq!(store.columns.attribute_keys.capacity(), 16);
     }
 
     fn store_for<'q>(queries: &'q [Query<'q>]) -> Store<'q, 'q> {
@@ -1116,9 +1146,47 @@ mod tests {
         let first = [Query::first("p", Save::all()).unwrap().build()];
         let store = crate::parse("<p>one</p><p>two</p>", &first).unwrap();
         assert!(store.columns.rows.capacity() >= 5_000);
-        assert!(store.columns.attributes.capacity() < 100);
+        assert!(store.columns.attribute_keys.capacity() < 100);
         assert!(store.columns.inner_html.capacity() < 100);
         assert!(store.columns.text.capacity() < 100);
+    }
+
+    #[test]
+    fn class_and_id_are_the_first_with_a_value_and_the_rest_keep_source_order() {
+        let queries = [Query::all("a", Save::all()).unwrap().build()];
+        let html = r#"<a class href=h id=x class=c data-k class=d id><b></b></a>"#;
+        let store = crate::parse(html, &queries).unwrap();
+        let a = store.get("a").unwrap().next().unwrap();
+
+        assert_eq!((a.class(), a.id()), (Some("c"), Some("x")));
+        let others: Vec<_> = a
+            .attributes()
+            .unwrap()
+            .map(|attribute| (attribute.key, attribute.value))
+            .collect();
+        assert_eq!(
+            others,
+            [
+                ("class", None),
+                ("href", Some("h")),
+                ("data-k", None),
+                ("class", Some("d")),
+                ("id", None),
+            ]
+        );
+        // `attribute` searches the same attributes as `attributes`.
+        assert_eq!(a.attribute("href"), Some("h"));
+        assert_eq!(a.attribute("CLASS"), None);
+        assert_eq!(a.attribute("data-k"), None);
+        assert_eq!(store.attribute_count(), 7);
+
+        // Without `class` or `id`, the attributes start with the others.
+        let html = r#"<a ID data-x=1>t</a>"#;
+        let store = crate::parse(html, &queries).unwrap();
+        let a = store.get("a").unwrap().next().unwrap();
+        assert_eq!((a.class(), a.id()), (None, None));
+        assert_eq!(a.attributes().unwrap().len(), 2);
+        assert_eq!(a.attribute("data-x"), Some("1"));
     }
 
     #[test]
@@ -1134,8 +1202,8 @@ mod tests {
         let p = store.get("p").unwrap().next().unwrap();
         assert_eq!((p.name(), p.id(), p.class()), ("p", None, None));
         assert_eq!(
-            (p.attributes(), p.text(), p.inner_html()),
-            (None, None, None)
+            (p.attributes().is_none(), p.text(), p.inner_html()),
+            (true, None, None)
         );
         drop(store);
 
