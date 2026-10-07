@@ -63,6 +63,11 @@ Rust crates and the Python and npm packages together.
 - Tags that end right after their name, such as `<div>`, skip attribute
   parsing in every parse, and rarely taken paths leave the parse loop. On
   documents of empty `div`s, parsing is about 16% faster. ([#102])
+- Documents the adaptive policy indexes ahead are now indexed with a SIMD
+  structural tape (via simdlex) instead of the full-document event index.
+  Finding every link on large real pages is 15–27% faster, and on text-heavy
+  documents about 2x faster; dense documents keep the rolling indexer.
+  ([#101])
 
 ### Fixed
 
@@ -193,3 +198,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#98]: https://github.com/zacharyvmm/scah/pull/98
 [#100]: https://github.com/zacharyvmm/scah/pull/100
 [#102]: https://github.com/zacharyvmm/scah/pull/102
+[#101]: https://github.com/zacharyvmm/scah/pull/101
