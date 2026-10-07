@@ -66,7 +66,7 @@ pub struct Store<'html, 'query> {
     columns: Columns,
     /// Accumulated raw-text and normalized-text buffers shared by all elements.
     pub(crate) text: TextStore,
-    /// A text range did not fit a span.
+    /// A text range or an attribute index did not fit in 32 bits.
     overflowed: bool,
     /// Sections of the parsed queries, in declaration order.
     sections: Box<[StoreSection<'query>]>,
@@ -513,7 +513,8 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         std::ptr::eq(self.html.as_bytes(), source)
     }
 
-    /// Whether a text range did not fit in 32 bits, so some text is missing.
+    /// Whether a text range or an attribute index did not fit in 32 bits, so
+    /// some text or attributes are missing.
     pub(crate) fn overflowed(&self) -> bool {
         self.overflowed
     }
@@ -596,12 +597,19 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         element: &crate::XHtmlElement<'html>,
     ) -> ElementId {
         let row = ElementId::from(self.len());
-        // Each saved attribute spans at least one byte of the HTML, which is
-        // shorter than `u32::MAX` bytes, so attribute indexes fit in `u32`.
-        let attributes = self.columns.attribute_keys.len() as u32;
+        let saved = self.columns.attribute_keys.len();
         if spec.save.attributes && !element.attributes.is_empty() {
-            self.save_attributes(element);
+            // Rows of several sections can save one tag's attributes each, so
+            // the count is not bounded by the HTML's length. Past `u32` the
+            // row keeps none and the parse fails with `InputTooLarge`.
+            if attributes_fit(saved, element.attributes.len()) {
+                self.save_attributes(element);
+            } else {
+                self.overflowed = true;
+            }
         }
+        // Saving stops before the count passes `u32::MAX`.
+        let attributes = saved as u32;
         let head = RowHead {
             name: self.html_span(element.name),
             section: section.0,
@@ -785,6 +793,15 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             }
         );
     }
+}
+
+/// Whether `additional` attributes can follow `saved` ones with every index,
+/// and the end of the last, still fitting in a `u32`.
+#[inline(always)]
+fn attributes_fit(saved: usize, additional: usize) -> bool {
+    saved
+        .checked_add(additional)
+        .is_some_and(|end| end <= u32::MAX as usize)
 }
 
 /// Span of `value` in `html`, which `value` borrows from.
@@ -1090,6 +1107,15 @@ mod tests {
         let store = crate::parse(&html, &queries).unwrap();
         assert_eq!(store.columns.rows.as_ptr(), rows);
         assert_eq!(store.text.text.as_bytes().as_ptr(), text);
+    }
+
+    #[test]
+    fn attribute_indexes_stop_at_u32() {
+        let max = u32::MAX as usize;
+        assert!(attributes_fit(0, 3));
+        assert!(attributes_fit(max - 3, 3));
+        assert!(!attributes_fit(max - 3, 4));
+        assert!(!attributes_fit(usize::MAX, 1));
     }
 
     #[test]
