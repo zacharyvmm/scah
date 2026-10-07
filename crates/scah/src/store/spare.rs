@@ -12,7 +12,6 @@ use std::cell::Cell;
 use super::arena::id::ElementId;
 use super::columns::Columns;
 use super::text::TextStore;
-use crate::Attribute;
 
 /// Largest set of allocations kept for reuse. A store whose buffers are
 /// bigger is freed normally, so one huge document does not pin its memory
@@ -24,7 +23,6 @@ pub(crate) const MAX_RETAINED_BYTES: usize = 32 << 20;
 #[derive(Debug, Default)]
 pub(crate) struct StoreBuffers {
     pub(crate) columns: Columns,
-    pub(crate) attributes: Vec<Attribute<'static>>,
     pub(crate) text: TextStore,
     pub(crate) edges: Vec<(u32, u32)>,
     pub(crate) slot_starts: Vec<u32>,
@@ -40,11 +38,11 @@ impl StoreBuffers {
         }
         let columns = &self.columns;
         bytes(&columns.rows)
-            + bytes(&columns.attributes)
+            + bytes(&columns.attribute_keys)
+            + bytes(&columns.attribute_values)
             + bytes(&columns.inner_html)
             + bytes(&columns.raw_text)
             + bytes(&columns.text)
-            + bytes(&self.attributes)
             + self.text.raw_text.capacity()
             + self.text.text.capacity()
             + bytes(&self.edges)
@@ -52,16 +50,6 @@ impl StoreBuffers {
             + bytes(&self.slot_offsets)
             + bytes(&self.results)
     }
-}
-
-/// An empty attribute tape that no longer borrows its document.
-pub(crate) fn detach(mut tape: Vec<Attribute<'_>>) -> Vec<Attribute<'static>> {
-    tape.clear();
-    let mut tape = std::mem::ManuallyDrop::new(tape);
-    // SAFETY: the vector is empty, so no `&str` with the old lifetime is
-    // reachable through it, and `Attribute<'a>` has the same layout for
-    // every `'a`. The allocation is handed over unchanged.
-    unsafe { Vec::from_raw_parts(tape.as_mut_ptr().cast(), 0, tape.capacity()) }
 }
 
 thread_local! {

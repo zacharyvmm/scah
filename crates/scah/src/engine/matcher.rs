@@ -55,7 +55,6 @@ use crate::store::{ElementId, Store};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct SaveHit {
     pub element_id: ElementId,
-    pub save_attributes: bool,
     pub save_inner_html: bool,
     pub save_raw_text: bool,
     pub save_text: bool,
@@ -1060,7 +1059,6 @@ impl<'q> AnyMatcher<'q> {
 fn save_hit(element_id: ElementId, spec: &scah_query_ir::QuerySection<'_>) -> SaveHit {
     SaveHit {
         element_id,
-        save_attributes: spec.save.attributes,
         save_inner_html: spec.save.inner_html,
         save_raw_text: spec.save.raw_text,
         save_text: spec.save.text,
@@ -1097,7 +1095,7 @@ fn add_edge<'html, 'q: 'html>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Query, QuerySpec, Save};
+    use crate::{Attribute, Query, QuerySpec, Save};
     use pretty_assertions::assert_eq;
 
     /// Every tag name, id and class the tests use, space-separated. The
@@ -1105,7 +1103,7 @@ mod tests {
     /// elements borrow from this one.
     static VOCABULARY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
         let mut words = String::from(
-            " a b c d d1 d2 d3 div e h1 h2 li one p row s1 s2 section span two u u1 u2 ul w x y z ",
+            " a b c class d d1 d2 d3 div e h1 h2 id li one p row s1 s2 section span two u u1 u2 ul w x y z ",
         );
         for index in 0..100 {
             words.push_str(&format!("d{index} ad{index} "));
@@ -1151,11 +1149,22 @@ mod tests {
             let (name, id) = rest
                 .split_once('#')
                 .map_or((rest, None), |(l, r)| (l, Some(r)));
+            let (id, class) = (id.map(word), class.map(word));
+            // Like the parser, list `class` and `id` first among the
+            // attributes, which is where saved rows read them from.
+            let attributes: Vec<_> = [("class", class), ("id", id)]
+                .into_iter()
+                .filter(|(_, value)| value.is_some())
+                .map(|(key, value)| Attribute {
+                    key: word(key),
+                    value,
+                })
+                .collect();
             let element = XHtmlElement {
                 name: word(name),
-                id: id.map(word),
-                class: class.map(word),
-                attributes: &[],
+                id,
+                class,
+                attributes: Box::leak(attributes.into_boxed_slice()),
             };
             self.matcher.prepare(TagId::of(name), name);
             self.matcher

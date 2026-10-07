@@ -1,7 +1,11 @@
 use std::fmt;
 
-use super::columns::Columns;
-use super::{Attribute, ElementId, Store};
+use std::iter::FusedIterator;
+use std::ops::Range;
+
+use super::columns::{Columns, Span};
+use super::{ElementId, Store};
+use crate::Attribute;
 
 /// A matched HTML element: a handle to one row of a [`Store`].
 ///
@@ -48,17 +52,63 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     }
 
     /// The `class` attribute value, if present and saved.
+    ///
+    /// The first `class` attribute with a value, like in selector matching.
     #[inline]
     pub fn class(&self) -> Option<&'html str> {
-        let cells = self.store.columns.attributes.get(self.row.index())?;
-        self.store.html_value(cells.class)
+        let range = self.attribute_range();
+        if !self.marked(&range, range.start, Span::CLASS_KEY) {
+            return None;
+        }
+        self.store.attribute_value(range.start)
     }
 
     /// The `id` attribute value, if present and saved.
+    ///
+    /// The first `id` attribute with a value, like in selector matching.
     #[inline]
     pub fn id(&self) -> Option<&'html str> {
-        let cells = self.store.columns.attributes.get(self.row.index())?;
-        self.store.html_value(cells.id)
+        let layout = self.layout();
+        if !layout.id {
+            return None;
+        }
+        self.store
+            .attribute_value(layout.range.start + usize::from(layout.class))
+    }
+
+    /// Indexes of this row's attributes in the attribute columns.
+    #[inline]
+    fn attribute_range(&self) -> Range<usize> {
+        self.store.columns.attribute_range(self.row.index())
+    }
+
+    /// Whether the saved attribute at `index` is named `name`, ASCII
+    /// case-insensitively. Compares lengths, then exact bytes, before
+    /// folding case.
+    #[inline]
+    fn key_is(&self, index: usize, name: &str) -> bool {
+        if self.store.columns.attribute_keys[index].len() != name.len() {
+            return false;
+        }
+        let key = self.store.attribute_key(index);
+        key == name || key.eq_ignore_ascii_case(name)
+    }
+
+    /// Whether the attribute at `index`, if in `range`, has the key
+    /// `marker`.
+    #[inline]
+    fn marked(&self, range: &Range<usize>, index: usize, marker: Span) -> bool {
+        range.contains(&index) && self.store.columns.attribute_keys[index] == marker
+    }
+
+    /// Where the row's attributes are: its `class` is saved first, then its
+    /// `id`, then the others.
+    #[inline]
+    fn layout(&self) -> AttributeLayout {
+        let range = self.attribute_range();
+        let class = self.marked(&range, range.start, Span::CLASS_KEY);
+        let id = self.marked(&range, range.start + usize::from(class), Span::ID_KEY);
+        AttributeLayout { range, class, id }
     }
 
     /// The raw HTML between the opening and closing tags.
@@ -75,12 +125,12 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// Returns `None` if the element had no other attributes, or they were
     /// not saved.
     #[inline]
-    pub fn attributes(&self) -> Option<&'store [Attribute<'html>]> {
-        let cells = self.store.columns.attributes.get(self.row.index())?;
-        cells
-            .others
-            .range()
-            .map(|range| &self.store.attributes.as_slice()[range])
+    pub fn attributes(&self) -> Option<Attributes<'store, 'html, 'query>> {
+        let range = self.layout().others();
+        (!range.is_empty()).then_some(Attributes {
+            store: self.store,
+            range,
+        })
     }
 
     /// Look up a single attribute value by name (ASCII case-insensitive).
@@ -103,10 +153,11 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// assert_eq!(a.attribute("href"), Some("https://example.com"));
     /// ```
     pub fn attribute(&self, key: &str) -> Option<&'html str> {
-        self.attributes()?
-            .iter()
-            .find(|attribute| attribute.key.eq_ignore_ascii_case(key))
-            .and_then(|attribute| attribute.value)
+        let index = self
+            .layout()
+            .others()
+            .find(|&index| self.key_is(index, key))?;
+        self.store.attribute_value(index)
     }
 
     /// The element's source-preserving descendant text.
@@ -247,6 +298,86 @@ impl<'html, 'query: 'html> DoubleEndedIterator for Elements<'_, 'html, 'query> {
 impl<'html, 'query: 'html> ExactSizeIterator for Elements<'_, 'html, 'query> {}
 
 impl fmt::Debug for Elements<'_, '_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.clone()).finish()
+    }
+}
+
+/// A row's attribute indexes, and whether they start with its `class` and
+/// `id`.
+struct AttributeLayout {
+    range: Range<usize>,
+    class: bool,
+    id: bool,
+}
+
+impl AttributeLayout {
+    /// Indexes of the attributes other than the row's `class` and `id`.
+    #[inline]
+    fn others(&self) -> Range<usize> {
+        self.range.start + usize::from(self.class) + usize::from(self.id)..self.range.end
+    }
+}
+
+/// Iterator over an element's attributes other than `class` and `id`, in
+/// source order. Returned by [`ElementRef::attributes`].
+#[derive(Clone)]
+pub struct Attributes<'store, 'html, 'query> {
+    store: &'store Store<'html, 'query>,
+    range: Range<usize>,
+}
+
+impl<'html, 'query: 'html> Attributes<'_, 'html, 'query> {
+    #[inline]
+    fn attribute(&self, index: usize) -> Attribute<'html> {
+        Attribute {
+            key: self.store.attribute_key(index),
+            value: self.store.attribute_value(index),
+        }
+    }
+}
+
+impl<'html, 'query: 'html> Iterator for Attributes<'_, 'html, 'query> {
+    type Item = Attribute<'html>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let index = self.range.next()?;
+        Some(self.attribute(index))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.range.size_hint()
+    }
+
+    #[inline]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let index = self.range.nth(n)?;
+        Some(self.attribute(index))
+    }
+}
+
+impl<'html, 'query: 'html> DoubleEndedIterator for Attributes<'_, 'html, 'query> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let index = self.range.next_back()?;
+        Some(self.attribute(index))
+    }
+}
+
+impl<'html, 'query: 'html> ExactSizeIterator for Attributes<'_, 'html, 'query> {}
+
+impl<'html, 'query: 'html> FusedIterator for Attributes<'_, 'html, 'query> {}
+
+/// Equal when both yield the same attributes, from any stores.
+impl<'html, 'query: 'html> PartialEq for Attributes<'_, 'html, 'query> {
+    fn eq(&self, other: &Self) -> bool {
+        self.range.len() == other.range.len() && self.clone().eq(other.clone())
+    }
+}
+
+impl fmt::Debug for Attributes<'_, '_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.clone()).finish()
     }

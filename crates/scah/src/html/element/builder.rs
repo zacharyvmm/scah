@@ -21,7 +21,7 @@ use scah_query_ir::{Attribute, IElement};
 /// let store = parse(html, queries).expect("parse succeeds");
 ///
 /// let a = store.get("a").unwrap().next().unwrap();
-/// let attrs = a.attributes().unwrap();
+/// let attrs: Vec<_> = a.attributes().unwrap().collect();
 /// assert_eq!(attrs[0].key, "href");
 /// assert_eq!(attrs[0].value, Some("https://example.com"));
 /// assert_eq!(attrs[1].key, "target");
@@ -40,7 +40,8 @@ pub struct XHtmlElement<'html> {
     pub id: Option<&'html str>,
     /// The value of the `class` attribute, if present.
     pub class: Option<&'html str>,
-    /// Slice of additional attributes (excludes `id` and `class`).
+    /// Every attribute parsed: the `class` and `id` above first, then the
+    /// others in source order.
     pub attributes: &'html [Attribute<'html>],
 }
 
@@ -77,22 +78,49 @@ impl<'html> XHtmlElement<'html> {
         &mut self,
         attribute: Attribute<'html>,
         attribute_tape: &mut Vec<Attribute<'html>>,
+        start: usize,
     ) {
         if self.name.is_empty() && attribute.value.is_none() {
             self.name = attribute.key;
-        } else if self.class.is_none()
+            return;
+        }
+        if self.class.is_none()
             && attribute.key.eq_ignore_ascii_case("class")
             && attribute.value.is_some()
         {
-            self.class = attribute.value;
+            self.list_class(attribute, attribute_tape, start);
         } else if self.id.is_none()
             && attribute.key.eq_ignore_ascii_case("id")
             && attribute.value.is_some()
         {
-            self.id = attribute.value;
+            self.list_id(attribute, attribute_tape, start);
         } else {
             attribute_tape.push(attribute);
         }
+    }
+
+    /// Make `attribute` the element's `class`, listed first.
+    #[inline]
+    fn list_class(
+        &mut self,
+        attribute: Attribute<'html>,
+        attribute_tape: &mut Vec<Attribute<'html>>,
+        start: usize,
+    ) {
+        self.class = attribute.value;
+        attribute_tape.insert(start, attribute);
+    }
+
+    /// Make `attribute` the element's `id`, listed right after its `class`.
+    #[inline]
+    fn list_id(
+        &mut self,
+        attribute: Attribute<'html>,
+        attribute_tape: &mut Vec<Attribute<'html>>,
+        start: usize,
+    ) {
+        self.id = attribute.value;
+        attribute_tape.insert(start + usize::from(self.class.is_some()), attribute);
     }
 
     fn add_selected_attribute(
@@ -100,30 +128,29 @@ impl<'html> XHtmlElement<'html> {
         attribute: Attribute<'html>,
         attribute_tape: &mut Vec<Attribute<'html>>,
         interest: &AttributeInterest<'_>,
+        start: usize,
     ) {
+        // `class` and `id` are kept in the list too, so a saved row has every
+        // attribute. The first of each with a value is also the element's
+        // field, and is listed first (see `XHtmlElement::attributes`).
         if attribute.key.eq_ignore_ascii_case("class") {
             if !interest.includes_class() {
                 return;
             }
             if self.class.is_none() && attribute.value.is_some() {
-                self.class = attribute.value;
-            } else {
-                // Preserve valueless and duplicate class attributes so
-                // `[class]` selectors retain the existing fallback behavior.
-                attribute_tape.push(attribute);
+                return self.list_class(attribute, attribute_tape, start);
             }
         } else if attribute.key.eq_ignore_ascii_case("id") {
             if !interest.includes_id() {
                 return;
             }
             if self.id.is_none() && attribute.value.is_some() {
-                self.id = attribute.value;
-            } else {
-                attribute_tape.push(attribute);
+                return self.list_id(attribute, attribute_tape, start);
             }
-        } else if interest.includes_attribute(attribute.key) {
-            attribute_tape.push(attribute);
+        } else if !interest.includes_attribute(attribute.key) {
+            return;
         }
+        attribute_tape.push(attribute);
     }
 
     #[inline]
@@ -132,11 +159,12 @@ impl<'html> XHtmlElement<'html> {
         attribute: Attribute<'html>,
         attribute_tape: &mut Vec<Attribute<'html>>,
         interest: Option<&AttributeInterest<'_>>,
+        start: usize,
     ) {
         if let Some(interest) = interest {
-            self.add_selected_attribute(attribute, attribute_tape, interest);
+            self.add_selected_attribute(attribute, attribute_tape, interest, start);
         } else {
-            self.add_to_element(attribute, attribute_tape);
+            self.add_to_element(attribute, attribute_tape, start);
         }
     }
 
@@ -191,6 +219,7 @@ impl<'html> XHtmlElement<'html> {
                                 },
                                 attribute_tape,
                                 interest,
+                                start_len,
                             );
                             key = None;
                         } else {
@@ -201,6 +230,7 @@ impl<'html> XHtmlElement<'html> {
                                 },
                                 attribute_tape,
                                 interest,
+                                start_len,
                             );
                             key = Some(string_value)
                         }
@@ -222,6 +252,7 @@ impl<'html> XHtmlElement<'html> {
                 },
                 attribute_tape,
                 interest,
+                start_len,
             );
         }
 
@@ -566,31 +597,29 @@ mod tests {
         element.from(&mut reader, &mut attributes);
 
         assert_eq!(element.name, "a");
-
-        assert_eq!(
-            element.attributes[0],
-            Attribute {
-                key: "target",
-                value: Some("_blank")
-            }
-        );
-
-        assert_eq!(
-            element.attributes[1],
-            Attribute {
-                key: "href",
-                value: Some("/my_cv.pdf")
-            }
-        );
-
         assert_eq!(element.class, Some("px-7 py-3"));
-
+        // The element's `class` is listed first, then the others in source
+        // order.
         assert_eq!(
-            element.attributes[2],
-            Attribute {
-                key: "hello-world",
-                value: Some("hello-world")
-            }
+            element.attributes,
+            &[
+                Attribute {
+                    key: "class",
+                    value: Some("px-7 py-3")
+                },
+                Attribute {
+                    key: "target",
+                    value: Some("_blank")
+                },
+                Attribute {
+                    key: "href",
+                    value: Some("/my_cv.pdf")
+                },
+                Attribute {
+                    key: "hello-world",
+                    value: Some("hello-world")
+                },
+            ]
         );
     }
 
@@ -769,10 +798,16 @@ mod tests {
         assert_eq!(element.class, Some("promoted"));
         assert_eq!(
             element.attributes,
-            &[Attribute {
-                key: "href",
-                value: Some("/kept"),
-            }]
+            &[
+                Attribute {
+                    key: "class",
+                    value: Some("promoted"),
+                },
+                Attribute {
+                    key: "href",
+                    value: Some("/kept"),
+                }
+            ]
         );
     }
 }

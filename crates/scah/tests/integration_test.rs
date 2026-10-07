@@ -441,7 +441,7 @@ fn test_html_page_first_anchor_tag_selection() {
     let a = children.next().unwrap();
     assert_eq!(a.name(), "a");
     assert_eq!(
-        a.attributes().unwrap(),
+        a.attributes().unwrap().collect::<Vec<_>>(),
         &[Attribute {
             key: "href",
             value: Some("link1")

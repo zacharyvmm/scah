@@ -70,7 +70,7 @@ impl JsElement {
 
         if let Some(attrs) = attributes {
             for Attribute { key, value } in attrs {
-                object.set(*key, *value)?
+                object.set(key, value)?
             }
         }
         Ok(object)

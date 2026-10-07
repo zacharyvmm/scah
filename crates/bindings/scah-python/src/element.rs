@@ -42,7 +42,7 @@ impl PyElement {
 
         if let Some(attrs) = attributes {
             for Attribute { key, value } in attrs {
-                object.set_item(*key, *value)?
+                object.set_item(key, value)?
             }
         }
         Ok(object)

@@ -125,7 +125,7 @@ pub use scah_query_ir::{
     StructuralPredicate, StructuralPredicates, TextRequirements, Transition, TransitionId,
 };
 pub use scah_reader::Reader;
-pub use store::{CapacityOptions, ElementId, ElementRef, Elements, HeapUsage, Store};
+pub use store::{Attributes, CapacityOptions, ElementId, ElementRef, Elements, HeapUsage, Store};
 
 /// Implementation details referenced by `query!` expansions.
 #[doc(hidden)]
@@ -421,7 +421,8 @@ mod tests {
             capacity_path_reservation,
         );
         assert!(
-            store.attributes.capacity() < html_len / 24,
+            store.attribute_count() < html_len / 24
+                && store.heap_usage().attributes < html_len / 24 * 16,
             "early-exit parse must not preallocate attribute arena"
         );
 
@@ -472,7 +473,7 @@ mod tests {
         let store = parse(&html, queries).unwrap();
 
         assert_eq!(store.get("div[data-value]").unwrap().count(), 5_000);
-        assert_eq!(store.attributes.capacity(), 0);
+        assert_eq!(store.heap_usage().attributes, 0);
     }
 
     #[test]
@@ -539,8 +540,8 @@ mod tests {
         assert_eq!(anchor.name(), "a");
         assert_eq!(anchor.id(), None);
         assert_eq!(anchor.class(), None);
-        assert_eq!(anchor.attributes(), None);
-        assert_eq!(store.attributes.len(), 0);
+        assert!(anchor.attributes().is_none());
+        assert_eq!(store.attribute_count(), 0);
     }
 
     #[test]
@@ -555,7 +556,7 @@ mod tests {
 
         let store = parse(html, queries).unwrap();
         assert_eq!(store.get("a").unwrap().count(), 1);
-        assert_eq!(store.attributes.len(), 0);
+        assert_eq!(store.attribute_count(), 0);
     }
 
     #[test]
@@ -571,7 +572,7 @@ mod tests {
         let store = parse(html, queries).unwrap();
         let lean = store.get("a.promoted[href]").unwrap().next().unwrap();
         let complete = store.get("a").unwrap().next().unwrap();
-        assert_eq!(lean.attributes(), None);
+        assert!(lean.attributes().is_none());
         assert_eq!(complete.id(), Some("hero"));
         assert_eq!(complete.class(), Some("promoted"));
         assert_eq!(complete.attribute("href"), Some("/kept"));
