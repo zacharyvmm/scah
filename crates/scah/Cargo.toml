@@ -36,6 +36,12 @@ otel = ["dep:tracing"]
 [dev-dependencies]
 pretty_assertions = "1.4.1"
 
+[lints.rust]
+# `--cfg scah_no_layout_hints` drops the `#[cold]` and `#[inline(never)]`
+# hints that keep rare paths out of the parse loop, to compare against them
+# or to lay the code out with PGO instead (see benches/layout).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(scah_no_layout_hints)"] }
+
 [lints.clippy]
 let-and-return = "allow"
 byte_char_slices = "allow"
