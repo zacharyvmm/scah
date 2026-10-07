@@ -5,6 +5,7 @@ mod open_elements;
 pub mod parser;
 mod simd_classifier;
 pub mod tag;
+mod tape_indexer;
 mod text_edge;
 mod text_state;
 

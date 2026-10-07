@@ -201,6 +201,34 @@ pub mod bench_internals {
 
         Ok(parser.finish())
     }
+
+    /// Parse HTML with the simdlex structural-tape indexer.
+    #[cfg(feature = "simd-bench-internals")]
+    pub fn parse_with_tape_indexer<'a: 'query, 'html: 'query, 'query: 'html, Q>(
+        html: &'html str,
+        queries: &'a [Q],
+    ) -> Result<Store<'html, 'query>, ParseError>
+    where
+        Q: QuerySpec<'query>,
+    {
+        if queries.is_empty() {
+            return Err(ParseError::EmptyQueries);
+        }
+
+        let mut parser = XHtmlParser::from_program(
+            std::borrow::Cow::Owned(Program::compile(queries)),
+            Some(html.len()),
+            Some(IndexingMode::Tape),
+        );
+        let mut reader = Reader::new(html);
+        while parser.next(&mut reader) {}
+
+        if let Some(err) = parser.take_parse_error() {
+            return Err(err);
+        }
+
+        Ok(parser.finish())
+    }
 }
 
 /// Errors that can occur during parsing.

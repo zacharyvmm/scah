@@ -39,6 +39,7 @@ dependencies = [
  "scah-macros 0.2.0-dev",
  "scah-query-ir 0.2.0-dev",
  "scah-reader 0.2.0-dev",
+ "simdlex",
  "smallvec",
 ]
 
@@ -99,6 +100,25 @@ checksum = "32b092b587ee15027ab003aec183b5a3891d3cd39876e1571f42f4ce77fcb01e"
 [[package]]
 name = "scah-reader"
 version = "0.2.0-dev"
+
+[[package]]
+name = "simdlex"
+version = "0.1.0"
+source = "git+https://github.com/zacharyvmm/simdlex?branch=experimental%2Fprimitive#a6300da749f47312ffac7a90c01a98932c34ab6a"
+dependencies = [
+ "simdlex-index",
+ "simdlex-tablegen",
+]
+
+[[package]]
+name = "simdlex-index"
+version = "0.1.0"
+source = "git+https://github.com/zacharyvmm/simdlex?branch=experimental%2Fprimitive#a6300da749f47312ffac7a90c01a98932c34ab6a"
+
+[[package]]
+name = "simdlex-tablegen"
+version = "0.1.0"
+source = "git+https://github.com/zacharyvmm/simdlex?branch=experimental%2Fprimitive#a6300da749f47312ffac7a90c01a98932c34ab6a"
 
 [[package]]
 name = "smallvec"

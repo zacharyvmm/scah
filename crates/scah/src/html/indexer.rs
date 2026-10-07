@@ -35,6 +35,8 @@ pub(crate) enum IndexingMode {
     /// Force the full-document backend, bypassing adaptive strategy selection.
     /// This is intended for isolated strategy benchmarks.
     ForcedFullDocument,
+    /// Use the simdlex structural tape ([`super::tape_indexer`]).
+    Tape,
 }
 
 /// The kind of completed structural span discovered by a [`TagIndexer`].
@@ -130,7 +132,7 @@ pub(crate) trait TagIndexer {
 #[derive(Debug, Default)]
 pub(crate) struct ScalarTagIndexer;
 
-trait StructuralSearch {
+pub(super) trait StructuralSearch {
     fn find_byte(&mut self, source: &[u8], from: usize, needle: u8) -> Option<usize>;
 
     fn find_tag_end(&mut self, source: &[u8], from: usize) -> usize;
@@ -898,7 +900,7 @@ fn find_raw_text_close_scalar(source: &[u8], from: usize, close_tag: &[u8]) -> O
     None
 }
 
-fn find_raw_text_close_packed(
+pub(super) fn find_raw_text_close_packed(
     search: &mut impl StructuralSearch,
     source: &[u8],
     from: usize,
@@ -914,7 +916,11 @@ fn find_raw_text_close_packed(
     None
 }
 
-fn next_event(search: &mut impl StructuralSearch, source: &[u8], from: usize) -> Option<TagEvent> {
+pub(super) fn next_event(
+    search: &mut impl StructuralSearch,
+    source: &[u8],
+    from: usize,
+) -> Option<TagEvent> {
     let mut from = from;
     loop {
         let start = search.find_byte(source, from, b'<')?;
@@ -1281,6 +1287,7 @@ fn sample_full_index_windows(
 
 #[derive(Debug)]
 pub(crate) struct AutoTagIndexer {
+    tape: Option<super::tape_indexer::TapeTagIndexer>,
     scalar: ScalarTagIndexer,
     rolling: Option<PackedTagIndexer>,
     full: Option<PackedTagIndexer>,
@@ -1302,6 +1309,7 @@ impl AutoTagIndexer {
         let classifier = BlockClassifier::default();
         let accelerated = classifier.is_accelerated();
         Self {
+            tape: (mode == IndexingMode::Tape).then(Default::default),
             scalar: ScalarTagIndexer,
             rolling: accelerated.then(|| PackedTagIndexer::new(IndexingMode::Rolling)),
             full: None,
@@ -1391,11 +1399,17 @@ impl AutoTagIndexer {
 
 impl TagIndexer for AutoTagIndexer {
     fn prepare(&mut self, source: &[u8]) {
+        if let Some(indexer) = &mut self.tape {
+            indexer.prepare(source);
+            return;
+        }
         self.prepare_policy(source);
     }
 
     fn next(&mut self, source: &[u8], from: usize) -> Option<TagEvent> {
-        if let Some(indexer) = &mut self.full {
+        if let Some(indexer) = &mut self.tape {
+            indexer.next(source, from)
+        } else if let Some(indexer) = &mut self.full {
             indexer.next(source, from)
         } else if let Some(indexer) = &mut self.rolling {
             indexer.next(source, from)
@@ -1406,7 +1420,9 @@ impl TagIndexer for AutoTagIndexer {
 
     #[inline(always)]
     fn finish_open(&mut self, source: &[u8], open: &OpenTagStart) -> usize {
-        if let Some(indexer) = &mut self.full {
+        if let Some(indexer) = &mut self.tape {
+            indexer.finish_open(source, open)
+        } else if let Some(indexer) = &mut self.full {
             indexer.finish_open(source, open)
         } else if let Some(indexer) = &mut self.rolling {
             indexer.finish_open(source, open)
@@ -1421,7 +1437,9 @@ impl TagIndexer for AutoTagIndexer {
         from: usize,
         close_tag: &str,
     ) -> Option<usize> {
-        if let Some(indexer) = &mut self.full {
+        if let Some(indexer) = &mut self.tape {
+            indexer.find_raw_text_close(source, from, close_tag)
+        } else if let Some(indexer) = &mut self.full {
             indexer.find_raw_text_close(source, from, close_tag)
         } else if let Some(indexer) = &mut self.rolling {
             indexer.find_raw_text_close(source, from, close_tag)
