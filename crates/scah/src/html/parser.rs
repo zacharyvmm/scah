@@ -525,8 +525,10 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                         interest.require_hidden();
                     }
                     // A tag ending immediately after its name cannot carry
-                    // selector attributes or hidden-text suppression.
-                    let end = if CAPTURE && source.get(open.attributes_start) == Some(&b'>') {
+                    // selector attributes, saved attributes, or hidden-text
+                    // suppression, so it needs neither tokenizing nor a search
+                    // for its end.
+                    let end = if source.get(open.attributes_start) == Some(&b'>') {
                         open.attributes_start + 1
                     } else if !interest.is_empty() {
                         #[cfg(test)]
