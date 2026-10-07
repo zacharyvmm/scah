@@ -10,6 +10,7 @@
 //! search that jumps ahead (a raw-text close, an attribute run) does not
 //! index the bytes it skipped.
 
+use std::cell::Cell;
 use std::convert::Infallible;
 use std::ops::Range;
 
@@ -39,8 +40,14 @@ impl IndexSpec for HtmlBounds {
     const CLASS_COUNT: usize = BOUNDS.len();
 }
 
-const FIRST_WINDOW_BYTES: usize = 4 * 1024;
+const FIRST_WINDOW_BYTES: usize = 1024;
 const MAX_WINDOW_BYTES: usize = 64 * 1024;
+
+thread_local! {
+    /// A dropped indexer's tape, lent to the next parse on this thread so
+    /// that each parse does not allocate (and fault in) a fresh tape.
+    static SPARE_INDEX: Cell<Option<StructuralIndex>> = const { Cell::new(None) };
+}
 
 #[derive(Debug)]
 pub(crate) struct TapeTagIndexer {
@@ -60,13 +67,24 @@ impl Default for TapeTagIndexer {
     fn default() -> Self {
         Self {
             indexer: Indexer::new(),
-            index: StructuralIndex::new(),
+            index: SPARE_INDEX
+                .try_with(Cell::take)
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
             window: 0..0,
             next_window: FIRST_WINDOW_BYTES,
             cursor: 0,
             source_pointer: 0,
             source_len: 0,
         }
+    }
+}
+
+impl Drop for TapeTagIndexer {
+    fn drop(&mut self) {
+        let index = std::mem::take(&mut self.index);
+        let _ = SPARE_INDEX.try_with(|spare| spare.set(Some(index)));
     }
 }
 
@@ -102,10 +120,20 @@ impl TapeTagIndexer {
     fn find_matching(
         &mut self,
         source: &[u8],
-        mut from: usize,
+        from: usize,
         wanted: impl Fn(u8) -> bool,
     ) -> Option<usize> {
         self.bind(source);
+        self.find_on_tape(source, from, wanted)
+    }
+
+    #[inline]
+    fn find_on_tape(
+        &mut self,
+        source: &[u8],
+        mut from: usize,
+        wanted: impl Fn(u8) -> bool,
+    ) -> Option<usize> {
         loop {
             if from >= source.len() {
                 return None;

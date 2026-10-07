@@ -202,6 +202,42 @@ pub mod bench_internals {
         Ok(parser.finish())
     }
 
+    /// The tag-indexing strategy for [`parse_with_strategy`].
+    #[cfg(feature = "simd-bench-internals")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum IndexingStrategy {
+        /// The production choice, as [`crate::parse`] makes it.
+        Policy,
+        Rolling,
+        FullDocument,
+        Tape,
+    }
+
+    /// Parse exactly as [`crate::parse`] does (same driver loop and
+    /// capacity policy), but with a forced indexing strategy.
+    #[cfg(feature = "simd-bench-internals")]
+    pub fn parse_with_strategy<'a: 'query, 'html: 'query, 'query: 'html, Q>(
+        html: &'html str,
+        queries: &'a [Q],
+        strategy: IndexingStrategy,
+    ) -> Result<Store<'html, 'query>, ParseError>
+    where
+        Q: QuerySpec<'query>,
+    {
+        let mode = match strategy {
+            IndexingStrategy::Policy => None,
+            IndexingStrategy::Rolling => Some(IndexingMode::Rolling),
+            IndexingStrategy::FullDocument => Some(IndexingMode::ForcedFullDocument),
+            IndexingStrategy::Tape => Some(IndexingMode::Tape),
+        };
+        crate::run(
+            html,
+            std::borrow::Cow::Owned(Program::compile(queries)),
+            true,
+            mode,
+        )
+    }
+
     /// Parse HTML with the simdlex structural-tape indexer.
     #[cfg(feature = "simd-bench-internals")]
     pub fn parse_with_tape_indexer<'a: 'query, 'html: 'query, 'query: 'html, Q>(
@@ -308,7 +344,7 @@ pub fn parse<'a: 'query, 'html: 'query, 'query: 'html, Q>(
 where
     Q: QuerySpec<'query>,
 {
-    run(html, Cow::Owned(Program::compile(queries)), true)
+    run(html, Cow::Owned(Program::compile(queries)), true, None)
 }
 
 /// Parse with queries compiled once by [`Program::compile`].
@@ -340,7 +376,7 @@ pub fn parse_compiled<'html, 'query: 'html>(
     html: &'html str,
     program: &'query Program<'query>,
 ) -> Result<Store<'html, 'query>, ParseError> {
-    run(html, Cow::Borrowed(program), true)
+    run(html, Cow::Borrowed(program), true, None)
 }
 
 /// Parse queries that do not request raw or normalized text.
@@ -354,7 +390,7 @@ pub fn parse_without_text_capture<'a: 'query, 'html: 'query, 'query: 'html, Q>(
 where
     Q: QuerySpec<'query>,
 {
-    run(html, Cow::Owned(Program::compile(queries)), false)
+    run(html, Cow::Owned(Program::compile(queries)), false, None)
 }
 
 /// [`parse_without_text_capture`] with a compiled [`Program`].
@@ -362,13 +398,14 @@ pub fn parse_compiled_without_text_capture<'html, 'query: 'html>(
     html: &'html str,
     program: &'query Program<'query>,
 ) -> Result<Store<'html, 'query>, ParseError> {
-    run(html, Cow::Borrowed(program), false)
+    run(html, Cow::Borrowed(program), false, None)
 }
 
 fn run<'html, 'query: 'html>(
     html: &'html str,
     program: Cow<'query, Program<'query>>,
     capture: bool,
+    indexing_mode: Option<html::IndexingMode>,
 ) -> Result<Store<'html, 'query>, ParseError> {
     if program.root_sections().is_empty() {
         return Err(ParseError::EmptyQueries);
@@ -382,7 +419,7 @@ fn run<'html, 'query: 'html>(
     let query_count = program.root_sections().len();
     // Queries that can stop early skip reserving storage for the whole document.
     let capacity = (!program.features().all_roots_first).then_some(html.len());
-    let mut parser = XHtmlParser::from_program(program, capacity, None);
+    let mut parser = XHtmlParser::from_program(program, capacity, indexing_mode);
     let mut reader = Reader::new(html);
     parser.trace_parse_started(html.len(), query_count);
     if capture {

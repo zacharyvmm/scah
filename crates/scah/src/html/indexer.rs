@@ -1293,6 +1293,7 @@ pub(crate) struct AutoTagIndexer {
     full: Option<PackedTagIndexer>,
     allow_full_index: bool,
     force_full_index: bool,
+    force_tape: bool,
     attributes_may_be_parsed: bool,
     prepared_source: usize,
     prepared_len: usize,
@@ -1318,6 +1319,7 @@ impl AutoTagIndexer {
                 IndexingMode::FullDocument | IndexingMode::ForcedFullDocument
             ),
             force_full_index: mode == IndexingMode::ForcedFullDocument,
+            force_tape: mode == IndexingMode::Tape,
             attributes_may_be_parsed,
             prepared_source: 0,
             prepared_len: 0,
@@ -1353,9 +1355,11 @@ impl AutoTagIndexer {
         sample.should_build_full_index(attributes_may_be_parsed)
     }
 
+    /// Whether the policy chose an up-front index for this document: the
+    /// structural tape, or the forced full-document index.
     #[cfg(test)]
     fn uses_full_index(&self) -> bool {
-        self.full.is_some()
+        self.full.is_some() || self.tape.is_some()
     }
 
     #[cfg(test)]
@@ -1373,6 +1377,7 @@ impl AutoTagIndexer {
         self.prepared_source = source_pointer;
         self.prepared_len = source.len();
         self.full = None;
+        self.tape = None;
 
         if self.force_full_index {
             let mut full = PackedTagIndexer::new(IndexingMode::FullDocument);
@@ -1390,17 +1395,23 @@ impl AutoTagIndexer {
                 self.attributes_may_be_parsed,
             )
         {
-            let mut full = PackedTagIndexer::new(IndexingMode::FullDocument);
-            full.prepare(source);
-            self.full = Some(full);
+            // Where a document is worth indexing ahead, the structural tape
+            // beats the full-document event index on every measured page
+            // (`speed_bench_tape_indexer`). Dense documents never get here and
+            // keep the rolling indexer.
+            let mut tape = super::tape_indexer::TapeTagIndexer::default();
+            tape.prepare(source);
+            self.tape = Some(tape);
         }
     }
 }
 
 impl TagIndexer for AutoTagIndexer {
     fn prepare(&mut self, source: &[u8]) {
-        if let Some(indexer) = &mut self.tape {
-            indexer.prepare(source);
+        if self.force_tape {
+            if let Some(indexer) = &mut self.tape {
+                indexer.prepare(source);
+            }
             return;
         }
         self.prepare_policy(source);

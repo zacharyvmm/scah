@@ -1,13 +1,14 @@
 //! Compares tag-indexing strategies on the same documents and queries:
-//! the production policy (`parse`), the rolling and full-document packed
-//! indexers, and the simdlex structural-tape indexer.
+//! the production policy, the rolling and full-document packed indexers, and
+//! the simdlex structural-tape indexer. Every strategy runs through the same
+//! driver as `scah::parse`.
 //!
 //! Real pages are read from `SCAH_TAPE_CORPUS` (a directory of `.html`
 //! files) when it is set.
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use scah::bench_internals::{parse_with_indexing_mode, parse_with_tape_indexer};
-use scah::{Query, Save, parse};
+use scah::bench_internals::{IndexingStrategy, parse_with_strategy};
+use scah::{Query, Save};
 use std::hint::black_box;
 use std::time::Duration;
 
@@ -83,38 +84,29 @@ fn bench_strategies(c: &mut Criterion) {
         for (workload, queries, selector) in workloads {
             let count =
                 |store: scah::Store<'_, '_>| store.get(selector).map_or(0, |items| items.count());
-            let expected = count(parse(&html, queries).unwrap());
-            assert_eq!(
-                count(parse_with_tape_indexer(&html, queries).unwrap()),
-                expected
-            );
-            assert_eq!(
-                count(parse_with_indexing_mode(&html, queries, true).unwrap()),
-                expected
-            );
-
-            group.bench_with_input(BenchmarkId::new("policy", workload), &html, |b, html| {
-                b.iter(|| count(parse(black_box(html), black_box(queries)).unwrap()))
-            });
-            for (strategy, full_index) in [("rolling", false), ("full_index", true)] {
-                group.bench_with_input(BenchmarkId::new(strategy, workload), &html, |b, html| {
+            let strategies = [
+                ("policy", IndexingStrategy::Policy),
+                ("rolling", IndexingStrategy::Rolling),
+                ("full_index", IndexingStrategy::FullDocument),
+                ("tape", IndexingStrategy::Tape),
+            ];
+            let expected =
+                count(parse_with_strategy(&html, queries, IndexingStrategy::Policy).unwrap());
+            for (name, strategy) in strategies {
+                assert_eq!(
+                    count(parse_with_strategy(&html, queries, strategy).unwrap()),
+                    expected,
+                    "{document} {workload} {name}"
+                );
+                group.bench_with_input(BenchmarkId::new(name, workload), &html, |b, html| {
                     b.iter(|| {
                         count(
-                            parse_with_indexing_mode(
-                                black_box(html),
-                                black_box(queries),
-                                full_index,
-                            )
-                            .unwrap(),
+                            parse_with_strategy(black_box(html), black_box(queries), strategy)
+                                .unwrap(),
                         )
                     })
                 });
             }
-            group.bench_with_input(BenchmarkId::new("tape", workload), &html, |b, html| {
-                b.iter(|| {
-                    count(parse_with_tape_indexer(black_box(html), black_box(queries)).unwrap())
-                })
-            });
         }
         group.finish();
     }
