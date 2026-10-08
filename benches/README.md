@@ -10,6 +10,7 @@
 | `cursor_dominance/`, `sibling/`, `structural/`, `ordinary_gate/` | Parser engine workloads; `ordinary_gate` backs the sibling performance gate |
 | `element_tape/`, `escape_scanner/`, `tag_classification/` | Microbenchmarks for internal design experiments |
 | `gates/` | Scripts that compare a pull request against its base revision in CI |
+| `layout/` | Scripts that separate code-layout effects from code changes (see below) |
 | `results/` | Published comparison results, one JSON file per suite and scenario |
 | `report/` | Converts raw benchmark output into `results/` and renders the README tables |
 
@@ -52,6 +53,37 @@ Memory benchmarks use gungraun (Valgrind) and run only on Linux:
 ```bash
 cargo bench -p scah-benches --features linux-memory-benches --bench memory_bench_simple_all
 ```
+
+## Code layout
+
+The parse loop is sensitive to where the linker places its code. On Intel
+CPUs the share of its µops served from the decoded-µop cache moves by over 20
+points between builds that differ only in function order, and its speed moves
+with it. A comparison of one build per side, as the CI gates make, can
+therefore show a few percent in either direction that no source change
+caused. Two scripts help tell the difference:
+
+```bash
+# Mean change of this checkout vs a base revision over 4 shuffled layouts
+just layout-compare origin/main 4
+
+# The same tree with and without the `#[cold]`/`#[inline(never)]` hints
+CANDIDATE_RUSTFLAGS="--cfg scah_no_layout_hints" just layout-compare HEAD 4
+
+# Which functions PGO places in .text.hot / .text.unlikely
+just pgo-sections
+```
+
+`compare.sh` reports each build's IPC and µop-cache share when `perf` can
+read hardware counters (`kernel.perf_event_paranoid` 2 or lower).
+
+The layout hints in `crates/scah/src/html/parser.rs` move rarely run paths
+(raw text, mismatched close tags, implied closes, end of input, errors) out
+of the parse loop. They are written as
+`#[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]`, so building
+with `RUSTFLAGS="--cfg scah_no_layout_hints"` removes all of them: use it to
+check that they still help, or to train PGO without them and compare its
+verdict from `pgo-sections.sh` with where the hints are.
 
 ## Result format
 

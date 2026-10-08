@@ -87,6 +87,13 @@ gate-sibling base="origin/main":
     ./benches/gates/check-sibling-performance.sh {{base}}
 gate-text base="origin/main":
     ./benches/gates/check-text-performance.sh {{base}}
+
+# Compare against a base revision over several shuffled code layouts (x86-64 only)
+layout-compare base="origin/main" seeds="4":
+    ./benches/layout/compare.sh {{base}} {{seeds}}
+# List where PGO places the parser's functions (needs the llvm-tools component)
+pgo-sections:
+    ./benches/layout/pgo-sections.sh
 download-html-spec-bench:
     mkdir -p benches/bench_data
     curl -L "https://html.spec.whatwg.org/" -o benches/bench_data/html.spec.whatwg.org.html
