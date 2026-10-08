@@ -200,19 +200,21 @@ impl TagIndexer for TapeTagIndexer {
     }
 
     // Kept out of line so that adding this backend does not grow the
-    // dispatcher in `AutoTagIndexer`, whose rolling path is per-tag hot.
-    #[inline(never)]
+    // dispatcher in `AutoTagIndexer`, whose rolling path is per-tag hot. Not
+    // `cold`: this path is hot for the documents that take it. Like the
+    // parser's hints, `--cfg scah_no_layout_hints` removes these.
+    #[cfg_attr(not(scah_no_layout_hints), inline(never))]
     fn next(&mut self, source: &[u8], from: usize) -> Option<TagEvent> {
         next_event(self, source, from)
     }
 
-    #[inline(never)]
+    #[cfg_attr(not(scah_no_layout_hints), inline(never))]
     fn finish_open(&mut self, source: &[u8], open: &OpenTagStart) -> usize {
         open.end_hint
             .unwrap_or_else(|| self.find_tag_end(source, open.attributes_start))
     }
 
-    #[inline(never)]
+    #[cfg_attr(not(scah_no_layout_hints), inline(never))]
     fn find_raw_text_close(
         &mut self,
         source: &[u8],
