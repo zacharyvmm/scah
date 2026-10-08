@@ -1285,12 +1285,21 @@ fn sample_full_index_windows(
     sample
 }
 
+/// An index built ahead of the parse: the structural tape in production, or
+/// the full-document event index when forced for benchmarks. One option
+/// keeps the rolling path, which most dense documents take, at a single
+/// check per call.
+#[derive(Debug)]
+enum Ahead {
+    Full(PackedTagIndexer),
+    Tape(super::tape_indexer::TapeTagIndexer),
+}
+
 #[derive(Debug)]
 pub(crate) struct AutoTagIndexer {
-    tape: Option<super::tape_indexer::TapeTagIndexer>,
     scalar: ScalarTagIndexer,
     rolling: Option<PackedTagIndexer>,
-    full: Option<PackedTagIndexer>,
+    ahead: Option<Ahead>,
     allow_full_index: bool,
     force_full_index: bool,
     force_tape: bool,
@@ -1310,10 +1319,9 @@ impl AutoTagIndexer {
         let classifier = BlockClassifier::default();
         let accelerated = classifier.is_accelerated();
         Self {
-            tape: (mode == IndexingMode::Tape).then(Default::default),
             scalar: ScalarTagIndexer,
             rolling: accelerated.then(|| PackedTagIndexer::new(IndexingMode::Rolling)),
-            full: None,
+            ahead: None,
             allow_full_index: matches!(
                 mode,
                 IndexingMode::FullDocument | IndexingMode::ForcedFullDocument
@@ -1359,7 +1367,7 @@ impl AutoTagIndexer {
     /// structural tape, or the forced full-document index.
     #[cfg(test)]
     fn uses_full_index(&self) -> bool {
-        self.full.is_some() || self.tape.is_some()
+        self.ahead.is_some()
     }
 
     #[cfg(test)]
@@ -1376,13 +1384,18 @@ impl AutoTagIndexer {
         }
         self.prepared_source = source_pointer;
         self.prepared_len = source.len();
-        self.full = None;
-        self.tape = None;
+        self.ahead = None;
 
         if self.force_full_index {
             let mut full = PackedTagIndexer::new(IndexingMode::FullDocument);
             full.prepare(source);
-            self.full = Some(full);
+            self.ahead = Some(Ahead::Full(full));
+            return;
+        }
+        if self.force_tape {
+            let mut tape = super::tape_indexer::TapeTagIndexer::default();
+            tape.prepare(source);
+            self.ahead = Some(Ahead::Tape(tape));
             return;
         }
         let Some(rolling) = self.rolling.as_ref() else {
@@ -1401,27 +1414,22 @@ impl AutoTagIndexer {
             // keep the rolling indexer.
             let mut tape = super::tape_indexer::TapeTagIndexer::default();
             tape.prepare(source);
-            self.tape = Some(tape);
+            self.ahead = Some(Ahead::Tape(tape));
         }
     }
 }
 
 impl TagIndexer for AutoTagIndexer {
     fn prepare(&mut self, source: &[u8]) {
-        if self.force_tape {
-            if let Some(indexer) = &mut self.tape {
-                indexer.prepare(source);
-            }
-            return;
-        }
         self.prepare_policy(source);
     }
 
     fn next(&mut self, source: &[u8], from: usize) -> Option<TagEvent> {
-        if let Some(indexer) = &mut self.tape {
-            indexer.next(source, from)
-        } else if let Some(indexer) = &mut self.full {
-            indexer.next(source, from)
+        if let Some(ahead) = &mut self.ahead {
+            match ahead {
+                Ahead::Full(indexer) => indexer.next(source, from),
+                Ahead::Tape(indexer) => indexer.next(source, from),
+            }
         } else if let Some(indexer) = &mut self.rolling {
             indexer.next(source, from)
         } else {
@@ -1431,10 +1439,11 @@ impl TagIndexer for AutoTagIndexer {
 
     #[inline(always)]
     fn finish_open(&mut self, source: &[u8], open: &OpenTagStart) -> usize {
-        if let Some(indexer) = &mut self.tape {
-            indexer.finish_open(source, open)
-        } else if let Some(indexer) = &mut self.full {
-            indexer.finish_open(source, open)
+        if let Some(ahead) = &mut self.ahead {
+            match ahead {
+                Ahead::Full(indexer) => indexer.finish_open(source, open),
+                Ahead::Tape(indexer) => indexer.finish_open(source, open),
+            }
         } else if let Some(indexer) = &mut self.rolling {
             indexer.finish_open(source, open)
         } else {
@@ -1448,10 +1457,11 @@ impl TagIndexer for AutoTagIndexer {
         from: usize,
         close_tag: &str,
     ) -> Option<usize> {
-        if let Some(indexer) = &mut self.tape {
-            indexer.find_raw_text_close(source, from, close_tag)
-        } else if let Some(indexer) = &mut self.full {
-            indexer.find_raw_text_close(source, from, close_tag)
+        if let Some(ahead) = &mut self.ahead {
+            match ahead {
+                Ahead::Full(indexer) => indexer.find_raw_text_close(source, from, close_tag),
+                Ahead::Tape(indexer) => indexer.find_raw_text_close(source, from, close_tag),
+            }
         } else if let Some(indexer) = &mut self.rolling {
             indexer.find_raw_text_close(source, from, close_tag)
         } else {
