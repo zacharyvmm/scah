@@ -65,8 +65,8 @@ Rust crates and the Python and npm packages together.
   documents of empty `div`s, parsing is about 16% faster. ([#102])
 - Documents the adaptive policy indexes ahead are now indexed with a SIMD
   structural tape (via simdlex) instead of the full-document event index.
-  Finding every link on large real pages is 15–27% faster, and on text-heavy
-  documents about 2x faster; dense documents keep the rolling indexer.
+  Finding every link on large real pages is 12–20% faster, and on text-heavy
+  documents about 1.8x faster; dense documents keep the rolling indexer.
   ([#101])
 
 ### Fixed
