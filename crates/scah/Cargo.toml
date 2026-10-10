@@ -25,6 +25,8 @@ smallvec = "1.15.1"
 scah-reader.workspace = true
 scah-query-ir.workspace = true
 scah-macros.workspace = true
+# Experimental: structural tape indexing (git dependency until simdlex is published).
+simdlex = { git = "https://github.com/zacharyvmm/simdlex", branch = "main" }
 tracing = { version = "0.1", optional = true }
 
 [features]

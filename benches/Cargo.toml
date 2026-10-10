@@ -124,3 +124,8 @@ harness = false
 name = "speed_bench_structural"
 path = "structural/speed_bench.rs"
 harness = false
+
+[[bench]]
+name = "speed_bench_tape_indexer"
+path = "tape_indexer/speed_bench.rs"
+harness = false
