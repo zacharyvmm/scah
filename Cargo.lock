@@ -1814,7 +1814,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "simdlex"
 version = "0.1.0"
-source = "git+https://github.com/zacharyvmm/simdlex?branch=experimental%2Fprimitive#a6300da749f47312ffac7a90c01a98932c34ab6a"
+source = "git+https://github.com/zacharyvmm/simdlex?branch=main#91e9353a8bbd1a67306c2efc9a9b9cecc0990c51"
 dependencies = [
  "simdlex-index",
  "simdlex-tablegen",
@@ -1823,12 +1823,12 @@ dependencies = [
 [[package]]
 name = "simdlex-index"
 version = "0.1.0"
-source = "git+https://github.com/zacharyvmm/simdlex?branch=experimental%2Fprimitive#a6300da749f47312ffac7a90c01a98932c34ab6a"
+source = "git+https://github.com/zacharyvmm/simdlex?branch=main#91e9353a8bbd1a67306c2efc9a9b9cecc0990c51"
 
 [[package]]
 name = "simdlex-tablegen"
 version = "0.1.0"
-source = "git+https://github.com/zacharyvmm/simdlex?branch=experimental%2Fprimitive#a6300da749f47312ffac7a90c01a98932c34ab6a"
+source = "git+https://github.com/zacharyvmm/simdlex?branch=main#91e9353a8bbd1a67306c2efc9a9b9cecc0990c51"
 
 [[package]]
 name = "siphasher"
