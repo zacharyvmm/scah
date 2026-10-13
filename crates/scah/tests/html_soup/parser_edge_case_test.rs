@@ -89,6 +89,20 @@ fn end_tag_attributes_do_not_change_the_closed_element() {
 }
 
 #[test]
+fn quotes_and_equals_stay_in_end_tag_names() {
+    // `</div=bogus>` is an end tag named `div=bogus`, which closes nothing.
+    let html = r#"<div>a</div=bogus><span>b</span></div><p>c</p"x><em>d</em>"#;
+    let store = super::helpers::parse_all(html, &["div", "div span", "p em"]);
+
+    assert_eq!(
+        super::helpers::inner_htmls(&store, "div"),
+        vec![Some("a</div=bogus><span>b</span>")]
+    );
+    assert_eq!(super::helpers::elements(&store, "div span").len(), 1);
+    assert_eq!(super::helpers::elements(&store, "p em").len(), 1);
+}
+
+#[test]
 fn solidus_ends_open_and_close_tag_names_alike() {
     // `<x/foo>` opens `x` (the solidus starts attributes), so `</x/foo>` must
     // close it rather than leave it open around the following `<p>`.

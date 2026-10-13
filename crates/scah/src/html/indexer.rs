@@ -746,9 +746,10 @@ fn is_html_whitespace(byte: u8) -> bool {
 
 /// The name of a close tag whose content spans `content_start..gt`.
 ///
-/// The name ends where an opening tag's name would (see [`is_name_boundary`]):
+/// The name ends at whitespace or `/`, as in the tokenizer's tag name state:
 /// anything after it (`</div class=x>`, `</x/y>`) is ignored rather than
-/// becoming part of the name. Leading whitespace is skipped.
+/// becoming part of the name. Quotes and `=` stay in the name, so
+/// `</div=x>` does not close a `div`. Leading whitespace is skipped.
 #[inline]
 fn close_tag_name(source: &[u8], content_start: usize, gt: usize) -> (usize, usize) {
     let mut name_start = content_start;
@@ -756,7 +757,7 @@ fn close_tag_name(source: &[u8], content_start: usize, gt: usize) -> (usize, usi
         name_start += 1;
     }
     let mut name_end = name_start;
-    while name_end < gt && !is_name_boundary(source[name_end]) {
+    while name_end < gt && !is_html_whitespace(source[name_end]) && source[name_end] != b'/' {
         name_end += 1;
     }
     (name_start, name_end)
@@ -832,8 +833,7 @@ fn quoted_close_tag_end(source: &[u8], mut position: usize) -> usize {
     source.len()
 }
 
-/// Ends an opening or closing tag name. Both kinds share it so that a close
-/// tag always names the element its matching open tag created.
+/// Ends an opening tag name.
 #[inline]
 fn is_name_boundary(byte: u8) -> bool {
     is_html_whitespace(byte) || matches!(byte, b'\'' | b'"' | b'=' | b'>' | b'/')
