@@ -18,6 +18,21 @@ Rust crates and the Python and npm packages together.
 - `Position`, the `QuerySpec` navigation methods, `Transition::next`, and
   `exit_at_section_end` are removed from the query IR; `QuerySpec` only exposes
   query data. ([#98])
+- `Element` is replaced by `ElementRef`, a handle to a row of the store.
+  Fields become methods (`name()`, `class()`, `id()`, `inner_html()`), and
+  accessors no longer take the store: `element.text()`,
+  `element.attribute("href")`, `element.get(selector)`. `Store::get` and
+  `Store::query` return `Elements`, an iterator of handles, and the public
+  `Store::elements` and `Store::attributes` fields give way to
+  `Store::element(id)`, `Store::elements()`, and `Store::len()`.
+  `element.attributes()` returns `Attributes`, an iterator over the same
+  attributes as before (all but the `class` and `id` that have their own
+  methods), instead of a slice. ([#100])
+- HTML of 4 GiB or more returns `ParseError::InputTooLarge`. ([#100])
+- `XHtmlParser::next` panics if stepped over a different source than its
+  first call, or over a `Reader::from_bytes` source that is not UTF-8.
+  `Reader::source_str` returns the source as a string when it is valid.
+  ([#100])
 
 ### Added
 
@@ -38,6 +53,13 @@ Rust crates and the Python and npm packages together.
   parsing documents with no matches is about 14% faster. ([#94], [#95])
 - Tag names are resolved once per tag to a one-byte id that drives parser,
   text, and selector lookups. ([#96])
+- Saved elements are stored as columns of 32-bit spans, one per saved field,
+  and a column exists only if some query saves that field. Attributes are two
+  columns of key and value spans, `class` and `id` included, so an element
+  without attributes stores nothing for them. ([#100])
+- A dropped `Store` keeps its allocations, up to 32 MiB, for the next parse on
+  the same thread, so parsing many documents in a loop no longer allocates
+  and page-faults a fresh store each time. ([#100])
 
 ### Fixed
 
@@ -166,3 +188,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#91]: https://github.com/zacharyvmm/scah/issues/91
 [#97]: https://github.com/zacharyvmm/scah/pull/97
 [#98]: https://github.com/zacharyvmm/scah/pull/98
+[#100]: https://github.com/zacharyvmm/scah/pull/100

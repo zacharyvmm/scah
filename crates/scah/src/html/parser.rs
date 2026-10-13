@@ -38,8 +38,8 @@ struct ParserTempState<'html, 'query> {
     closing_elements: Vec<OpenElement<'html>>,
     implied_closes: Vec<OpenElement<'html>>,
     saved_elements: Vec<SavedElement>,
+    /// Attributes of the open tag being parsed, cleared for each tag.
     attributes: Vec<Attribute<'html>>,
-    attribute_start: usize,
     save_hits: Vec<SaveHit>,
     attribute_interest: AttributeInterest<'query>,
     structural: Option<Box<StructuralParserState<'html, 'query>>>,
@@ -190,11 +190,12 @@ pub struct XHtmlParser<'html, 'query> {
     raw_source_start: Option<usize>,
     raw_active_count: usize,
     text_active_count: usize,
-    persist_attributes: bool,
     /// Every root query is `First`, so parsing may stop early.
     can_finish: bool,
     raw_text_close: Option<&'static str>,
     eof_drained: bool,
+    /// The first `next` or `run` bound the store to its reader's source.
+    source_bound: bool,
     parse_error: Option<ParseError>,
     indexer: AutoTagIndexer,
     #[cfg(test)]
@@ -264,7 +265,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         let features = *program.features();
         let requirements = features.text;
         let text_state = ParserTextState::new(requirements);
-        let persist_attributes = features.stores_attributes;
         let parse_attributes = features.parses_attributes || requirements.text;
         let indexing_mode = indexing_mode.unwrap_or(if features.all_roots_first {
             IndexingMode::Rolling
@@ -279,7 +279,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                     reserve_text: requirements.text,
                     ..crate::CapacityOptions::default()
                 },
-                persist_attributes,
+                features.stores_attributes,
                 false,
             )
         });
@@ -305,10 +305,10 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             raw_source_start: None,
             raw_active_count: 0,
             text_active_count: 0,
-            persist_attributes,
             can_finish: features.all_roots_first,
             raw_text_close: None,
             eof_drained: false,
+            source_bound: false,
             parse_error: None,
             indexer: AutoTagIndexer::new(indexing_mode, parse_attributes),
             #[cfg(test)]
@@ -353,10 +353,17 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     }
 
     /// Process the next tag. Returns `false` once parsing is complete.
+    ///
+    /// # Panics
+    ///
+    /// If `reader` reads a different source than the first call did (the
+    /// results borrow from one document), the source is not UTF-8, or it is
+    /// 4 GiB or longer.
     pub fn next(&mut self, reader: &mut Reader<'html>) -> bool {
         if self.parse_error.is_some() {
             return false;
         }
+        self.bind_source(reader);
         self.indexer.prepare(reader.source());
         if self.capture_mode.captures_any() {
             self.next_mode::<true>(reader)
@@ -369,6 +376,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         if self.parse_error.is_some() {
             return;
         }
+        self.bind_source(reader);
         // A full run keeps one Reader source, so the index policy only needs
         // preparation once. `next` prepares per call because its caller owns
         // the Reader and may step a different source between calls.
@@ -385,8 +393,24 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         if self.parse_error.is_some() {
             return;
         }
+        self.bind_source(reader);
         self.indexer.prepare(reader.source());
         while self.next_mode::<false>(reader) {}
+    }
+
+    /// Point the store at the document being parsed, which saved strings
+    /// borrow from. Later calls must read the same document: the matcher and
+    /// open elements carry its state, whether or not any row was saved yet.
+    #[inline]
+    fn bind_source(&mut self, reader: &Reader<'html>) {
+        let source = reader.source();
+        if self.source_bound {
+            assert!(self.store.bound_to(source), "a parser reads one document");
+        } else {
+            let html = reader.source_str().expect("a parser reads UTF-8 HTML");
+            self.store.set_html(html);
+            self.source_bound = true;
+        }
     }
 
     /// Whether no later tag can change the results: every query is done and
@@ -464,7 +488,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                     self.position.reader_position = open.start;
                     let name = open.name(source);
                     self.element.set_name(name);
-                    self.temp_state.attribute_start = self.store.attributes.len();
 
                     let tag_id = TagId::of(name);
                     let classified = ClassifiedTag::of(tag_id);
@@ -511,20 +534,14 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                             self.attribute_parse_count += 1;
                         }
                         let mut attributes = Reader::from_bytes(&source[open.attributes_start..]);
-                        if self.persist_attributes {
-                            self.element.parse_attributes(
-                                &mut attributes,
-                                &mut self.store.attributes,
-                                &self.temp_state.attribute_interest,
-                            );
-                        } else {
-                            self.temp_state.attributes.clear();
-                            self.element.parse_attributes(
-                                &mut attributes,
-                                &mut self.temp_state.attributes,
-                                &self.temp_state.attribute_interest,
-                            );
-                        }
+                        // The store copies the attributes of rows that save
+                        // them, so every tag parses into the same scratch list.
+                        self.temp_state.attributes.clear();
+                        self.element.parse_attributes(
+                            &mut attributes,
+                            &mut self.temp_state.attributes,
+                            &self.temp_state.attribute_interest,
+                        );
                         #[cfg(test)]
                         {
                             self.selected_attribute_count += self.element.attributes.len();
@@ -618,18 +635,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                     &mut self.store,
                     &mut self.temp_state.save_hits,
                 );
-                if self.persist_attributes {
-                    let attributes_saved = match self.temp_state.save_hits.as_slice() {
-                        [] => false,
-                        [hit] => hit.save_attributes,
-                        hits => hits.iter().any(|hit| hit.save_attributes),
-                    };
-                    if !attributes_saved {
-                        self.store
-                            .attributes
-                            .truncate(self.temp_state.attribute_start);
-                    }
-                }
                 let text_was_active = CAPTURE && self.text_active_count > 0;
                 let (new_raw_count, new_text_count) = if CAPTURE && !is_self_closing {
                     self.temp_state
@@ -796,9 +801,9 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         crate::scah_trace!(
             self.store,
             TraceEvent::ParseFinished {
-                element_count: self.store.elements.len(),
+                element_count: self.store.len(),
                 result_count: self.store.result_count(),
-                attribute_count: self.store.attributes.len(),
+                attribute_count: self.store.attribute_count(),
                 raw_text_len: self.store.text.raw_text.len(),
                 text_len: self.store.text.text.len(),
             }
@@ -998,11 +1003,21 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
 }
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
+
+    /// Attributes other than `class` and `id` of every saved row, in row
+    /// order.
+    fn saved_attributes<'html, 'query: 'html>(
+        store: &Store<'html, 'query>,
+    ) -> Vec<Attribute<'html>> {
+        store
+            .elements()
+            .flat_map(|element| element.attributes().into_iter().flatten())
+            .collect()
+    }
 
     use super::*;
     use crate::Attribute;
-    use crate::store::Element;
+    use crate::store::ElementRef;
     use crate::{Query, Reader, Save, parse};
     use pretty_assertions::assert_eq;
 
@@ -1068,11 +1083,11 @@ mod tests {
         assert_eq!(store.get("p.indent > .bold").unwrap().count(), 1);
         let children = store.get("p.indent > .bold").unwrap();
 
-        let children: Vec<&Element> = children.collect();
+        let children: Vec<ElementRef> = children.collect();
         assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name, "span");
-        assert_eq!(children[0].id, Some("name"));
-        assert_eq!(children[0].class, Some("bold"));
+        assert_eq!(children[0].name(), "span");
+        assert_eq!(children[0].id(), Some("name"));
+        assert_eq!(children[0].class(), Some("bold"));
     }
 
     #[test]
@@ -1082,7 +1097,7 @@ mod tests {
             .build()];
         let store = parse(BASIC_HTML, queries).unwrap();
         let bold = store.get("p.indent > .bold").unwrap().next().unwrap();
-        assert_eq!(bold.text(&store), Some("Zachary"));
+        assert_eq!(bold.text(), Some("Zachary"));
     }
 
     #[test]
@@ -1096,8 +1111,8 @@ mod tests {
 
         let store = parser.matches();
         let anchor = store.get("a").unwrap().next().unwrap();
-        assert_eq!(anchor.inner_html, Some("Hello <b>World</b>"));
-        assert_eq!(anchor.text(&store), None);
+        assert_eq!(anchor.inner_html(), Some("Hello <b>World</b>"));
+        assert_eq!(anchor.text(), None);
         assert!(store.text.text.as_bytes().is_empty());
     }
 
@@ -1132,8 +1147,8 @@ mod tests {
         let store = parse(html, queries).unwrap();
         let hit = store.get(".hit").unwrap().next().unwrap();
 
-        assert_eq!(hit.raw_text(&store), Some("selected &amp; nested"));
-        assert_eq!(hit.text(&store), Some("selected & nested"));
+        assert_eq!(hit.raw_text(), Some("selected &amp; nested"));
+        assert_eq!(hit.text(), Some("selected & nested"));
         assert_eq!(store.text.raw_text.as_bytes(), b"selected &amp; nested");
         assert_eq!(store.text.text.as_bytes(), b"selected & nested");
     }
@@ -1153,9 +1168,9 @@ mod tests {
         let store = parser.matches();
         let anchor = store.get("a").unwrap().next().unwrap();
         let bold = store.get("b").unwrap().next().unwrap();
-        assert_eq!(anchor.inner_html, Some("Hello <b>World</b>"));
-        assert_eq!(anchor.text(&store), None);
-        assert_eq!(bold.text(&store), Some("World"));
+        assert_eq!(anchor.inner_html(), Some("Hello <b>World</b>"));
+        assert_eq!(anchor.text(), None);
+        assert_eq!(bold.text(), Some("World"));
     }
 
     #[test]
@@ -1228,43 +1243,43 @@ mod tests {
         let store = parser.matches();
         println!("{:#?}", store);
 
-        let sections: Vec<&Element> = store.get("main > section").unwrap().collect();
+        let sections: Vec<ElementRef> = store.get("main > section").unwrap().collect();
         assert_eq!(sections.len(), 2);
 
         // Section 1
         let s1 = sections[0];
-        assert_eq!(s1.text(&store), Some("Hello World"));
+        assert_eq!(s1.text(), Some("Hello World"));
 
-        let s1_div_a: Vec<&Element> = s1.get(&store, "div a").unwrap().collect();
+        let s1_div_a: Vec<ElementRef> = s1.get("div a").unwrap().collect();
         assert_eq!(s1_div_a.len(), 1);
-        assert_eq!(s1_div_a[0].text(&store), Some("World"));
+        assert_eq!(s1_div_a[0].text(), Some("World"));
         assert_eq!(
-            s1_div_a[0].attributes(&store).unwrap()[0].value,
+            s1_div_a[0].attributes().unwrap().next().unwrap().value,
             Some("https://world.com")
         );
 
         println!("{:#?}", s1);
 
-        let s1_direct_a: Vec<&Element> = s1.get(&store, "> a[href]").unwrap().collect();
+        let s1_direct_a: Vec<ElementRef> = s1.get("> a[href]").unwrap().collect();
         assert_eq!(s1_direct_a.len(), 1);
-        assert_eq!(s1_direct_a[0].text(&store), Some("Hello"));
+        assert_eq!(s1_direct_a[0].text(), Some("Hello"));
         assert_eq!(
-            s1_direct_a[0].attributes(&store).unwrap()[0].value,
+            s1_direct_a[0].attributes().unwrap().next().unwrap().value,
             Some("https://hello.com")
         );
 
         // Section 2
         let s2 = sections[1];
-        assert_eq!(s2.text(&store), Some("Hello2 World2 World3"));
+        assert_eq!(s2.text(), Some("Hello2 World2 World3"));
 
-        let s2_div_a: Vec<&Element> = s2.get(&store, "div a").unwrap().collect();
+        let s2_div_a: Vec<ElementRef> = s2.get("div a").unwrap().collect();
         assert_eq!(s2_div_a.len(), 2, "World3 Element duplicated");
-        assert_eq!(s2_div_a[0].text(&store), Some("World2"));
-        assert_eq!(s2_div_a[1].text(&store), Some("World3"));
+        assert_eq!(s2_div_a[0].text(), Some("World2"));
+        assert_eq!(s2_div_a[1].text(), Some("World3"));
 
-        let s2_direct_a: Vec<&Element> = s2.get(&store, "> a[href]").unwrap().collect();
+        let s2_direct_a: Vec<ElementRef> = s2.get("> a[href]").unwrap().collect();
         assert_eq!(s2_direct_a.len(), 1);
-        assert_eq!(s2_direct_a[0].text(&store), Some("Hello2"));
+        assert_eq!(s2_direct_a[0].text(), Some("Hello2"));
     }
 
     const BASIC_HTML_WITH_SCRIPT: &str = r#"
@@ -1313,7 +1328,7 @@ mod tests {
         let matches = store.get("span").unwrap().collect::<Vec<_>>();
 
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].inner_html, None);
+        assert_eq!(matches[0].inner_html(), None);
     }
 
     #[test]
@@ -1379,19 +1394,22 @@ mod tests {
 
         let store = parser.matches();
 
-        let inputs: Vec<&Element> = store.get("form > p > input").unwrap().collect();
+        let inputs: Vec<ElementRef> = store.get("form > p > input").unwrap().collect();
         assert_eq!(inputs.len(), 2);
 
-        assert_eq!(inputs[0].name, "input");
-        assert_eq!(inputs[0].id, Some("name"));
-        assert_eq!(inputs[0].attributes(&store).unwrap()[0].key, "type");
-        assert_eq!(inputs[0].attributes(&store).unwrap()[0].value, Some("text"));
-
-        assert_eq!(inputs[1].name, "input");
-        assert_eq!(inputs[1].id, Some("mail"));
-        assert_eq!(inputs[1].attributes(&store).unwrap()[0].key, "type");
+        assert_eq!(inputs[0].name(), "input");
+        assert_eq!(inputs[0].id(), Some("name"));
+        assert_eq!(inputs[0].attributes().unwrap().next().unwrap().key, "type");
         assert_eq!(
-            inputs[1].attributes(&store).unwrap()[0].value,
+            inputs[0].attributes().unwrap().next().unwrap().value,
+            Some("text")
+        );
+
+        assert_eq!(inputs[1].name(), "input");
+        assert_eq!(inputs[1].id(), Some("mail"));
+        assert_eq!(inputs[1].attributes().unwrap().next().unwrap().key, "type");
+        assert_eq!(
+            inputs[1].attributes().unwrap().next().unwrap().value,
             Some("email")
         );
     }
@@ -1413,13 +1431,13 @@ mod tests {
 
         let store = parser.matches();
 
-        let inputs: Vec<&Element> = store.get("form > p > input").unwrap().collect();
+        let inputs: Vec<ElementRef> = store.get("form > p > input").unwrap().collect();
         assert_eq!(inputs.len(), 2);
-        assert_eq!(inputs[0].text(&store), Some(""));
-        assert_eq!(inputs[0].inner_html, None);
+        assert_eq!(inputs[0].text(), Some(""));
+        assert_eq!(inputs[0].inner_html(), None);
 
-        assert_eq!(inputs[1].text(&store), Some(""));
-        assert_eq!(inputs[1].inner_html, None);
+        assert_eq!(inputs[1].text(), Some(""));
+        assert_eq!(inputs[1].inner_html(), None);
     }
 
     const BASIC_ANCHOR_LIST: &str = r#"
@@ -1440,12 +1458,12 @@ mod tests {
 
         let store = parser.matches();
 
-        let anchors: Vec<&Element> = store.get("a").unwrap().collect();
+        let anchors: Vec<ElementRef> = store.get("a").unwrap().collect();
         assert_eq!(anchors.len(), 3);
 
-        assert_eq!(anchors[0].text(&store), Some("Hello 1"));
-        assert_eq!(anchors[1].text(&store), Some("Hello 2"));
-        assert_eq!(anchors[2].text(&store), Some("Hello 3"));
+        assert_eq!(anchors[0].text(), Some("Hello 1"));
+        assert_eq!(anchors[1].text(), Some("Hello 2"));
+        assert_eq!(anchors[2].text(), Some("Hello 3"));
     }
 
     const POSTS: &str = r#"<div class="article"><a href="/post/0"><b>Post</b> &lt;0&gt;</a></div><div class="article"><a href="/post/1"><b>Post</b> &lt;1&gt;</a></div>"#;
@@ -1464,10 +1482,13 @@ mod tests {
 
         let anchor = store.get("div.article a").unwrap().next().unwrap();
 
-        assert_eq!(anchor.name, "a");
-        assert_eq!(anchor.attributes(&store).unwrap()[0].value, Some("/post/0"));
-        assert_eq!(anchor.inner_html, Some("<b>Post</b> &lt;0&gt;"));
-        assert_eq!(anchor.text(&store), Some("Post <0>"));
+        assert_eq!(anchor.name(), "a");
+        assert_eq!(
+            anchor.attributes().unwrap().next().unwrap().value,
+            Some("/post/0")
+        );
+        assert_eq!(anchor.inner_html(), Some("<b>Post</b> &lt;0&gt;"));
+        assert_eq!(anchor.text(), Some("Post <0>"));
     }
 
     const PYTHON_TEST_HTML: &str = r#"
@@ -1502,7 +1523,7 @@ mod tests {
         let store = parser.matches();
 
         assert_eq!(
-            store.attributes.deref().clone(),
+            saved_attributes(&store),
             vec![
                 Attribute {
                     key: "hello",
@@ -1515,46 +1536,46 @@ mod tests {
             ]
         );
 
-        let worlds: Vec<&Element> = store.get("#world").unwrap().collect();
+        let worlds: Vec<ElementRef> = store.get("#world").unwrap().collect();
         assert_eq!(worlds.len(), 1);
 
         let span = worlds[0];
-        assert_eq!(span.name, "span");
-        assert_eq!(span.class, Some("hello"));
-        assert_eq!(span.id, Some("world"));
+        assert_eq!(span.name(), "span");
+        assert_eq!(span.class(), Some("hello"));
+        assert_eq!(span.id(), Some("world"));
         assert_eq!(
-            span.attributes(&store).unwrap(),
+            span.attributes().unwrap().collect::<Vec<_>>(),
             &[Attribute {
                 key: "hello",
                 value: Some("world")
             },]
         );
         assert_eq!(
-            span.inner_html,
+            span.inner_html(),
             Some(
                 r#"
         Hello <a href="https://www.example.com">World</a>
     "#
             )
         );
-        assert!(span.text(&store).is_some());
+        assert!(span.text().is_some());
 
-        let anchors: Vec<&Element> = span.get(&store, "a").unwrap().collect();
+        let anchors: Vec<ElementRef> = span.get("a").unwrap().collect();
         assert_eq!(anchors.len(), 1);
 
         let a = anchors[0];
-        assert_eq!(a.name, "a");
-        assert_eq!(a.class, None);
-        assert_eq!(a.id, None);
+        assert_eq!(a.name(), "a");
+        assert_eq!(a.class(), None);
+        assert_eq!(a.id(), None);
         assert_eq!(
-            a.attributes(&store).unwrap(),
+            a.attributes().unwrap().collect::<Vec<_>>(),
             &[Attribute {
                 key: "href",
                 value: Some("https://www.example.com")
             },]
         );
-        assert_eq!(a.inner_html, Some("World"));
-        assert!(a.text(&store).is_some());
+        assert_eq!(a.inner_html(), Some("World"));
+        assert!(a.text().is_some());
     }
 
     #[test]
@@ -1589,15 +1610,15 @@ mod tests {
         let element = store.get("a").unwrap().next().unwrap();
 
         assert_eq!(
-            store.attributes.deref().clone(),
+            saved_attributes(&store),
             vec![Attribute {
                 key: "href",
                 value: Some("/post/0"),
             }]
         );
 
-        assert_eq!(element.inner_html, Some("<b>Post</b> &lt;0&gt;"));
-        assert_eq!(element.text(&store), Some("Post <0>"));
+        assert_eq!(element.inner_html(), Some("<b>Post</b> &lt;0&gt;"));
+        assert_eq!(element.text(), Some("Post <0>"));
     }
 
     #[test]
@@ -1611,8 +1632,8 @@ mod tests {
 
         let store = parser.matches();
         let p = store.get("p").unwrap().next().unwrap();
-        assert_eq!(p.inner_html, Some("Hello"));
-        assert_eq!(p.text(&store), Some("Hello"));
+        assert_eq!(p.inner_html(), Some("Hello"));
+        assert_eq!(p.text(), Some("Hello"));
     }
 
     #[test]
@@ -1641,10 +1662,10 @@ mod tests {
         let div = store.get("div").unwrap().next().unwrap();
         let span = store.get("span").unwrap().next().unwrap();
 
-        assert_eq!(span.inner_html, Some("Hello"));
-        assert_eq!(span.text(&store), Some("Hello"));
-        assert_eq!(div.inner_html, Some("<span>Hello"));
-        assert_eq!(div.text(&store), Some("Hello"));
+        assert_eq!(span.inner_html(), Some("Hello"));
+        assert_eq!(span.text(), Some("Hello"));
+        assert_eq!(div.inner_html(), Some("<span>Hello"));
+        assert_eq!(div.text(), Some("Hello"));
     }
 
     #[test]
@@ -1658,8 +1679,8 @@ mod tests {
 
         let store = parser.matches();
         let span = store.get("div span").unwrap().next().unwrap();
-        assert_eq!(span.text(&store), Some("Hello"));
-        assert_eq!(span.inner_html, Some("Hello</bogus>"));
+        assert_eq!(span.text(), Some("Hello"));
+        assert_eq!(span.inner_html(), Some("Hello</bogus>"));
     }
 
     #[test]
@@ -1678,10 +1699,10 @@ mod tests {
         let section = store.get("section").unwrap().next().unwrap();
         let a = store.get("a").unwrap().next().unwrap();
 
-        assert_eq!(a.inner_html, Some("Link"));
-        assert_eq!(a.text(&store), Some("Link"));
-        assert_eq!(section.inner_html, Some("<a href='x'>Link"));
-        assert_eq!(section.text(&store), Some("Link"));
+        assert_eq!(a.inner_html(), Some("Link"));
+        assert_eq!(a.text(), Some("Link"));
+        assert_eq!(section.inner_html(), Some("<a href='x'>Link"));
+        assert_eq!(section.text(), Some("Link"));
     }
 
     #[test]
@@ -1694,12 +1715,12 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let items: Vec<&Element> = store.get("li").unwrap().collect();
+        let items: Vec<ElementRef> = store.get("li").unwrap().collect();
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0].text(&store), Some("One"));
-        assert_eq!(items[0].inner_html, Some("One"));
-        assert_eq!(items[1].text(&store), Some("Two"));
-        assert_eq!(items[1].inner_html, Some("Two"));
+        assert_eq!(items[0].text(), Some("One"));
+        assert_eq!(items[0].inner_html(), Some("One"));
+        assert_eq!(items[1].text(), Some("Two"));
+        assert_eq!(items[1].inner_html(), Some("Two"));
     }
 
     #[test]
@@ -1724,14 +1745,14 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let dts: Vec<&Element> = store.get("dt").unwrap().collect();
-        let dds: Vec<&Element> = store.get("dd").unwrap().collect();
+        let dts: Vec<ElementRef> = store.get("dt").unwrap().collect();
+        let dds: Vec<ElementRef> = store.get("dd").unwrap().collect();
 
         assert_eq!(dts.len(), 2);
         assert_eq!(dds.len(), 1);
-        assert_eq!(dts[0].text(&store), Some("Term"));
-        assert_eq!(dds[0].text(&store), Some("Def"));
-        assert_eq!(dts[1].text(&store), Some("Next"));
+        assert_eq!(dts[0].text(), Some("Term"));
+        assert_eq!(dds[0].text(), Some("Def"));
+        assert_eq!(dts[1].text(), Some("Next"));
     }
 
     #[test]
@@ -1744,10 +1765,10 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let options: Vec<&Element> = store.get("option").unwrap().collect();
+        let options: Vec<ElementRef> = store.get("option").unwrap().collect();
         assert_eq!(options.len(), 2);
-        assert_eq!(options[0].text(&store), Some("One"));
-        assert_eq!(options[1].text(&store), Some("Two"));
+        assert_eq!(options[0].text(), Some("One"));
+        assert_eq!(options[1].text(), Some("Two"));
     }
 
     #[test]
@@ -1763,15 +1784,15 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let optgroups: Vec<&Element> = store.get("optgroup").unwrap().collect();
-        let options: Vec<&Element> = store.get("option").unwrap().collect();
+        let optgroups: Vec<ElementRef> = store.get("optgroup").unwrap().collect();
+        let options: Vec<ElementRef> = store.get("option").unwrap().collect();
 
         assert_eq!(optgroups.len(), 2);
         assert_eq!(options.len(), 2);
-        assert_eq!(optgroups[0].text(&store), Some("One"));
-        assert_eq!(optgroups[1].text(&store), Some("Two"));
-        assert_eq!(options[0].text(&store), Some("One"));
-        assert_eq!(options[1].text(&store), Some("Two"));
+        assert_eq!(optgroups[0].text(), Some("One"));
+        assert_eq!(optgroups[1].text(), Some("Two"));
+        assert_eq!(options[0].text(), Some("One"));
+        assert_eq!(options[1].text(), Some("Two"));
     }
 
     #[test]
@@ -1784,10 +1805,10 @@ mod tests {
         while parser.next(&mut reader) {}
 
         let store = parser.matches();
-        let cells: Vec<&Element> = store.get("td").unwrap().collect();
+        let cells: Vec<ElementRef> = store.get("td").unwrap().collect();
         assert_eq!(cells.len(), 2);
-        assert_eq!(cells[0].text(&store), Some("One"));
-        assert_eq!(cells[1].text(&store), Some("Two"));
+        assert_eq!(cells[0].text(), Some("One"));
+        assert_eq!(cells[1].text(), Some("Two"));
     }
 
     #[test]
@@ -1806,10 +1827,10 @@ mod tests {
         let div = store.get("div").unwrap().next().unwrap();
         let class_match = store.get(".x").unwrap().next().unwrap();
 
-        assert_eq!(div.inner_html, Some("Hello"));
-        assert_eq!(div.text(&store), Some("Hello"));
-        assert_eq!(class_match.inner_html, Some("Hello"));
-        assert_eq!(class_match.text(&store), Some("Hello"));
+        assert_eq!(div.inner_html(), Some("Hello"));
+        assert_eq!(div.text(), Some("Hello"));
+        assert_eq!(class_match.inner_html(), Some("Hello"));
+        assert_eq!(class_match.text(), Some("Hello"));
     }
 
     #[test]
@@ -1850,7 +1871,7 @@ mod tests {
         let store = parse("<div>abc<!--c-->def</div>", queries).unwrap();
         let div = store.get("div").unwrap().next().unwrap();
 
-        assert_eq!(div.text(&store), Some("abcdef"));
+        assert_eq!(div.text(), Some("abcdef"));
     }
 
     #[test]
@@ -1862,7 +1883,7 @@ mod tests {
         let store = parse(&html, queries).unwrap();
         let div = store.get("div").unwrap().next().unwrap();
 
-        assert_eq!(div.inner_html, Some(&html["<div>".len()..]));
+        assert_eq!(div.inner_html(), Some(&html["<div>".len()..]));
     }
 
     #[test]
@@ -1887,7 +1908,7 @@ mod tests {
 
         let store = parser.matches();
         let div = store.get("div").unwrap().next().unwrap();
-        assert_eq!(div.text(&store), Some("Hello"));
+        assert_eq!(div.text(), Some("Hello"));
     }
 
     #[test]
@@ -1896,7 +1917,7 @@ mod tests {
         let store = parse("<div><a>Hello <b>World</b></a></div>", queries).unwrap();
 
         let anchor = store.get("a").unwrap().next().unwrap();
-        assert_eq!(anchor.text(&store), None);
+        assert_eq!(anchor.text(), None);
         assert_eq!(store.text.text.len(), 0);
     }
 
@@ -1910,8 +1931,8 @@ mod tests {
 
         let anchor = store.get("a").unwrap().next().unwrap();
         let bold = store.get("b").unwrap().next().unwrap();
-        assert_eq!(anchor.text(&store), None);
-        assert_eq!(bold.text(&store), Some("World"));
+        assert_eq!(anchor.text(), None);
+        assert_eq!(bold.text(), Some("World"));
     }
 
     const SINGLE_PRODUCT_HTML: &str = r#"
@@ -1952,47 +1973,47 @@ mod tests {
 
         println!("Store: {:#?}", store);
 
-        assert_eq!(store.elements.len(), 5);
+        assert_eq!(store.elements().len(), 5);
 
         assert_eq!(
-            store.attributes.deref().clone(),
+            saved_attributes(&store),
             vec![Attribute {
                 key: "src",
                 value: Some("https://example.com/p1.png")
             }]
         );
 
-        let products_sections: Vec<&Element> = store.get("#products").unwrap().collect();
+        let products_sections: Vec<ElementRef> = store.get("#products").unwrap().collect();
         assert_eq!(products_sections.len(), 1);
 
         let section = products_sections[0];
-        assert_eq!(section.name, "section");
-        assert_eq!(section.id, Some("products"));
-        assert!(section.inner_html.is_some());
-        assert!(section.text(&store).is_some());
+        assert_eq!(section.name(), "section");
+        assert_eq!(section.id(), Some("products"));
+        assert!(section.inner_html().is_some());
+        assert!(section.text().is_some());
 
-        let products: Vec<&Element> = section.get(&store, ".product").unwrap().collect();
+        let products: Vec<ElementRef> = section.get(".product").unwrap().collect();
         assert_eq!(products.len(), 1);
 
         let product = products[0];
-        assert_eq!(product.name, "div");
-        assert_eq!(product.class, Some("product"));
-        assert!(product.inner_html.is_some());
-        assert!(product.text(&store).is_some());
+        assert_eq!(product.name(), "div");
+        assert_eq!(product.class(), Some("product"));
+        assert!(product.inner_html().is_some());
+        assert!(product.text().is_some());
 
-        let h1 = product.get(&store, "h1").unwrap().next().unwrap();
-        assert_eq!(h1.name, "h1");
-        assert_eq!(h1.inner_html, Some("Product #1"));
-        assert!(h1.text(&store).is_some());
+        let h1 = product.get("h1").unwrap().next().unwrap();
+        assert_eq!(h1.name(), "h1");
+        assert_eq!(h1.inner_html(), Some("Product #1"));
+        assert!(h1.text().is_some());
 
-        let img = product.get(&store, "img").unwrap().next().unwrap();
-        assert_eq!(img.name, "img");
-        assert!(img.attributes(&store).is_some());
+        let img = product.get("img").unwrap().next().unwrap();
+        assert_eq!(img.name(), "img");
+        assert!(img.attributes().is_some());
 
-        let p = product.get(&store, "p").unwrap().next().unwrap();
-        assert_eq!(p.name, "p");
-        assert!(p.inner_html.is_some());
-        assert!(p.text(&store).is_some());
+        let p = product.get("p").unwrap().next().unwrap();
+        assert_eq!(p.name(), "p");
+        assert!(p.inner_html().is_some());
+        assert!(p.text().is_some());
     }
 
     const PRODUCT_HTML: &str = r#"
@@ -2041,10 +2062,10 @@ mod tests {
 
         println!("Store: {:#?}", store);
 
-        assert_eq!(store.elements.len(), 9);
+        assert_eq!(store.elements().len(), 9);
 
         assert_eq!(
-            store.attributes.deref().clone(),
+            saved_attributes(&store),
             vec![
                 Attribute {
                     key: "src",
@@ -2057,59 +2078,59 @@ mod tests {
             ]
         );
 
-        let products_sections: Vec<&Element> = store.get("#products").unwrap().collect();
+        let products_sections: Vec<ElementRef> = store.get("#products").unwrap().collect();
         assert_eq!(products_sections.len(), 1);
 
         let section = products_sections[0];
-        assert_eq!(section.name, "section");
-        assert_eq!(section.id, Some("products"));
-        assert!(section.inner_html.is_some());
-        assert!(section.text(&store).is_some());
+        assert_eq!(section.name(), "section");
+        assert_eq!(section.id(), Some("products"));
+        assert!(section.inner_html().is_some());
+        assert!(section.text().is_some());
 
-        let products: Vec<&Element> = section.get(&store, ".product").unwrap().collect();
+        let products: Vec<ElementRef> = section.get(".product").unwrap().collect();
         assert_eq!(products.len(), 2);
 
         // Product 1
         let p1 = products[0];
-        assert_eq!(p1.name, "div");
-        assert_eq!(p1.class, Some("product"));
-        assert!(p1.inner_html.is_some());
-        assert!(p1.text(&store).is_some());
+        assert_eq!(p1.name(), "div");
+        assert_eq!(p1.class(), Some("product"));
+        assert!(p1.inner_html().is_some());
+        assert!(p1.text().is_some());
 
-        let p1_h1 = p1.get(&store, "h1").unwrap().next().unwrap();
-        assert_eq!(p1_h1.name, "h1");
-        assert_eq!(p1_h1.inner_html, Some("Product #1"));
-        assert!(p1_h1.text(&store).is_some());
+        let p1_h1 = p1.get("h1").unwrap().next().unwrap();
+        assert_eq!(p1_h1.name(), "h1");
+        assert_eq!(p1_h1.inner_html(), Some("Product #1"));
+        assert!(p1_h1.text().is_some());
 
-        let p1_img = p1.get(&store, "img").unwrap().next().unwrap();
-        assert_eq!(p1_img.name, "img");
-        assert!(p1_img.attributes(&store).is_some());
+        let p1_img = p1.get("img").unwrap().next().unwrap();
+        assert_eq!(p1_img.name(), "img");
+        assert!(p1_img.attributes().is_some());
 
-        let p1_p = p1.get(&store, "p").unwrap().next().unwrap();
-        assert_eq!(p1_p.name, "p");
-        assert!(p1_p.inner_html.is_some());
-        assert!(p1_p.text(&store).is_some());
+        let p1_p = p1.get("p").unwrap().next().unwrap();
+        assert_eq!(p1_p.name(), "p");
+        assert!(p1_p.inner_html().is_some());
+        assert!(p1_p.text().is_some());
 
         // Product 2
         let p2 = products[1];
-        assert_eq!(p2.name, "div");
-        assert_eq!(p2.class, Some("product"));
-        assert!(p2.inner_html.is_some());
-        assert!(p2.text(&store).is_some());
+        assert_eq!(p2.name(), "div");
+        assert_eq!(p2.class(), Some("product"));
+        assert!(p2.inner_html().is_some());
+        assert!(p2.text().is_some());
 
-        let p2_h1 = p2.get(&store, "h1").unwrap().next().unwrap();
-        assert_eq!(p2_h1.name, "h1");
-        assert!(p2_h1.inner_html.is_some());
-        assert!(p2_h1.text(&store).is_some());
+        let p2_h1 = p2.get("h1").unwrap().next().unwrap();
+        assert_eq!(p2_h1.name(), "h1");
+        assert!(p2_h1.inner_html().is_some());
+        assert!(p2_h1.text().is_some());
 
-        let p2_img = p2.get(&store, "img").unwrap().next().unwrap();
-        assert_eq!(p2_img.name, "img");
-        assert!(p2_img.attributes(&store).is_some());
+        let p2_img = p2.get("img").unwrap().next().unwrap();
+        assert_eq!(p2_img.name(), "img");
+        assert!(p2_img.attributes().is_some());
 
-        let p2_p = p2.get(&store, "p").unwrap().next().unwrap();
-        assert_eq!(p2_p.name, "p");
-        assert!(p2_p.inner_html.is_some());
-        assert!(p2_p.text(&store).is_some());
+        let p2_p = p2.get("p").unwrap().next().unwrap();
+        assert_eq!(p2_p.name(), "p");
+        assert!(p2_p.inner_html().is_some());
+        assert!(p2_p.text().is_some());
     }
 
     // --- parse() Result tests ---
@@ -2156,8 +2177,8 @@ mod tests {
         assert_eq!(parser.attribute_parse_count, 1);
         let store = parser.matches();
         let anchor = store.get("main a").unwrap().next().unwrap();
-        assert_eq!(anchor.attribute(&store, "href"), Some("/kept"));
-        assert_eq!(anchor.attribute(&store, "rel"), Some("next"));
+        assert_eq!(anchor.attribute("href"), Some("/kept"));
+        assert_eq!(anchor.attribute("rel"), Some("next"));
     }
 
     #[test]
@@ -2213,7 +2234,7 @@ mod tests {
 
         assert_eq!(parser.attribute_parse_count, 2);
         assert_eq!(parser.selected_attribute_count, 1);
-        assert!(parser.matches().elements.is_empty());
+        assert!(parser.matches().is_empty());
     }
 
     #[test]
@@ -2260,7 +2281,7 @@ mod tests {
         let hits: Vec<_> = store
             .get("br + p")
             .unwrap()
-            .map(|element| element.id)
+            .map(|element| element.id())
             .collect();
         assert_eq!(hits, [Some("hit")]);
     }
@@ -2279,7 +2300,7 @@ mod tests {
         let hits: Vec<_> = store
             .get("div + br + p")
             .unwrap()
-            .map(|element| element.id)
+            .map(|element| element.id())
             .collect();
         assert_eq!(hits, [Some("hit")]);
     }
@@ -2315,5 +2336,55 @@ mod tests {
             store.get("div ~ p").map(|iter| iter.count()).unwrap_or(0),
             0
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "a parser reads one document")]
+    fn stepping_a_second_document_after_saving_panics() {
+        let first = "<p>one</p>";
+        let second = String::from("<p>two</p>");
+        let queries = [Query::all("p", Save::none()).unwrap().build()];
+        let mut parser = XHtmlParser::new(&queries);
+        let mut reader = Reader::new(first);
+        while parser.next(&mut reader) {}
+        let mut reader = Reader::new(&second);
+        parser.next(&mut reader);
+    }
+
+    #[test]
+    fn utf8_byte_readers_parse_like_string_readers() {
+        let html = "<p>é</p>";
+        let queries = [Query::all("p", Save::all()).unwrap().build()];
+        let mut parser = XHtmlParser::new(&queries);
+        let mut reader = Reader::from_bytes(html.as_bytes());
+        while parser.next(&mut reader) {}
+        let store = parser.matches();
+        let p = store.get("p").unwrap().next().unwrap();
+        assert_eq!(p.inner_html(), Some("é"));
+    }
+
+    #[test]
+    #[should_panic(expected = "a parser reads UTF-8 HTML")]
+    fn non_utf8_byte_readers_panic_before_binding() {
+        let queries = [Query::all("p", Save::none()).unwrap().build()];
+        let mut parser = XHtmlParser::new(&queries);
+        let mut reader = Reader::from_bytes(b"\xff<p>");
+        parser.next(&mut reader);
+    }
+
+    #[test]
+    #[should_panic(expected = "a parser reads one document")]
+    fn stepping_a_second_document_before_saving_panics() {
+        // Nothing is saved after `<div>`, but the matcher already holds the
+        // open `div`, so a `<p>` from another document must not match.
+        let first = "<div><p>one</p></div>";
+        let second = String::from("<p>two</p>");
+        let queries = [Query::all("div p", Save::none()).unwrap().build()];
+        let mut parser = XHtmlParser::new(&queries);
+        let mut reader = Reader::new(first);
+        parser.next(&mut reader);
+        assert!(parser.store.is_empty());
+        let mut reader = Reader::new(&second);
+        parser.next(&mut reader);
     }
 }

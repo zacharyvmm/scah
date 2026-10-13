@@ -52,8 +52,8 @@ let queries = &[Query::all("a[href]", Save::all())
 let store = parse(html, queries).expect("parse succeeds");
 
 for a in store.get("a[href]").unwrap() {
-    let href = a.attribute(&store, "href").unwrap();
-    let text = a.text(&store).unwrap_or_default();
+    let href = a.attribute("href").unwrap();
+    let text = a.text().unwrap_or_default();
     println!("{text}: {href}");
 }
 // One: /one
@@ -92,9 +92,9 @@ let queries = [query];
 let store = parse(html, &queries).expect("parse succeeds");
 
 for section in store.get("main > section").unwrap() {
-    if let Some(links) = section.get(&store, "> a[href]") {
+    if let Some(links) = section.get("> a[href]") {
         for link in links {
-            println!("direct link: {}", link.attribute(&store, "href").unwrap());
+            println!("direct link: {}", link.attribute("href").unwrap());
         }
     }
 }
@@ -129,7 +129,7 @@ let query = query! {
 let queries = [query];
 let store = parse(html, &queries).expect("parse succeeds");
 for article in store.get("article").unwrap() {
-    assert_eq!(article.get(&store, "a[href]").unwrap().count(), 2);
+    assert_eq!(article.get("a[href]").unwrap().count(), 2);
 }
 ```
 

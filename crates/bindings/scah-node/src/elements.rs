@@ -27,18 +27,17 @@ impl JsElement {
     pub fn to_json<'a>(&'a self, env: Env) -> Result<JsonElement<'a>> {
         let element = self
             .store
-            .elements
-            .get(self.id.index())
+            .element(self.id)
             .expect("The Element ID should be valid");
 
         let json = JsonElement {
-            name: element.name.to_string(),
-            id: element.id.map(|s| s.to_string()),
-            class: element.class.map(|s| s.to_string()),
+            name: element.name().to_string(),
+            id: element.id().map(|s| s.to_string()),
+            class: element.class().map(|s| s.to_string()),
             attributes: self.attributes(env)?,
-            inner_html: element.inner_html.map(|s| s.to_string()),
-            raw_text: element.raw_text(&self.store).map(|s| s.to_string()),
-            text: element.text(&self.store).map(|s| s.to_string()),
+            inner_html: element.inner_html().map(|s| s.to_string()),
+            raw_text: element.raw_text().map(|s| s.to_string()),
+            text: element.text().map(|s| s.to_string()),
         };
 
         Ok(json)
@@ -46,42 +45,32 @@ impl JsElement {
 
     #[napi(getter)]
     pub fn name(&self) -> Option<&str> {
-        self.store.elements.get(self.id.index()).map(|e| e.name)
+        self.store.element(self.id).map(|e| e.name())
     }
 
     #[napi(getter)]
     pub fn class_name(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.class)
+        self.store.element(self.id).and_then(|e| e.class())
     }
 
     #[napi(getter)]
     pub fn id(&self) -> Option<&str> {
-        self.store.elements.get(self.id.index()).and_then(|e| e.id)
+        self.store.element(self.id).and_then(|e| e.id())
     }
 
     #[napi]
     pub fn get_attribute(&self, key: String) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.attribute(&self.store, &key))
+        self.store.element(self.id).and_then(|e| e.attribute(&key))
     }
 
     #[napi(getter)]
     pub fn attributes<'a>(&'a self, env: Env) -> Result<Object<'a>> {
         let mut object = Object::new(&env)?;
-        let attributes = self
-            .store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.attributes(&self.store));
+        let attributes = self.store.element(self.id).and_then(|e| e.attributes());
 
         if let Some(attrs) = attributes {
             for Attribute { key, value } in attrs {
-                object.set(*key, *value)?
+                object.set(key, value)?
             }
         }
         Ok(object)
@@ -89,26 +78,17 @@ impl JsElement {
 
     #[napi(getter)]
     pub fn inner_html(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.inner_html)
+        self.store.element(self.id).and_then(|e| e.inner_html())
     }
 
     #[napi(getter)]
     pub fn raw_text(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.raw_text(&self.store))
+        self.store.element(self.id).and_then(|e| e.raw_text())
     }
 
     #[napi(getter)]
     pub fn text(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.text(&self.store))
+        self.store.element(self.id).and_then(|e| e.text())
     }
 
     #[napi(getter)]

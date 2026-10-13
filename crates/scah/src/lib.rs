@@ -42,7 +42,7 @@
 //!
 //! // Iterate over matched elements
 //! for element in store.get("main > section > a[href]").unwrap() {
-//!     println!("{}: {}", element.name, element.attribute(&store, "href").unwrap());
+//!     println!("{}: {}", element.name(), element.attribute("href").unwrap());
 //! }
 //! ```
 //!
@@ -80,8 +80,9 @@
 //!    flat step and section tables with one bit per compound selector.
 //! 3. **[`XHtmlParser`]**: A streaming parser that emits open/close events and
 //!    runs the program as a bitset automaton, one frame per open element.
-//! 4. **[`Store`]**: An arena-based result set that collects matched
-//!    [`Element`]s, their attributes, and (optionally) inner HTML / raw or normalized text.
+//! 4. **[`Store`]**: A columnar result set: one row per saved element, one
+//!    column per saved field (name, attributes, inner HTML, raw or
+//!    normalized text), read through [`ElementRef`] handles.
 //!
 //! ## Supported CSS Selector Syntax
 //!
@@ -124,7 +125,7 @@ pub use scah_query_ir::{
     StructuralPredicate, StructuralPredicates, TextRequirements, Transition, TransitionId,
 };
 pub use scah_reader::Reader;
-pub use store::{CapacityOptions, Element, ElementId, Store};
+pub use store::{Attributes, CapacityOptions, ElementId, ElementRef, Elements, HeapUsage, Store};
 
 /// Implementation details referenced by `query!` expansions.
 #[doc(hidden)]
@@ -212,6 +213,9 @@ pub enum ParseError {
     MaximumDepthExceeded,
     /// [`parse_without_text_capture`] received a query that requests text.
     TextCaptureRequired,
+    /// The HTML, or the text saved from it, is 4 GiB or longer: the
+    /// [`Store`] indexes it with 32-bit offsets.
+    InputTooLarge,
 }
 
 impl std::fmt::Display for ParseError {
@@ -225,6 +229,9 @@ impl std::fmt::Display for ParseError {
                 f,
                 "parse_without_text_capture cannot run queries that capture raw or normalized text; use parse"
             ),
+            ParseError::InputTooLarge => {
+                write!(f, "HTML input must be shorter than 4 GiB")
+            }
         }
     }
 }
@@ -240,8 +247,9 @@ impl std::error::Error for ParseError {}
 ///
 /// # Errors
 ///
-/// Returns [`ParseError::EmptyQueries`] for an empty query slice and
-/// [`ParseError::MaximumDepthExceeded`] when nesting exceeds the supported depth.
+/// Returns [`ParseError::EmptyQueries`] for an empty query slice,
+/// [`ParseError::MaximumDepthExceeded`] when nesting exceeds the supported
+/// depth, and [`ParseError::InputTooLarge`] for HTML of 4 GiB or more.
 ///
 /// # Parameters
 ///
@@ -263,7 +271,7 @@ impl std::error::Error for ParseError {}
 ///
 /// let links: Vec<_> = store.get("a").unwrap().collect();
 /// assert_eq!(links.len(), 1);
-/// assert_eq!(links[0].name, "a");
+/// assert_eq!(links[0].name(), "a");
 /// ```
 pub fn parse<'a: 'query, 'html: 'query, 'query: 'html, Q>(
     html: &'html str,
@@ -340,6 +348,9 @@ fn run<'html, 'query: 'html>(
     if !capture && program.features().text.any() {
         return Err(ParseError::TextCaptureRequired);
     }
+    if html.len() >= u32::MAX as usize {
+        return Err(ParseError::InputTooLarge);
+    }
     let query_count = program.root_sections().len();
     // Queries that can stop early skip reserving storage for the whole document.
     let capacity = (!program.features().all_roots_first).then_some(html.len());
@@ -355,7 +366,11 @@ fn run<'html, 'query: 'html>(
     if let Some(err) = parser.take_parse_error() {
         return Err(err);
     }
-    Ok(parser.finish())
+    let store = parser.finish();
+    if store.overflowed() {
+        return Err(ParseError::InputTooLarge);
+    }
+    Ok(store)
 }
 
 #[cfg(test)]
@@ -400,20 +415,21 @@ mod tests {
         // length (capacity path would reserve html_len / 48 ≈ 5k+).
         let capacity_path_reservation = html_len / 48;
         assert!(
-            store.elements.capacity() < capacity_path_reservation,
+            store.row_capacity() < capacity_path_reservation,
             "early-exit parse capacity ({}) must be far below full-document reservation ({})",
-            store.elements.capacity(),
+            store.row_capacity(),
             capacity_path_reservation,
         );
         assert!(
-            store.attributes.capacity() < html_len / 24,
+            store.attribute_count() < html_len / 24
+                && store.heap_usage().attributes < html_len / 24 * 16,
             "early-exit parse must not preallocate attribute arena"
         );
 
         // Results must still be correct.
         let hits: Vec<_> = store.get("#hit").unwrap().collect();
         assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].name, "div");
+        assert_eq!(hits[0].name(), "div");
     }
 
     #[test]
@@ -429,7 +445,7 @@ mod tests {
 
         // .all() queries don't have exit_at_section_end → uses capacity path.
         assert!(
-            store.elements.capacity() > 0,
+            store.row_capacity() > 0,
             "non-early-exit parse must preallocate element arena"
         );
 
@@ -457,7 +473,7 @@ mod tests {
         let store = parse(&html, queries).unwrap();
 
         assert_eq!(store.get("div[data-value]").unwrap().count(), 5_000);
-        assert_eq!(store.attributes.capacity(), 0);
+        assert_eq!(store.heap_usage().attributes, 0);
     }
 
     #[test]
@@ -486,7 +502,7 @@ mod tests {
 
         let hits: Vec<_> = store.get("#hit").unwrap().collect();
         assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].text(&store), Some("important text"));
+        assert_eq!(hits[0].text(), Some("important text"));
 
         // Early-exit with XHtmlParser::new uses Store::default() with no
         // preallocation, but matches are still recorded correctly.
@@ -501,9 +517,9 @@ mod tests {
         let store = parse(html, queries).expect("parse succeeds");
         let a = store.get("a").unwrap().next().unwrap();
 
-        assert_eq!(a.attribute(&store, "href"), Some("x"));
-        assert_eq!(a.attribute(&store, "HREF"), Some("x"));
-        assert_eq!(a.attribute(&store, "Href"), Some("x"));
+        assert_eq!(a.attribute("href"), Some("x"));
+        assert_eq!(a.attribute("HREF"), Some("x"));
+        assert_eq!(a.attribute("Href"), Some("x"));
     }
 
     #[test]
@@ -521,11 +537,11 @@ mod tests {
         let anchors = store.get("a.promoted[href]").unwrap().collect::<Vec<_>>();
         assert_eq!(anchors.len(), 3);
         let anchor = anchors[0];
-        assert_eq!(anchor.name, "a");
-        assert_eq!(anchor.id, None);
-        assert_eq!(anchor.class, None);
-        assert_eq!(anchor.attributes(&store), None);
-        assert_eq!(store.attributes.len(), 0);
+        assert_eq!(anchor.name(), "a");
+        assert_eq!(anchor.id(), None);
+        assert_eq!(anchor.class(), None);
+        assert!(anchor.attributes().is_none());
+        assert_eq!(store.attribute_count(), 0);
     }
 
     #[test]
@@ -540,7 +556,7 @@ mod tests {
 
         let store = parse(html, queries).unwrap();
         assert_eq!(store.get("a").unwrap().count(), 1);
-        assert_eq!(store.attributes.len(), 0);
+        assert_eq!(store.attribute_count(), 0);
     }
 
     #[test]
@@ -556,9 +572,9 @@ mod tests {
         let store = parse(html, queries).unwrap();
         let lean = store.get("a.promoted[href]").unwrap().next().unwrap();
         let complete = store.get("a").unwrap().next().unwrap();
-        assert_eq!(lean.attributes(&store), None);
-        assert_eq!(complete.id, Some("hero"));
-        assert_eq!(complete.class, Some("promoted"));
-        assert_eq!(complete.attribute(&store, "href"), Some("/kept"));
+        assert!(lean.attributes().is_none());
+        assert_eq!(complete.id(), Some("hero"));
+        assert_eq!(complete.class(), Some("promoted"));
+        assert_eq!(complete.attribute("href"), Some("/kept"));
     }
 }

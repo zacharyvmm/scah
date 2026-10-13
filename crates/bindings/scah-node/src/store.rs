@@ -39,6 +39,6 @@ impl JSStore {
 
     #[napi(getter)]
     pub fn length(&self) -> i64 {
-        self.store.elements.len() as i64
+        self.store.len() as i64
     }
 }
