@@ -50,10 +50,12 @@ optimized=$(bench "$work/use" "-Cprofile-use=$work/merged.profdata" \
 cp "$optimized" "$out/speed_bench_ordinary_gate"
 
 # The linker map names each function's input section: .text.hot.<symbol>,
-# .text.unlikely.<symbol>, or .text.<symbol>.
-grep -oE '\(\.text(\.hot|\.unlikely)?\._ZN[^)]*4scah[^)]*\)' "$work/link.map" \
+# .text.unlikely.<symbol>, or .text.<symbol>. Symbols are legacy (`_ZN`) or
+# v0 (`_R`) mangled, depending on the toolchain; demangling drops legacy
+# hashes and v0 crate disambiguators.
+grep -oE '\(\.text(\.hot|\.unlikely)?\.(_ZN|_R)[^)]*4scah[^)]*\)' "$work/link.map" \
   | sed -E 's/^\(\.text\.(hot|unlikely)\.(.*)\)$/\1 \2/; s/^\(\.text\.(.*)\)$/plain \1/' \
-  | c++filt | sed -E 's/::h[0-9a-f]{16}$//' | sort -u > "$out/sections.txt"
+  | c++filt | sed -E 's/::h[0-9a-f]{16}$//; s/\[[0-9a-f]+\]//g' | sort -u > "$out/sections.txt"
 
 cut -d' ' -f1 "$out/sections.txt" | sort | uniq -c
 echo "Functions by section: $out/sections.txt"
