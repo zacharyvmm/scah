@@ -30,9 +30,18 @@
 //! A nested section (`.then(...)`) matches relative to each *scope*: an open
 //! element saved by the parent section. A match is attached to every scope
 //! that contains the start of its chain, which a plain bit cannot express. For
-//! steps of nested sections, frames therefore also carry *lanes*: the set of
-//! open scopes (by stack slot) that each partial match is anchored in. Lanes
-//! are only computed for steps that matched.
+//! steps of nested sections, the matcher also tracks *lanes*: the set of open
+//! scopes (by stack slot) that each partial match is anchored in. Lanes are
+//! only computed for steps that matched.
+//!
+//! A lane depends only on where the element is. An entry step's lane comes
+//! from the scope stack, a ` ` step's from the lanes its ancestors inherit,
+//! and a `>`, `+` or `~` step copies the previous step's lane from its parent
+//! or an earlier sibling, which shares the element's position. So only the
+//! inherited lanes are stored: one live set, with a log of the bits each
+//! frame added so popping it can take them out. Every other lane is
+//! recomputed when it is read. Memory stays linear in the open scopes, even
+//! when every one of thousands of nested scopes anchors a partial match.
 
 // Word loops index several rows at once and run `0..self.words()`, which is
 // a constant for fixed-width matchers, so they unroll into register code.
@@ -130,99 +139,103 @@ struct SectionState {
     root_claimed: bool,
 }
 
-const NO_BLOCK: u32 = u32::MAX;
-
-/// Lane blocks of one frame. A block holds one lane per scoped step.
-#[derive(Debug, Clone, Copy)]
-struct FrameLanes {
-    matched: u32,
-    inherited: u32,
-    prev_sibling: u32,
-    any_sibling: u32,
-    /// Block count when the frame was pushed; popping truncates back to it.
-    mark: u32,
-}
-
 #[derive(Debug, Clone, Copy)]
 struct FrameMeta {
     /// Depth of the element the frame belongs to; 0 for the document.
     depth: u32,
-    lanes: FrameLanes,
+    /// Length of [`Lanes::log`] when the frame was pushed.
+    log_mark: u32,
 }
 
-/// LIFO arena of lane blocks. Each lane is a bitset over scope slots.
+/// Bits a frame added to one word of the live inherited lanes.
+#[derive(Debug, Clone, Copy)]
+struct LaneLogEntry {
+    lane: u32,
+    word: u32,
+    bits: u64,
+}
+
+/// Lanes: per scoped step, a bitset over scope slots.
 #[derive(Debug)]
 struct Lanes {
-    /// Number of scoped steps, i.e. lanes per block.
+    /// Number of scoped steps, i.e. lanes per set.
     steps: usize,
     /// Words per lane; grows when more scopes are open than it can index.
     words: usize,
-    /// Allocated blocks.
-    count: u32,
-    arena: SmallVec<[u64; 16]>,
+    /// Inherited lanes of the innermost frame: the union of the lanes of
+    /// every element with a frame.
+    live: SmallVec<[u64; 8]>,
+    /// The bits each frame added to `live`, oldest first.
+    log: SmallVec<[LaneLogEntry; 8]>,
+    /// Lanes of the element being opened.
+    current: SmallVec<[u64; 8]>,
 }
 
 impl Lanes {
     #[inline]
-    fn block_len(&self) -> usize {
-        self.steps * self.words
-    }
-
-    #[inline]
-    fn alloc(&mut self) -> u32 {
-        let block = self.count;
-        self.count += 1;
-        self.arena.resize(self.arena.len() + self.block_len(), 0);
-        block
-    }
-
-    #[inline]
-    fn truncate(&mut self, blocks: u32) {
-        if blocks < self.count {
-            self.count = blocks;
-            self.arena.truncate(blocks as usize * self.block_len());
-        }
-    }
-
-    #[inline]
-    fn range(&self, block: u32, lane: usize) -> Range<usize> {
-        let start = block as usize * self.block_len() + lane * self.words;
+    fn range(&self, lane: usize) -> Range<usize> {
+        let start = lane * self.words;
         start..start + self.words
     }
 
-    #[inline]
-    fn block_range(&self, block: u32) -> Range<usize> {
-        let start = block as usize * self.block_len();
-        start..start + self.block_len()
+    /// Add the current element's lanes to the live set, logging new bits.
+    fn inherit_current(&mut self) {
+        for lane in 0..self.steps {
+            for word in 0..self.words {
+                let index = lane * self.words + word;
+                let bits = self.current[index] & !self.live[index];
+                if bits != 0 {
+                    self.live[index] |= bits;
+                    self.log.push(LaneLogEntry {
+                        lane: lane as u32,
+                        word: word as u32,
+                        bits,
+                    });
+                }
+            }
+        }
     }
 
-    #[inline]
-    fn lane(&self, block: u32, lane: usize) -> &[u64] {
-        &self.arena[self.range(block, lane)]
+    /// Remove the bits logged since `mark` from the live set.
+    fn undo(&mut self, mark: u32) {
+        let mark = mark as usize;
+        for entry in &self.log[mark..] {
+            self.live[entry.lane as usize * self.words + entry.word as usize] &= !entry.bits;
+        }
+        self.log.truncate(mark);
     }
 
-    /// `target |= source`, where `source` lives in an earlier block.
-    fn or_from(&mut self, target: (u32, usize), source: (u32, usize)) {
-        debug_assert!(source.0 < target.0);
-        let target = self.range(target.0, target.1);
-        let source = self.range(source.0, source.1);
-        let (low, high) = self.arena.split_at_mut(target.start);
-        bits::or_assign(&mut high[..self.words], &low[source]);
+    /// Copy `lane` of the live set as it was when the log was `mark` long
+    /// into `target` of the current lanes.
+    fn inherited_at(&mut self, lane: usize, mark: usize, target: usize) {
+        let words = self.words;
+        let (source, target) = (lane * words, target * words);
+        for word in 0..words {
+            self.current[target + word] = self.live[source + word];
+        }
+        for entry in &self.log[mark..] {
+            if entry.lane as usize == lane {
+                self.current[target + entry.word as usize] &= !entry.bits;
+            }
+        }
     }
 
-    /// Make room for `slots` open scopes, widening every block if needed.
+    /// Make room for `slots` open scopes, widening the lane sets if needed.
     fn ensure_slots(&mut self, slots: usize) {
         if slots <= self.words * 64 {
             return;
         }
         let words = bits::words_for(slots).max(self.words * 2);
-        let lanes = self.arena.len() / self.words.max(1);
-        let mut arena: SmallVec<[u64; 16]> = smallvec![0; lanes * words];
-        for lane in 0..lanes {
-            arena[lane * words..lane * words + self.words]
-                .copy_from_slice(&self.arena[lane * self.words..(lane + 1) * self.words]);
-        }
-        self.arena = arena;
+        let widen = |old: &SmallVec<[u64; 8]>| -> SmallVec<[u64; 8]> {
+            let mut wide = smallvec![0; self.steps * words];
+            for lane in 0..self.steps {
+                wide[lane * words..lane * words + self.words]
+                    .copy_from_slice(&old[lane * self.words..(lane + 1) * self.words]);
+            }
+            wide
+        };
+        self.live = widen(&self.live);
+        self.current = widen(&self.current);
         self.words = words;
     }
 }
@@ -268,7 +281,6 @@ pub(crate) struct Matcher<'q, const W: usize> {
     saved_rows: SmallVec<[ElementId; 4]>,
     lane_steps: SmallVec<[usize; 8]>,
     slot_scratch: SmallVec<[u64; 2]>,
-    lane_scratch: SmallVec<[u64; 8]>,
 }
 
 impl<'q, const W: usize> Matcher<'q, W> {
@@ -380,19 +392,14 @@ impl<'q, const W: usize> Matcher<'q, W> {
             frames: smallvec![0; FRAME_ROWS * words],
             frame_meta: smallvec![FrameMeta {
                 depth: 0,
-                lanes: FrameLanes {
-                    matched: NO_BLOCK,
-                    inherited: NO_BLOCK,
-                    prev_sibling: NO_BLOCK,
-                    any_sibling: NO_BLOCK,
-                    mark: 0,
-                },
+                log_mark: 0,
             }],
             lanes: Lanes {
                 steps: lane_count as usize,
                 words: 1,
-                count: 0,
-                arena: SmallVec::new(),
+                live: smallvec![0; lane_count as usize],
+                log: SmallVec::new(),
+                current: smallvec![0; lane_count as usize],
             },
             scopes: SmallVec::new(),
             scope_rows: SmallVec::new(),
@@ -401,7 +408,6 @@ impl<'q, const W: usize> Matcher<'q, W> {
             saved_rows: SmallVec::new(),
             lane_steps: SmallVec::new(),
             slot_scratch: SmallVec::new(),
-            lane_scratch: SmallVec::new(),
             program,
         }
     }
@@ -452,7 +458,7 @@ impl<'q, const W: usize> Matcher<'q, W> {
     /// Push a frame for the element at `depth` whose matches are the
     /// `SCRATCH` row (or nothing), inheriting from the innermost frame, which
     /// is its nearest ancestor with a frame.
-    fn push_frame(&mut self, depth: usize, matched: bool, lanes: FrameLanes) {
+    fn push_frame(&mut self, depth: usize, matched: bool) {
         let words = self.words();
         let top = self.top();
         let base = self.frames.len();
@@ -469,7 +475,7 @@ impl<'q, const W: usize> Matcher<'q, W> {
         }
         self.frame_meta.push(FrameMeta {
             depth: depth as u32,
-            lanes,
+            log_mark: self.lanes.log.len() as u32,
         });
     }
 
@@ -478,7 +484,7 @@ impl<'q, const W: usize> Matcher<'q, W> {
         debug_assert!(frame > 0, "the document frame is never popped");
         self.frames.truncate(frame * FRAME_ROWS * self.words());
         let meta = self.frame_meta.pop().unwrap();
-        self.lanes.truncate(meta.lanes.mark);
+        self.lanes.undo(meta.log_mark);
     }
 
     /// Select the steps an element named `name` could match at the current
@@ -588,17 +594,10 @@ impl<'q, const W: usize> Matcher<'q, W> {
         }
 
         let top = self.top();
-        let mut lanes = FrameLanes {
-            matched: NO_BLOCK,
-            inherited: self.frame_meta[top].lanes.inherited,
-            prev_sibling: NO_BLOCK,
-            any_sibling: NO_BLOCK,
-            mark: self.lanes.count,
-        };
         let scoped = self.lanes.steps > 0
             && bits::intersects(self.mask(CANDIDATES), self.program.mask(StepMask::Scoped));
         if scoped {
-            self.compute_lanes(parent, &mut lanes);
+            self.compute_lanes(parent);
         }
 
         // A frame is needed when a child or sibling reads one of these
@@ -617,18 +616,14 @@ impl<'q, const W: usize> Matcher<'q, W> {
         }
         let push = needed != 0 || (scoped && read != 0);
         if push {
+            self.push_frame(self.depth, true);
             if scoped {
-                self.inherit_lanes(&mut lanes);
+                self.lanes.inherit_current();
             }
-            self.push_frame(self.depth, true, lanes);
         }
 
         if bits::intersects(self.mask(CANDIDATES), self.program.mask(StepMask::Save)) {
-            self.save(lanes.matched, element, store, hits);
-        }
-        if scoped && !push {
-            // Save-only lanes were read by `save`; nothing else needs them.
-            self.lanes.truncate(lanes.mark);
+            self.save(element, store, hits);
         }
     }
 
@@ -675,14 +670,12 @@ impl<'q, const W: usize> Matcher<'q, W> {
     /// Fill lanes for the scoped candidates of the element being opened, and
     /// drop candidates no scope can anchor.
     #[inline(never)]
-    fn compute_lanes(&mut self, parent: usize, lanes: &mut FrameLanes) {
+    fn compute_lanes(&mut self, parent: usize) {
         let words = self.words();
-        let block = self.lanes.alloc();
-        let parent_lanes = self
-            .frame_at(parent)
-            .map(|frame| self.frame_meta[frame].lanes);
-        let inherited = self.frame_meta[self.top()].lanes.inherited;
         let scoped = self.program.mask(StepMask::Scoped);
+        // Lanes of steps that are not candidates stay empty: a frame inherits
+        // every lane.
+        self.lanes.current.fill(0);
         self.lane_steps.clear();
         for word in 0..words {
             let mut pending = self.masks[CANDIDATES * words + word] & scoped[word];
@@ -695,63 +688,77 @@ impl<'q, const W: usize> Matcher<'q, W> {
 
         for index in 0..self.lane_steps.len() {
             let step = self.lane_steps[index];
+            let lane = self.steps[step].lane as usize;
+            self.resolve_lane(step, parent + 1, self.lanes.log.len(), lane);
+            if !bits::any(&self.lanes.current[self.lanes.range(lane)]) {
+                self.masks[CANDIDATES * words + step / 64] &= !(1 << (step % 64));
+            }
+        }
+    }
+
+    /// Write into `target` of the current lanes the lane of `step` for an
+    /// element at `depth` opened when the lane log was `mark` long.
+    ///
+    /// `>` reads the parent's lane and `+`/`~` an earlier sibling's, which
+    /// was computed at the same position, so both walk back to the step that
+    /// starts the run: an entry step, whose lane comes from the scope stack,
+    /// or a ` ` step, whose lane is what the element's ancestors inherited.
+    fn resolve_lane(&mut self, mut step: usize, mut depth: usize, mut mark: usize, target: usize) {
+        let range = self.lanes.range(target);
+        loop {
             let state = self.steps[step];
-            let lane = state.lane as usize;
-            let previous = (step > 0).then(|| self.steps[step - 1].lane as usize);
-            let source = match state.source {
+            match state.source {
+                LaneSource::Child => {
+                    // The parent matched the previous step, so it has a frame.
+                    let frames = &self.frame_meta;
+                    let index = frames.partition_point(|frame| (frame.depth as usize) < depth - 1);
+                    if frames
+                        .get(index)
+                        .is_none_or(|frame| frame.depth as usize != depth - 1)
+                    {
+                        self.lanes.current[range].fill(0);
+                        return;
+                    }
+                    mark = frames[index].log_mark as usize;
+                    depth -= 1;
+                    step -= 1;
+                }
+                LaneSource::Adjacent | LaneSource::Sibling => step -= 1,
                 LaneSource::EntryDescendant | LaneSource::EntryChild => {
                     let entry_child = state.source == LaneSource::EntryChild;
                     let scope_section = self
                         .program
                         .section_parent(state.save.section)
                         .expect("nested section has a parent");
-                    let target = self.lanes.range(block, lane);
+                    let lanes = &mut self.lanes.current[range];
+                    lanes.fill(0);
                     for (slot, scope) in self.scopes.iter().enumerate() {
+                        let scope_depth = scope.depth as usize;
                         if scope.section == scope_section
-                            && (!entry_child || scope.depth as usize == parent)
+                            && scope_depth < depth
+                            && (!entry_child || scope_depth == depth - 1)
                         {
-                            bits::set(&mut self.lanes.arena[target.clone()], slot);
+                            bits::set(lanes, slot);
                         }
                     }
-                    NO_BLOCK
+                    return;
                 }
-                LaneSource::Descendant => inherited,
-                LaneSource::Child => parent_lanes.map_or(NO_BLOCK, |lanes| lanes.matched),
-                LaneSource::Adjacent => parent_lanes.map_or(NO_BLOCK, |lanes| lanes.prev_sibling),
-                LaneSource::Sibling => parent_lanes.map_or(NO_BLOCK, |lanes| lanes.any_sibling),
-                LaneSource::Never => NO_BLOCK,
-            };
-            if source != NO_BLOCK {
-                self.lanes
-                    .or_from((block, lane), (source, previous.unwrap()));
-            }
-            if !bits::any(self.lanes.lane(block, lane)) {
-                self.masks[CANDIDATES * words + step / 64] &= !(1 << (step % 64));
+                LaneSource::Descendant => {
+                    let previous = self.steps[step - 1].lane as usize;
+                    self.lanes.inherited_at(previous, mark, target);
+                    return;
+                }
+                LaneSource::Never => {
+                    self.lanes.current[range].fill(0);
+                    return;
+                }
             }
         }
-
-        lanes.matched = block;
-    }
-
-    /// Inherited lanes of a new frame: the nearest ancestor frame's, plus
-    /// the element's own.
-    #[inline(never)]
-    fn inherit_lanes(&mut self, lanes: &mut FrameLanes) {
-        let inherited = self.lanes.alloc();
-        for lane in 0..self.lanes.steps {
-            if lanes.inherited != NO_BLOCK {
-                self.lanes
-                    .or_from((inherited, lane), (lanes.inherited, lane));
-            }
-            self.lanes.or_from((inherited, lane), (lanes.matched, lane));
-        }
-        lanes.inherited = inherited;
     }
 
     #[inline(always)]
     fn save<'html>(
         &mut self,
-        lane_block: u32,
         element: &XHtmlElement<'html>,
         store: &mut Store<'html, 'q>,
         hits: &mut Vec<SaveHit>,
@@ -775,7 +782,7 @@ impl<'q, const W: usize> Matcher<'q, W> {
                 if info.root {
                     self.save_root(info, element, store, hits);
                 } else {
-                    self.save_scoped(info, lane_block, element, store, hits);
+                    self.save_scoped(info, element, store, hits);
                 }
             }
         }
@@ -827,7 +834,6 @@ impl<'q, const W: usize> Matcher<'q, W> {
     fn save_scoped<'html>(
         &mut self,
         info: StepSave,
-        lane_block: u32,
         element: &XHtmlElement<'html>,
         store: &mut Store<'html, 'q>,
         hits: &mut Vec<SaveHit>,
@@ -847,8 +853,8 @@ impl<'q, const W: usize> Matcher<'q, W> {
             while pending != 0 {
                 let step = word * 64 + pending.trailing_zeros() as usize;
                 pending &= pending - 1;
-                let lane = self.lanes.lane(lane_block, self.steps[step].lane as usize);
-                bits::or_assign(&mut self.slot_scratch, lane);
+                let lane = self.lanes.range(self.steps[step].lane as usize);
+                bits::or_assign(&mut self.slot_scratch, &self.lanes.current[lane]);
             }
         }
 
@@ -935,7 +941,6 @@ impl<'q, const W: usize> Matcher<'q, W> {
         {
             let row = self.frame_row(parent, PREV_SIBLING);
             self.frames[row].fill(0);
-            self.frame_meta[parent].lanes.prev_sibling = NO_BLOCK;
         }
     }
 
@@ -944,38 +949,26 @@ impl<'q, const W: usize> Matcher<'q, W> {
     #[inline(never)]
     fn close_frame_with_siblings(&mut self, frame: usize, depth: usize) {
         let words = self.words();
-        let matched_lanes = self.frame_meta[frame].lanes.matched;
         let mut any = 0;
         for word in 0..words {
             let matched = self.frames[self.frame_word(frame, MATCHED, word)];
             self.masks[SCRATCH * words + word] = matched;
             any |= matched;
         }
-        if matched_lanes == NO_BLOCK && any == 0 {
+        if any == 0 {
             // A frame that only held its children's sibling state.
             self.pop_frame();
             self.clear_prev_sibling(depth - 1);
             return;
         }
-        if matched_lanes != NO_BLOCK {
-            let range = self.lanes.block_range(matched_lanes);
-            self.lane_scratch.clear();
-            self.lane_scratch
-                .extend_from_slice(&self.lanes.arena[range]);
-        }
         self.pop_frame();
 
+        // A later sibling's lanes are recomputed at its own position, which
+        // this element shared, so only the matched steps carry over.
         let parent = match self.frame_at(depth - 1) {
             Some(parent) => parent,
             None => {
-                let lanes = FrameLanes {
-                    matched: NO_BLOCK,
-                    inherited: self.frame_meta[self.top()].lanes.inherited,
-                    prev_sibling: NO_BLOCK,
-                    any_sibling: NO_BLOCK,
-                    mark: self.lanes.count,
-                };
-                self.push_frame(depth - 1, false, lanes);
+                self.push_frame(depth - 1, false);
                 self.top()
             }
         };
@@ -985,9 +978,6 @@ impl<'q, const W: usize> Matcher<'q, W> {
             self.frames[prev] = matched;
             let all = self.frame_word(parent, ANY_SIBLING, word);
             self.frames[all] |= matched;
-        }
-        if self.lanes.steps > 0 {
-            self.close_sibling_lanes(parent, matched_lanes != NO_BLOCK);
         }
     }
 
@@ -1010,35 +1000,6 @@ impl<'q, const W: usize> Matcher<'q, W> {
         if refresh {
             self.refresh_entry_descendant();
         }
-    }
-
-    /// Record the closed child's lanes as its parent's sibling lanes.
-    fn close_sibling_lanes(&mut self, parent: usize, had_lanes: bool) {
-        if !had_lanes {
-            self.frame_meta[parent].lanes.prev_sibling = NO_BLOCK;
-            return;
-        }
-        let prev = match self.frame_meta[parent].lanes.prev_sibling {
-            NO_BLOCK => {
-                let block = self.lanes.alloc();
-                self.frame_meta[parent].lanes.prev_sibling = block;
-                block
-            }
-            block => block,
-        };
-        let range = self.lanes.block_range(prev);
-        self.lanes.arena[range].copy_from_slice(&self.lane_scratch);
-
-        let any = match self.frame_meta[parent].lanes.any_sibling {
-            NO_BLOCK => {
-                let block = self.lanes.alloc();
-                self.frame_meta[parent].lanes.any_sibling = block;
-                block
-            }
-            block => block,
-        };
-        let range = self.lanes.block_range(any);
-        bits::or_assign(&mut self.lanes.arena[range], &self.lane_scratch);
     }
 
     /// Whether no later element can be saved: every root section is a
@@ -1481,6 +1442,87 @@ mod tests {
             run(&queries, "ul#u(li#a h1 li#b p li#c)"),
             "ul[u{> h1 ~ li[b, c]}]"
         );
+    }
+
+    /// Lane state the matcher holds: live lanes plus logged words.
+    fn lane_words(driver: &Driver<'_>) -> usize {
+        let AnyMatcher::Single(matcher) = &driver.matcher else {
+            unreachable!("one-word program")
+        };
+        matcher.lanes.live.len() + matcher.lanes.log.len()
+    }
+
+    #[test]
+    fn sibling_lanes_do_not_grow_with_siblings() {
+        let queries = [Query::all("section", Save::none())
+            .unwrap()
+            .all("h1 + a", Save::none())
+            .unwrap()
+            .build()];
+        let mut driver = Driver::new(&queries);
+        driver.open("section");
+        driver.feed("h1 span");
+        let words = lane_words(&driver);
+        for _ in 0..100 {
+            driver.feed("h1 span");
+        }
+        assert_eq!(lane_words(&driver), words);
+        driver.feed("h1 a#x").close();
+        assert_eq!(driver.render(), "section[section{h1 + a[x]}]");
+    }
+
+    #[test]
+    fn lanes_of_an_earlier_element_do_not_leak_into_a_frame() {
+        // `p` pushes a frame (for `p > x`) right after the inner `a` computed
+        // `a b` lanes for `s1` and `s2`. Slot 1 now holds `u1`, which has no
+        // `a` inside, so `b` must not be saved under it.
+        let queries = [Query::all("section", Save::none())
+            .unwrap()
+            .then(|section| {
+                Ok([
+                    section.all("a b", Save::none())?,
+                    section.all("p > x", Save::none())?,
+                ])
+            })
+            .unwrap()
+            .build()];
+        assert_eq!(
+            run(&queries, "section#s1(a(section#s2(a) section#u1(p(b))))"),
+            "section[s1{a b[b]}, s2, u1]"
+        );
+    }
+
+    #[test]
+    fn nested_scope_lanes_stay_linear() {
+        // Every `div` is a scope, and every inner `div` starts a partial
+        // match in each enclosing one: storing each frame's lanes would take
+        // memory quadratic in the depth.
+        for selector in ["div span", "div > span", "div + span"] {
+            let queries = [Query::all("div", Save::none())
+                .unwrap()
+                .all(selector, Save::none())
+                .unwrap()
+                .build()];
+            let mut driver = Driver::new(&queries);
+            let depth = 1_000;
+            for _ in 0..depth {
+                driver.open("div");
+            }
+            let lanes = 2;
+            let words = bits::words_for(depth);
+            assert!(
+                lane_words(&driver) <= 2 * lanes * words + lanes * depth,
+                "{selector}: {} words",
+                lane_words(&driver)
+            );
+            for _ in 0..depth {
+                driver.close();
+            }
+            let AnyMatcher::Single(matcher) = &driver.matcher else {
+                unreachable!("one-word program")
+            };
+            assert!(matcher.lanes.log.is_empty(), "{selector}");
+        }
     }
 
     #[test]
