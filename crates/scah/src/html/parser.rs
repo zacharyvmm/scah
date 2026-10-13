@@ -286,6 +286,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             .has_structural
             .then(|| Box::new(StructuralParserState::new(&program)));
         let attribute_interest = AttributeInterest::new(program.attribute_names());
+        let mut store = store;
+        store.set_sections(&program);
 
         Self {
             position: DocumentPosition::default(),
@@ -759,7 +761,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         true
     }
 
-    pub fn matches(self) -> Store<'html, 'query> {
+    pub fn matches(mut self) -> Store<'html, 'query> {
+        self.store.finish();
         self.store
     }
 
@@ -787,14 +790,13 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         }
     }
 
-    pub fn finish(
-        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_mut))] mut self,
-    ) -> Store<'html, 'query> {
+    pub fn finish(mut self) -> Store<'html, 'query> {
+        self.store.finish();
         crate::scah_trace!(
             self.store,
             TraceEvent::ParseFinished {
                 element_count: self.store.elements.len(),
-                query_node_count: self.store.queries.len(),
+                result_count: self.store.result_count(),
                 attribute_count: self.store.attributes.len(),
                 raw_text_len: self.store.text.raw_text.len(),
                 text_len: self.store.text.text.len(),
