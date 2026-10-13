@@ -1,5 +1,6 @@
 pub mod program;
 mod query;
+mod tag;
 
 pub use program::{AttributeMask, Program, ProgramFeatures, SectionIndex, SectionMask, StepMask};
 pub use query::compiler::lazy;
@@ -15,3 +16,4 @@ pub use query::selector::{
     StructuralMatchContext, StructuralPredicate, StructuralPredicates,
 };
 pub use scah_reader::Reader;
+pub use tag::TagId;

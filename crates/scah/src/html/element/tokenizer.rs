@@ -39,6 +39,12 @@ impl<'a> ElementAttributeToken<'a> {
     /// the trailing-solidus handling below is skipped when `in_value` is set.
     pub fn next(reader: &mut Reader<'a>, in_value: bool) -> Option<Self> {
         reader.next_while_list(&WHITESPACE);
+        // In name position a `/` separates attributes like whitespace does:
+        // `<div/id=x>` has the attribute `id`. Before `>` it ends the tag.
+        while !in_value && reader.peek() == Some(b'/') {
+            reader.skip();
+            reader.next_while_list(&WHITESPACE);
+        }
 
         let start_pos = reader.get_position();
 
