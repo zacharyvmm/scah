@@ -60,6 +60,9 @@ Rust crates and the Python and npm packages together.
 - A dropped `Store` keeps its allocations, up to 32 MiB, for the next parse on
   the same thread, so parsing many documents in a loop no longer allocates
   and page-faults a fresh store each time. ([#100])
+- Tags that end right after their name, such as `<div>`, skip attribute
+  parsing in every parse, and rarely taken paths leave the parse loop. On
+  documents of empty `div`s, parsing is about 16% faster. ([#102])
 
 ### Fixed
 
@@ -189,3 +192,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#97]: https://github.com/zacharyvmm/scah/pull/97
 [#98]: https://github.com/zacharyvmm/scah/pull/98
 [#100]: https://github.com/zacharyvmm/scah/pull/100
+[#102]: https://github.com/zacharyvmm/scah/pull/102
