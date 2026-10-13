@@ -427,6 +427,14 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             if CAPTURE && self.capture_mode.captures_any() {
                 self.mark_active_source_start(reader.get_position());
             }
+            if finished {
+                crate::scah_trace!(
+                    self.store,
+                    TraceEvent::EarlyExit {
+                        reader_position: reader.get_position(),
+                    }
+                );
+            }
             return !finished && !reader.eof();
         }
 
