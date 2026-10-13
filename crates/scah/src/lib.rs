@@ -106,6 +106,8 @@ use std::borrow::Cow;
 pub mod debug;
 mod engine;
 mod html;
+#[cfg(scah_resolved_stats)]
+pub use html::resolved_stats;
 mod store;
 mod support;
 
@@ -211,6 +213,8 @@ pub mod bench_internals {
         Rolling,
         FullDocument,
         Tape,
+        /// Whole tags resolved from the tape ahead of the parser.
+        Resolved,
     }
 
     /// Parse exactly as [`crate::parse`] does (same driver loop and
@@ -229,6 +233,7 @@ pub mod bench_internals {
             IndexingStrategy::Rolling => Some(IndexingMode::Rolling),
             IndexingStrategy::FullDocument => Some(IndexingMode::ForcedFullDocument),
             IndexingStrategy::Tape => Some(IndexingMode::Tape),
+            IndexingStrategy::Resolved => Some(IndexingMode::Resolved),
         };
         crate::run(
             html,

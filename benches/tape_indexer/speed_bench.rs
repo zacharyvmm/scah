@@ -89,6 +89,7 @@ fn bench_strategies(c: &mut Criterion) {
                 ("rolling", IndexingStrategy::Rolling),
                 ("full_index", IndexingStrategy::FullDocument),
                 ("tape", IndexingStrategy::Tape),
+                ("resolved", IndexingStrategy::Resolved),
             ];
             let expected =
                 count(parse_with_strategy(&html, queries, IndexingStrategy::Policy).unwrap());

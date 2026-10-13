@@ -42,7 +42,7 @@ pretty_assertions = "1.4.1"
 # `--cfg scah_no_layout_hints` drops the `#[cold]` and `#[inline(never)]`
 # hints that keep rare paths out of the parse loop, to compare against them
 # or to lay the code out with PGO instead (see benches/layout).
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(scah_no_layout_hints)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(scah_no_layout_hints)", "cfg(scah_resolved_policy)", "cfg(scah_resolved_everywhere)", "cfg(scah_resolved_stats)", "cfg(scah_resolved_hybrid)"] }
 
 [lints.clippy]
 let-and-return = "allow"

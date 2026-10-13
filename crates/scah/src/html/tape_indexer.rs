@@ -26,7 +26,7 @@ use super::indexer::{
 const BOUNDS: [ByteSet; 1] = [ByteSet::from_bytes(b"<>'\"")];
 const TABLES: Tables<1> = unwrap(generate(&BOUNDS));
 
-struct HtmlBounds;
+pub(super) struct HtmlBounds;
 
 impl IndexSpec for HtmlBounds {
     type State = ();
@@ -226,11 +226,11 @@ impl TagIndexer for TapeTagIndexer {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::html::indexer::ScalarTagIndexer;
 
-    const EDGE_CASES: &[&str] = &[
+    pub(in crate::html) const EDGE_CASES: &[&str] = &[
         "",
         "plain text without markup",
         "0123456789abcde<a x='y'>body</a>",
@@ -280,24 +280,24 @@ mod tests {
         }
     }
 
-    struct Rng(u64);
+    pub(in crate::html) struct Rng(pub(in crate::html) u64);
 
     impl Rng {
-        fn next(&mut self) -> u64 {
+        pub(in crate::html) fn next(&mut self) -> u64 {
             self.0 ^= self.0 << 13;
             self.0 ^= self.0 >> 7;
             self.0 ^= self.0 << 17;
             self.0
         }
 
-        fn below(&mut self, n: usize) -> usize {
+        pub(in crate::html) fn below(&mut self, n: usize) -> usize {
             (self.next() % n as u64) as usize
         }
     }
 
     /// Random markup built from tag fragments, quotes, escapes, comments,
     /// and long text runs, so tags straddle window and block boundaries.
-    fn random_document(rng: &mut Rng, pieces: usize) -> String {
+    pub(in crate::html) fn random_document(rng: &mut Rng, pieces: usize) -> String {
         const PIECES: &[&str] = &[
             "<div class=\"a b\">",
             "</div>",

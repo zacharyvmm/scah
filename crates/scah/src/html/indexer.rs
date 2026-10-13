@@ -37,6 +37,9 @@ pub(crate) enum IndexingMode {
     ForcedFullDocument,
     /// Use the simdlex structural tape ([`super::tape_indexer`]).
     Tape,
+    /// Resolve whole tags from the tape ahead of the parser
+    /// ([`super::resolved_indexer`]).
+    Resolved,
 }
 
 /// The kind of completed structural span discovered by a [`TagIndexer`].
@@ -752,7 +755,7 @@ fn is_html_whitespace(byte: u8) -> bool {
 /// anything after it (`</div class=x>`, `</x/y>`) is ignored rather than
 /// becoming part of the name. Leading whitespace is skipped.
 #[inline]
-fn close_tag_name(source: &[u8], content_start: usize, gt: usize) -> (usize, usize) {
+pub(super) fn close_tag_name(source: &[u8], content_start: usize, gt: usize) -> (usize, usize) {
     let mut name_start = content_start;
     while name_start < gt && is_html_whitespace(source[name_start]) {
         name_start += 1;
@@ -837,11 +840,11 @@ fn quoted_close_tag_end(source: &[u8], mut position: usize) -> usize {
 /// Ends an opening or closing tag name. Both kinds share it so that a close
 /// tag always names the element its matching open tag created.
 #[inline]
-fn is_name_boundary(byte: u8) -> bool {
+pub(super) fn is_name_boundary(byte: u8) -> bool {
     is_html_whitespace(byte) || matches!(byte, b'\'' | b'"' | b'=' | b'>' | b'/')
 }
 
-fn find_unquoted_tag_end(source: &[u8], mut position: usize) -> usize {
+pub(super) fn find_unquoted_tag_end(source: &[u8], mut position: usize) -> usize {
     let mut quote = None;
     let mut backslash_run = 0usize;
 
@@ -1293,6 +1296,30 @@ fn sample_full_index_windows(
 enum Ahead {
     Full(PackedTagIndexer),
     Tape(super::tape_indexer::TapeTagIndexer),
+    Resolved(super::resolved_indexer::ResolvedTagIndexer),
+}
+
+impl Ahead {
+    /// The index the policy builds where a document is worth indexing ahead.
+    /// `--cfg scah_resolved_policy` swaps the tape for resolved tags, to
+    /// compare them through the public API.
+    fn for_policy(source: &[u8]) -> Self {
+        let mut ahead = if cfg!(scah_resolved_policy) {
+            Self::Resolved(Default::default())
+        } else {
+            Self::Tape(Default::default())
+        };
+        ahead.prepare(source);
+        ahead
+    }
+
+    fn prepare(&mut self, source: &[u8]) {
+        match self {
+            Ahead::Full(indexer) => indexer.prepare(source),
+            Ahead::Tape(indexer) => indexer.prepare(source),
+            Ahead::Resolved(indexer) => indexer.prepare(source),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1303,6 +1330,7 @@ pub(crate) struct AutoTagIndexer {
     allow_full_index: bool,
     force_full_index: bool,
     force_tape: bool,
+    force_resolved: bool,
     attributes_may_be_parsed: bool,
     prepared_source: usize,
     prepared_len: usize,
@@ -1328,6 +1356,9 @@ impl AutoTagIndexer {
             ),
             force_full_index: mode == IndexingMode::ForcedFullDocument,
             force_tape: mode == IndexingMode::Tape,
+            // `--cfg scah_resolved_everywhere` runs every parse on resolved
+            // tags, to check them against the whole test suite.
+            force_resolved: mode == IndexingMode::Resolved || cfg!(scah_resolved_everywhere),
             attributes_may_be_parsed,
             prepared_source: 0,
             prepared_len: 0,
@@ -1392,10 +1423,24 @@ impl AutoTagIndexer {
             self.ahead = Some(Ahead::Full(full));
             return;
         }
+        if self.force_resolved {
+            let mut resolved = Ahead::Resolved(Default::default());
+            resolved.prepare(source);
+            self.ahead = Some(resolved);
+            return;
+        }
         if self.force_tape {
             let mut tape = super::tape_indexer::TapeTagIndexer::default();
             tape.prepare(source);
             self.ahead = Some(Ahead::Tape(tape));
+            return;
+        }
+        // `--cfg scah_resolved_hybrid`: resolved tags wherever the parser
+        // never tokenizes attributes, whatever the document's density.
+        if cfg!(scah_resolved_hybrid) && !self.attributes_may_be_parsed {
+            let mut resolved = Ahead::Resolved(Default::default());
+            resolved.prepare(source);
+            self.ahead = Some(resolved);
             return;
         }
         let Some(rolling) = self.rolling.as_ref() else {
@@ -1412,9 +1457,7 @@ impl AutoTagIndexer {
             // beats the full-document event index on every measured page
             // (`speed_bench_tape_indexer`). Dense documents never get here and
             // keep the rolling indexer.
-            let mut tape = super::tape_indexer::TapeTagIndexer::default();
-            tape.prepare(source);
-            self.ahead = Some(Ahead::Tape(tape));
+            self.ahead = Some(Ahead::for_policy(source));
         }
     }
 }
@@ -1429,6 +1472,7 @@ impl TagIndexer for AutoTagIndexer {
             match ahead {
                 Ahead::Full(indexer) => indexer.next(source, from),
                 Ahead::Tape(indexer) => indexer.next(source, from),
+                Ahead::Resolved(indexer) => indexer.next(source, from),
             }
         } else if let Some(indexer) = &mut self.rolling {
             indexer.next(source, from)
@@ -1443,6 +1487,7 @@ impl TagIndexer for AutoTagIndexer {
             match ahead {
                 Ahead::Full(indexer) => indexer.finish_open(source, open),
                 Ahead::Tape(indexer) => indexer.finish_open(source, open),
+                Ahead::Resolved(indexer) => indexer.finish_open(source, open),
             }
         } else if let Some(indexer) = &mut self.rolling {
             indexer.finish_open(source, open)
@@ -1461,6 +1506,7 @@ impl TagIndexer for AutoTagIndexer {
             match ahead {
                 Ahead::Full(indexer) => indexer.find_raw_text_close(source, from, close_tag),
                 Ahead::Tape(indexer) => indexer.find_raw_text_close(source, from, close_tag),
+                Ahead::Resolved(indexer) => indexer.find_raw_text_close(source, from, close_tag),
             }
         } else if let Some(indexer) = &mut self.rolling {
             indexer.find_raw_text_close(source, from, close_tag)
