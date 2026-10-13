@@ -411,89 +411,18 @@ impl<'query> QueryBuilder<'query> {
         }
         Ok(self)
     }
-
-    fn exit_at_section(&self) -> Option<QuerySectionId> {
-        // returns the position in the selection tree where it can early exit
-        // TODO: I should add a required flag for QuerySections, so that the first selection is nulled
-        //  -> Basicly you can't return the first section without a perticular section behind added
-        //  -> If you come back to the section without saving the required section,
-        //      then you delete the saved data and you start over.
-
-        fn search_for_single_exit_section(
-            index: QuerySectionId,
-            list: &[QuerySection<'_>],
-        ) -> Option<QuerySectionId> {
-            // If you have a section with MULTIPLE children that can early exit,
-            //   then this parent node will become the exit section
-            if index.index() >= list.len() {
-                return None;
-            }
-            let section = &list[index.index()];
-            let stop_here = match &section.kind {
-                //BUG: you can only early exit when the ALL of them have been found, thus the parent must be awaited for
-                SelectionKind::All => return None,
-
-                // First queries that capture content cannot exit until the
-                // winning element closes and its ranges are finalized.
-                SelectionKind::First => {
-                    section.save.inner_html || section.save.raw_text || section.save.text
-                }
-            };
-            if stop_here {
-                return Some(index);
-            }
-
-            let mut child = QuerySectionId(index.index() + 1);
-            if child.index() >= list.len() {
-                return Some(index);
-            }
-
-            let mut child_response: Option<QuerySectionId> = None;
-            if let Some(parent) = list[child.index()].parent
-                && parent == index
-            {
-                loop {
-                    child_response = match child_response {
-                        None => search_for_single_exit_section(child, list),
-                        Some(_) => {
-                            // If their's more than one child that can early exit then
-                            // the parent is chosen
-                            return Some(index);
-                        }
-                    };
-
-                    if let Some(sibling) = list[child.index()].next_sibling {
-                        child = sibling;
-                    } else {
-                        break;
-                    }
-                }
-            }
-
-            if child_response.is_some() {
-                return child_response;
-            }
-            Some(index)
-        }
-
-        search_for_single_exit_section(QuerySectionId(0), &self.selection)
-    }
 }
 
 impl<'query> QueryBuilder<'query> {
     /// Finalise the builder and produce a compiled [`Query`].
     ///
-    /// This computes early-exit optimisation metadata and converts the
-    /// internal vectors into boxed slices. After calling `build`, pass
+    /// This converts the internal vectors into boxed slices. After calling
+    /// `build`, pass
     /// the resulting `Query` to [`parse`](https://docs.rs/scah/latest/scah/fn.parse.html).
     pub fn build(self) -> Query<'query> {
-        let exit_at_section_end = self.exit_at_section();
-        let states_box = self.states.into_boxed_slice();
-        let query_box = self.selection.into_boxed_slice();
         Query::new(
-            states_box,
-            query_box,
-            exit_at_section_end,
+            self.states.into_boxed_slice(),
+            self.selection.into_boxed_slice(),
             self.alternatives
                 .into_iter()
                 .map(Vec::into_boxed_slice)
@@ -540,48 +469,6 @@ mod tests {
             query.states[0].predicate().classes,
             ClassSelections::from_static(&["blue", "exit"])
         );
-    }
-
-    #[test]
-    fn test_early_exit() {
-        let query = Query::all("a", Save::all()).unwrap();
-        assert_eq!(query.exit_at_section(), None);
-
-        let query = Query::all("a", Save::none()).unwrap();
-        assert_eq!(query.exit_at_section(), None);
-
-        let query = Query::first("a", Save::all()).unwrap();
-        assert_eq!(query.exit_at_section(), Some(QuerySectionId(0)));
-
-        let query = Query::first("a", Save::none()).unwrap();
-        assert_eq!(query.exit_at_section(), Some(QuerySectionId(0)));
-
-        let query = Query::first("a", Save::name_only()).unwrap();
-        assert_eq!(query.exit_at_section(), Some(QuerySectionId(0)));
-
-        let query = Query::all("p", Save::all())
-            .unwrap()
-            .first("a", Save::all())
-            .unwrap();
-        assert_eq!(query.exit_at_section(), None);
-
-        let query = Query::first("p", Save::all())
-            .unwrap()
-            .all("a", Save::all())
-            .unwrap();
-        assert_eq!(query.exit_at_section(), Some(QuerySectionId(0)));
-
-        let query = Query::first("p", Save::all())
-            .unwrap()
-            .first("a", Save::all())
-            .unwrap();
-        assert_eq!(query.exit_at_section(), Some(QuerySectionId(0)));
-
-        let query = Query::first("p", Save::none())
-            .unwrap()
-            .first("a", Save::none())
-            .unwrap();
-        assert_eq!(query.exit_at_section(), Some(QuerySectionId(1)));
     }
 
     #[test]

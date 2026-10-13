@@ -100,6 +100,8 @@
 //! | **Adjacent sibling** | `h1 + p` | Coming soon |
 //! | **General sibling** | `h1 ~ p` | Coming soon |
 
+use std::borrow::Cow;
+
 pub mod debug;
 mod engine;
 mod html;
@@ -117,10 +119,9 @@ pub use scah_query_ir::{
     AnPlusB, Attribute, AttributeCaseSensitivity, AttributeSelection, AttributeSelectionKind,
     AttributeSelections, ClassSelections, Combinator, ElementPredicate, IElement,
     LocalLogicalPredicate, LocalSelectorList, LogicalPredicates, MAX_SELECTOR_NESTING_DEPTH,
-    Position, Program, ProgramFeatures, Query, QueryBuilder, QueryFactory, QuerySection,
-    QuerySectionId, QuerySpec, Save, SelectionKind, SelectorParseError, StaticQuery,
-    StructuralMatchContext, StructuralPredicate, StructuralPredicates, TextRequirements,
-    Transition, TransitionId,
+    Program, ProgramFeatures, Query, QueryBuilder, QueryFactory, QuerySection, QuerySectionId,
+    QuerySpec, Save, SelectionKind, SelectorParseError, StaticQuery, StructuralMatchContext,
+    StructuralPredicate, StructuralPredicates, TextRequirements, Transition, TransitionId,
 };
 pub use scah_reader::Reader;
 pub use store::{CapacityOptions, Element, ElementId, Store};
@@ -186,7 +187,7 @@ pub mod bench_internals {
             IndexingMode::Rolling
         };
         let mut parser = XHtmlParser::from_program(
-            Program::compile(queries),
+            std::borrow::Cow::Owned(Program::compile(queries)),
             Some(html.len()),
             Some(indexing_mode),
         );
@@ -271,29 +272,39 @@ pub fn parse<'a: 'query, 'html: 'query, 'query: 'html, Q>(
 where
     Q: QuerySpec<'query>,
 {
-    if queries.is_empty() {
-        return Err(ParseError::EmptyQueries);
-    }
-
-    let mut parser = new_parser(html, Program::compile(queries));
-    let mut reader = Reader::new(html);
-    parser.trace_parse_started(html.len(), queries.len());
-    parser.run(&mut reader);
-
-    if let Some(err) = parser.take_parse_error() {
-        return Err(err);
-    }
-
-    Ok(parser.finish())
+    run(html, Cow::Owned(Program::compile(queries)), true)
 }
 
-/// Queries that can stop early skip reserving storage for the whole document.
-fn new_parser<'html, 'query: 'html>(
+/// Parse with queries compiled once by [`Program::compile`].
+///
+/// Compiling turns the queries into the flat tables the matcher runs. Reuse
+/// one program to parse many documents with the same queries without paying
+/// for that work on every call.
+///
+/// # Errors
+///
+/// The same as [`parse`].
+///
+/// # Example
+///
+/// ```rust
+/// use scah::{Program, Query, Save, parse_compiled};
+///
+/// let queries = [Query::all("a[href]", Save::none())
+///     .expect("valid selector")
+///     .build()];
+/// let program = Program::compile(&queries);
+///
+/// for html in ["<a href='/1'>1</a>", "<p><a href='/2'>2</a></p>"] {
+///     let store = parse_compiled(html, &program).expect("parse succeeds");
+///     assert_eq!(store.get("a[href]").unwrap().count(), 1);
+/// }
+/// ```
+pub fn parse_compiled<'html, 'query: 'html>(
     html: &'html str,
-    program: Program<'query>,
-) -> XHtmlParser<'html, 'query> {
-    let capacity = (!program.features().all_roots_first).then_some(html.len());
-    XHtmlParser::from_program(program, capacity, None)
+    program: &'query Program<'query>,
+) -> Result<Store<'html, 'query>, ParseError> {
+    run(html, Cow::Borrowed(program), true)
 }
 
 /// Parse queries that do not request raw or normalized text.
@@ -307,18 +318,39 @@ pub fn parse_without_text_capture<'a: 'query, 'html: 'query, 'query: 'html, Q>(
 where
     Q: QuerySpec<'query>,
 {
-    if queries.is_empty() {
+    run(html, Cow::Owned(Program::compile(queries)), false)
+}
+
+/// [`parse_without_text_capture`] with a compiled [`Program`].
+pub fn parse_compiled_without_text_capture<'html, 'query: 'html>(
+    html: &'html str,
+    program: &'query Program<'query>,
+) -> Result<Store<'html, 'query>, ParseError> {
+    run(html, Cow::Borrowed(program), false)
+}
+
+fn run<'html, 'query: 'html>(
+    html: &'html str,
+    program: Cow<'query, Program<'query>>,
+    capture: bool,
+) -> Result<Store<'html, 'query>, ParseError> {
+    if program.root_sections().is_empty() {
         return Err(ParseError::EmptyQueries);
     }
-
-    let program = Program::compile(queries);
-    if program.features().text.any() {
+    if !capture && program.features().text.any() {
         return Err(ParseError::TextCaptureRequired);
     }
-    let mut parser = new_parser(html, program);
+    let query_count = program.root_sections().len();
+    // Queries that can stop early skip reserving storage for the whole document.
+    let capacity = (!program.features().all_roots_first).then_some(html.len());
+    let mut parser = XHtmlParser::from_program(program, capacity, None);
     let mut reader = Reader::new(html);
-    parser.trace_parse_started(html.len(), queries.len());
-    parser.run_without_text_capture(&mut reader);
+    parser.trace_parse_started(html.len(), query_count);
+    if capture {
+        parser.run(&mut reader);
+    } else {
+        parser.run_without_text_capture(&mut reader);
+    }
 
     if let Some(err) = parser.take_parse_error() {
         return Err(err);
