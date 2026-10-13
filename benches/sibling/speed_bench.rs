@@ -1,5 +1,5 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use scah::{Query, QueryMultiplexer, Reader, Save, XHtmlParser, parse};
+use scah::{Query, Reader, Save, XHtmlParser, parse};
 use std::hint::black_box;
 
 fn generate_flat_nonmatching_html(count: usize) -> String {
@@ -377,12 +377,12 @@ fn bench_many_first_queries_end_to_end(c: &mut Criterion) {
     group.finish();
 }
 
-/// Times only the close event that retires every prepared `First` runner.
+/// Times only the open event at which every prepared `First` query matches.
 ///
-/// Setup advances through `<main>` and `<h1 class="early">`; the measured
-/// iteration closes `h1` and performs the dense-to-sparse active-set transition.
-fn bench_isolated_first_retirement_close(c: &mut Criterion) {
-    let mut group = c.benchmark_group("isolated_first_retirement_close");
+/// Setup advances through `<main>`; the measured iteration opens
+/// `<h1 class="early">`, claims every `First` query, and finishes the parse.
+fn bench_isolated_first_claim_open(c: &mut Criterion) {
+    let mut group = c.benchmark_group("isolated_first_claim_open");
     group.sample_size(20);
     const HTML: &str = "<main><h1 class=\"early\"></h1></main>";
 
@@ -394,15 +394,14 @@ fn bench_isolated_first_retirement_close(c: &mut Criterion) {
             |b, _| {
                 b.iter_batched(
                     || {
-                        let mut parser =
-                            XHtmlParser::new(QueryMultiplexer::new(queries as &[Query]));
+                        let mut parser = XHtmlParser::new(queries as &[Query]);
                         let mut reader = Reader::new(HTML);
                         assert!(parser.next(&mut reader), "open <main>");
-                        assert!(parser.next(&mut reader), "open <h1>");
                         (parser, reader)
                     },
                     |(mut parser, mut reader)| {
-                        black_box(parser.next(&mut reader)); // </h1> retires all First runners
+                        // Every First query matches <h1>, so the parse finishes here.
+                        assert!(!parser.next(&mut reader), "open <h1> finishes the parse");
                         black_box(parser);
                     },
                     BatchSize::SmallInput,
@@ -508,7 +507,7 @@ criterion_group!(
     bench_child_obligation_hot_path,
     bench_many_retired_runners,
     bench_many_first_queries_end_to_end,
-    bench_isolated_first_retirement_close,
+    bench_isolated_first_claim_open,
     bench_redundant_general_sibling_sources,
     bench_large_source_subtree,
 );

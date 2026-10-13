@@ -1,262 +1,145 @@
-use crate::__private::PredicateMetadata;
-use crate::ElementPredicate;
-use smallvec::SmallVec;
+use scah_query_ir::AttributeMask;
 
-const INLINE_ATTRIBUTE_KEYS: usize = 4;
+/// Normalized text checks `hidden` on every tag, independently of selectors.
+const HIDDEN: u8 = 1 << 7;
 
-/// Attribute fields required by the currently active query frontier.
+/// Attributes the parser must tokenize for the current opening tag.
 ///
-/// `all` is used for viable save points because Scah's current result contract
-/// preserves every attribute. Intermediate selector transitions can request
-/// only the fields they actually inspect.
+/// Matching steps contribute precomputed [`AttributeMask`]s, so building the
+/// interest for a tag is a few `OR`s. Viable save points require every
+/// attribute, because the result contract preserves them all.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct AttributeInterest<'query> {
-    all: bool,
-    id: bool,
-    class: bool,
-    hidden: bool,
-    keys: SmallVec<[&'query str; 4]>,
+    mask: AttributeMask,
+    /// The program's attribute names, indexed by the bits of `mask.keys`.
+    names: Box<[&'query str]>,
 }
 
 impl<'query> AttributeInterest<'query> {
+    pub fn new(names: &[&'query str]) -> Self {
+        Self {
+            mask: AttributeMask::default(),
+            names: names.into(),
+        }
+    }
+
     #[inline]
     pub fn clear(&mut self) {
-        self.all = false;
-        self.id = false;
-        self.class = false;
-        self.hidden = false;
-        self.keys.clear();
+        self.mask = AttributeMask::default();
     }
 
-    #[inline]
-    pub fn require_all(&mut self) {
-        self.all = true;
-        self.keys.clear();
-    }
-
-    /// Normalized text checks hidden on every tag, independently of selectors.
     #[inline]
     pub fn require_hidden(&mut self) {
-        self.hidden = true;
+        self.mask.flags |= HIDDEN;
     }
 
-    pub fn add_predicate(&mut self, predicate: &ElementPredicate<'query>) {
-        self.add_metadata(&PredicateMetadata::compile(predicate));
-    }
-
-    pub fn add_metadata(&mut self, metadata: &PredicateMetadata<'query>) {
-        if self.all {
-            return;
-        }
-
-        self.id |= metadata.needs_id();
-        self.class |= metadata.needs_class();
-        for &key in metadata.attribute_names() {
-            if !self
-                .keys
-                .iter()
-                .any(|existing| existing.eq_ignore_ascii_case(key))
-            {
-                if self.keys.len() == INLINE_ATTRIBUTE_KEYS {
-                    self.require_all();
-                    return;
-                }
-                self.keys.push(key);
-            }
-        }
-    }
-
-    pub fn merge(&mut self, other: &Self) {
-        if self.all || other.is_empty() {
-            return;
-        }
-        if other.all {
-            self.require_all();
-            return;
-        }
-
-        self.id |= other.id;
-        self.class |= other.class;
-        self.hidden |= other.hidden;
-        for &key in &other.keys {
-            if !self
-                .keys
-                .iter()
-                .any(|existing| existing.eq_ignore_ascii_case(key))
-            {
-                if self.keys.len() == INLINE_ATTRIBUTE_KEYS {
-                    self.require_all();
-                    return;
-                }
-                self.keys.push(key);
-            }
-        }
+    #[inline(always)]
+    pub fn add(&mut self, mask: AttributeMask) {
+        self.mask = self.mask.union(mask);
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        !self.all && !self.id && !self.class && !self.hidden && self.keys.is_empty()
+        self.mask.is_empty()
+    }
+
+    #[inline]
+    fn all(&self) -> bool {
+        self.mask.flags & AttributeMask::ALL != 0
     }
 
     #[inline]
     pub fn includes_id(&self) -> bool {
-        self.all || self.id
+        self.mask.flags & (AttributeMask::ALL | AttributeMask::ID) != 0
     }
 
     #[inline]
     pub fn includes_class(&self) -> bool {
-        self.all || self.class
+        self.mask.flags & (AttributeMask::ALL | AttributeMask::CLASS) != 0
     }
 
     #[inline]
     pub fn includes_attribute(&self, key: &str) -> bool {
-        self.all
-            || (self.hidden && key.eq_ignore_ascii_case("hidden"))
-            || self
-                .keys
-                .iter()
-                .any(|required| required.eq_ignore_ascii_case(key))
+        if self.all() || (self.mask.flags & HIDDEN != 0 && key.eq_ignore_ascii_case("hidden")) {
+            return true;
+        }
+        let mut keys = self.mask.keys;
+        while keys != 0 {
+            let index = keys.trailing_zeros() as usize;
+            keys &= keys - 1;
+            if self.names[index].eq_ignore_ascii_case(key) {
+                return true;
+            }
+        }
+        false
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AttributeSelection, AttributeSelectionKind, AttributeSelections, ClassSelections};
+    use crate::{Program, Query, Save};
+
+    fn interest_for(selector: &'static str, save: Save) -> AttributeInterest<'static> {
+        let queries: &'static [Query<'static>] =
+            Box::leak(Box::new([Query::all(selector, save).unwrap().build()]));
+        let program = Box::leak(Box::new(Program::compile(queries)));
+        let mut interest = AttributeInterest::new(program.attribute_names());
+        for step in 0..program.step_count() {
+            interest.add(program.step_interest(step));
+        }
+        interest
+    }
 
     #[test]
     fn merges_dedicated_and_generic_attribute_requirements() {
-        let mut interest = AttributeInterest::default();
-        interest.add_predicate(&ElementPredicate {
-            name: Some("a"),
-            id: Some("hero"),
-            classes: ClassSelections::from_static(&["promoted"]),
-            attributes: AttributeSelections::from(vec![
-                AttributeSelection {
-                    name: "href",
-                    value: None,
-                    kind: AttributeSelectionKind::Presence,
-                    case_sensitivity: crate::AttributeCaseSensitivity::Default,
-                },
-                AttributeSelection {
-                    name: "HREF",
-                    value: None,
-                    kind: AttributeSelectionKind::Presence,
-                    case_sensitivity: crate::AttributeCaseSensitivity::Default,
-                },
-            ]),
-            logical: Default::default(),
-            structural: Default::default(),
-        });
+        let interest = interest_for("#hero.promoted[href][HREF]", Save::name_only());
 
         assert!(interest.includes_id());
         assert!(interest.includes_class());
         assert!(interest.includes_attribute("href"));
+        assert!(interest.includes_attribute("Href"));
         assert!(!interest.includes_attribute("rel"));
-        assert_eq!(interest.keys.len(), 1);
     }
 
     #[test]
-    fn all_interest_supersedes_selected_keys() {
-        let mut interest = AttributeInterest::default();
-        interest.add_predicate(&ElementPredicate {
-            name: None,
-            id: None,
-            classes: ClassSelections::default(),
-            attributes: AttributeSelections::from(vec![AttributeSelection {
-                name: "href",
-                value: None,
-                kind: AttributeSelectionKind::Presence,
-                case_sensitivity: crate::AttributeCaseSensitivity::Default,
-            }]),
-            logical: Default::default(),
-            structural: Default::default(),
-        });
-        interest.require_all();
+    fn saving_steps_require_every_attribute() {
+        let interest = interest_for("a[href]", Save::none());
 
         assert!(interest.includes_id());
         assert!(interest.includes_class());
         assert!(interest.includes_attribute("anything"));
-        assert!(interest.keys.is_empty());
     }
 
     #[test]
-    fn explicit_attribute_interest_preserves_selective_parsing() {
-        let mut interest = AttributeInterest::default();
+    fn hidden_is_tracked_without_other_attributes() {
+        let mut interest = AttributeInterest::new(&[]);
         interest.require_hidden();
         interest.require_hidden();
-        assert!(interest.includes_attribute("HIDDEN"));
 
+        assert!(interest.includes_attribute("HIDDEN"));
         assert!(interest.includes_attribute("hidden"));
         assert!(!interest.includes_attribute("data-unused"));
-        assert!(interest.hidden);
-        assert!(interest.keys.is_empty());
+        assert!(!interest.includes_id());
+        assert!(!interest.is_empty());
     }
 
     #[test]
-    fn excess_selected_keys_fall_back_without_spilling() {
-        let mut interest = AttributeInterest::default();
-        let predicate = ElementPredicate {
-            name: Some("a"),
-            id: None,
-            classes: ClassSelections::default(),
-            attributes: AttributeSelections::from(
-                ["href", "target", "rel", "download", "data-id"]
-                    .into_iter()
-                    .map(|name| AttributeSelection {
-                        name,
-                        value: None,
-                        kind: AttributeSelectionKind::Presence,
-                        case_sensitivity: crate::AttributeCaseSensitivity::Default,
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-            logical: Default::default(),
-            structural: Default::default(),
-        };
-        let metadata = PredicateMetadata::compile(&predicate);
-        interest.add_metadata(&metadata);
+    fn many_attribute_names_stay_selective() {
+        let interest = interest_for("a[href][target][rel][download][data-id]", Save::name_only());
 
-        assert!(interest.all);
-        assert!(interest.keys.is_empty());
-        assert!(!interest.keys.spilled());
+        for name in ["href", "target", "rel", "download", "data-id"] {
+            assert!(interest.includes_attribute(name), "{name}");
+        }
+        assert!(!interest.includes_attribute("title"));
+        assert!(!interest.includes_id());
     }
 
     #[test]
-    fn merge_deduplicates_compiled_interest() {
-        let mut left = AttributeInterest::default();
-        left.add_predicate(&ElementPredicate {
-            name: None,
-            id: Some("hero"),
-            classes: ClassSelections::default(),
-            attributes: AttributeSelections::from(vec![AttributeSelection {
-                name: "href",
-                value: None,
-                kind: AttributeSelectionKind::Presence,
-                case_sensitivity: crate::AttributeCaseSensitivity::Default,
-            }]),
-            logical: Default::default(),
-            structural: Default::default(),
-        });
-        let mut right = AttributeInterest::default();
-        right.add_predicate(&ElementPredicate {
-            name: None,
-            id: None,
-            classes: ClassSelections::from_static(&["promoted"]),
-            attributes: AttributeSelections::from(vec![AttributeSelection {
-                name: "HREF",
-                value: None,
-                kind: AttributeSelectionKind::Presence,
-                case_sensitivity: crate::AttributeCaseSensitivity::Default,
-            }]),
-            logical: Default::default(),
-            structural: Default::default(),
-        });
-
-        left.merge(&right);
-
-        assert!(left.includes_id());
-        assert!(left.includes_class());
-        assert_eq!(left.keys.as_slice(), &["href"]);
+    fn clear_resets_the_mask() {
+        let mut interest = interest_for("a[href]", Save::name_only());
+        interest.clear();
+        assert!(interest.is_empty());
+        assert!(!interest.includes_attribute("href"));
     }
 }
