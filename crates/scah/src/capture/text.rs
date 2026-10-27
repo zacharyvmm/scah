@@ -1,9 +1,9 @@
-use super::entities::{
+use crate::engine::DepthSize;
+use crate::html::entities::{
     contains_ampersand, decode_character_references,
     decode_character_references_normalizing_source_newlines,
 };
-use super::text_edge::TextEdgePolicy;
-use crate::engine::DepthSize;
+use crate::html::tag::TextTagFlags;
 use crate::store::TextTape;
 use scah_query_ir::TextRequirements;
 
@@ -47,6 +47,14 @@ impl TextCaptureMode {
     }
 }
 
+/// Whether a saved element's normalized range should trim collapsible edges.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TextEdgePolicy {
+    #[default]
+    TrimCollapsedSeparators,
+    Preserve,
+}
+
 /// Lazy structural/whitespace separator queued for normalized text.
 ///
 /// Separators stay pending until the next visible text (or an opening boundary
@@ -84,7 +92,7 @@ impl TextElementBehavior {
 
     /// Merge runtime behavior with tag classification bits for the open stack.
     #[inline]
-    pub fn stack_flags(self, text_tag: super::tag::TextTagFlags) -> TextElementFlags {
+    pub fn stack_flags(self, text_tag: TextTagFlags) -> TextElementFlags {
         let mut flags = TextElementFlags::from_text_tag(text_tag);
         // Attribute-driven hidden suppression overrides / extends tag flags.
         if self.suppressed {
@@ -594,7 +602,7 @@ impl TextElementFlags {
     }
 
     #[inline]
-    pub(crate) fn from_text_tag(text_tag: super::tag::TextTagFlags) -> Self {
+    pub(crate) fn from_text_tag(text_tag: TextTagFlags) -> Self {
         let mut flags = Self::empty();
         if text_tag.is_break() {
             flags.insert(Self::BREAK);
