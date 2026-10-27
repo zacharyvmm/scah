@@ -106,15 +106,18 @@ use std::borrow::Cow;
 mod capture;
 pub mod debug;
 mod engine;
-mod html;
+mod lexer;
+mod parser;
 mod store;
 mod support;
+mod tag;
+mod tree;
 
 #[cfg(all(any(debug_assertions, test), feature = "otel"))]
 mod otel;
 
-pub use html::element::builder::XHtmlElement;
-pub use html::parser::XHtmlParser;
+pub use lexer::element::XHtmlElement;
+pub use parser::XHtmlParser;
 pub use scah_macros::query;
 pub use scah_query_ir::lazy;
 pub use scah_query_ir::{
@@ -140,18 +143,18 @@ pub mod __private {
 /// scanner access is available only with `simd-bench-internals`.
 #[doc(hidden)]
 pub mod bench_internals {
-    pub use crate::html::tag::{ScopeKind, TagFlags};
+    pub use crate::tag::{ScopeKind, TagFlags};
 
     #[cfg(feature = "bench-internals")]
     pub use crate::capture::TextPathStats;
     #[cfg(feature = "simd-bench-internals")]
-    use crate::html::BlockClassifier;
+    use crate::lexer::BlockClassifier;
     #[cfg(feature = "simd-bench-internals")]
-    use crate::html::IndexingMode;
+    use crate::lexer::indexer::IndexingMode;
     #[cfg(feature = "simd-bench-internals")]
     use crate::store::Store;
     #[cfg(feature = "simd-bench-internals")]
-    use crate::{ParseError, Program, QuerySpec, Reader, XHtmlParser};
+    use crate::{ParseError, Program, QuerySpec};
 
     /// Reusable production `<` scanner for delimiter-distance benchmarks.
     #[cfg(feature = "simd-bench-internals")]
@@ -179,28 +182,17 @@ pub mod bench_internals {
     where
         Q: QuerySpec<'query>,
     {
-        if queries.is_empty() {
-            return Err(ParseError::EmptyQueries);
-        }
-
         let indexing_mode = if full_index {
             IndexingMode::ForcedFullDocument
         } else {
             IndexingMode::Rolling
         };
-        let mut parser = XHtmlParser::from_program(
+        crate::run(
+            html,
             std::borrow::Cow::Owned(Program::compile(queries)),
-            Some(html.len()),
+            true,
             Some(indexing_mode),
-        );
-        let mut reader = Reader::new(html);
-        while parser.next(&mut reader) {}
-
-        if let Some(err) = parser.take_parse_error() {
-            return Err(err);
-        }
-
-        Ok(parser.finish())
+        )
     }
 }
 
@@ -281,7 +273,7 @@ pub fn parse<'a: 'query, 'html: 'query, 'query: 'html, Q>(
 where
     Q: QuerySpec<'query>,
 {
-    run(html, Cow::Owned(Program::compile(queries)), true)
+    run(html, Cow::Owned(Program::compile(queries)), true, None)
 }
 
 /// Parse with queries compiled once by [`Program::compile`].
@@ -313,7 +305,7 @@ pub fn parse_compiled<'html, 'query: 'html>(
     html: &'html str,
     program: &'query Program<'query>,
 ) -> Result<Store<'html, 'query>, ParseError> {
-    run(html, Cow::Borrowed(program), true)
+    run(html, Cow::Borrowed(program), true, None)
 }
 
 /// Parse queries that do not request raw or normalized text.
@@ -327,7 +319,7 @@ pub fn parse_without_text_capture<'a: 'query, 'html: 'query, 'query: 'html, Q>(
 where
     Q: QuerySpec<'query>,
 {
-    run(html, Cow::Owned(Program::compile(queries)), false)
+    run(html, Cow::Owned(Program::compile(queries)), false, None)
 }
 
 /// [`parse_without_text_capture`] with a compiled [`Program`].
@@ -335,34 +327,25 @@ pub fn parse_compiled_without_text_capture<'html, 'query: 'html>(
     html: &'html str,
     program: &'query Program<'query>,
 ) -> Result<Store<'html, 'query>, ParseError> {
-    run(html, Cow::Borrowed(program), false)
+    run(html, Cow::Borrowed(program), false, None)
 }
 
+/// Parse `html` with a compiled program. `capture` is false for the
+/// `*_without_text_capture` entry points, which reject text-saving queries.
 fn run<'html, 'query: 'html>(
     html: &'html str,
     program: Cow<'query, Program<'query>>,
     capture: bool,
+    indexing_mode: Option<lexer::indexer::IndexingMode>,
 ) -> Result<Store<'html, 'query>, ParseError> {
-    if program.root_sections().is_empty() {
-        return Err(ParseError::EmptyQueries);
-    }
-    if !capture && program.features().text.any() {
-        return Err(ParseError::TextCaptureRequired);
-    }
-    if html.len() >= u32::MAX as usize {
-        return Err(ParseError::InputTooLarge);
-    }
+    check_limits(html, &program, capture)?;
     let query_count = program.root_sections().len();
-    // Queries that can stop early skip reserving storage for the whole document.
+    // Parses that can stop early do not reserve result rows for the whole input.
     let capacity = (!program.features().all_roots_first).then_some(html.len());
-    let mut parser = XHtmlParser::from_program(program, capacity, None);
+    let mut parser = XHtmlParser::from_program(program, capacity, indexing_mode);
     let mut reader = Reader::new(html);
     parser.trace_parse_started(html.len(), query_count);
-    if capture {
-        parser.run(&mut reader);
-    } else {
-        parser.run_without_text_capture(&mut reader);
-    }
+    parser.run(&mut reader);
 
     if let Some(err) = parser.take_parse_error() {
         return Err(err);
@@ -372,6 +355,19 @@ fn run<'html, 'query: 'html>(
         return Err(ParseError::InputTooLarge);
     }
     Ok(store)
+}
+
+fn check_limits(html: &str, program: &Program<'_>, capture: bool) -> Result<(), ParseError> {
+    if program.root_sections().is_empty() {
+        return Err(ParseError::EmptyQueries);
+    }
+    if !capture && program.features().text.any() {
+        return Err(ParseError::TextCaptureRequired);
+    }
+    if html.len() >= u32::MAX as usize {
+        return Err(ParseError::InputTooLarge);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

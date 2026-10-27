@@ -13,6 +13,7 @@
 //! Every method takes the parser's `CAPTURE` flag. When it is `false` the parse
 //! captures no text, and the text paths compile away.
 
+mod entities;
 mod text;
 
 #[cfg(feature = "bench-internals")]
@@ -26,8 +27,8 @@ use crate::Reader;
 use crate::XHtmlElement;
 use crate::engine::DepthSize;
 use crate::engine::matcher::SaveHit;
-use crate::html::tag::TextTagFlags;
 use crate::store::{ElementId, Store, trim_collapsed_range};
+use crate::tag::TextTagFlags;
 use scah_query_ir::TextRequirements;
 
 /// Captures the content of saved elements while the document is parsed.

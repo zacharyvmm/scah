@@ -60,7 +60,7 @@ compare against it instead, for example `just gate-text HEAD~1`.
 
 ### HTML entity table
 
-`crates/scah/src/html/entities_table.rs` is generated. Don't edit it by hand;
+`crates/scah/src/capture/entities_table.rs` is generated. Don't edit it by hand;
 see [`crates/scah/scripts/README.md`](crates/scah/scripts/README.md).
 
 ## Releases

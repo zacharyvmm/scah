@@ -77,7 +77,7 @@ just pgo-sections
 `compare.sh` reports each build's IPC and µop-cache share when `perf` can
 read hardware counters (`kernel.perf_event_paranoid` 2 or lower).
 
-The layout hints in `crates/scah/src/html/parser.rs` move rarely run paths
+The layout hints in `crates/scah/src/parser.rs` move rarely run paths
 (raw text, mismatched close tags, implied closes, end of input, errors) out
 of the parse loop. They are written as
 `#[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]`, so building

@@ -1,6 +1,19 @@
-use super::indexer::{AutoTagIndexer, IndexingMode, OpenTagStart, TagEvent, TagIndexer, TagKind};
-use super::open_elements::{OpenElement, OpenElementStack};
-use super::tag::{ClassifiedTag, TagFlags};
+//! The parse loop: one pass over the document, one tag at a time.
+//!
+//! ```text
+//! next_tag   the next open or close tag; comments are skipped    (lexer)
+//! open_tag   close the elements the tag implies                  (tree)
+//!            select the candidate steps for its name             (engine)
+//!            read only the attributes they, or capture, need     (lexer)
+//!            push it, match it, save its matches                 (tree, engine, store)
+//!            note where the saved elements' content starts       (capture)
+//! end_tag    pop the element the tag names, and any above it     (tree)
+//!            finish its saved content, pop its match state       (capture, engine)
+//! ```
+//!
+//! Parsing stops at the end of the input, or as soon as every query is a
+//! satisfied `first()`.
+
 use crate::Attribute;
 use crate::ParseError;
 use crate::Reader;
@@ -13,7 +26,12 @@ use crate::engine::attribute_interest::AttributeInterest;
 use crate::engine::matcher::{AnyMatcher, SaveHit};
 use crate::engine::structural::StructuralState;
 use crate::engine::{DepthSize, MAX_ELEMENT_DEPTH};
+use crate::lexer::indexer::{
+    AutoTagIndexer, IndexingMode, OpenTagStart, TagEvent, TagIndexer, TagKind,
+};
 use crate::store::Store;
+use crate::tag::{ClassifiedTag, TagFlags};
+use crate::tree::{OpenElement, OpenElementStack};
 use crate::{Program, QuerySpec};
 use scah_query_ir::TagId;
 use std::borrow::Cow;

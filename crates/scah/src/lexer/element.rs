@@ -1,7 +1,7 @@
-use super::tokenizer::ElementAttributeToken;
+use super::attributes::ElementAttributeToken;
 use crate::Reader;
 use crate::engine::attribute_interest::AttributeInterest;
-use crate::html::tag::TagFlags;
+use crate::tag::TagFlags;
 use scah_query_ir::{Attribute, IElement};
 
 /// A key-value pair representing an HTML element attribute.
