@@ -304,17 +304,30 @@ impl Capture {
         reader: &Reader<'html>,
         store: &mut Store<'html, 'query>,
     ) {
-        while let Some(content) = self.pending.last() {
-            debug_assert!(
-                content.depth <= depth,
-                "pending content outlived its element"
-            );
-            if content.depth != depth {
-                break;
-            }
-            let content = self.pending.pop().expect("checked above");
-            self.finish_content::<CAPTURE>(&content, inner_html_end, reader, store);
+        // The element's records are the innermost ones; finish them in the
+        // order they were saved.
+        let start = self
+            .pending
+            .iter()
+            .rposition(|content| content.depth != depth)
+            .map_or(0, |index| index + 1);
+        debug_assert!(
+            self.pending[..start]
+                .last()
+                .is_none_or(|content| content.depth < depth),
+            "pending content outlived its element"
+        );
+        let (mut raw, mut text) = (0, 0);
+        for content in &self.pending[start..] {
+            let (raw_text, normalized) =
+                finish_content::<CAPTURE>(content, inner_html_end, reader, store);
+            raw += usize::from(raw_text);
+            text += usize::from(normalized);
         }
+        self.pending.truncate(start);
+        debug_assert!(raw <= self.raw_active && text <= self.text_active);
+        self.raw_active -= raw;
+        self.text_active -= text;
         if self.captures_text::<CAPTURE>() {
             self.text.after_close_element(text_flags, depth);
             if self.text_active == 0 {
@@ -329,43 +342,43 @@ impl Capture {
         }
     }
 
-    fn finish_content<'html, 'query: 'html, const CAPTURE: bool>(
-        &mut self,
-        content: &PendingContent,
-        inner_html_end: usize,
-        reader: &Reader<'html>,
-        store: &mut Store<'html, 'query>,
-    ) {
-        let inner_html = content
-            .inner_html_start()
-            .map(|start| reader.slice(start..inner_html_end));
-        if !CAPTURE {
-            store.set_content(content.element_id, inner_html, None, None);
-            return;
-        }
-        let raw_text = content
-            .raw_text_start()
-            .map(|start| start..store.text.raw_text.len());
-        let text = content.text_start().map(|start| {
-            let range = start..store.text.text.len();
-            match content.text_edge_policy() {
-                TextEdgePolicy::TrimCollapsedSeparators => {
-                    trim_collapsed_range(&store.text.text, range)
-                }
-                TextEdgePolicy::Preserve => range,
-            }
-        });
-        debug_assert!(raw_text.is_none() || self.raw_active > 0);
-        debug_assert!(text.is_none() || self.text_active > 0);
-        self.raw_active -= usize::from(raw_text.is_some());
-        self.text_active -= usize::from(text.is_some());
-        store.set_content(content.element_id, inner_html, raw_text, text);
-    }
-
     #[cfg(test)]
     pub(crate) fn active_counts(&self) -> (usize, usize) {
         (self.raw_active, self.text_active)
     }
+}
+
+/// Write the finished ranges of `content` to the store. Returns whether it
+/// captured raw text and normalized text.
+#[inline(always)]
+fn finish_content<'html, 'query: 'html, const CAPTURE: bool>(
+    content: &PendingContent,
+    inner_html_end: usize,
+    reader: &Reader<'html>,
+    store: &mut Store<'html, 'query>,
+) -> (bool, bool) {
+    let inner_html = content
+        .inner_html_start()
+        .map(|start| reader.slice(start..inner_html_end));
+    if !CAPTURE {
+        store.set_content(content.element_id, inner_html, None, None);
+        return (false, false);
+    }
+    let raw_text = content
+        .raw_text_start()
+        .map(|start| start..store.text.raw_text.len());
+    let text = content.text_start().map(|start| {
+        let range = start..store.text.text.len();
+        match content.text_edge_policy() {
+            TextEdgePolicy::TrimCollapsedSeparators => {
+                trim_collapsed_range(&store.text.text, range)
+            }
+            TextEdgePolicy::Preserve => range,
+        }
+    });
+    let captured = (raw_text.is_some(), text.is_some());
+    store.set_content(content.element_id, inner_html, raw_text, text);
+    captured
 }
 
 #[inline]
