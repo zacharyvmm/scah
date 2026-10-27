@@ -1,13 +1,12 @@
-use super::element::builder::XHtmlTag;
-use super::indexer::{AutoTagIndexer, IndexingMode, TagEvent, TagIndexer, TagKind};
+use super::indexer::{AutoTagIndexer, IndexingMode, OpenTagStart, TagEvent, TagIndexer, TagKind};
 use super::open_elements::{OpenElement, OpenElementStack};
-use super::tag::{ClassifiedTag, TextTagFlags};
+use super::tag::{ClassifiedTag, TagFlags};
 use crate::Attribute;
 use crate::ParseError;
 use crate::Reader;
 use crate::StructuralMatchContext;
 use crate::XHtmlElement;
-use crate::capture::Capture;
+use crate::capture::{Capture, TextElementFlags};
 use crate::debug::ImpliedCloseReason;
 #[cfg(any(debug_assertions, test))]
 use crate::debug::TraceEvent;
@@ -32,8 +31,8 @@ struct DocumentPosition {
 
 #[derive(Default)]
 struct ParserTempState<'html, 'query> {
-    closing_elements: Vec<OpenElement<'html>>,
-    implied_closes: Vec<OpenElement<'html>>,
+    /// Elements popped together, innermost first, waiting to be closed.
+    closing: Vec<OpenElement<'html>>,
     /// Attributes of the open tag being parsed, cleared for each tag.
     attributes: Vec<Attribute<'html>>,
     save_hits: Vec<SaveHit>,
@@ -331,25 +330,41 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         self.can_finish && self.capture.idle() && self.matcher.finished()
     }
 
+    /// Process one tag: the open or close tag of an element, or the end of a
+    /// raw-text element. Returns whether to continue.
     #[inline(always)]
     fn next_mode<const CAPTURE: bool>(&mut self, reader: &mut Reader<'html>) -> bool {
         if let Some(close_tag) = self.raw_text_close {
             return self.next_after_raw_text::<CAPTURE>(reader, close_tag);
         }
+        let Some(tag) = self.next_tag::<CAPTURE>(reader) else {
+            self.close_all_at_eof::<CAPTURE>(reader);
+            return false;
+        };
+        let finished = match tag {
+            TagEvent::Open(open) => match self.open_tag::<CAPTURE>(open, reader) {
+                Ok(finished) => finished,
+                Err(err) => {
+                    self.record_parse_error(err);
+                    return false;
+                }
+            },
+            TagEvent::Complete(close) => {
+                debug_assert_eq!(close.kind, TagKind::Close);
+                reader.advance_to(close.end);
+                self.end_tag::<CAPTURE>(close.name(reader.source()), close.start, reader)
+            }
+        };
+        self.continue_after_tag::<CAPTURE>(finished, reader)
+    }
 
+    /// The next open or close tag. Comments and declarations are skipped,
+    /// but they still interrupt captured text.
+    #[inline(always)]
+    fn next_tag<const CAPTURE: bool>(&mut self, reader: &mut Reader<'html>) -> Option<TagEvent> {
         let source = reader.source();
-        let mut finished = false;
-        let mut open_tag_flags = None;
-        let mut open_tag_id = TagId::UNKNOWN;
-        let mut open_text_tag_flags = TextTagFlags::default();
-        let tag = loop {
-            let Some(span) = self.indexer.next(source, reader.get_position()) else {
-                reader.advance_to(source.len());
-                self.drain_open_elements::<CAPTURE>(reader);
-                return false;
-            };
-
-            match span {
+        loop {
+            match self.indexer.next(source, reader.get_position())? {
                 TagEvent::Complete(span) if span.kind == TagKind::Ignored => {
                     self.position.reader_position = span.start;
                     self.capture.text_until::<CAPTURE>(
@@ -362,175 +377,179 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                     reader.advance_to(span.end);
                     self.capture.text_from::<CAPTURE>(reader.get_position());
                 }
-                TagEvent::Open(open) => {
-                    self.position.reader_position = open.start;
-                    let name = open.name(source);
-                    self.element.set_name(name);
-
-                    let tag_id = TagId::of(name);
-                    let classified = ClassifiedTag::of(tag_id);
-                    let tag_flags = classified.parser;
-                    let text_tag_flags = self.capture.text_tag::<CAPTURE>(classified.text);
-                    open_tag_id = tag_id;
-                    self.capture.text_until::<CAPTURE>(
-                        reader,
-                        open.start,
-                        self.position.element_depth,
-                        &mut self.store,
-                    );
-                    if tag_flags.can_trigger_implied_close() {
-                        self.open_elements
-                            .prepare_for_open_into(tag_flags, &mut self.temp_state.implied_closes);
-                        if !self.temp_state.implied_closes.is_empty() {
-                            finished = self.drain_implied_closes::<CAPTURE>(
-                                reader,
-                                Some(ImpliedCloseReason::OpenTagRule),
-                                None,
-                            ) || finished;
-                        }
-                    }
-
-                    let interest = &mut self.temp_state.attribute_interest;
-                    interest.clear();
-                    if self.matcher.prepare(tag_id, name) {
-                        interest.add(self.matcher.attribute_mask());
-                    }
-                    if let Some(structural) = self.temp_state.structural.as_ref() {
-                        interest.add(structural.attribute_interest);
-                    }
-                    if self.capture.needs_hidden::<CAPTURE>() {
-                        interest.require_hidden();
-                    }
-                    // A tag ending immediately after its name cannot carry
-                    // selector attributes, saved attributes, or hidden-text
-                    // suppression, so it needs neither tokenizing nor a search
-                    // for its end.
-                    let end = if source.get(open.attributes_start) == Some(&b'>') {
-                        open.attributes_start + 1
-                    } else if !interest.is_empty() {
-                        #[cfg(test)]
-                        {
-                            self.attribute_parse_count += 1;
-                        }
-                        let mut attributes = Reader::from_bytes(&source[open.attributes_start..]);
-                        // The store copies the attributes of rows that save
-                        // them, so every tag parses into the same scratch list.
-                        self.temp_state.attributes.clear();
-                        self.element.parse_attributes(
-                            &mut attributes,
-                            &mut self.temp_state.attributes,
-                            &self.temp_state.attribute_interest,
-                        );
-                        #[cfg(test)]
-                        {
-                            self.selected_attribute_count += self.element.attributes.len();
-                        }
-                        open.attributes_start + attributes.get_position()
-                    } else {
-                        self.indexer.finish_open(source, &open)
-                    };
-                    reader.advance_to(end);
-                    open_tag_flags = Some(tag_flags);
-                    open_text_tag_flags = text_tag_flags;
-                    break XHtmlTag::Open;
-                }
-                TagEvent::Complete(span) => {
-                    debug_assert_eq!(span.kind, TagKind::Close);
-                    self.position.reader_position = span.start;
-                    let name = span.name(source);
-                    reader.advance_to(span.end);
-                    break XHtmlTag::Close(name);
-                }
-            }
-        };
-        let tag_start_position = self.position.reader_position;
-
-        match tag {
-            XHtmlTag::Open => {
-                let tag = open_tag_flags.expect("opening tags are classified before matching");
-
-                if let Some(close_tag) = tag.raw_text_close_tag() {
-                    self.raw_text_close = Some(close_tag);
-                }
-
-                self.position.reader_position = reader.get_position();
-
-                let is_self_closing = tag.is_void();
-
-                let open_text = self
-                    .capture
-                    .open_text::<CAPTURE>(&self.element, open_text_tag_flags);
-                if is_self_closing {
-                    let depth = self.open_elements.depth().saturating_add(1);
-                    if depth > MAX_ELEMENT_DEPTH {
-                        self.record_parse_error(ParseError::MaximumDepthExceeded);
-                        return false;
-                    }
-                    self.position.element_depth = depth;
-                } else if let Err(err) = self.open_elements.push_classified(
-                    self.element.name,
-                    open_tag_id,
-                    tag,
-                    open_text.stack_flags(),
-                ) {
-                    self.record_parse_error(err);
-                    return false;
-                } else {
-                    self.position.element_depth = self.open_elements.depth();
-                }
-                let structural =
-                    self.temp_state.structural.as_deref_mut().map(|state| {
-                        state.open(self.element.name, !is_self_closing, &self.element)
-                    });
-
-                crate::scah_trace!(
-                    self.store,
-                    TraceEvent::OpenTag {
-                        tag: self.element.name,
-                        depth: self.position.element_depth,
-                        reader_position: self.position.reader_position,
-                        self_closing: is_self_closing,
-                    }
-                );
-
-                self.matcher.open(
-                    &self.element,
-                    structural.as_ref(),
-                    &mut self.store,
-                    &mut self.temp_state.save_hits,
-                );
-                self.capture.open::<CAPTURE>(
-                    &self.temp_state.save_hits,
-                    &open_text,
-                    is_self_closing,
-                    self.position.reader_position,
-                    self.position.element_depth,
-                    &mut self.store,
-                );
-                if is_self_closing {
-                    self.matcher.close();
-                }
-                finished = finished || self.finished();
-
-                self.element.clear();
-                self.capture.text_from::<CAPTURE>(reader.get_position());
-            }
-            XHtmlTag::Close(closing_tag) => {
-                // Opening tags flush before implied-close processing above.
-                // Closing tags still need to flush their preceding text here.
-                self.capture.text_until::<CAPTURE>(
-                    reader,
-                    tag_start_position,
-                    self.position.element_depth,
-                    &mut self.store,
-                );
-                self.capture.cancel_initial_newline::<CAPTURE>();
-                finished = self.handle_close_tag::<CAPTURE>(closing_tag, reader) || finished;
-                self.capture.text_from::<CAPTURE>(reader.get_position());
+                tag => return Some(tag),
             }
         }
+    }
 
-        self.continue_after_tag::<CAPTURE>(finished, reader)
+    /// Open an element: close the elements its tag implicitly closes, match
+    /// it, and start capturing the content of the matches it saves. Returns
+    /// whether parsing is finished.
+    #[inline(always)]
+    fn open_tag<const CAPTURE: bool>(
+        &mut self,
+        open: OpenTagStart,
+        reader: &mut Reader<'html>,
+    ) -> Result<bool, ParseError> {
+        let name = open.name(reader.source());
+        let id = TagId::of(name);
+        let classified = ClassifiedTag::of(id);
+        let tag = classified.parser;
+        self.position.reader_position = open.start;
+        self.element.set_name(name);
+        self.capture.text_until::<CAPTURE>(
+            reader,
+            open.start,
+            self.position.element_depth,
+            &mut self.store,
+        );
+        let mut finished = self.close_implied_by::<CAPTURE>(tag, reader);
+
+        let candidates = self.matcher.prepare(id, name);
+        self.read_attributes::<CAPTURE>(candidates, &open, reader);
+        if let Some(close_tag) = tag.raw_text_close_tag() {
+            self.raw_text_close = Some(close_tag);
+        }
+        self.position.reader_position = reader.get_position();
+
+        let void = tag.is_void();
+        let text_tag = self.capture.text_tag::<CAPTURE>(classified.text);
+        let open_text = self.capture.open_text::<CAPTURE>(&self.element, text_tag);
+        self.push_element(id, tag, void, open_text.stack_flags())?;
+        let structural = self
+            .temp_state
+            .structural
+            .as_deref_mut()
+            .map(|state| state.open(self.element.name, !void, &self.element));
+        crate::scah_trace!(
+            self.store,
+            TraceEvent::OpenTag {
+                tag: self.element.name,
+                depth: self.position.element_depth,
+                reader_position: self.position.reader_position,
+                self_closing: void,
+            }
+        );
+
+        self.matcher.open(
+            &self.element,
+            structural.as_ref(),
+            &mut self.store,
+            &mut self.temp_state.save_hits,
+        );
+        self.capture.open::<CAPTURE>(
+            &self.temp_state.save_hits,
+            &open_text,
+            void,
+            self.position.reader_position,
+            self.position.element_depth,
+            &mut self.store,
+        );
+        if void {
+            self.matcher.close();
+        }
+        finished = finished || self.finished();
+
+        self.element.clear();
+        self.capture.text_from::<CAPTURE>(reader.get_position());
+        Ok(finished)
+    }
+
+    /// Parse the attributes that the prepared candidates, structural
+    /// filters or text capture read, and move the reader past the open tag.
+    #[inline(always)]
+    fn read_attributes<const CAPTURE: bool>(
+        &mut self,
+        candidates: bool,
+        open: &OpenTagStart,
+        reader: &mut Reader<'html>,
+    ) {
+        let source = reader.source();
+        let interest = &mut self.temp_state.attribute_interest;
+        interest.clear();
+        if candidates {
+            interest.add(self.matcher.attribute_mask());
+        }
+        if let Some(structural) = self.temp_state.structural.as_ref() {
+            interest.add(structural.attribute_interest);
+        }
+        if self.capture.needs_hidden::<CAPTURE>() {
+            interest.require_hidden();
+        }
+        // A tag ending immediately after its name cannot carry selector
+        // attributes, saved attributes, or hidden-text suppression, so it
+        // needs neither tokenizing nor a search for its end.
+        let end = if source.get(open.attributes_start) == Some(&b'>') {
+            open.attributes_start + 1
+        } else if !interest.is_empty() {
+            #[cfg(test)]
+            {
+                self.attribute_parse_count += 1;
+            }
+            let mut attributes = Reader::from_bytes(&source[open.attributes_start..]);
+            // The store copies the attributes of rows that save them, so
+            // every tag parses into the same scratch list.
+            self.temp_state.attributes.clear();
+            self.element.parse_attributes(
+                &mut attributes,
+                &mut self.temp_state.attributes,
+                &self.temp_state.attribute_interest,
+            );
+            #[cfg(test)]
+            {
+                self.selected_attribute_count += self.element.attributes.len();
+            }
+            open.attributes_start + attributes.get_position()
+        } else {
+            self.indexer.finish_open(source, open)
+        };
+        reader.advance_to(end);
+    }
+
+    /// Push the element being opened. A void element is never pushed: it is
+    /// closed as soon as it is matched.
+    #[inline(always)]
+    fn push_element(
+        &mut self,
+        id: TagId,
+        tag: TagFlags,
+        void: bool,
+        text_flags: TextElementFlags,
+    ) -> Result<(), ParseError> {
+        if void {
+            let depth = self.open_elements.depth().saturating_add(1);
+            if depth > MAX_ELEMENT_DEPTH {
+                return Err(ParseError::MaximumDepthExceeded);
+            }
+            self.position.element_depth = depth;
+        } else {
+            self.open_elements
+                .push_classified(self.element.name, id, tag, text_flags)?;
+            self.position.element_depth = self.open_elements.depth();
+        }
+        Ok(())
+    }
+
+    /// Handle an end tag that starts at `start`; the reader is past it.
+    /// Returns whether parsing is finished.
+    #[inline(always)]
+    fn end_tag<const CAPTURE: bool>(
+        &mut self,
+        name: &'html str,
+        start: usize,
+        reader: &Reader<'html>,
+    ) -> bool {
+        self.position.reader_position = start;
+        self.capture.text_until::<CAPTURE>(
+            reader,
+            start,
+            self.position.element_depth,
+            &mut self.store,
+        );
+        self.capture.cancel_initial_newline::<CAPTURE>();
+        let finished = self.close_named::<CAPTURE>(name, reader);
+        self.capture.text_from::<CAPTURE>(reader.get_position());
+        finished
     }
 
     /// Skip the raw text of a `script`, `style` or similar element to its
@@ -546,32 +565,18 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             self.indexer
                 .find_raw_text_close(source, reader.get_position(), close_tag)
         else {
-            reader.advance_to(source.len());
-            self.drain_open_elements::<CAPTURE>(reader);
+            self.close_all_at_eof::<CAPTURE>(reader);
             return false;
         };
-        reader.advance_to(close_position);
-
-        // Consume an appropriate raw end tag here instead of delegating
-        // to `XHtmlTag::from`: that parser intentionally keeps text after
-        // `/` as part of the closing tag name, which would leave the raw
-        // element open for a tolerated form such as `</style ignored>`.
-        self.capture.text_until::<CAPTURE>(
-            reader,
-            reader.get_position(),
-            self.position.element_depth,
-            &mut self.store,
-        );
         self.raw_text_close = None;
 
-        self.position.reader_position = reader.get_position();
+        // The end tag ends at the next `>`, whatever follows its name: a
+        // tolerated form such as `</style ignored>` still closes the element.
+        reader.advance_to(close_position);
         reader.next_until(b'>');
         reader.skip();
 
-        let closing_tag = &close_tag[2..];
-        self.capture.cancel_initial_newline::<CAPTURE>();
-        let finished = self.handle_close_tag::<CAPTURE>(closing_tag, reader);
-        self.capture.text_from::<CAPTURE>(reader.get_position());
+        let finished = self.end_tag::<CAPTURE>(&close_tag[2..], close_position, reader);
         self.continue_after_tag::<CAPTURE>(finished, reader)
     }
 
@@ -594,8 +599,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             return false;
         }
         if reader.eof() {
-            reader.advance_to(reader.source().len());
-            self.drain_open_elements::<CAPTURE>(reader);
+            self.close_all_at_eof::<CAPTURE>(reader);
             return false;
         }
         true
@@ -648,15 +652,16 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
 
     /// Close an element popped from the open-element stack. Returns whether
     /// parsing is finished.
-    fn pop_open_element<const CAPTURE: bool>(
+    #[inline(always)]
+    fn close_element<const CAPTURE: bool>(
         &mut self,
-        open_element: OpenElement<'html>,
-        close_depth: DepthSize,
+        element: OpenElement<'html>,
+        depth: DepthSize,
         reader: &Reader<'html>,
     ) -> bool {
         self.capture.close::<CAPTURE>(
-            open_element.text_flags(),
-            close_depth,
+            element.text_flags(),
+            depth,
             self.position.reader_position,
             reader,
             &mut self.store,
@@ -664,128 +669,83 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         if let Some(structural) = self.temp_state.structural.as_deref_mut() {
             structural.close();
         }
-        self.position.element_depth = close_depth;
+        self.position.element_depth = depth;
         self.matcher.close();
         self.finished()
     }
 
-    /// Drain the implied-closes vector, finalizing each element, and restore
-    /// the vector's capacity for reuse. Returns whether parsing is finished.
-    #[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]
-    fn drain_implied_closes<const CAPTURE: bool>(
+    /// Close the element an end tag names. Returns whether parsing is
+    /// finished.
+    #[inline(always)]
+    fn close_named<const CAPTURE: bool>(
         &mut self,
-        reader: &Reader<'html>,
-        implied_close_reason: Option<ImpliedCloseReason>,
-        expected_tag: Option<&'html str>,
-    ) -> bool {
-        let mut elements = std::mem::take(&mut self.temp_state.implied_closes);
-        let finished =
-            self.pop_elements::<CAPTURE>(&mut elements, reader, implied_close_reason, expected_tag);
-        self.temp_state.implied_closes = elements;
-        finished
-    }
-
-    /// Apply a close tag: trace, pop from the open-element stack, and run
-    /// the close-element path. Returns whether parsing is finished.
-    fn handle_close_tag<const CAPTURE: bool>(
-        &mut self,
-        closing_tag: &'html str,
+        name: &'html str,
         reader: &Reader<'html>,
     ) -> bool {
         crate::scah_trace!(
             self.store,
             TraceEvent::CloseTag {
-                tag: closing_tag,
+                tag: name,
                 depth: self.position.element_depth,
                 reader_position: self.position.reader_position,
             }
         );
 
-        // Well-formed markup closes the element on top of the stack. Handling
-        // that here duplicates `close_by_end_tag_into`'s fast path on purpose:
-        // it keeps the common case off `temp_state.closing_elements` entirely.
-        // The outcome is identical, because `pop_elements` suppresses the
-        // implied-close trace when the popped name matches `expected_tag` and
-        // derives the same `close_depth` for a single popped element.
-        // Well-formed markup repeats the open tag's exact name, so try that
-        // before resolving the close tag's id.
-        if let Some(open_element) = self.open_elements.pop_exact_top(closing_tag) {
-            let close_depth = self.open_elements.depth().saturating_add(1);
-            return self.pop_open_element::<CAPTURE>(open_element, close_depth, reader);
+        // Well-formed markup closes the element on top of the stack, and
+        // usually repeats its exact name, so try that before resolving the
+        // name's id. This is `close_by_end_tag_into`'s first case, kept off
+        // the `closing` list.
+        if let Some(element) = self.open_elements.pop_exact_top(name) {
+            let depth = self.open_elements.depth().saturating_add(1);
+            return self.close_element::<CAPTURE>(element, depth, reader);
         }
-        let id = TagId::of(closing_tag);
-        if let Some(open_element) = self.open_elements.pop_matching_top(closing_tag, id) {
-            let close_depth = self.open_elements.depth().saturating_add(1);
-            return self.pop_open_element::<CAPTURE>(open_element, close_depth, reader);
+        let id = TagId::of(name);
+        if let Some(element) = self.open_elements.pop_matching_top(name, id) {
+            let depth = self.open_elements.depth().saturating_add(1);
+            return self.close_element::<CAPTURE>(element, depth, reader);
         }
-
-        self.close_mismatched::<CAPTURE>(closing_tag, id, reader)
+        self.close_mismatched::<CAPTURE>(name, id, reader)
     }
 
-    /// Apply a close tag that does not close the top element: it closes an
-    /// element further down, or nothing.
+    /// Close the elements an end tag closes when it does not name the top
+    /// element: an element further down and everything above it, or nothing.
     #[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]
     fn close_mismatched<const CAPTURE: bool>(
         &mut self,
-        closing_tag: &'html str,
+        name: &'html str,
         id: TagId,
         reader: &Reader<'html>,
     ) -> bool {
-        self.open_elements.close_by_end_tag_into(
-            closing_tag,
-            id,
-            &mut self.temp_state.closing_elements,
-        );
-        let mut elements = std::mem::take(&mut self.temp_state.closing_elements);
-        let finished = self.pop_elements::<CAPTURE>(
-            &mut elements,
-            reader,
-            Some(ImpliedCloseReason::MismatchedEndTag),
-            Some(closing_tag),
-        );
-        self.temp_state.closing_elements = elements;
-        finished
+        self.open_elements
+            .close_by_end_tag_into(name, id, &mut self.temp_state.closing);
+        self.close_popped::<CAPTURE>(reader, ImpliedCloseReason::MismatchedEndTag, Some(name))
     }
 
-    /// Close a batch of elements popped together, innermost first.
-    fn pop_elements<const CAPTURE: bool>(
+    /// Close the elements that opening a `tag` closes implicitly, such as an
+    /// open `p` before a `div`. Returns whether parsing is finished.
+    #[inline(always)]
+    fn close_implied_by<const CAPTURE: bool>(
         &mut self,
-        elements: &mut Vec<OpenElement<'html>>,
+        tag: TagFlags,
         reader: &Reader<'html>,
-        implied_close_reason: Option<ImpliedCloseReason>,
-        expected_tag: Option<&'html str>,
     ) -> bool {
-        let base_depth = self.open_elements.depth();
-        let total = elements.len();
-        let mut finished = false;
-
-        for (index, open_element) in elements.drain(..).enumerate() {
-            let close_depth = base_depth.saturating_add((total - index) as DepthSize);
-            if implied_close_reason.is_some_and(|_| {
-                expected_tag
-                    .is_none_or(|expected| !open_element.name.eq_ignore_ascii_case(expected))
-            }) {
-                crate::scah_trace!(
-                    self.store,
-                    TraceEvent::ImpliedClose {
-                        tag: open_element.name,
-                        depth: close_depth,
-                        reason: implied_close_reason.unwrap(),
-                    }
-                );
-            }
-            finished =
-                self.pop_open_element::<CAPTURE>(open_element, close_depth, reader) || finished;
+        if !tag.can_trigger_implied_close() {
+            return false;
         }
-        finished
+        self.open_elements
+            .prepare_for_open_into(tag, &mut self.temp_state.closing);
+        !self.temp_state.closing.is_empty()
+            && self.close_popped::<CAPTURE>(reader, ImpliedCloseReason::OpenTagRule, None)
     }
 
+    /// Close every element still open at the end of the input, so their
+    /// saved content is finished.
     #[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]
-    fn drain_open_elements<const CAPTURE: bool>(&mut self, reader: &Reader<'html>) {
+    fn close_all_at_eof<const CAPTURE: bool>(&mut self, reader: &mut Reader<'html>) {
+        reader.advance_to(reader.source().len());
         if self.eof_drained {
             return;
         }
-
         self.capture.text_until::<CAPTURE>(
             reader,
             reader.get_position(),
@@ -794,9 +754,41 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         );
         self.position.reader_position = reader.get_position();
         self.open_elements
-            .close_all_at_eof_into(&mut self.temp_state.implied_closes);
-        self.drain_implied_closes::<CAPTURE>(reader, Some(ImpliedCloseReason::EofDrain), None);
+            .close_all_at_eof_into(&mut self.temp_state.closing);
+        self.close_popped::<CAPTURE>(reader, ImpliedCloseReason::EofDrain, None);
         self.eof_drained = true;
+    }
+
+    /// Close the elements in `temp_state.closing`, innermost first. Elements
+    /// other than the one an end tag names (`named`) are traced as implied
+    /// closes. Returns whether parsing is finished.
+    #[cfg_attr(not(scah_no_layout_hints), cold, inline(never))]
+    fn close_popped<const CAPTURE: bool>(
+        &mut self,
+        reader: &Reader<'html>,
+        reason: ImpliedCloseReason,
+        named: Option<&'html str>,
+    ) -> bool {
+        let mut closing = std::mem::take(&mut self.temp_state.closing);
+        let base_depth = self.open_elements.depth();
+        let total = closing.len();
+        let mut finished = false;
+        for (index, element) in closing.drain(..).enumerate() {
+            let depth = base_depth.saturating_add((total - index) as DepthSize);
+            if named.is_none_or(|named| !element.name.eq_ignore_ascii_case(named)) {
+                crate::scah_trace!(
+                    self.store,
+                    TraceEvent::ImpliedClose {
+                        tag: element.name,
+                        depth,
+                        reason,
+                    }
+                );
+            }
+            finished = self.close_element::<CAPTURE>(element, depth, reader) || finished;
+        }
+        self.temp_state.closing = closing;
+        finished
     }
 }
 #[cfg(test)]
