@@ -195,7 +195,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         if self.source_bound {
             assert!(self.store.bound_to(source), "a parser reads one document");
         } else {
-            let html = reader.source_str().expect("a parser reads UTF-8 HTML");
+            let html = reader.source_str();
             self.store.set_html(html);
             self.source_bound = true;
         }
@@ -230,7 +230,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             TagEvent::Complete(close) => {
                 debug_assert_eq!(close.kind, TagKind::Close);
                 reader.advance_to(close.end);
-                self.end_tag::<CAPTURE>(close.name(reader.source()), close.start, reader)
+                self.end_tag::<CAPTURE>(close.name(reader.source_str()), close.start, reader)
             }
         };
         self.continue_after_tag::<CAPTURE>(finished, reader)
@@ -269,7 +269,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         open: OpenTagStart,
         reader: &mut Reader<'html>,
     ) -> Result<bool, ParseError> {
-        let name = open.name(reader.source());
+        let name = open.name(reader.source_str());
         let id = TagId::of(name);
         let classified = ClassifiedTag::of(id);
         let tag = classified.parser;
@@ -364,15 +364,20 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             {
                 self.attribute_parse_count += 1;
             }
-            let mut attributes = Reader::from_bytes(&source[open.attributes_start..]);
+            let mut attributes = Reader::new(&reader.source_str()[open.attributes_start..]);
             // The store copies the attributes of rows that save them, so
             // every tag parses into the same scratch list.
             self.temp_state.attributes.clear();
-            self.element.parse_attributes(
-                &mut attributes,
-                &mut self.temp_state.attributes,
-                &self.temp_state.attribute_interest,
-            );
+            // SAFETY: the parser mutates the tape only here, and
+            // `parse_attributes` reassigns `element.attributes` before
+            // anything reads it again. The tape is dropped with the element.
+            unsafe {
+                self.element.parse_attributes(
+                    &mut attributes,
+                    &mut self.temp_state.attributes,
+                    &self.temp_state.attribute_interest,
+                );
+            }
             #[cfg(test)]
             {
                 self.selected_attribute_count += self.element.attributes.len();
@@ -1264,7 +1269,7 @@ mod tests {
         }
 
         let html = generate_html(100);
-        let mut reader = Reader::from_bytes(html.as_bytes());
+        let mut reader = Reader::from_bytes(html.as_bytes()).unwrap();
 
         let query = Query::first("a", Save::all()).unwrap().build();
         let queries = &[query];
@@ -2025,20 +2030,11 @@ mod tests {
         let html = "<p>é</p>";
         let queries = [Query::all("p", Save::all()).unwrap().build()];
         let mut parser = XHtmlParser::new(&queries);
-        let mut reader = Reader::from_bytes(html.as_bytes());
+        let mut reader = Reader::from_bytes(html.as_bytes()).unwrap();
         while parser.next(&mut reader) {}
         let store = parser.matches();
         let p = store.get("p").unwrap().next().unwrap();
         assert_eq!(p.inner_html(), Some("é"));
-    }
-
-    #[test]
-    #[should_panic(expected = "a parser reads UTF-8 HTML")]
-    fn non_utf8_byte_readers_panic_before_binding() {
-        let queries = [Query::all("p", Save::none()).unwrap().build()];
-        let mut parser = XHtmlParser::new(&queries);
-        let mut reader = Reader::from_bytes(b"\xff<p>");
-        parser.next(&mut reader);
     }
 
     #[test]

@@ -53,8 +53,16 @@ impl<'html> XHtmlElement<'html> {
     /// The reader must begin at the first byte after the already-discovered
     /// element name. Keeping this separate lets tag-only query paths avoid
     /// attribute tokenization entirely.
+    ///
+    /// # Safety
+    ///
+    /// The parsed attributes are appended to `attribute_tape`, and
+    /// `self.attributes` points at them without borrowing the tape. Until
+    /// `self.attributes` is reassigned (by another parse or
+    /// [`clear`](Self::clear)), the caller must not read it after
+    /// `attribute_tape` is mutated, moved or dropped.
     #[inline]
-    pub fn parse_attributes(
+    pub unsafe fn parse_attributes(
         &mut self,
         reader: &mut Reader<'html>,
         attribute_tape: &mut Vec<Attribute<'html>>,
@@ -175,7 +183,10 @@ impl<'html> XHtmlElement<'html> {
         self.attributes = &[];
     }
 
-    pub fn from(&mut self, reader: &mut Reader<'html>, attribute_tape: &mut Vec<Attribute<'html>>) {
+    /// Parse a whole tag, name included. The tests use this; production
+    /// takes the name from the indexer and calls `parse_attributes`.
+    #[cfg(test)]
+    fn from(&mut self, reader: &mut Reader<'html>, attribute_tape: &mut Vec<Attribute<'html>>) {
         self.parse_from(reader, attribute_tape, None);
     }
 
@@ -247,10 +258,9 @@ impl<'html> XHtmlElement<'html> {
             );
         }
 
-        // Since we are
-        //  1) assigning after adding the Attributes
-        //  and 2) either transforming it into a Range in Store or removing them
-        //  their is no risk when doing this unsafely
+        // SAFETY: the range is in bounds of `attribute_tape`. Reads stay valid
+        // while the tape is untouched, which `parse_attributes` makes its
+        // caller's obligation.
         self.attributes = unsafe {
             std::slice::from_raw_parts(
                 attribute_tape.as_ptr().add(start_len),
@@ -766,7 +776,8 @@ mod tests {
         let mut element = XHtmlElement::default();
         element.set_name("a");
         let mut attributes = vec![];
-        element.parse_attributes(&mut reader, &mut attributes, &interest);
+        // SAFETY: `attributes` outlives every read of `element.attributes`.
+        unsafe { element.parse_attributes(&mut reader, &mut attributes, &interest) };
 
         assert_eq!(element.class, Some("promoted"));
         assert_eq!(

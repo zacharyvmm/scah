@@ -71,9 +71,11 @@ impl BlockClassifier {
         !matches!(self.backend, Backend::Scalar)
     }
 
-    /// Classify exactly 16 bytes from `source` beginning at `start`.
+    /// Classify exactly 16 bytes from `source` beginning at `start`. The
+    /// SIMD backends do not bounds-check the load, so this stays private to
+    /// the crate's indexers.
     #[inline]
-    pub fn classify(&self, source: &[u8], start: usize) -> ClassMasks {
+    pub(crate) fn classify(&self, source: &[u8], start: usize) -> ClassMasks {
         debug_assert!(start + 16 <= source.len());
         match self.backend {
             Backend::Scalar => classify_scalar(&source[start..start + 16]),

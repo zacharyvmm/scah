@@ -60,10 +60,8 @@ pub struct TagSpan {
 
 impl TagSpan {
     #[inline]
-    pub fn name<'html>(&self, source: &'html [u8]) -> &'html str {
-        // SAFETY: input originates from `&str`; the scanner only moves name
-        // boundaries over ASCII structural bytes.
-        unsafe { std::str::from_utf8_unchecked(&source[self.name.clone()]) }
+    pub fn name<'html>(&self, source: &'html str) -> &'html str {
+        &source[self.name.clone()]
     }
 }
 
@@ -83,10 +81,8 @@ pub struct OpenTagStart {
 
 impl OpenTagStart {
     #[inline]
-    pub fn name<'html>(&self, source: &'html [u8]) -> &'html str {
-        // SAFETY: input originates from `&str`; the scanner only moves name
-        // boundaries over ASCII structural bytes.
-        unsafe { std::str::from_utf8_unchecked(&source[self.name.clone()]) }
+    pub fn name<'html>(&self, source: &'html str) -> &'html str {
+        &source[self.name.clone()]
     }
 
     #[inline]
@@ -1469,7 +1465,7 @@ mod tests {
         let TagEvent::Open(open) = next(html, 0) else {
             panic!("expected open tag");
         };
-        assert_eq!(open.name(html.as_bytes()), "a");
+        assert_eq!(open.name(html), "a");
         let open_end = open.finish(html.as_bytes());
         assert_eq!(&html[open.start..open_end], r#"<a href=">" class='x'>"#);
 
@@ -1477,7 +1473,7 @@ mod tests {
             panic!("expected close tag");
         };
         assert_eq!(close.kind, TagKind::Close);
-        assert_eq!(close.name(html.as_bytes()), "a");
+        assert_eq!(close.name(html), "a");
         assert_eq!(&html[close.start..close.end], "</a>");
     }
 
@@ -1492,7 +1488,7 @@ mod tests {
         let TagEvent::Open(paragraph) = next(html, comment.end) else {
             panic!("expected open tag");
         };
-        assert_eq!(paragraph.name(html.as_bytes()), "p");
+        assert_eq!(paragraph.name(html), "p");
     }
 
     #[test]
@@ -1500,12 +1496,12 @@ mod tests {
         let TagEvent::Complete(close) = next("</  div  >", 0) else {
             panic!("expected close tag");
         };
-        assert_eq!(close.name("</  div  >".as_bytes()), "div");
+        assert_eq!(close.name("</  div  >"), "div");
 
         let TagEvent::Open(open) = next("<hr/>", 0) else {
             panic!("expected open tag");
         };
-        assert_eq!(open.name("<hr/>".as_bytes()), "hr");
+        assert_eq!(open.name("<hr/>"), "hr");
         assert_eq!(open.finish("<hr/>".as_bytes()), 5);
     }
 
@@ -1546,7 +1542,7 @@ mod tests {
                 panic!("expected scalar opening tag for source={source:?}");
             };
             assert_eq!(scalar_open.start, expected_start);
-            assert_eq!(scalar_open.name(bytes), "p");
+            assert_eq!(scalar_open.name(source), "p");
 
             for mode in [IndexingMode::Rolling, IndexingMode::FullDocument] {
                 let mut packed = PackedTagIndexer::new(mode);
@@ -1555,7 +1551,7 @@ mod tests {
                     panic!("expected opening tag for source={source:?}, mode={mode:?}");
                 };
                 assert_eq!(open.start, expected_start, "source={source:?}");
-                assert_eq!(open.name(bytes), "p", "source={source:?}, mode={mode:?}");
+                assert_eq!(open.name(source), "p", "source={source:?}, mode={mode:?}");
             }
         }
     }
@@ -1707,7 +1703,7 @@ mod tests {
         let Some(TagEvent::Open(script)) = packed.next(bytes, 0) else {
             panic!("expected script opening tag");
         };
-        assert_eq!(script.name(bytes), "script");
+        assert_eq!(script.name(&source), "script");
 
         let close = packed
             .find_raw_text_close(bytes, script.finish(bytes), "</script")
@@ -1716,7 +1712,7 @@ mod tests {
         let Some(TagEvent::Open(span)) = packed.next(bytes, after_close) else {
             panic!("expected opening tag after raw text");
         };
-        assert_eq!(span.name(bytes), "span");
+        assert_eq!(span.name(&source), "span");
         assert!(packed.cache.masks.is_empty());
     }
 
@@ -1740,7 +1736,7 @@ mod tests {
         let Some(TagEvent::Open(span)) = packed.next(bytes, after_close) else {
             panic!("expected opening tag after raw text");
         };
-        assert_eq!(span.name(bytes), "span");
+        assert_eq!(span.name(&source), "span");
     }
 
     #[test]
@@ -1765,7 +1761,7 @@ mod tests {
         let Some(TagEvent::Open(span)) = packed.next(bytes, after_close) else {
             panic!("expected first span after the raw close");
         };
-        assert_eq!(span.name(bytes), "span");
+        assert_eq!(span.name(&source), "span");
         assert_eq!(&source[span.start..span.finish(bytes)], "<span>");
     }
 
@@ -1884,7 +1880,7 @@ mod tests {
             panic!("expected opening tag after malformed delimiter run");
         };
         assert_eq!(open.start, source.len() - 3);
-        assert_eq!(open.name(bytes), "p");
+        assert_eq!(open.name(&source), "p");
     }
 
     #[test]

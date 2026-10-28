@@ -20,6 +20,13 @@ struct ScanCase {
     expected_position: usize,
 }
 
+impl ScanCase {
+    /// The case as the `&str` a `Reader` scans. Every case is ASCII.
+    fn text(&self) -> &str {
+        std::str::from_utf8(&self.data).expect("scan cases are ASCII")
+    }
+}
+
 // ── Algorithm implementations ──────────────────────────────────────────
 
 /// Forward-parity: scans byte-by-byte, tracking escape-run parity.
@@ -47,8 +54,8 @@ fn forward_parity(bytes: &[u8], delimiter: u8, escape: u8) -> usize {
 /// Production delimiter-first scanner via `Reader::next_until_unescaped()`.
 /// This measures the actual shipping implementation.
 #[inline(never)]
-fn production_scanner(data: &[u8], delimiter: u8, escape: u8) -> usize {
-    let mut reader = Reader::from_bytes(data);
+fn production_scanner(data: &str, delimiter: u8, escape: u8) -> usize {
+    let mut reader = Reader::new(data);
     reader.next_until_unescaped(delimiter, escape);
     reader.get_position()
 }
@@ -89,7 +96,7 @@ fn validate_cases(cases: &[ScanCase]) {
 
     for case in cases {
         let candidate = forward_parity(&case.data, case.delimiter, b'\\');
-        let production = production_scanner(&case.data, case.delimiter, b'\\');
+        let production = production_scanner(case.text(), case.delimiter, b'\\');
 
         assert_eq!(
             candidate, case.expected_position,
@@ -327,24 +334,26 @@ fn bench_comparison(c: &mut Criterion) {
         group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
         algo_name: &str,
         cases: &[ScanCase],
-        run: fn(&[u8], u8, u8) -> usize,
+        run: fn(&str, u8, u8) -> usize,
     ) {
         for case in cases {
             group.throughput(Throughput::Bytes(bytes_scanned(case) as u64));
             group.bench_with_input(BenchmarkId::new(algo_name, &case.name), case, |b, c| {
+                let text = c.text();
                 b.iter(|| {
-                    let pos = run(
-                        black_box(c.data.as_slice()),
-                        black_box(c.delimiter),
-                        black_box(b'\\'),
-                    );
+                    let pos = run(black_box(text), black_box(c.delimiter), black_box(b'\\'));
                     black_box(pos)
                 })
             });
         }
     }
 
-    bench_algo(&mut group, "forward_parity", &all_cases, forward_parity);
+    bench_algo(
+        &mut group,
+        "forward_parity",
+        &all_cases,
+        |data, delimiter, escape| forward_parity(data.as_bytes(), delimiter, escape),
+    );
     bench_algo(
         &mut group,
         "production_delimiter_first",
