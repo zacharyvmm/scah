@@ -67,6 +67,19 @@ impl<'a> Reader<'a> {
         &self.text[range]
     }
 
+    /// [`slice`](Self::slice) without the character boundary checks.
+    ///
+    /// # Safety
+    ///
+    /// `range` must start and end on character boundaries.
+    #[inline]
+    pub(crate) unsafe fn slice_unchecked(&self, range: Range<usize>) -> &'a str {
+        debug_assert!(self.text.get(range.clone()).is_some());
+        // SAFETY: the range is bounds-checked, and the caller guarantees it
+        // starts and ends on character boundaries.
+        unsafe { std::str::from_utf8_unchecked(&self.text.as_bytes()[range]) }
+    }
+
     #[inline]
     pub fn peek(&self) -> Option<u8> {
         self.source().get(self.position).copied()

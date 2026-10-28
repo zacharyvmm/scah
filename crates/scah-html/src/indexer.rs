@@ -63,6 +63,21 @@ impl TagSpan {
     pub fn name<'html>(&self, source: &'html str) -> &'html str {
         &source[self.name.clone()]
     }
+
+    /// [`name`](Self::name) without the character boundary checks, for the
+    /// parse loop.
+    ///
+    /// # Safety
+    ///
+    /// `self` must have been returned by an indexer for `source`, which
+    /// ends names only at ASCII bytes or the end of the source.
+    #[inline]
+    pub unsafe fn name_unchecked<'html>(&self, source: &'html str) -> &'html str {
+        debug_assert!(source.get(self.name.clone()).is_some());
+        // SAFETY: the range is bounds-checked, and the caller guarantees it
+        // starts and ends on character boundaries.
+        unsafe { std::str::from_utf8_unchecked(&source.as_bytes()[self.name.clone()]) }
+    }
 }
 
 /// The cheap first phase of an opening tag.
@@ -83,6 +98,21 @@ impl OpenTagStart {
     #[inline]
     pub fn name<'html>(&self, source: &'html str) -> &'html str {
         &source[self.name.clone()]
+    }
+
+    /// [`name`](Self::name) without the character boundary checks, for the
+    /// parse loop.
+    ///
+    /// # Safety
+    ///
+    /// `self` must have been returned by an indexer for `source`, which
+    /// ends names only at ASCII bytes or the end of the source.
+    #[inline]
+    pub unsafe fn name_unchecked<'html>(&self, source: &'html str) -> &'html str {
+        debug_assert!(source.get(self.name.clone()).is_some());
+        // SAFETY: the range is bounds-checked, and the caller guarantees it
+        // starts and ends on character boundaries.
+        unsafe { std::str::from_utf8_unchecked(&source.as_bytes()[self.name.clone()]) }
     }
 
     #[inline]

@@ -230,7 +230,9 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             TagEvent::Complete(close) => {
                 debug_assert_eq!(close.kind, TagKind::Close);
                 reader.advance_to(close.end);
-                self.end_tag::<CAPTURE>(close.name(reader.source_str()), close.start, reader)
+                // SAFETY: the indexer found `close` in the reader's source.
+                let name = unsafe { close.name_unchecked(reader.source_str()) };
+                self.end_tag::<CAPTURE>(name, close.start, reader)
             }
         };
         self.continue_after_tag::<CAPTURE>(finished, reader)
@@ -269,7 +271,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         open: OpenTagStart,
         reader: &mut Reader<'html>,
     ) -> Result<bool, ParseError> {
-        let name = open.name(reader.source_str());
+        // SAFETY: the indexer found `open` in the reader's source.
+        let name = unsafe { open.name_unchecked(reader.source_str()) };
         let id = TagId::of(name);
         let classified = ClassifiedTag::of(id);
         let tag = classified.parser;
@@ -364,13 +367,18 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             {
                 self.attribute_parse_count += 1;
             }
-            let mut attributes = Reader::new(&reader.source_str()[open.attributes_start..]);
+            // SAFETY: the indexer starts attributes after the tag name, at
+            // an ASCII byte or the end of the source.
+            let mut attributes = Reader::new(unsafe {
+                std::str::from_utf8_unchecked(&source[open.attributes_start..])
+            });
             // The store copies the attributes of rows that save them, so
             // every tag parses into the same scratch list.
             self.temp_state.attributes.clear();
             // SAFETY: the parser mutates the tape only here, and
             // `parse_attributes` reassigns `element.attributes` before
             // anything reads it again. The tape is dropped with the element.
+            // The reader starts at a character boundary (above).
             unsafe {
                 self.element.parse_attributes(
                     &mut attributes,

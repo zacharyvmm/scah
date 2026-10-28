@@ -61,6 +61,9 @@ impl<'html> XHtmlElement<'html> {
     /// `self.attributes` is reassigned (by another parse or
     /// [`clear`](Self::clear)), the caller must not read it after
     /// `attribute_tape` is mutated, moved or dropped.
+    ///
+    /// `reader` must be at a character boundary, as it is after the name of
+    /// a tag the indexer found.
     #[inline]
     pub unsafe fn parse_attributes(
         &mut self,
@@ -69,7 +72,8 @@ impl<'html> XHtmlElement<'html> {
         interest: &AttributeInterest<'_>,
     ) {
         debug_assert!(!self.name.is_empty());
-        self.parse_from(reader, attribute_tape, Some(interest));
+        // SAFETY: the caller upholds both requirements.
+        unsafe { self.parse_from(reader, attribute_tape, Some(interest)) };
     }
 
     fn add_to_element(
@@ -187,10 +191,15 @@ impl<'html> XHtmlElement<'html> {
     /// takes the name from the indexer and calls `parse_attributes`.
     #[cfg(test)]
     fn from(&mut self, reader: &mut Reader<'html>, attribute_tape: &mut Vec<Attribute<'html>>) {
-        self.parse_from(reader, attribute_tape, None);
+        // SAFETY: the tests start readers at a tag, and read
+        // `self.attributes` before touching the tape again.
+        unsafe { self.parse_from(reader, attribute_tape, None) };
     }
 
-    fn parse_from(
+    /// # Safety
+    ///
+    /// As for [`parse_attributes`](Self::parse_attributes).
+    unsafe fn parse_from(
         &mut self,
         reader: &mut Reader<'html>,
         attribute_tape: &mut Vec<Attribute<'html>>,
@@ -203,7 +212,9 @@ impl<'html> XHtmlElement<'html> {
         // Pass `assign` so the tokenizer knows whether the next token is an
         // unquoted attribute *value* (immediately after `=`), where a trailing
         // `/` is a literal character rather than a self-closing marker.
-        while let Some(token) = ElementAttributeToken::next(reader, assign) {
+        // SAFETY: `parse_attributes` requires the reader to start at a
+        // character boundary, and each token leaves it at one.
+        while let Some(token) = unsafe { ElementAttributeToken::next(reader, assign) } {
             match token {
                 ElementAttributeToken::String(string_value) => match key {
                     None => {
