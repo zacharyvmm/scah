@@ -1,5 +1,7 @@
 pub(crate) mod attribute_interest;
 pub(crate) mod matcher;
+mod scopes;
+pub(crate) mod structural;
 
 pub(crate) type DepthSize = u16;
 
