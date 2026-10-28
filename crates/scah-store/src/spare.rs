@@ -9,8 +9,8 @@
 
 use std::cell::Cell;
 
-use super::arena::id::ElementId;
 use super::columns::Columns;
+use super::id::ElementId;
 use super::text::TextStore;
 
 /// Largest set of allocations kept for reuse. A store whose buffers are

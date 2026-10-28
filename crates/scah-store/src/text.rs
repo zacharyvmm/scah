@@ -6,12 +6,11 @@ use std::ops::Range;
 /// be removed, shifted, or rewritten. Separator canonicalization must therefore
 /// occur in pending parser state before bytes are appended.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct TextTape {
+pub struct TextTape {
     content: Vec<u8>,
 }
 
 impl TextTape {
-    #[cfg(test)]
     pub fn new() -> Self {
         Self {
             content: Vec::new(),
@@ -78,7 +77,7 @@ impl TextTape {
 
 /// Result-only storage for both text extraction modes.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct TextStore {
+pub struct TextStore {
     pub raw_text: TextTape,
     pub text: TextTape,
 }
@@ -88,7 +87,8 @@ pub(crate) struct TextStore {
 ///
 /// Only space, tab, and line break are removed. Must not be applied to
 /// selected preformatted (`pre` / `textarea`) ranges.
-pub(crate) fn trim_collapsed_range(tape: &TextTape, range: Range<usize>) -> Range<usize> {
+#[inline]
+pub fn trim_collapsed_range(tape: &TextTape, range: Range<usize>) -> Range<usize> {
     let bytes = tape.as_bytes();
     if range.start >= range.end || range.end > bytes.len() {
         return range.start..range.start;

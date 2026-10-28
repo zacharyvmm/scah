@@ -26,9 +26,10 @@ pub(crate) use text::{
 use crate::Reader;
 use crate::XHtmlElement;
 use crate::engine::matcher::SaveHit;
-use crate::store::{ElementId, Store, trim_collapsed_range};
+use crate::output::Output;
 use scah_html::{DepthSize, TextTagFlags};
 use scah_query_ir::TextRequirements;
+use scah_store::{ElementId, trim_collapsed_range};
 
 /// Captures the content of saved elements while the document is parsed.
 #[derive(Debug)]
@@ -124,10 +125,10 @@ impl Capture {
         reader: &Reader<'_>,
         end: usize,
         depth: DepthSize,
-        store: &mut Store<'_, '_>,
+        out: &mut Output<'_, '_>,
     ) {
         if self.text_active::<CAPTURE>() {
-            self.flush_source_text(reader, end, depth, store);
+            self.flush_source_text(reader, end, depth, out);
         }
     }
 
@@ -158,7 +159,7 @@ impl Capture {
         reader: &Reader<'_>,
         end: usize,
         depth: DepthSize,
-        store: &mut Store<'_, '_>,
+        out: &mut Output<'_, '_>,
     ) {
         let raw_start = self.raw_source_start.take();
         let text_start = self.text.source_start.take();
@@ -175,12 +176,12 @@ impl Capture {
         // boundaries.
         if let Some(start) = raw_start.filter(|start| *start < end) {
             let raw = unsafe { reader.slice_unchecked(start..end) };
-            store.text.raw_text.push_str(raw);
+            out.store.text_mut().raw_text.push_str(raw);
         }
         if let Some(start) = text_start.filter(|start| *start < end) {
             let text = unsafe { reader.slice_unchecked(start..end) };
             self.text
-                .write_normalized_fragment(&mut store.text.text, text, depth);
+                .write_normalized_fragment(&mut out.store.text_mut().text, text, depth);
         }
     }
 
@@ -222,7 +223,7 @@ impl Capture {
         void: bool,
         inner_html_start: usize,
         depth: DepthSize,
-        store: &mut Store<'html, 'query>,
+        out: &mut Output<'html, 'query>,
     ) {
         let text_was_active = CAPTURE && self.text_active > 0;
         let (new_raw, new_text) = if CAPTURE && !void {
@@ -241,24 +242,21 @@ impl Capture {
             if !text_was_active {
                 self.text.discard_pending();
             }
+            let tape = &mut out.store.text_mut().text;
+            self.text.before_open_element(tape, behavior, void);
             self.text
-                .before_open_element(&mut store.text.text, behavior, void);
-            self.text.before_text_range_start(
-                &mut store.text.text,
-                behavior,
-                open.edge,
-                open.tag.is_cell(),
-            );
+                .before_text_range_start(tape, behavior, open.edge, open.tag.is_cell());
         }
         let (raw_start, text_start) = if CAPTURE {
-            (store.text.raw_text.len(), store.text.text.len())
+            let tapes = out.store.text();
+            (tapes.raw_text.len(), tapes.text.len())
         } else {
             (0, 0)
         };
 
         if void {
             for hit in hits.iter().filter(|hit| hit.needs_close_finalization()) {
-                store.set_content(
+                out.set_content(
                     hit.element_id,
                     None,
                     hit.save_raw_text.then_some(raw_start..raw_start),
@@ -305,7 +303,7 @@ impl Capture {
         depth: DepthSize,
         inner_html_end: usize,
         reader: &Reader<'html>,
-        store: &mut Store<'html, 'query>,
+        out: &mut Output<'html, 'query>,
     ) {
         debug_assert!(
             self.pending
@@ -319,7 +317,7 @@ impl Capture {
             .last()
             .is_some_and(|content| content.depth == depth)
         {
-            self.finish_pending::<CAPTURE>(depth, inner_html_end, reader, store);
+            self.finish_pending::<CAPTURE>(depth, inner_html_end, reader, out);
         }
         if self.captures_text::<CAPTURE>() {
             self.text.after_close_element(text_flags, depth);
@@ -343,7 +341,7 @@ impl Capture {
         depth: DepthSize,
         inner_html_end: usize,
         reader: &Reader<'html>,
-        store: &mut Store<'html, 'query>,
+        out: &mut Output<'html, 'query>,
     ) {
         let start = self
             .pending
@@ -353,7 +351,7 @@ impl Capture {
         let (mut raw, mut text) = (0, 0);
         for content in &self.pending[start..] {
             let (raw_text, normalized) =
-                finish_content::<CAPTURE>(content, inner_html_end, reader, store);
+                finish_content::<CAPTURE>(content, inner_html_end, reader, out);
             raw += usize::from(raw_text);
             text += usize::from(normalized);
         }
@@ -376,7 +374,7 @@ fn finish_content<'html, 'query: 'html, const CAPTURE: bool>(
     content: &PendingContent,
     inner_html_end: usize,
     reader: &Reader<'html>,
-    store: &mut Store<'html, 'query>,
+    out: &mut Output<'html, 'query>,
 ) -> (bool, bool) {
     let inner_html = content
         .inner_html_start()
@@ -385,23 +383,22 @@ fn finish_content<'html, 'query: 'html, const CAPTURE: bool>(
         // the same reason as in `flush_source_text`.
         .map(|start| unsafe { reader.slice_unchecked(start..inner_html_end) });
     if !CAPTURE {
-        store.set_content(content.element_id, inner_html, None, None);
+        out.set_content(content.element_id, inner_html, None, None);
         return (false, false);
     }
+    let tapes = out.store.text();
     let raw_text = content
         .raw_text_start()
-        .map(|start| start..store.text.raw_text.len());
+        .map(|start| start..tapes.raw_text.len());
     let text = content.text_start().map(|start| {
-        let range = start..store.text.text.len();
+        let range = start..tapes.text.len();
         match content.text_edge_policy() {
-            TextEdgePolicy::TrimCollapsedSeparators => {
-                trim_collapsed_range(&store.text.text, range)
-            }
+            TextEdgePolicy::TrimCollapsedSeparators => trim_collapsed_range(&tapes.text, range),
             TextEdgePolicy::Preserve => range,
         }
     });
     let captured = (raw_text.is_some(), text.is_some());
-    store.set_content(content.element_id, inner_html, raw_text, text);
+    out.set_content(content.element_id, inner_html, raw_text, text);
     captured
 }
 
@@ -515,7 +512,7 @@ impl PendingContent {
 #[cfg(test)]
 mod tests {
     use super::{PendingContent, TextEdgePolicy};
-    use crate::store::ElementId;
+    use scah_store::ElementId;
 
     #[test]
     fn pending_content_none_starts_round_trip() {

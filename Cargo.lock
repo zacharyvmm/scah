@@ -1636,6 +1636,7 @@ dependencies = [
  "scah-html",
  "scah-macros",
  "scah-query-ir",
+ "scah-store",
  "smallvec",
  "tracing",
 ]
@@ -1695,6 +1696,13 @@ dependencies = [
  "pretty_assertions",
  "scah-html",
  "smallvec",
+]
+
+[[package]]
+name = "scah-store"
+version = "0.2.0-dev"
+dependencies = [
+ "scah-html",
 ]
 
 [[package]]

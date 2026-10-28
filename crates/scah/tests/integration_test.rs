@@ -55,19 +55,17 @@ fn trace_records_open_and_save_events() {
     let query = Query::all("main section a", Save::all()).unwrap().build();
     let queries = [query];
 
-    let store = parse(html, &queries).unwrap();
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
 
-    assert!(!store.trace.is_empty());
+    assert!(!trace.is_empty());
     assert!(
-        store
-            .trace
+        trace
             .events()
             .iter()
             .any(|event| { matches!(event, debug::TraceEvent::OpenTag { tag: "main", .. }) })
     );
     assert!(
-        store
-            .trace
+        trace
             .events()
             .iter()
             .any(|event| { matches!(event, debug::TraceEvent::ElementSaved { element: "a", .. }) })
@@ -81,9 +79,9 @@ fn trace_records_implied_li_close() {
     let query = Query::all("li", Save::all()).unwrap().build();
     let queries = [query];
 
-    let store = parse(html, &queries).unwrap();
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
 
-    assert!(store.trace.events().iter().any(|event| {
+    assert!(trace.events().iter().any(|event| {
         matches!(
             event,
             debug::TraceEvent::ImpliedClose {
@@ -104,10 +102,9 @@ fn trace_finalizes_an_elements_rows_in_save_order() {
         Query::all(".x", Save::only_raw_text()).unwrap().build(),
     ];
 
-    let store = parse(html, &queries).unwrap();
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
 
-    let finalized: Vec<_> = store
-        .trace
+    let finalized: Vec<_> = trace
         .events()
         .iter()
         .filter_map(|event| match event {
@@ -115,8 +112,7 @@ fn trace_finalizes_an_elements_rows_in_save_order() {
             _ => None,
         })
         .collect();
-    let saved: Vec<_> = store
-        .trace
+    let saved: Vec<_> = trace
         .events()
         .iter()
         .filter_map(|event| match event {
@@ -135,11 +131,10 @@ fn trace_records_first_query_early_exit() {
     let query = Query::first("a", Save::all()).unwrap().build();
     let queries = [query];
 
-    let store = parse(html, &queries).unwrap();
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
 
     assert!(
-        store
-            .trace
+        trace
             .events()
             .iter()
             .any(|event| matches!(event, debug::TraceEvent::EarlyExit { .. }))
@@ -155,11 +150,10 @@ fn trace_records_raw_text_early_exit() {
         .build();
     let queries = [query];
 
-    let store = parse(html, &queries).unwrap();
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
 
     assert!(
-        store
-            .trace
+        trace
             .events()
             .iter()
             .any(|event| matches!(event, debug::TraceEvent::EarlyExit { .. }))
@@ -173,9 +167,9 @@ fn trace_records_step_rejections() {
     let query = Query::all("main > a.yes", Save::all()).unwrap().build();
     let queries = [query];
 
-    let store = parse(html, &queries).unwrap();
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
 
-    assert!(store.trace.events().iter().any(|event| {
+    assert!(trace.events().iter().any(|event| {
         matches!(
             event,
             debug::TraceEvent::StepRejected {

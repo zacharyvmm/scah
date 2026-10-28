@@ -25,8 +25,9 @@ Run `just` to list every recipe.
 
 | Path | Contents |
 | ---- | -------- |
-| `crates/scah` | The public crate: parser, query engine, and result store |
+| `crates/scah` | The public crate: parser, query engine, and content capture |
 | `crates/scah-html` | Finding tags, reading attributes, and the open-element tree |
+| `crates/scah-store` | The result store: saved elements, their content, and the result index |
 | `crates/scah-query-ir` | Selector parsing and the compiled query representation |
 | `crates/scah-macros` | The `query!` macro |
 | `crates/bindings/scah-python` | Python bindings (PyO3 and maturin) |

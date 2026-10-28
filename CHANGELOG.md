@@ -42,6 +42,10 @@ Rust crates and the Python and npm packages together.
   that splits a character. `XHtmlElement::parse_attributes` is `unsafe`,
   because the attributes it lists point into a tape it doesn't borrow.
   ([#112])
+- The result store moves to a new `scah-store` crate, which knows nothing of
+  queries. The `scah` API is unchanged except for the debug trace:
+  `Store::trace` is removed, and `scah::debug::parse_traced` returns the store
+  together with its `TraceStore`.
 
 ### Added
 

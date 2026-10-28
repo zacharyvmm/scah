@@ -1,18 +1,52 @@
-use crate::QuerySection;
-use scah_query_ir::{Program, SectionIndex};
+//! The result store of [scah](https://docs.rs/scah): the elements a parse
+//! saves, one column per field, and an index from each parent to its
+//! results.
+//!
+//! ```text
+//! Store          the results, read through ElementRef handles
+//! StoreBuilder   the write side: rows, edges and content, as a parse finds them
+//! Section        what the store knows of a query section
+//! columns        one column per saved field, as spans of the HTML or a text tape
+//! text           the raw-text and normalized-text tapes
+//! spare          the buffers of dropped stores, for the next parse
+//! ```
+//!
+//! The store knows nothing of selectors or matching: scah describes the
+//! query sections with [`Section`] and saves rows as elements match.
+//!
+//! This crate is an implementation detail of scah and has no stability
+//! guarantees of its own; use scah instead.
+
+use scah_html::XHtmlElement;
 use std::ops::Range;
 
-mod text;
-pub(crate) use text::{TextStore, TextTape, trim_collapsed_range};
-mod arena;
 mod columns;
 mod element;
+mod id;
 mod spare;
+mod text;
 
-pub use arena::id::ElementId;
+pub use columns::Content;
 use columns::{ColumnPlan, Columns, RowHead, Span};
-
 pub use element::{Attributes, ElementRef, Elements};
+pub use id::ElementId;
+pub use text::{TextStore, TextTape, trim_collapsed_range};
+
+/// A query section, as the store needs to know it: the selector its
+/// results are looked up by, the section whose rows they are listed under,
+/// and the content its rows keep. scah builds one per section of its
+/// compiled queries for [`StoreBuilder::set_sections`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Section<'query> {
+    /// The selector the section was built from, which [`Store::get`] and
+    /// [`ElementRef::get`] look results up by.
+    pub selector: &'query str,
+    /// Index of the section this one is nested under, or `None` for the
+    /// root section of a query.
+    pub parent: Option<u32>,
+    /// The content columns its rows fill.
+    pub content: Content,
+}
 
 /// A query section as the store sees it: enough to resolve lookups.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,7 +59,8 @@ struct StoreSection<'query> {
     children: (u32, u32),
 }
 
-/// The result set returned by [`parse`](crate::parse).
+/// The result set returned by
+/// [`parse`](https://docs.rs/scah/latest/scah/fn.parse.html).
 ///
 /// A `Store` holds flat tables: one row per element and query section that
 /// saved it, stored as one column per field (name, attributes, inner HTML,
@@ -40,7 +75,7 @@ struct StoreSection<'query> {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use scah::{Query, Save, parse};
 ///
 /// let html = "<div><a href='x'>Link1</a><a href='y'>Link2</a></div>";
@@ -65,7 +100,7 @@ pub struct Store<'html, 'query> {
     /// under each parent.
     columns: Columns,
     /// Accumulated raw-text and normalized-text buffers shared by all elements.
-    pub(crate) text: TextStore,
+    text: TextStore,
     /// A text range or an attribute index did not fit in 32 bits.
     overflowed: bool,
     /// Sections of the parsed queries, in declaration order.
@@ -82,14 +117,12 @@ pub struct Store<'html, 'query> {
     /// Group `g` owns one result slot per section it can hold results of
     /// (the roots for the document, the row section's nested sections
     /// otherwise), starting at slot `slot_starts[g]`. Built by
-    /// [`Store::finish`].
+    /// [`StoreBuilder::finish`].
     slot_starts: Vec<u32>,
     /// Results of slot `s` are `results[slot_offsets[s]..slot_offsets[s + 1]]`,
     /// in document order.
     slot_offsets: Vec<u32>,
     results: Vec<ElementId>,
-    #[cfg(any(debug_assertions, test))]
-    pub trace: crate::debug::TraceStore<'html, 'query>,
 }
 
 /// Heap bytes a [`Store`] holds, by role, as reported by
@@ -145,8 +178,8 @@ pub struct CapacityOptions {
     /// behaviour of reserving normalized-text storage.
     pub reserve_text: bool,
 
-    /// Maximum trace-log preallocation.  Only used behind
-    /// `cfg(any(debug_assertions, test))`; harmless otherwise.
+    /// Maximum preallocation of scah's trace log, which debug and test
+    /// builds of scah record. The store itself does not read it.
     ///
     /// Default: 4096.
     pub trace_capacity_limit: usize,
@@ -175,7 +208,7 @@ fn same_selector(section: &str, selector: &str) -> bool {
 
 impl<'html, 'query: 'html> Default for Store<'html, 'query> {
     fn default() -> Self {
-        Self::from_buffers(spare::take().unwrap_or_default(), 0)
+        Self::from_buffers(spare::take().unwrap_or_default())
     }
 }
 
@@ -211,9 +244,10 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     /// using the default [`CapacityOptions`].
     ///
     /// By default this reserves capacity for **both** text representations
-    /// (`raw_text` and normalized `text`). Query-aware [`crate::parse`]
-    /// construction reserves only the representations required by the
-    /// supplied queries via [`CapacityOptions`].
+    /// (`raw_text` and normalized `text`). scah's query-aware
+    /// [`parse`](https://docs.rs/scah/latest/scah/fn.parse.html) reserves
+    /// only the representations required by the supplied queries via
+    /// [`CapacityOptions`].
     ///
     /// This is the non-breaking public API. For advanced tuning (e.g.
     /// skipping text-content reservation or adjusting element/attribute
@@ -240,7 +274,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         Self::with_capacity_requirements(capacity, options, true, true)
     }
 
-    pub(crate) fn with_capacity_requirements(
+    fn with_capacity_requirements(
         capacity: usize,
         options: CapacityOptions,
         reserve_attributes: bool,
@@ -267,11 +301,11 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             buffers.columns.attribute_keys.reserve(attributes);
             buffers.columns.attribute_values.reserve(attributes);
         }
-        Self::from_buffers(buffers, element_slots.min(options.trace_capacity_limit))
+        Self::from_buffers(buffers)
     }
 
     /// An empty store on `buffers`, which must be empty.
-    fn from_buffers(buffers: spare::StoreBuffers, trace_capacity: usize) -> Self {
+    fn from_buffers(buffers: spare::StoreBuffers) -> Self {
         let spare::StoreBuffers {
             columns,
             text,
@@ -280,8 +314,6 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             slot_offsets,
             results,
         } = buffers;
-        #[cfg(not(any(debug_assertions, test)))]
-        let _ = trace_capacity;
         Self {
             html: "",
             columns,
@@ -295,34 +327,21 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             slot_starts,
             slot_offsets,
             results,
-            #[cfg(any(debug_assertions, test))]
-            trace: crate::debug::TraceStore::with_capacity(trace_capacity),
-        }
-    }
-
-    #[inline(always)]
-    #[cfg_attr(not(any(debug_assertions, test)), allow(dead_code))]
-    pub(crate) fn trace_event(
-        &mut self,
-        #[cfg(any(debug_assertions, test))] event: crate::debug::TraceEvent<'html, 'query>,
-    ) {
-        #[cfg(any(debug_assertions, test))]
-        {
-            self.trace.push(event);
         }
     }
 
     /// Results saved for the first query whose selector is `selector`.
     ///
     /// The `selector` must be the **exact same string** used to build the
-    /// [`Query`](crate::Query) (e.g. `"main > section > a[href]"`). When
-    /// several queries share a selector, use [`Store::query`] to pick one.
+    /// [`Query`](https://docs.rs/scah/latest/scah/struct.Query.html) (e.g.
+    /// `"main > section > a[href]"`). When several queries share a
+    /// selector, use [`Store::query`] to pick one.
     ///
     /// Returns `None` when no query has that selector or it matched nothing.
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use scah::{Query, Save, parse};
     ///
     /// let html = "<ul><li>A</li><li>B</li></ul>";
@@ -341,7 +360,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     }
 
     /// Results saved for the query at `index` in the slice given to
-    /// [`parse`](crate::parse).
+    /// [`parse`](https://docs.rs/scah/latest/scah/fn.parse.html).
     ///
     /// Returns `None` when there is no such query or it matched nothing.
     #[inline]
@@ -396,12 +415,6 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             attributes: bytes(&columns.attribute_keys) + bytes(&columns.attribute_values),
             text: self.text.raw_text.capacity() + self.text.text.capacity(),
         }
-    }
-
-    /// Rows reserved in the name column.
-    #[cfg(test)]
-    pub(crate) fn row_capacity(&self) -> usize {
-        self.columns.rows.capacity()
     }
 
     /// Whether nothing was saved.
@@ -489,34 +502,10 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         value.map_or(Span::ABSENT, |value| self.html_span(value))
     }
 
-    /// Record the HTML being parsed, which stored strings borrow from.
-    ///
-    /// # Panics
-    ///
-    /// If `html` is not shorter than `u32::MAX` bytes, or rows were already
-    /// saved from a different document.
-    pub(crate) fn set_html(&mut self, html: &'html str) {
-        assert!(
-            html.len() < u32::MAX as usize,
-            "the store indexes HTML with 32-bit offsets"
-        );
-        assert!(
-            self.is_empty() || self.bound_to(html.as_bytes()),
-            "a store's results borrow from one document"
-        );
-        self.html = html;
-    }
-
     /// Whether the store reads strings from `source`.
     #[inline]
-    pub(crate) fn bound_to(&self, source: &[u8]) -> bool {
+    fn bound_to(&self, source: &[u8]) -> bool {
         std::ptr::eq(self.html.as_bytes(), source)
-    }
-
-    /// Whether a text range or an attribute index did not fit in 32 bits, so
-    /// some text or attributes are missing.
-    pub(crate) fn overflowed(&self) -> bool {
-        self.overflowed
     }
 
     /// Nested sections of the section that saved `row`.
@@ -534,83 +523,11 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         (start < end).then(|| &self.results[start..end])
     }
 
-    /// Record the sections of the queries being parsed: the program's
-    /// section tree, copied because the store outlives the program.
-    pub(crate) fn set_sections(&mut self, program: &Program<'query>) {
-        let count = program.section_count();
-        let mut children = Vec::with_capacity(count);
-        let mut sections = Vec::with_capacity(count);
-        for index in 0..count {
-            let section = SectionIndex(index as u32);
-            let start = children.len() as u32;
-            children.extend(program.children(section).iter().map(|child| child.0));
-            // A section's result slot is its position among its siblings.
-            let siblings = match program.section_parent(section) {
-                Some(parent) => program.children(parent),
-                None => program.root_sections(),
-            };
-            let slot = siblings
-                .iter()
-                .position(|&sibling| sibling == section)
-                .expect("a section is listed under its parent");
-            sections.push(StoreSection {
-                selector: program.section(section).source,
-                slot: slot as u32,
-                children: (start, children.len() as u32),
-            });
-        }
-        self.sections = sections.into();
-        self.roots = program.root_sections().iter().map(|root| root.0).collect();
-        self.children = children.into();
-        self.record_edges = program.features().has_scoped_sections;
-
-        let mut plan = ColumnPlan::default();
-        for index in 0..count {
-            plan.add(program.section(SectionIndex(index as u32)).save);
-        }
-        self.columns.plan = plan;
-        // Give the optional columns the rows this parse reserved.
-        self.columns.reserve_optional();
-    }
-
-    /// Save `element` as a new row of `section`.
-    ///
-    /// The row is not a result until [`Store::add_edge`] lists it under a
-    /// parent.
-    #[inline]
-    pub(crate) fn add_row(
-        &mut self,
-        section: SectionIndex,
-        spec: &QuerySection<'query>,
-        element: &crate::XHtmlElement<'html>,
-    ) -> ElementId {
-        let row = ElementId::from(self.len());
-        let saved = self.columns.attribute_keys.len();
-        if spec.save.attributes && !element.attributes.is_empty() {
-            // Rows of several sections can save one tag's attributes each, so
-            // the count is not bounded by the HTML's length. Past `u32` the
-            // row keeps none and the parse fails with `InputTooLarge`.
-            if attributes_fit(saved, element.attributes.len()) {
-                self.save_attributes(element);
-            } else {
-                self.overflowed = true;
-            }
-        }
-        // Saving stops before the count passes `u32::MAX`.
-        let attributes = saved as u32;
-        let head = RowHead {
-            name: self.html_span(element.name),
-            section: section.0,
-            attributes,
-        };
-        self.columns.push(head);
-        row
-    }
-
     /// Append `element`'s attributes to the attribute columns as spans of
     /// the HTML. The parser lists its `class` and `id` first, as the columns
     /// keep them, and their keys become markers (see [`Columns`]).
-    fn save_attributes(&mut self, element: &crate::XHtmlElement<'html>) {
+    #[inline]
+    fn save_attributes(&mut self, element: &XHtmlElement<'html>) {
         let html = self.html;
         let attributes = element.attributes;
         let columns = &mut self.columns;
@@ -638,27 +555,10 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         debug_assert_eq!(columns.attribute_keys.len(), start + attributes.len());
     }
 
-    /// List `row` among the results of `parent` (the document when `None`).
-    #[inline]
-    pub(crate) fn add_edge(&mut self, parent: Option<ElementId>, row: ElementId) {
-        if self.record_edges {
-            let group = parent.map_or(0, |parent| parent.0 + 1);
-            self.edges.push((group, row.0));
-        } else {
-            debug_assert!(
-                parent.is_none(),
-                "root-only stores list rows under the document"
-            );
-        }
-    }
-
     /// Build the result index: assign every group its slots, then place
     /// each saved edge in its slot, keeping document order (one stable
     /// counting sort).
-    pub(crate) fn finish(&mut self) {
-        if !self.slot_offsets.is_empty() {
-            return;
-        }
+    fn build_index(&mut self) {
         self.slot_starts.reserve(self.len() + 2);
         self.slot_starts.extend([0, self.roots.len() as u32]);
         if self.record_edges {
@@ -732,54 +632,259 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             counts[index] += counts[index - 1];
         }
     }
+}
+
+/// For scah: its parse checks [`Store::overflowed`], and its tests read how
+/// a parse filled the store. Not part of the API.
+#[doc(hidden)]
+impl<'html, 'query: 'html> Store<'html, 'query> {
+    /// Whether a text range or an attribute index did not fit in 32 bits, so
+    /// some text or attributes are missing.
+    pub fn overflowed(&self) -> bool {
+        self.overflowed
+    }
+
+    /// Rows reserved in the name column.
+    pub fn row_capacity(&self) -> usize {
+        self.columns.rows.capacity()
+    }
+
+    /// The row and attribute columns.
+    pub fn columns(&self) -> &Columns {
+        &self.columns
+    }
+
+    /// The raw-text and normalized-text tapes.
+    pub fn text_tapes(&self) -> &TextStore {
+        &self.text
+    }
+}
+
+/// The write side of a [`Store`], which scah's parser fills as it reads a
+/// document: it records the query sections and the document, saves a row
+/// per match and lists it under its parents, writes each row's content once
+/// its element closes, and [`StoreBuilder::finish`] indexes the results.
+///
+/// The methods scah calls per tag or per match are `#[inline]`, so its
+/// parse loop can inline them across the crate boundary.
+#[derive(Debug, Default)]
+pub struct StoreBuilder<'html, 'query> {
+    /// The rows saved so far. Its result index is empty until `finish`.
+    store: Store<'html, 'query>,
+}
+
+impl<'html, 'query: 'html> StoreBuilder<'html, 'query> {
+    /// A builder whose store reserves room for an input of `capacity` bytes
+    /// like [`Store::with_capacity_options`], but reserves the attribute
+    /// columns only if `reserve_attributes`, and the text tapes only if
+    /// `reserve_text_buffers`.
+    pub fn with_capacity_requirements(
+        capacity: usize,
+        options: CapacityOptions,
+        reserve_attributes: bool,
+        reserve_text_buffers: bool,
+    ) -> Self {
+        Self {
+            store: Store::with_capacity_requirements(
+                capacity,
+                options,
+                reserve_attributes,
+                reserve_text_buffers,
+            ),
+        }
+    }
+
+    /// Record the sections of the queries being parsed, copied because the
+    /// store outlives the queries. A section's nested sections, and the
+    /// root sections, keep the order they have in `sections`.
+    ///
+    /// # Panics
+    ///
+    /// If a section's parent is not an index of `sections`.
+    pub fn set_sections(&mut self, sections: &[Section<'query>]) {
+        let count = sections.len();
+        // The nested sections of section `s` are
+        // `children[starts[s]..starts[s + 1]]`.
+        let mut starts = vec![0; count + 1];
+        for section in sections {
+            if let Some(parent) = section.parent {
+                starts[parent as usize + 1] += 1;
+            }
+        }
+        Store::prefix_sum(&mut starts);
+        let mut next = starts.clone();
+        let mut children = vec![0; starts[count] as usize];
+        let mut roots = Vec::new();
+        let mut table = Vec::with_capacity(count);
+        let mut plan = ColumnPlan::default();
+        for (index, section) in sections.iter().enumerate() {
+            // A section's result slot is its position among its siblings.
+            let slot = match section.parent {
+                Some(parent) => {
+                    let parent = parent as usize;
+                    children[next[parent] as usize] = index as u32;
+                    next[parent] += 1;
+                    next[parent] - 1 - starts[parent]
+                }
+                None => {
+                    roots.push(index as u32);
+                    roots.len() as u32 - 1
+                }
+            };
+            table.push(StoreSection {
+                selector: section.selector,
+                slot,
+                children: (starts[index], starts[index + 1]),
+            });
+            plan.add(section.content);
+        }
+        let store = &mut self.store;
+        store.sections = table.into();
+        store.roots = roots.into();
+        store.children = children.into();
+        store.record_edges = sections.iter().any(|section| section.parent.is_some());
+
+        store.columns.plan = plan;
+        // Give the optional columns the rows this parse reserved.
+        store.columns.reserve_optional();
+    }
+
+    /// Record the HTML being parsed, which stored strings borrow from.
+    ///
+    /// # Panics
+    ///
+    /// If `html` is not shorter than `u32::MAX` bytes, or rows were already
+    /// saved from a different document.
+    pub fn set_html(&mut self, html: &'html str) {
+        assert!(
+            html.len() < u32::MAX as usize,
+            "the store indexes HTML with 32-bit offsets"
+        );
+        assert!(
+            self.store.is_empty() || self.bound_to(html.as_bytes()),
+            "a store's results borrow from one document"
+        );
+        self.store.html = html;
+    }
+
+    /// Whether the store reads strings from `source`.
+    #[inline]
+    pub fn bound_to(&self, source: &[u8]) -> bool {
+        self.store.bound_to(source)
+    }
+
+    /// Number of rows saved so far.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.store.len()
+    }
+
+    /// Save `element` as a new row of section `section`, with its
+    /// attributes if `save_attributes`.
+    ///
+    /// The row is not a result until [`StoreBuilder::add_edge`] lists it
+    /// under a parent.
+    #[inline]
+    pub fn add_row(
+        &mut self,
+        section: u32,
+        save_attributes: bool,
+        element: &XHtmlElement<'html>,
+    ) -> ElementId {
+        let store = &mut self.store;
+        let row = ElementId::from(store.len());
+        let saved = store.columns.attribute_keys.len();
+        if save_attributes && !element.attributes.is_empty() {
+            // Rows of several sections can save one tag's attributes each, so
+            // the count is not bounded by the HTML's length. Past `u32` the
+            // row keeps none and the parse fails with `InputTooLarge`.
+            if attributes_fit(saved, element.attributes.len()) {
+                store.save_attributes(element);
+            } else {
+                store.overflowed = true;
+            }
+        }
+        // Saving stops before the count passes `u32::MAX`.
+        let attributes = saved as u32;
+        let head = RowHead {
+            name: store.html_span(element.name),
+            section,
+            attributes,
+        };
+        store.columns.push(head);
+        row
+    }
+
+    /// List `row` among the results of `parent` (the document when `None`).
+    #[inline]
+    pub fn add_edge(&mut self, parent: Option<ElementId>, row: ElementId) {
+        let store = &mut self.store;
+        if store.record_edges {
+            let group = parent.map_or(0, |parent| parent.0 + 1);
+            store.edges.push((group, row.0));
+        } else {
+            debug_assert!(
+                parent.is_none(),
+                "root-only stores list rows under the document"
+            );
+        }
+    }
 
     /// Record the content of `element_id`, once its element closed.
-    pub(crate) fn set_content(
+    #[inline]
+    pub fn set_content(
         &mut self,
         element_id: ElementId,
         inner_html: Option<&'html str>,
         raw_text: Option<Range<usize>>,
         text: Option<Range<usize>>,
     ) {
+        let store = &mut self.store;
         let row = element_id.index();
-        assert!(row < self.len());
-
-        #[cfg(any(debug_assertions, test))]
-        let tag = self
-            .html_value(self.columns.rows[row].name)
-            .unwrap_or_default();
-        #[cfg(any(debug_assertions, test))]
-        let has_inner_html = inner_html.is_some();
-        #[cfg(any(debug_assertions, test))]
-        let has_raw_text = raw_text.is_some();
-        #[cfg(any(debug_assertions, test))]
-        let has_text = text.is_some();
+        assert!(row < store.len());
 
         if inner_html.is_some() {
-            let span = self.optional_html_span(inner_html);
-            self.columns.inner_html[row] = span;
+            let span = store.optional_html_span(inner_html);
+            store.columns.inner_html[row] = span;
         }
         for (range, column) in [
-            (raw_text, &mut self.columns.raw_text),
-            (text, &mut self.columns.text),
+            (raw_text, &mut store.columns.raw_text),
+            (text, &mut store.columns.text),
         ] {
             let Some(range) = range else { continue };
             match Span::of(range) {
                 Some(span) => column[row] = span,
-                None => self.overflowed = true,
+                None => store.overflowed = true,
             }
         }
+    }
 
-        crate::scah_trace!(
-            self,
-            crate::debug::TraceEvent::ContentFinalized {
-                element_id,
-                tag,
-                has_inner_html,
-                has_raw_text,
-                has_text,
-            }
-        );
+    /// Tag name of `row`, a row saved earlier.
+    pub fn name(&self, row: ElementId) -> &'html str {
+        let store = &self.store;
+        store
+            .html_value(store.columns.rows[row.index()].name)
+            .unwrap_or_default()
+    }
+
+    /// Build the result index and return the finished store.
+    pub fn finish(mut self) -> Store<'html, 'query> {
+        self.store.build_index();
+        self.store
+    }
+}
+
+impl<'html, 'query> StoreBuilder<'html, 'query> {
+    /// The text tapes.
+    #[inline]
+    pub fn text(&self) -> &TextStore {
+        &self.store.text
+    }
+
+    /// The text tapes, to copy the content of saved elements to.
+    #[inline]
+    pub fn text_mut(&mut self) -> &mut TextStore {
+        &mut self.store.text
     }
 }
 
@@ -820,10 +925,16 @@ fn foreign_span(value: &str) -> Span {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Query, Save};
 
     /// Source of the element names the table tests store.
     static HTML: &str = "section a div span";
+
+    /// Content of a section built with `Save::all()`.
+    const ALL: Content = Content {
+        inner_html: true,
+        raw_text: true,
+        text: true,
+    };
 
     fn tracks_text(store: &Store) -> bool {
         !store.columns.text.is_empty()
@@ -897,53 +1008,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_inner_html_only_skips_text_range_sidecar() {
-        let html = "<p>one</p><p>two</p>";
-        let query = Query::all("p", Save::only_inner_html()).unwrap().build();
-        let queries = [query];
-        let store = crate::parse(html, &queries).unwrap();
-        assert!(!tracks_text(&store) && !tracks_raw_text(&store));
-        assert_eq!(store.len(), 2);
-    }
-
-    #[test]
-    fn parse_text_modes_allocate_independent_range_vectors() {
-        let html = "<p class=\"x\">A</p><p>B</p>";
-        let queries = [
-            Query::all("p", Save::only_text()).unwrap().build(),
-            Query::all("p.x", Save::only_raw_text()).unwrap().build(),
-        ];
-        let store = crate::parse(html, &queries).unwrap();
-        assert!(tracks_text(&store) || tracks_raw_text(&store));
-        assert!(tracks_raw_text(&store));
-        assert!(tracks_text(&store));
-        assert_eq!(store.len(), 3);
-    }
-
-    #[test]
-    fn query_aware_capacity_keeps_unmatched_text_storage_lazy() {
-        let html = "<main><div data-a='1'>outside</div><p>more</p></main>";
-        let query = Query::all(".missing", Save::only_text()).unwrap().build();
-        let queries = [query];
-        let store = crate::parse(html, &queries).unwrap();
-
-        assert_eq!(store.text.raw_text.capacity(), 0);
-        assert_eq!(store.text.text.capacity(), 0);
-        assert!(!tracks_text(&store) && !tracks_raw_text(&store));
-    }
-
-    #[test]
-    fn one_text_mode_does_not_allocate_ranges_for_the_other() {
-        let html = "<p>A</p><p>B</p>";
-        let query = Query::all("p", Save::only_text()).unwrap().build();
-        let queries = [query];
-        let store = crate::parse(html, &queries).unwrap();
-
-        assert!(!tracks_raw_text(&store));
-        assert!(tracks_text(&store));
-    }
-
-    #[test]
     fn row_cells_are_compact() {
         assert_eq!(std::mem::size_of::<Span>(), 8);
         assert_eq!(std::mem::size_of::<RowHead>(), 16);
@@ -979,16 +1043,24 @@ mod tests {
         assert_eq!(store.columns.attribute_keys.capacity(), 16);
     }
 
-    fn store_for<'q>(queries: &'q [Query<'q>]) -> Store<'q, 'q> {
-        let mut store = Store::default();
+    fn section(selector: &'static str, parent: Option<u32>, content: Content) -> Section<'static> {
+        Section {
+            selector,
+            parent,
+            content,
+        }
+    }
+
+    fn store_for(sections: &[Section<'static>]) -> StoreBuilder<'static, 'static> {
+        let mut store = StoreBuilder::default();
         store.set_html(HTML);
-        store.set_sections(&Program::compile(queries));
+        store.set_sections(sections);
         store
     }
 
-    fn element(name: &str) -> crate::XHtmlElement<'static> {
+    fn element(name: &str) -> XHtmlElement<'static> {
         let start = HTML.find(name).expect("name in HTML");
-        crate::XHtmlElement {
+        XHtmlElement {
             name: &HTML[start..start + name.len()],
             ..Default::default()
         }
@@ -996,28 +1068,22 @@ mod tests {
 
     #[test]
     fn results_are_grouped_by_parent_then_section_in_document_order() {
-        let queries = [Query::all("main > section", Save::all())
-            .unwrap()
-            .then(|section| {
-                Ok([
-                    section.all("> a[href]", Save::all())?,
-                    section.all("div a", Save::all())?,
-                ])
-            })
-            .unwrap()
-            .build()];
-        let mut store = store_for(&queries);
-        let spec = |index: usize| &queries[0].queries[index];
+        // `main > section`, with the nested sections `> a[href]` and `div a`.
+        let mut store = store_for(&[
+            section("main > section", None, ALL),
+            section("> a[href]", Some(0), ALL),
+            section("div a", Some(0), ALL),
+        ]);
 
-        let first = store.add_row(SectionIndex(0), spec(0), &element("section"));
+        let first = store.add_row(0, true, &element("section"));
         store.add_edge(None, first);
-        let deep = store.add_row(SectionIndex(2), spec(2), &element("a"));
+        let deep = store.add_row(2, true, &element("a"));
         store.add_edge(Some(first), deep);
-        let direct = store.add_row(SectionIndex(1), spec(1), &element("a"));
+        let direct = store.add_row(1, true, &element("a"));
         store.add_edge(Some(first), direct);
-        let second = store.add_row(SectionIndex(0), spec(0), &element("section"));
+        let second = store.add_row(0, true, &element("section"));
         store.add_edge(None, second);
-        store.finish();
+        let store = store.finish();
 
         assert_eq!(store.results("main > section"), Some(&[first, second][..]));
         assert_eq!(store.child_results(first, "> a[href]"), Some(&[direct][..]));
@@ -1032,72 +1098,6 @@ mod tests {
     }
 
     #[test]
-    fn positional_lookups_match_selector_lookups() {
-        let queries = [
-            Query::all("ul", Save::none())
-                .unwrap()
-                .then(|list| {
-                    Ok([
-                        list.all("> li", Save::none())?,
-                        list.first("a", Save::none())?,
-                    ])
-                })
-                .unwrap()
-                .build(),
-            Query::all("p", Save::none()).unwrap().build(),
-        ];
-        let store = crate::parse(
-            "<ul><li><a>1</a></li><li>2</li></ul><p></p><ul></ul>",
-            &queries,
-        )
-        .unwrap();
-
-        let lists: Vec<_> = store.query_results(0).unwrap().to_vec();
-        assert_eq!(lists.len(), 2);
-        assert_eq!(store.query_selector(0), Some("ul"));
-        assert_eq!(store.query_selector(1), Some("p"));
-        assert_eq!(store.query_selector(2), None);
-        assert_eq!(store.query_results(1), store.results("p"));
-        assert_eq!(store.query_results(2), None);
-
-        let [full, empty] = [lists[0], lists[1]];
-        assert_eq!(store.nested_results(full, 0).map(<[_]>::len), Some(2));
-        assert_eq!(
-            store.nested_results(full, 0),
-            store.child_results(full, "> li")
-        );
-        assert_eq!(
-            store.nested_results(full, 1),
-            store.child_results(full, "a")
-        );
-        assert_eq!(store.nested_selector(full, 1), Some("a"));
-        assert_eq!(store.nested_results(full, 2), None);
-        assert_eq!(store.nested_selector(full, 2), None);
-        assert_eq!(store.nested_results(empty, 0), None);
-
-        // Leaf rows have no nested sections.
-        let item = store.nested_results(full, 0).unwrap()[0];
-        assert_eq!(store.nested_results(item, 0), None);
-        assert_eq!(store.child_results(item, "a"), None);
-    }
-
-    #[test]
-    fn a_dropped_store_lends_its_buffers_to_the_next_parse() {
-        let queries = [Query::all("p", Save::all()).unwrap().build()];
-        let html = "<p class='a'>one</p><p>two</p>".repeat(50);
-        let (rows, text) = {
-            let store = crate::parse(&html, &queries).unwrap();
-            (
-                store.columns.rows.as_ptr(),
-                store.text.text.as_bytes().as_ptr(),
-            )
-        };
-        let store = crate::parse(&html, &queries).unwrap();
-        assert_eq!(store.columns.rows.as_ptr(), rows);
-        assert_eq!(store.text.text.as_bytes().as_ptr(), text);
-    }
-
-    #[test]
     fn attribute_indexes_stop_at_u32() {
         let max = u32::MAX as usize;
         assert!(attributes_fit(0, 3));
@@ -1108,10 +1108,11 @@ mod tests {
 
     #[test]
     fn heap_usage_counts_the_section_tables() {
-        let queries: Vec<_> = (0..100)
-            .map(|_| Query::all("p", Save::none()).unwrap().build())
-            .collect();
-        let store = crate::parse("", &queries).unwrap();
+        let sections = vec![section("p", None, Content::default()); 100];
+        let mut store = StoreBuilder::default();
+        store.set_html("");
+        store.set_sections(&sections);
+        let store = store.finish();
         assert!(
             store.heap_usage().results >= 100 * std::mem::size_of::<StoreSection<'_>>(),
             "{:?}",
@@ -1120,117 +1121,21 @@ mod tests {
     }
 
     #[test]
-    fn reservations_do_not_affect_equality() {
-        let html = "<p class=a>one</p><p>two</p>";
-        let queries = [Query::all("p", Save::all()).unwrap().build()];
-        fn parse<'html, 'query: 'html>(
-            mut parser: crate::XHtmlParser<'html, 'query>,
-            html: &'html str,
-        ) -> Store<'html, 'query> {
-            let mut reader = crate::Reader::new(html);
-            while parser.next(&mut reader) {}
-            parser.matches()
-        }
-        let plain = parse(crate::XHtmlParser::new(&queries), html);
-        let reserved = parse(crate::XHtmlParser::with_capacity(&queries, 1 << 16), html);
-        assert_ne!(plain.columns.reserved_rows, reserved.columns.reserved_rows);
-        assert_eq!(plain, reserved);
-    }
-
-    #[test]
-    fn optional_columns_do_not_copy_reused_row_capacity() {
-        let names = [Query::all("p", Save::name_only()).unwrap().build()];
-        drop(crate::parse(&"<p>x</p>".repeat(5_000), &names).unwrap());
-
-        // An early-exit parse reserves no rows, so its optional columns grow
-        // with the rows it saves, not with the rows the last parse kept.
-        let first = [Query::first("p", Save::all()).unwrap().build()];
-        let store = crate::parse("<p>one</p><p>two</p>", &first).unwrap();
-        assert!(store.columns.rows.capacity() >= 5_000);
-        assert!(store.columns.attribute_keys.capacity() < 100);
-        assert!(store.columns.inner_html.capacity() < 100);
-        assert!(store.columns.text.capacity() < 100);
-    }
-
-    #[test]
-    fn class_and_id_are_the_first_with_a_value_and_the_rest_keep_source_order() {
-        let queries = [Query::all("a", Save::all()).unwrap().build()];
-        let html = r#"<a class href=h id=x class=c data-k class=d id><b></b></a>"#;
-        let store = crate::parse(html, &queries).unwrap();
-        let a = store.get("a").unwrap().next().unwrap();
-
-        assert_eq!((a.class(), a.id()), (Some("c"), Some("x")));
-        let others: Vec<_> = a
-            .attributes()
-            .unwrap()
-            .map(|attribute| (attribute.key, attribute.value))
-            .collect();
-        assert_eq!(
-            others,
-            [
-                ("class", None),
-                ("href", Some("h")),
-                ("data-k", None),
-                ("class", Some("d")),
-                ("id", None),
-            ]
-        );
-        // `attribute` searches the same attributes as `attributes`.
-        assert_eq!(a.attribute("href"), Some("h"));
-        assert_eq!(a.attribute("CLASS"), None);
-        assert_eq!(a.attribute("data-k"), None);
-        assert_eq!(store.attribute_count(), 7);
-
-        // Without `class` or `id`, the attributes start with the others.
-        let html = r#"<a ID data-x=1>t</a>"#;
-        let store = crate::parse(html, &queries).unwrap();
-        let a = store.get("a").unwrap().next().unwrap();
-        assert_eq!((a.class(), a.id()), (None, None));
-        assert_eq!(a.attributes().unwrap().len(), 2);
-        assert_eq!(a.attribute("data-x"), Some("1"));
-    }
-
-    #[test]
-    fn reused_buffers_start_empty() {
-        let text_queries = [Query::all("p", Save::all()).unwrap().build()];
-        drop(crate::parse("<p id=x class=y z=1>first</p><p>second</p>", &text_queries).unwrap());
-
-        let html = String::from("<div><p>third</p></div>");
-        let name_queries = [Query::all("p", Save::name_only()).unwrap().build()];
-        let store = crate::parse(&html, &name_queries).unwrap();
-        assert_eq!(store.len(), 1);
-        assert_eq!(store.attribute_count(), 0);
-        let p = store.get("p").unwrap().next().unwrap();
-        assert_eq!((p.name(), p.id(), p.class()), ("p", None, None));
-        assert_eq!(
-            (p.attributes().is_none(), p.text(), p.inner_html()),
-            (true, None, None)
-        );
-        drop(store);
-
-        let store = crate::parse(&html, &text_queries).unwrap();
-        let p = store.get("p").unwrap().next().unwrap();
-        assert_eq!(p.text(), Some("third"));
-        assert_eq!(store.text.text.as_bytes(), b"third");
-    }
-
-    #[test]
     fn one_row_can_be_listed_under_several_parents() {
-        let queries = [Query::all("div", Save::none())
-            .unwrap()
-            .all("a", Save::none())
-            .unwrap()
-            .build()];
-        let mut store = store_for(&queries);
+        // `div a`, with `a` nested under `div`.
+        let mut store = store_for(&[
+            section("div", None, Content::default()),
+            section("a", Some(0), Content::default()),
+        ]);
 
-        let outer = store.add_row(SectionIndex(0), &queries[0].queries[0], &element("div"));
+        let outer = store.add_row(0, true, &element("div"));
         store.add_edge(None, outer);
-        let inner = store.add_row(SectionIndex(0), &queries[0].queries[0], &element("div"));
+        let inner = store.add_row(0, true, &element("div"));
         store.add_edge(None, inner);
-        let link = store.add_row(SectionIndex(1), &queries[0].queries[1], &element("a"));
+        let link = store.add_row(1, true, &element("a"));
         store.add_edge(Some(outer), link);
         store.add_edge(Some(inner), link);
-        store.finish();
+        let store = store.finish();
 
         assert_eq!(store.len(), 3);
         assert_eq!(store.child_results(outer, "a"), Some(&[link][..]));
@@ -1238,35 +1143,14 @@ mod tests {
     }
 
     #[test]
-    fn queries_with_the_same_selector_keep_separate_results() {
-        let queries = [
-            Query::all("a", Save::none()).unwrap().build(),
-            Query::all("a", Save::all()).unwrap().build(),
-        ];
-        let store = crate::parse("<a href=x>1</a><a>2</a>", &queries).unwrap();
-
-        assert_eq!(store.query(0).unwrap().count(), 2);
-        assert_eq!(store.query(1).unwrap().count(), 2);
-        assert!(store.query(0).unwrap().all(|a| a.inner_html().is_none()));
-        assert!(store.query(1).unwrap().all(|a| a.inner_html().is_some()));
-        // `get` resolves a shared selector to the first query.
-        assert!(store.get("a").unwrap().all(|a| a.inner_html().is_none()));
-        assert!(store.query(2).is_none());
-    }
-
-    #[test]
     fn test_multi_root_queries() {
-        let queries = &[
-            Query::all("span", Save::all()).unwrap().build(),
-            Query::all("a", Save::all()).unwrap().build(),
-        ];
-        let mut store = store_for(queries);
+        let mut store = store_for(&[section("span", None, ALL), section("a", None, ALL)]);
 
-        let span = store.add_row(SectionIndex(0), &queries[0].queries[0], &element("span"));
+        let span = store.add_row(0, true, &element("span"));
         store.add_edge(None, span);
-        let a = store.add_row(SectionIndex(1), &queries[1].queries[0], &element("a"));
+        let a = store.add_row(1, true, &element("a"));
         store.add_edge(None, a);
-        store.finish();
+        let store = store.finish();
 
         assert_eq!(store.get("span").unwrap().count(), 1);
         assert_eq!(store.get("a").unwrap().count(), 1);

@@ -1,6 +1,33 @@
+//! The trace of a parse: the tags it read, the elements it saved and the
+//! content it finished, as recorded by debug and test builds.
+
 use crate::ElementId;
+#[cfg(any(debug_assertions, test))]
+use crate::{ParseError, Program, QuerySpec, Store};
 use std::fmt::Write as _;
 use std::path::Path;
+
+/// Parse like [`parse`](crate::parse), and also return the trace of the
+/// parse. Only debug and test builds record traces.
+///
+/// # Errors
+///
+/// The same as [`parse`](crate::parse).
+#[cfg(any(debug_assertions, test))]
+pub fn parse_traced<'a: 'query, 'html: 'query, 'query: 'html, Q>(
+    html: &'html str,
+    queries: &'a [Q],
+) -> Result<(Store<'html, 'query>, TraceStore<'html, 'query>), ParseError>
+where
+    Q: QuerySpec<'query>,
+{
+    crate::run_traced(
+        html,
+        std::borrow::Cow::Owned(Program::compile(queries)),
+        true,
+        None,
+    )
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceStore<'html, 'query> {

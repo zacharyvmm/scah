@@ -32,7 +32,10 @@ if grep -Fq 'pub raw_text: bool' \
   legacy_base=0
   cp "$repo_root/benches/text_extraction/gate.rs" \
     "$base_tree/benches/text_extraction/gate.rs"
-  if ! grep -Fq 'pub struct ElementRef' "$base_tree/crates/scah/src/store/element.rs"; then
+  # The store moved from scah to scah-store; `-s` skips the missing file.
+  if ! grep -Fqs 'pub struct ElementRef' \
+    "$base_tree/crates/scah/src/store/element.rs" \
+    "$base_tree/crates/scah-store/src/element.rs"; then
     # Before the columnar store, element accessors took the store.
     sed -i.bak \
       -e 's/element\.raw_text()/element.raw_text(store)/' \

@@ -20,12 +20,14 @@ macro_rules! define_id {
         }
 
         impl From<usize> for $name {
+            #[inline]
             fn from(value: usize) -> Self {
                 Self(u32::try_from(value).expect("store rows fit in u32"))
             }
         }
 
         impl From<$name> for usize {
+            #[inline]
             fn from(value: $name) -> Self {
                 value.0 as usize
             }

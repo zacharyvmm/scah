@@ -2,9 +2,9 @@ use super::entities::{
     contains_ampersand, decode_character_references,
     decode_character_references_normalizing_source_newlines,
 };
-use crate::store::TextTape;
 use scah_html::{DepthSize, TextTagFlags};
 use scah_query_ir::TextRequirements;
+use scah_store::TextTape;
 
 /// Which text representations the current parse is capturing.
 ///
