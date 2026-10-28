@@ -97,6 +97,39 @@ fn trace_records_implied_li_close() {
 
 #[test]
 #[cfg(debug_assertions)]
+fn trace_finalizes_an_elements_rows_in_save_order() {
+    let html = r#"<p class="x">hello</p>"#;
+    let queries = [
+        Query::all("p", Save::only_inner_html()).unwrap().build(),
+        Query::all(".x", Save::only_raw_text()).unwrap().build(),
+    ];
+
+    let store = parse(html, &queries).unwrap();
+
+    let finalized: Vec<_> = store
+        .trace
+        .events()
+        .iter()
+        .filter_map(|event| match event {
+            debug::TraceEvent::ContentFinalized { element_id, .. } => Some(*element_id),
+            _ => None,
+        })
+        .collect();
+    let saved: Vec<_> = store
+        .trace
+        .events()
+        .iter()
+        .filter_map(|event| match event {
+            debug::TraceEvent::ElementSaved { element_id, .. } => Some(*element_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(finalized.len(), 2);
+    assert_eq!(finalized, saved);
+}
+
+#[test]
+#[cfg(debug_assertions)]
 fn trace_records_first_query_early_exit() {
     let html = "<div><a>one</a><a>two</a></div>";
     let query = Query::first("a", Save::all()).unwrap().build();

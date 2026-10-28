@@ -336,8 +336,8 @@ impl TextTagFlags {
     /// Separator queued after this element's content in normalized text.
     #[inline]
     #[allow(dead_code)] // mirrored on TextElementFlags for the open-stack close path
-    pub(crate) fn post_text_separator(self) -> Option<super::text_state::PendingSeparator> {
-        use super::text_state::PendingSeparator;
+    pub(crate) fn post_text_separator(self) -> Option<crate::capture::PendingSeparator> {
+        use crate::capture::PendingSeparator;
         if self.is_break() || self.is_block() || self.is_row() {
             Some(PendingSeparator::LineBreak)
         } else if self.is_cell() {

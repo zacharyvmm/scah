@@ -1,82 +1,15 @@
 use crate::ParseError;
+use crate::capture::TextElementFlags;
 use crate::engine::{DepthSize, MAX_ELEMENT_DEPTH};
 use crate::html::tag::{ScopeKind, TagFlags};
-use crate::html::text_edge::TextEdgePolicy;
-use crate::html::text_state::TextElementFlags;
-use crate::store::ElementId;
 use scah_query_ir::TagId;
-
-/// Sentinel for an inactive deferred content-start offset.
-///
-/// A start of `usize::MAX` cannot be a valid tape or source index: Rust
-/// allocations cannot have length `usize::MAX`, and reader/tape lengths must
-/// remain representable and indexable. Any input near this limit would fail
-/// allocation long before a range could be created.
-const NO_START: usize = usize::MAX;
-
-/// Deferred close-finalization record for a matched open element.
-///
-/// Optional start offsets are packed as plain `usize` values with [`NO_START`]
-/// for `None`, so inactive modes (e.g. inner-HTML-only) do not pay for three
-/// `Option<usize>` niches (typically 16 bytes each on 64-bit).
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SavedElement {
-    pub element_id: ElementId,
-    inner_html_start: usize,
-    raw_text_start: usize,
-    text_start: usize,
-    text_edge_policy: TextEdgePolicy,
-}
-
-impl SavedElement {
-    #[inline]
-    pub(crate) fn new(
-        element_id: ElementId,
-        inner_html_start: Option<usize>,
-        raw_text_start: Option<usize>,
-        text_start: Option<usize>,
-        text_edge_policy: TextEdgePolicy,
-    ) -> Self {
-        Self {
-            element_id,
-            inner_html_start: inner_html_start.unwrap_or(NO_START),
-            raw_text_start: raw_text_start.unwrap_or(NO_START),
-            text_start: text_start.unwrap_or(NO_START),
-            text_edge_policy,
-        }
-    }
-
-    #[inline]
-    pub(crate) fn inner_html_start(&self) -> Option<usize> {
-        (self.inner_html_start != NO_START).then_some(self.inner_html_start)
-    }
-
-    #[inline]
-    pub(crate) fn raw_text_start(&self) -> Option<usize> {
-        (self.raw_text_start != NO_START).then_some(self.raw_text_start)
-    }
-
-    #[inline]
-    pub(crate) fn text_start(&self) -> Option<usize> {
-        (self.text_start != NO_START).then_some(self.text_start)
-    }
-
-    #[inline]
-    pub(crate) fn text_edge_policy(&self) -> TextEdgePolicy {
-        self.text_edge_policy
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct OpenElement<'html> {
     pub name: &'html str,
     /// `name` resolved once at the open tag; close tags compare ids.
     pub id: TagId,
-    /// Index of the first attached saved element; `u32` keeps the hot stack
-    /// entry at 32 bytes.
-    saved_start: u32,
     packed_flags: u32,
-    saved_count: u32,
 }
 
 impl<'html> OpenElement<'html> {
@@ -134,7 +67,6 @@ impl<'html> OpenElementStack<'html> {
         name: &'html str,
         id: TagId,
         tag: TagFlags,
-        saved_start: usize,
         text_flags: TextElementFlags,
     ) -> Result<(), ParseError> {
         if Self::would_exceed_max_depth(self.entries.len()) {
@@ -143,12 +75,8 @@ impl<'html> OpenElementStack<'html> {
         self.entries.push(OpenElement {
             name,
             id,
-            saved_start: saved_start
-                .try_into()
-                .expect("saved element index fits in u32"),
             packed_flags: tag.bits()
                 | ((text_flags.bits() as u32) << OpenElement::TEXT_FLAGS_SHIFT),
-            saved_count: 0,
         });
         Ok(())
     }
@@ -156,27 +84,7 @@ impl<'html> OpenElementStack<'html> {
     #[cfg(test)]
     pub fn push(&mut self, name: &'html str) -> Result<(), ParseError> {
         let id = TagId::of(name);
-        self.push_classified(name, id, TagFlags::of(id), 0, TextElementFlags::empty())
-    }
-
-    pub fn attach_saved(&mut self, saved_index: usize) {
-        let open_element = self
-            .entries
-            .last_mut()
-            .expect("saved query hit requires an open element");
-        debug_assert_eq!(
-            open_element.saved_start as usize + open_element.saved_count as usize,
-            saved_index
-        );
-        open_element.saved_count = open_element
-            .saved_count
-            .checked_add(1)
-            .expect("too many saved query hits for one element");
-    }
-
-    pub fn saved_range(open_element: &OpenElement<'html>) -> std::ops::Range<usize> {
-        let start = open_element.saved_start as usize;
-        start..start + open_element.saved_count as usize
+        self.push_classified(name, id, TagFlags::of(id), TextElementFlags::empty())
     }
 
     #[cfg(test)]
@@ -330,85 +238,8 @@ impl<'html> OpenElementStack<'html> {
 
 #[cfg(test)]
 mod tests {
-    use super::{OpenElement, OpenElementStack, SavedElement};
+    use super::{OpenElement, OpenElementStack};
     use crate::engine::MAX_ELEMENT_DEPTH;
-    use crate::html::text_edge::TextEdgePolicy;
-    use crate::store::ElementId;
-
-    #[test]
-    fn saved_element_none_starts_round_trip() {
-        let saved = SavedElement::new(
-            ElementId::from(0usize),
-            None,
-            None,
-            None,
-            TextEdgePolicy::TrimCollapsedSeparators,
-        );
-
-        assert_eq!(saved.inner_html_start(), None);
-        assert_eq!(saved.raw_text_start(), None);
-        assert_eq!(saved.text_start(), None);
-        assert_eq!(
-            saved.text_edge_policy(),
-            TextEdgePolicy::TrimCollapsedSeparators
-        );
-    }
-
-    #[test]
-    fn saved_element_present_starts_round_trip() {
-        let saved = SavedElement::new(
-            ElementId::from(1usize),
-            Some(10),
-            Some(20),
-            Some(30),
-            TextEdgePolicy::Preserve,
-        );
-
-        assert_eq!(saved.inner_html_start(), Some(10));
-        assert_eq!(saved.raw_text_start(), Some(20));
-        assert_eq!(saved.text_start(), Some(30));
-        assert_eq!(saved.text_edge_policy(), TextEdgePolicy::Preserve);
-    }
-
-    #[test]
-    fn saved_element_mixed_optional_starts_round_trip() {
-        let cases = [
-            (Some(1), None, None),
-            (None, Some(2), None),
-            (None, None, Some(3)),
-            (Some(4), Some(5), None),
-            (Some(6), None, Some(7)),
-            (None, Some(8), Some(9)),
-            (Some(10), Some(11), Some(12)),
-            (None, None, None),
-        ];
-        for (inner, raw, text) in cases {
-            let saved = SavedElement::new(
-                ElementId::from(0usize),
-                inner,
-                raw,
-                text,
-                TextEdgePolicy::Preserve,
-            );
-            assert_eq!(saved.inner_html_start(), inner);
-            assert_eq!(saved.raw_text_start(), raw);
-            assert_eq!(saved.text_start(), text);
-        }
-    }
-
-    #[test]
-    fn saved_element_layout_is_compact_on_64bit() {
-        use std::mem::size_of;
-        // On 64-bit, sentinel-packed starts should restore the historical ~40-byte
-        // deferred record (or at most 48 with alignment padding).
-        if size_of::<usize>() == 8 {
-            let size = size_of::<SavedElement>();
-            assert!(
-                size <= 48,
-                "SavedElement grew unexpectedly: {size} bytes (expected <= 48)"
-            );
-        }
-    }
 
     #[test]
     fn would_exceed_max_depth_at_boundary() {

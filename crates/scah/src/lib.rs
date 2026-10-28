@@ -103,6 +103,7 @@
 
 use std::borrow::Cow;
 
+mod capture;
 pub mod debug;
 mod engine;
 mod html;
@@ -141,12 +142,12 @@ pub mod __private {
 pub mod bench_internals {
     pub use crate::html::tag::{ScopeKind, TagFlags};
 
+    #[cfg(feature = "bench-internals")]
+    pub use crate::capture::TextPathStats;
     #[cfg(feature = "simd-bench-internals")]
     use crate::html::BlockClassifier;
     #[cfg(feature = "simd-bench-internals")]
     use crate::html::IndexingMode;
-    #[cfg(feature = "bench-internals")]
-    pub use crate::html::TextPathStats;
     #[cfg(feature = "simd-bench-internals")]
     use crate::store::Store;
     #[cfg(feature = "simd-bench-internals")]
