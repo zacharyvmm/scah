@@ -113,8 +113,9 @@ dependencies = [
 
 [[package]]
 name = "simdlex"
-version = "0.1.0"
-source = "git+https://github.com/zacharyvmm/simdlex?rev=ec937239b1584bd5500012368472864cbd42c9af#ec937239b1584bd5500012368472864cbd42c9af"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6142cbdb1b631695d86272a84792f8b5f52e59300ff6deb87dc2981b53a0940"
 
 [[package]]
 name = "smallvec"

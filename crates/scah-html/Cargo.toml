@@ -11,9 +11,8 @@ homepage.workspace = true
 documentation = "https://docs.rs/scah-html"
 
 [dependencies]
-# Structural tape for documents the adaptive policy indexes ahead. A git
-# dependency until simdlex is published, so this crate cannot be packaged yet.
-simdlex = { git = "https://github.com/zacharyvmm/simdlex", rev = "ec937239b1584bd5500012368472864cbd42c9af" }
+# Structural tape for documents the adaptive policy indexes ahead.
+simdlex = "0.1"
 
 [lints.rust]
 # `--cfg scah_no_layout_hints` drops the `#[cold]` and `#[inline(never)]`
