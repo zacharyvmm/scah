@@ -52,6 +52,8 @@ pub struct Section<'query> {
 #[derive(Debug, Clone, PartialEq)]
 struct StoreSection<'query> {
     selector: &'query str,
+    /// The section this one is nested in, if any.
+    parent: Option<u32>,
     /// Position among its parent's nested sections, or among the root
     /// sections: the result slot it fills in each parent group.
     slot: u32,
@@ -530,8 +532,14 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     fn save_attributes(&mut self, element: &XHtmlElement<'html>) {
         let html = self.html;
         let attributes = element.attributes;
-        let columns = &mut self.columns;
-        let start = columns.attribute_keys.len();
+        let start = self.columns.attribute_keys.len();
+        // Attributes left by a panicking span would join the previous row,
+        // whose range ends where the next row's starts.
+        let guard = AttributeRollback {
+            columns: &mut self.columns,
+            len: start,
+        };
+        let columns = &mut *guard.columns;
         columns.attribute_keys.reserve(attributes.len());
         columns.attribute_values.reserve(attributes.len());
         for (offset, attribute) in attributes.iter().enumerate() {
@@ -553,6 +561,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             columns.attribute_values.push(value);
         }
         debug_assert_eq!(columns.attribute_keys.len(), start + attributes.len());
+        std::mem::forget(guard);
     }
 
     /// Build the result index: assign every group its slots, then place
@@ -739,6 +748,7 @@ impl<'html, 'query: 'html> StoreBuilder<'html, 'query> {
             };
             table.push(StoreSection {
                 selector: section.selector,
+                parent: section.parent,
                 slot,
                 children: (starts[index], starts[index + 1]),
             });
@@ -791,6 +801,12 @@ impl<'html, 'query: 'html> StoreBuilder<'html, 'query> {
     /// The row is not a result until [`StoreBuilder::add_edge`] lists it
     /// under a parent, unless no section is nested: then every row is a
     /// result of its section, and edges are not recorded.
+    ///
+    /// # Panics
+    ///
+    /// If `section` is not an index of the sections, or a non-empty string
+    /// of `element` does not borrow from the HTML. The store is unchanged
+    /// then.
     #[inline]
     pub fn add_row(
         &mut self,
@@ -799,6 +815,11 @@ impl<'html, 'query: 'html> StoreBuilder<'html, 'query> {
         element: &XHtmlElement<'html>,
     ) -> ElementId {
         let store = &mut self.store;
+        assert!(
+            (section as usize) < store.sections.len(),
+            "a row belongs to one of the store's sections"
+        );
+        let name = store.html_span(element.name);
         let row = ElementId::from(store.len());
         let saved = store.columns.attribute_keys.len();
         if save_attributes && !element.attributes.is_empty() {
@@ -814,7 +835,7 @@ impl<'html, 'query: 'html> StoreBuilder<'html, 'query> {
         // Saving stops before the count passes `u32::MAX`.
         let attributes = saved as u32;
         let head = RowHead {
-            name: store.html_span(element.name),
+            name,
             section,
             attributes,
         };
@@ -826,17 +847,24 @@ impl<'html, 'query: 'html> StoreBuilder<'html, 'query> {
     ///
     /// Does nothing when no section is nested, since every row is then a
     /// result of its root section (see [`StoreBuilder::add_row`]).
+    ///
+    /// # Panics
+    ///
+    /// If `row` or `parent` is not a saved row, or `row`'s section is not
+    /// nested in `parent`'s (a root section, for the document).
     #[inline]
     pub fn add_edge(&mut self, parent: Option<ElementId>, row: ElementId) {
         let store = &mut self.store;
+        let rows = &store.columns.rows;
+        let section = rows[row.index()].section;
+        let parent_section = parent.map(|parent| rows[parent.index()].section);
+        assert!(
+            store.sections[section as usize].parent == parent_section,
+            "a row is listed under a row of its section's parent"
+        );
         if store.record_edges {
             let group = parent.map_or(0, |parent| parent.0 + 1);
             store.edges.push((group, row.0));
-        } else {
-            debug_assert!(
-                parent.is_none(),
-                "root-only stores list rows under the document"
-            );
         }
     }
 
@@ -898,6 +926,21 @@ impl<'html, 'query> StoreBuilder<'html, 'query> {
     }
 }
 
+/// Truncates the attribute columns back to `len` when dropped: a row whose
+/// attributes failed to save takes them out again.
+struct AttributeRollback<'a> {
+    columns: &'a mut Columns,
+    len: usize,
+}
+
+impl Drop for AttributeRollback<'_> {
+    #[cold]
+    fn drop(&mut self) {
+        self.columns.attribute_keys.truncate(self.len);
+        self.columns.attribute_values.truncate(self.len);
+    }
+}
+
 /// Whether `additional` attributes can follow `saved` ones with every index,
 /// and the end of the last, still fitting in a `u32`.
 #[inline(always)]
@@ -940,6 +983,7 @@ fn foreign_span(value: &str) -> Span {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use scah_html::Attribute;
 
     /// Source of the element names the table tests store.
     static HTML: &str = "section a div span";
@@ -1140,6 +1184,68 @@ mod tests {
         let mut store = store_for(&[section("p", None, Content::default())]);
         store.add_row(0, false, &element("a"));
         store.set_sections(&[section("p", None, ALL)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "a row belongs to one of the store's sections")]
+    fn rows_need_a_known_section() {
+        let mut store = store_for(&[section("a", None, Content::default())]);
+        store.add_row(99, false, &element("a"));
+    }
+
+    #[test]
+    #[should_panic(expected = "a row is listed under a row of its section's parent")]
+    fn edges_follow_the_section_tree() {
+        // `a` nests `span`, `div` nests `section`.
+        let mut store = store_for(&[
+            section("a", None, Content::default()),
+            section("div", None, Content::default()),
+            section("span", Some(0), Content::default()),
+            section("section", Some(1), Content::default()),
+        ]);
+        let div = store.add_row(1, false, &element("div"));
+        store.add_edge(None, div);
+        let span = store.add_row(2, false, &element("span"));
+        store.add_edge(Some(div), span);
+    }
+
+    #[test]
+    #[should_panic(expected = "a row is listed under a row of its section's parent")]
+    fn root_only_edges_are_listed_under_the_document() {
+        let mut store = store_for(&[section("a", None, Content::default())]);
+        let first = store.add_row(0, false, &element("a"));
+        let second = store.add_row(0, false, &element("a"));
+        store.add_edge(Some(first), second);
+    }
+
+    #[test]
+    fn a_row_that_fails_to_save_leaves_no_attributes() {
+        let attributes = [
+            Attribute {
+                key: &HTML[8..9],
+                value: Some(&HTML[10..13]),
+            },
+            Attribute {
+                key: "foreign",
+                value: None,
+            },
+        ];
+        for (name, attributes) in [("foreign", &attributes[..1]), ("a", &attributes[..])] {
+            let mut store = store_for(&[section("a", None, Content::default())]);
+            let saved = store.add_row(0, true, &element("a"));
+            let failing = XHtmlElement {
+                name: if name == "a" { element("a").name } else { name },
+                attributes,
+                ..Default::default()
+            };
+            let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                store.add_row(0, true, &failing);
+            }));
+            assert!(unwound.is_err());
+            assert_eq!(store.len(), 1);
+            let store = store.finish();
+            assert!(store.element(saved).unwrap().attributes().is_none());
+        }
     }
 
     #[test]
