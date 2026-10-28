@@ -4,6 +4,7 @@ use crate::html::tag::{ScopeKind, TagFlags};
 use crate::html::text_edge::TextEdgePolicy;
 use crate::html::text_state::TextElementFlags;
 use crate::store::ElementId;
+use scah_query_ir::TagId;
 
 /// Sentinel for an inactive deferred content-start offset.
 ///
@@ -69,7 +70,11 @@ impl SavedElement {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct OpenElement<'html> {
     pub name: &'html str,
-    saved_start: usize,
+    /// `name` resolved once at the open tag; close tags compare ids.
+    pub id: TagId,
+    /// Index of the first attached saved element; `u32` keeps the hot stack
+    /// entry at 32 bytes.
+    saved_start: u32,
     packed_flags: u32,
     saved_count: u32,
 }
@@ -85,6 +90,17 @@ impl<'html> OpenElement<'html> {
     #[inline]
     pub fn text_flags(&self) -> TextElementFlags {
         TextElementFlags::from_bits((self.packed_flags >> Self::TEXT_FLAGS_SHIFT) as u8)
+    }
+
+    /// Whether a close tag named `name`, resolved to `id`, closes this
+    /// element. Known tags compare ids; other names compare ignoring case.
+    #[inline(always)]
+    fn closed_by(&self, name: &str, id: TagId) -> bool {
+        if id.is_known() || self.id.is_known() {
+            self.id == id
+        } else {
+            self.name == name || self.name.eq_ignore_ascii_case(name)
+        }
     }
 }
 
@@ -116,6 +132,7 @@ impl<'html> OpenElementStack<'html> {
     pub fn push_classified(
         &mut self,
         name: &'html str,
+        id: TagId,
         tag: TagFlags,
         saved_start: usize,
         text_flags: TextElementFlags,
@@ -125,7 +142,10 @@ impl<'html> OpenElementStack<'html> {
         }
         self.entries.push(OpenElement {
             name,
-            saved_start,
+            id,
+            saved_start: saved_start
+                .try_into()
+                .expect("saved element index fits in u32"),
             packed_flags: tag.bits()
                 | ((text_flags.bits() as u32) << OpenElement::TEXT_FLAGS_SHIFT),
             saved_count: 0,
@@ -135,7 +155,8 @@ impl<'html> OpenElementStack<'html> {
 
     #[cfg(test)]
     pub fn push(&mut self, name: &'html str) -> Result<(), ParseError> {
-        self.push_classified(name, TagFlags::classify(name), 0, TextElementFlags::empty())
+        let id = TagId::of(name);
+        self.push_classified(name, id, TagFlags::of(id), 0, TextElementFlags::empty())
     }
 
     pub fn attach_saved(&mut self, saved_index: usize) {
@@ -144,7 +165,7 @@ impl<'html> OpenElementStack<'html> {
             .last_mut()
             .expect("saved query hit requires an open element");
         debug_assert_eq!(
-            open_element.saved_start + open_element.saved_count as usize,
+            open_element.saved_start as usize + open_element.saved_count as usize,
             saved_index
         );
         open_element.saved_count = open_element
@@ -154,7 +175,7 @@ impl<'html> OpenElementStack<'html> {
     }
 
     pub fn saved_range(open_element: &OpenElement<'html>) -> std::ops::Range<usize> {
-        let start = open_element.saved_start;
+        let start = open_element.saved_start as usize;
         start..start + open_element.saved_count as usize
     }
 
@@ -193,20 +214,25 @@ impl<'html> OpenElementStack<'html> {
     #[cfg(test)]
     pub fn close_by_end_tag(&mut self, name: &str) -> Vec<OpenElement<'html>> {
         let mut popped = Vec::new();
-        self.close_by_end_tag_into(name, &mut popped);
+        self.close_by_end_tag_into(name, TagId::of(name), &mut popped);
         popped
     }
 
-    pub fn close_by_end_tag_into(&mut self, name: &str, popped: &mut Vec<OpenElement<'html>>) {
+    pub fn close_by_end_tag_into(
+        &mut self,
+        name: &str,
+        id: TagId,
+        popped: &mut Vec<OpenElement<'html>>,
+    ) {
         popped.clear();
 
-        if let Some(open) = self.pop_matching_top(name) {
+        if let Some(open) = self.pop_matching_top(name, id) {
             popped.push(open);
             return;
         }
 
-        let tag = TagFlags::classify(name);
-        if let Some(index) = self.find_matching_index(name, tag.close_scope()) {
+        let tag = TagFlags::of(id);
+        if let Some(index) = self.find_matching_index(name, id, tag.close_scope()) {
             while self.entries.len() > index {
                 if let Some(open) = self.entries.pop() {
                     popped.push(open);
@@ -220,11 +246,20 @@ impl<'html> OpenElementStack<'html> {
     /// This is exactly `find_matching_index`'s first iteration: that loop tests
     /// the entry name before the scope barrier, so a matching top always wins
     /// there too. Callers can take this path without deriving `close_scope()`.
-    #[inline]
-    pub fn pop_matching_top(&mut self, name: &str) -> Option<OpenElement<'html>> {
+    /// Pop the top entry when its name is exactly `name`.
+    #[inline(always)]
+    pub fn pop_exact_top(&mut self, name: &str) -> Option<OpenElement<'html>> {
         self.entries
             .last()
-            .is_some_and(|entry| entry.name == name || entry.name.eq_ignore_ascii_case(name))
+            .is_some_and(|entry| entry.name == name)
+            .then(|| self.entries.pop().expect("matching top element must exist"))
+    }
+
+    #[inline]
+    pub fn pop_matching_top(&mut self, name: &str, id: TagId) -> Option<OpenElement<'html>> {
+        self.entries
+            .last()
+            .is_some_and(|entry| entry.closed_by(name, id))
             .then(|| self.entries.pop().expect("matching top element must exist"))
     }
 
@@ -280,9 +315,9 @@ impl<'html> OpenElementStack<'html> {
         None
     }
 
-    fn find_matching_index(&self, name: &str, scope: ScopeKind) -> Option<usize> {
+    fn find_matching_index(&self, name: &str, id: TagId, scope: ScopeKind) -> Option<usize> {
         for (index, entry) in self.entries.iter().enumerate().rev() {
-            if entry.name == name || entry.name.eq_ignore_ascii_case(name) {
+            if entry.closed_by(name, id) {
                 return Some(index);
             }
             if entry.tag().is_scope_barrier(scope) {
