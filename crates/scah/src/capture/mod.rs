@@ -25,10 +25,9 @@ pub(crate) use text::{
 
 use crate::Reader;
 use crate::XHtmlElement;
-use crate::engine::DepthSize;
 use crate::engine::matcher::SaveHit;
 use crate::store::{ElementId, Store, trim_collapsed_range};
-use crate::tag::TextTagFlags;
+use scah_html::{DepthSize, TextTagFlags};
 use scah_query_ir::TextRequirements;
 
 /// Captures the content of saved elements while the document is parsed.

@@ -29,7 +29,7 @@ const FULL_INDEX_MAX_SAMPLED_TAG_BYTES: usize = 1024;
 const FULL_INDEX_MAX_UNKNOWN_PROBE_BYTES: usize = 4 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum IndexingMode {
+pub enum IndexingMode {
     Rolling,
     FullDocument,
     /// Force the full-document backend, bypassing adaptive strategy selection.
@@ -39,7 +39,7 @@ pub(crate) enum IndexingMode {
 
 /// The kind of completed structural span discovered by a [`TagIndexer`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TagKind {
+pub enum TagKind {
     Close,
     /// A comment, declaration, or bogus `<!...>` construct. The parser uses
     /// these spans as text boundaries but does not emit an element event.
@@ -51,7 +51,7 @@ pub(crate) enum TagKind {
 /// `start..end` covers the complete markup, including `<` and the terminating
 /// `>` when present. Close events also carry the zero-copy name range.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TagSpan {
+pub struct TagSpan {
     pub start: usize,
     pub end: usize,
     pub kind: TagKind,
@@ -74,7 +74,7 @@ impl TagSpan {
 /// them, or scan directly to the tag end when it does not. Vector backends may
 /// provide an `end_hint` discovered while classifying a larger input block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OpenTagStart {
+pub struct OpenTagStart {
     pub start: usize,
     pub name: Range<usize>,
     pub attributes_start: usize,
@@ -97,7 +97,7 @@ impl OpenTagStart {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum TagEvent {
+pub enum TagEvent {
     Open(OpenTagStart),
     Complete(TagSpan),
 }
@@ -107,7 +107,7 @@ pub(crate) enum TagEvent {
 /// Backends return one span at a time so callers retain early-exit behavior.
 /// A future SWAR/SIMD implementation can cache masks or several spans inside
 /// the backend without changing parser or query-executor semantics.
-pub(crate) trait TagIndexer {
+pub trait TagIndexer {
     fn prepare(&mut self, _source: &[u8]) {}
 
     fn next(&mut self, source: &[u8], from: usize) -> Option<TagEvent>;
@@ -1280,7 +1280,7 @@ fn sample_full_index_windows(
 }
 
 #[derive(Debug)]
-pub(crate) struct AutoTagIndexer {
+pub struct AutoTagIndexer {
     scalar: ScalarTagIndexer,
     rolling: Option<PackedTagIndexer>,
     full: Option<PackedTagIndexer>,
@@ -1298,7 +1298,7 @@ impl Default for AutoTagIndexer {
 }
 
 impl AutoTagIndexer {
-    pub(crate) fn new(mode: IndexingMode, attributes_may_be_parsed: bool) -> Self {
+    pub fn new(mode: IndexingMode, attributes_may_be_parsed: bool) -> Self {
         let classifier = BlockClassifier::default();
         let accelerated = classifier.is_accelerated();
         Self {

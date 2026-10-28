@@ -1,7 +1,7 @@
 use super::builder::ElementPredicate;
 use super::is_css_whitespace;
-use crate::Reader;
 use crate::query::compiler::SelectorParseError;
+use scah_html::Reader;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Combinator {

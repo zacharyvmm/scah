@@ -1,10 +1,8 @@
 pub mod program;
 mod query;
-mod tag;
 
 pub use program::{
-    AttributeMask, LaneSource, Program, ProgramFeatures, SectionIndex, SectionMask, StepMask,
-    StepPlan,
+    LaneSource, Program, ProgramFeatures, SectionIndex, SectionMask, StepMask, StepPlan,
 };
 pub use query::compiler::lazy;
 pub use query::compiler::{
@@ -13,10 +11,8 @@ pub use query::compiler::{
     TextRequirements, Transition, TransitionId, ascii_case_insensitive_hash,
 };
 pub use query::selector::{
-    AnPlusB, Attribute, AttributeCaseSensitivity, AttributeSelection, AttributeSelectionKind,
+    AnPlusB, AttributeCaseSensitivity, AttributeSelection, AttributeSelectionKind,
     AttributeSelections, ClassSelections, Combinator, ElementPredicate, IElement,
     LocalLogicalPredicate, LocalSelectorList, LogicalPredicates, MAX_SELECTOR_NESTING_DEPTH,
     StructuralMatchContext, StructuralPredicate, StructuralPredicates,
 };
-pub use scah_reader::Reader;
-pub use tag::TagId;

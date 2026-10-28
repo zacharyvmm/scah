@@ -33,6 +33,11 @@ Rust crates and the Python and npm packages together.
   first call, or over a `Reader::from_bytes` source that is not UTF-8.
   `Reader::source_str` returns the source as a string when it is valid.
   ([#100])
+- The `scah-reader` crate is replaced by `scah-html`, which also holds the tag
+  lexer and the open-element tree. `Attribute`, `TagId`, `AttributeMask`, and
+  `Reader` move there from `scah-query-ir`, and `scah-macros` no longer exports
+  `simd_nibble_tables!`. The `scah` API is unchanged: it still re-exports
+  `Reader`, `Attribute`, and `XHtmlElement`.
 
 ### Added
 

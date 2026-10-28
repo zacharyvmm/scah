@@ -1,5 +1,6 @@
-use super::builder::{Attribute, AttributeSelection, ElementPredicate, IElement};
+use super::builder::{AttributeSelection, ElementPredicate, IElement};
 use super::string_search::{AttributeSelectionKind, css_words};
+use scah_html::Attribute;
 
 impl<'a> AttributeSelection<'a> {
     pub fn matches_attribute(&self, other: &Attribute<'_>) -> bool {

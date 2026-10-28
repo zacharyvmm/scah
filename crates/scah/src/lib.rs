@@ -106,29 +106,25 @@ use std::borrow::Cow;
 mod capture;
 pub mod debug;
 mod engine;
-mod lexer;
 mod parser;
 mod store;
 mod support;
-mod tag;
-mod tree;
 
 #[cfg(all(any(debug_assertions, test), feature = "otel"))]
 mod otel;
 
-pub use lexer::element::XHtmlElement;
 pub use parser::XHtmlParser;
+pub use scah_html::{Attribute, Reader, XHtmlElement};
 pub use scah_macros::query;
 pub use scah_query_ir::lazy;
 pub use scah_query_ir::{
-    AnPlusB, Attribute, AttributeCaseSensitivity, AttributeSelection, AttributeSelectionKind,
+    AnPlusB, AttributeCaseSensitivity, AttributeSelection, AttributeSelectionKind,
     AttributeSelections, ClassSelections, Combinator, ElementPredicate, IElement,
     LocalLogicalPredicate, LocalSelectorList, LogicalPredicates, MAX_SELECTOR_NESTING_DEPTH,
     Program, ProgramFeatures, Query, QueryBuilder, QueryFactory, QuerySection, QuerySectionId,
     QuerySpec, Save, SelectionKind, SelectorParseError, StaticQuery, StructuralMatchContext,
     StructuralPredicate, StructuralPredicates, TextRequirements, Transition, TransitionId,
 };
-pub use scah_reader::Reader;
 pub use store::{Attributes, CapacityOptions, ElementId, ElementRef, Elements, HeapUsage, Store};
 
 /// Implementation details referenced by `query!` expansions.
@@ -143,18 +139,18 @@ pub mod __private {
 /// scanner access is available only with `simd-bench-internals`.
 #[doc(hidden)]
 pub mod bench_internals {
-    pub use crate::tag::{ScopeKind, TagFlags};
+    pub use scah_html::{ScopeKind, TagFlags};
 
     #[cfg(feature = "bench-internals")]
     pub use crate::capture::TextPathStats;
     #[cfg(feature = "simd-bench-internals")]
-    use crate::lexer::BlockClassifier;
-    #[cfg(feature = "simd-bench-internals")]
-    use crate::lexer::indexer::IndexingMode;
-    #[cfg(feature = "simd-bench-internals")]
     use crate::store::Store;
     #[cfg(feature = "simd-bench-internals")]
     use crate::{ParseError, Program, QuerySpec};
+    #[cfg(feature = "simd-bench-internals")]
+    use scah_html::BlockClassifier;
+    #[cfg(feature = "simd-bench-internals")]
+    use scah_html::IndexingMode;
 
     /// Reusable production `<` scanner for delimiter-distance benchmarks.
     #[cfg(feature = "simd-bench-internals")]
@@ -231,6 +227,12 @@ impl std::fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
+
+impl From<scah_html::DepthExceeded> for ParseError {
+    fn from(_: scah_html::DepthExceeded) -> Self {
+        ParseError::MaximumDepthExceeded
+    }
+}
 
 /// Parse an HTML string against one or more pre-built [`Query`] objects and
 /// return a [`Result`] containing a [`Store`] with all matched elements.
@@ -337,7 +339,7 @@ fn run<'html, 'query: 'html>(
     html: &'html str,
     program: Cow<'query, Program<'query>>,
     capture: bool,
-    indexing_mode: Option<lexer::indexer::IndexingMode>,
+    indexing_mode: Option<scah_html::IndexingMode>,
 ) -> Result<Store<'html, 'query>, ParseError> {
     check_limits(html, &program, capture)?;
     let query_count = program.root_sections().len();

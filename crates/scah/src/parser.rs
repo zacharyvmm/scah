@@ -14,26 +14,20 @@
 //! Parsing stops at the end of the input, or as soon as every query is a
 //! satisfied `first()`.
 
-use crate::Attribute;
 use crate::ParseError;
-use crate::Reader;
-use crate::XHtmlElement;
 use crate::capture::{Capture, TextElementFlags};
 use crate::debug::ImpliedCloseReason;
 #[cfg(any(debug_assertions, test))]
 use crate::debug::TraceEvent;
-use crate::engine::attribute_interest::AttributeInterest;
 use crate::engine::matcher::{AnyMatcher, SaveHit};
 use crate::engine::structural::StructuralState;
-use crate::engine::{DepthSize, MAX_ELEMENT_DEPTH};
-use crate::lexer::indexer::{
-    AutoTagIndexer, IndexingMode, OpenTagStart, TagEvent, TagIndexer, TagKind,
-};
 use crate::store::Store;
-use crate::tag::{ClassifiedTag, TagFlags};
-use crate::tree::{OpenElement, OpenElementStack};
 use crate::{Program, QuerySpec};
-use scah_query_ir::TagId;
+use scah_html::{
+    Attribute, AttributeInterest, AutoTagIndexer, ClassifiedTag, DepthSize, IndexingMode,
+    MAX_ELEMENT_DEPTH, OpenElement, OpenElementStack, OpenTagStart, Reader, TagEvent, TagFlags,
+    TagId, TagIndexer, TagKind, XHtmlElement,
+};
 use std::borrow::Cow;
 
 /// Where the parser is in the document.
@@ -408,7 +402,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             self.position.element_depth = depth;
         } else {
             self.open_elements
-                .push_classified(self.element.name, id, tag, text_flags)?;
+                .push_classified(self.element.name, id, tag, text_flags.bits())?;
             self.position.element_depth = self.open_elements.depth();
         }
         Ok(())
@@ -544,7 +538,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         reader: &Reader<'html>,
     ) -> bool {
         self.capture.close::<CAPTURE>(
-            element.text_flags(),
+            TextElementFlags::from_bits(element.payload()),
             depth,
             self.position.reader_position,
             reader,

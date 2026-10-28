@@ -4,7 +4,7 @@
 //! normalized-text properties are then a single load from [`CLASSIFIED`], a
 //! table indexed by that id.
 
-use scah_query_ir::TagId;
+use crate::TagId;
 
 /// Cached, overlapping properties of an HTML tag required by the parser.
 ///
@@ -63,23 +63,23 @@ impl TagFlags {
     const RAW_TITLE: u32 = 1 << 18;
 
     #[inline]
-    pub(crate) const fn bits(self) -> u32 {
+    pub const fn bits(self) -> u32 {
         self.0
     }
 
     #[inline]
-    pub(crate) const fn from_bits(bits: u32) -> Self {
+    pub const fn from_bits(bits: u32) -> Self {
         Self(bits)
     }
 
-    pub(crate) const P_MASK: Self = Self(Self::P);
-    pub(crate) const BUTTON_MASK: Self = Self(Self::BUTTON);
-    pub(crate) const LI_MASK: Self = Self(Self::LI);
-    pub(crate) const DT_DD_MASK: Self = Self(Self::DT_DD);
-    pub(crate) const OPTION_MASK: Self = Self(Self::OPTION);
-    pub(crate) const OPTGROUP_MASK: Self = Self(Self::OPTGROUP);
-    pub(crate) const TR_MASK: Self = Self(Self::TR);
-    pub(crate) const CELL_MASK: Self = Self(Self::CELL);
+    pub const P_MASK: Self = Self(Self::P);
+    pub const BUTTON_MASK: Self = Self(Self::BUTTON);
+    pub const LI_MASK: Self = Self(Self::LI);
+    pub const DT_DD_MASK: Self = Self(Self::DT_DD);
+    pub const OPTION_MASK: Self = Self(Self::OPTION);
+    pub const OPTGROUP_MASK: Self = Self(Self::OPTGROUP);
+    pub const TR_MASK: Self = Self(Self::TR);
+    pub const CELL_MASK: Self = Self(Self::CELL);
 
     /// Parser properties of `name`.
     #[inline]
@@ -154,7 +154,7 @@ impl TagFlags {
     }
 
     #[inline]
-    pub(crate) const fn intersects(self, other: Self) -> bool {
+    pub const fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
 
@@ -169,7 +169,7 @@ impl TagFlags {
     }
 
     #[inline]
-    pub(crate) const fn can_trigger_implied_close(self) -> bool {
+    pub const fn can_trigger_implied_close(self) -> bool {
         self.0
             & (Self::CLOSES_P
                 | Self::BUTTON
@@ -183,7 +183,7 @@ impl TagFlags {
     }
 
     #[inline]
-    pub(crate) const fn close_scope(self) -> ScopeKind {
+    pub const fn close_scope(self) -> ScopeKind {
         if self.0 & (Self::LI | Self::DT_DD) != 0 {
             ScopeKind::ListItem
         } else if self.0 & Self::BUTTON != 0 {
@@ -213,7 +213,7 @@ impl TagFlags {
     }
 
     #[inline]
-    pub(crate) const fn raw_text_close_tag(self) -> Option<&'static str> {
+    pub const fn raw_text_close_tag(self) -> Option<&'static str> {
         if self.0 & Self::RAW_SCRIPT != 0 {
             Some("</script")
         } else if self.0 & Self::RAW_STYLE != 0 {
@@ -304,47 +304,33 @@ impl TextTagFlags {
     }
 
     #[inline]
-    pub(crate) const fn is_block(self) -> bool {
+    pub const fn is_block(self) -> bool {
         self.0 & Self::BLOCK != 0
     }
 
     #[inline]
-    pub(crate) const fn is_break(self) -> bool {
+    pub const fn is_break(self) -> bool {
         self.0 & Self::BREAK != 0
     }
 
     #[inline]
-    pub(crate) const fn is_row(self) -> bool {
+    pub const fn is_row(self) -> bool {
         self.0 & Self::ROW != 0
     }
 
     #[inline]
-    pub(crate) const fn is_cell(self) -> bool {
+    pub const fn is_cell(self) -> bool {
         self.0 & Self::CELL != 0
     }
 
     #[inline]
-    pub(crate) const fn is_suppressed(self) -> bool {
+    pub const fn is_suppressed(self) -> bool {
         self.0 & Self::SUPPRESSED != 0
     }
 
     #[inline]
-    pub(crate) const fn is_preformatted(self) -> bool {
+    pub const fn is_preformatted(self) -> bool {
         self.0 & Self::PREFORMATTED != 0
-    }
-
-    /// Separator queued after this element's content in normalized text.
-    #[inline]
-    #[allow(dead_code)] // mirrored on TextElementFlags for the open-stack close path
-    pub(crate) fn post_text_separator(self) -> Option<crate::capture::PendingSeparator> {
-        use crate::capture::PendingSeparator;
-        if self.is_break() || self.is_block() || self.is_row() {
-            Some(PendingSeparator::LineBreak)
-        } else if self.is_cell() {
-            Some(PendingSeparator::Tab)
-        } else {
-            None
-        }
     }
 }
 

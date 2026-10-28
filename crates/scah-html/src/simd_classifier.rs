@@ -1,10 +1,16 @@
-const TABLES: ([u8; 16], [u8; 16], u8, u8, u8, u8, u8) = scah_macros::simd_nibble_tables! {
-    less_than: [b'<'],
-    greater_than: [b'>'],
-    quote: [b'"', b'\''],
-    equals: [b'='],
-    whitespace: [b' ', b'\t', b'\n', b'\r', b'\x0c'],
-};
+// Nibble lookup tables: a byte is in class `c` when
+// `TLO[byte & 0xf] & THI[byte >> 4]` has one of class `c`'s bits. Generated
+// for the classes `<`, `>`, quotes, `=` and HTML whitespace;
+// `generated_tables_classify_all_bytes_exactly` checks every byte.
+const TABLES: ([u8; 16], [u8; 16], u8, u8, u8, u8, u8) = (
+    [16, 0, 4, 0, 0, 0, 0, 4, 0, 32, 32, 0, 33, 40, 2, 0],
+    [32, 0, 20, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    1,
+    2,
+    4,
+    8,
+    48,
+);
 
 const TLO: [u8; 16] = TABLES.0;
 const THI: [u8; 16] = TABLES.1;
@@ -20,7 +26,7 @@ const TAG_END_BITS: u8 = GREATER_THAN_BITS | QUOTE_BITS;
 const STRUCTURAL_BITS: u8 = LESS_THAN_BITS | TAG_END_BITS | EQUALS_BITS;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ClassMasks {
+pub struct ClassMasks {
     pub tag_end: u16,
     pub less_than: u16,
 }
@@ -36,7 +42,7 @@ enum Backend {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct BlockClassifier {
+pub struct BlockClassifier {
     backend: Backend,
 }
 
