@@ -275,7 +275,7 @@ mod tests {
             panic!("expected opening tag after malformed delimiter run");
         };
         assert_eq!(open.start, source.len() - 3);
-        assert_eq!(open.name(bytes), "p");
+        assert_eq!(open.name(&source), "p");
     }
 
     struct Rng(u64);
@@ -401,7 +401,7 @@ mod tests {
         let Some(TagEvent::Open(script)) = tape.next(bytes, 0) else {
             panic!("expected script opening tag");
         };
-        assert_eq!(script.name(bytes), "script");
+        assert_eq!(script.name(&source), "script");
         let script_end = tape.finish_open(bytes, &script);
         let close = tape
             .find_raw_text_close(bytes, script_end, "</script")
@@ -412,7 +412,7 @@ mod tests {
         let Some(TagEvent::Open(span)) = tape.next(bytes, after_close) else {
             panic!("expected opening tag after raw text");
         };
-        assert_eq!(span.name(bytes), "span");
+        assert_eq!(span.name(&source), "span");
     }
 
     #[test]
