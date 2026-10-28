@@ -37,7 +37,7 @@ Rust crates and the Python and npm packages together.
   lexer and the open-element tree. `Attribute`, `TagId`, `AttributeMask`, and
   `Reader` move there from `scah-query-ir`, and `scah-macros` no longer exports
   `simd_nibble_tables!`. The `scah` API is unchanged: it still re-exports
-  `Reader`, `Attribute`, and `XHtmlElement`.
+  `Reader`, `Attribute`, and `XHtmlElement`. ([#112])
 
 ### Added
 
@@ -198,3 +198,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#98]: https://github.com/zacharyvmm/scah/pull/98
 [#100]: https://github.com/zacharyvmm/scah/pull/100
 [#102]: https://github.com/zacharyvmm/scah/pull/102
+[#112]: https://github.com/zacharyvmm/scah/pull/112

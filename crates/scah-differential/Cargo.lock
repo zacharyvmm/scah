@@ -28,7 +28,7 @@ checksum = "21e2ca17793b0129c1e050726ac06aaa2d61896cad24065daca018974dac9728"
 dependencies = [
  "scah-macros 0.1.0",
  "scah-query-ir 0.1.0",
- "scah-reader 0.1.0",
+ "scah-reader",
  "smallvec",
 ]
 
@@ -36,9 +36,9 @@ dependencies = [
 name = "scah"
 version = "0.2.0-dev"
 dependencies = [
+ "scah-html",
  "scah-macros 0.2.0-dev",
  "scah-query-ir 0.2.0-dev",
- "scah-reader 0.2.0-dev",
  "smallvec",
 ]
 
@@ -49,6 +49,10 @@ dependencies = [
  "scah 0.1.0",
  "scah 0.2.0-dev",
 ]
+
+[[package]]
+name = "scah-html"
+version = "0.2.0-dev"
 
 [[package]]
 name = "scah-macros"
@@ -78,7 +82,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48d2ed2c64cd940a2a32ca341d632089371168039a50991ee8dad9e0a4ab20b3"
 dependencies = [
- "scah-reader 0.1.0",
+ "scah-reader",
  "smallvec",
 ]
 
@@ -86,7 +90,7 @@ dependencies = [
 name = "scah-query-ir"
 version = "0.2.0-dev"
 dependencies = [
- "scah-reader 0.2.0-dev",
+ "scah-html",
  "smallvec",
 ]
 
@@ -95,10 +99,6 @@ name = "scah-reader"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32b092b587ee15027ab003aec183b5a3891d3cd39876e1571f42f4ce77fcb01e"
-
-[[package]]
-name = "scah-reader"
-version = "0.2.0-dev"
 
 [[package]]
 name = "smallvec"
