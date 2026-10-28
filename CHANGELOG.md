@@ -81,7 +81,7 @@ Rust crates and the Python and npm packages together.
   which is removed. The tape records every `<`, `>`, and quote, and is built
   lazily in windows, so a parse that stops early only indexes what it read.
   Dense documents keep the rolling indexer. On a 409 KB prose page, finding
-  every link is about 1.9× faster.
+  every link is about 1.9× faster. ([#115])
 
 ### Fixed
 
@@ -214,3 +214,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#102]: https://github.com/zacharyvmm/scah/pull/102
 [#112]: https://github.com/zacharyvmm/scah/pull/112
 [#113]: https://github.com/zacharyvmm/scah/pull/113
+[#115]: https://github.com/zacharyvmm/scah/pull/115
