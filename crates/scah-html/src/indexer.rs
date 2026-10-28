@@ -145,10 +145,15 @@ pub enum TagEvent {
 
 /// Incremental structural scanner used by the streaming parser.
 ///
-/// Backends return one span at a time so callers retain early-exit behavior.
-/// A future SWAR/SIMD implementation can cache masks or several spans inside
-/// the backend without changing parser or query-executor semantics.
+/// Backends return one span at a time so callers retain early-exit behavior,
+/// and may cache what they learned about the source between calls.
 pub trait TagIndexer {
+    /// Start indexing `source` as a new document, forgetting anything cached
+    /// about the previous one.
+    ///
+    /// The other methods must be passed the source last prepared. Given a
+    /// different one (or the same buffer after it changed), they may return
+    /// events of the old document, but never cause undefined behaviour.
     fn prepare(&mut self, _source: &[u8]) {}
 
     fn next(&mut self, source: &[u8], from: usize) -> Option<TagEvent>;
@@ -222,6 +227,11 @@ struct MaskCache {
 }
 
 impl MaskCache {
+    /// Drop the cached masks, even if the next source has the same address.
+    fn forget(&mut self) {
+        self.valid = false;
+    }
+
     fn reset_for(&mut self, source: &[u8]) {
         let source_pointer = source.as_ptr() as usize;
         if !self.valid || self.source_pointer != source_pointer || self.source_len != source.len() {
@@ -641,6 +651,7 @@ impl TagIndexer for ScalarTagIndexer {
 
 impl TagIndexer for PackedTagIndexer {
     fn prepare(&mut self, source: &[u8]) {
+        self.cache.forget();
         self.prepare_masks(source);
     }
 
@@ -922,8 +933,6 @@ pub struct AutoTagIndexer {
     allow_index_ahead: bool,
     force_tape: bool,
     attributes_may_be_parsed: bool,
-    prepared_source: usize,
-    prepared_len: usize,
 }
 
 impl Default for AutoTagIndexer {
@@ -943,8 +952,6 @@ impl AutoTagIndexer {
             allow_index_ahead: mode == IndexingMode::Adaptive,
             force_tape: mode == IndexingMode::ForcedTape,
             attributes_may_be_parsed,
-            prepared_source: 0,
-            prepared_len: 0,
         }
     }
 
@@ -990,13 +997,10 @@ impl AutoTagIndexer {
     }
 
     fn prepare_policy(&mut self, source: &[u8]) {
-        let source_pointer = source.as_ptr() as usize;
-        if self.prepared_source == source_pointer && self.prepared_len == source.len() {
-            return;
-        }
-        self.prepared_source = source_pointer;
-        self.prepared_len = source.len();
         self.tape = None;
+        if let Some(rolling) = &mut self.rolling {
+            rolling.prepare(source);
+        }
 
         if self.force_tape && fits_tape(source) {
             self.build_tape(source);
@@ -1559,6 +1563,26 @@ mod tests {
         indexer.prepare(source.as_bytes());
 
         assert!(indexer.indexes_ahead());
+    }
+
+    #[test]
+    fn prepare_forgets_a_document_whose_buffer_is_reused() {
+        // Long enough for the rolling indexer's SIMD windows.
+        let first = "x".repeat(4096);
+        let second = format!("{}<p>", "x".repeat(4093));
+        for mode in [IndexingMode::Rolling, IndexingMode::ForcedTape] {
+            let mut source = first.clone().into_bytes();
+            let mut indexer = AutoTagIndexer::new(mode, false);
+            indexer.prepare(&source);
+            assert_eq!(indexer.next(&source, 0), None, "mode={mode:?}");
+
+            source.copy_from_slice(second.as_bytes());
+            indexer.prepare(&source);
+            let Some(TagEvent::Open(open)) = indexer.next(&source, 0) else {
+                panic!("expected the second document's tag, mode={mode:?}");
+            };
+            assert_eq!(open.name(&second), "p", "mode={mode:?}");
+        }
     }
 
     #[test]

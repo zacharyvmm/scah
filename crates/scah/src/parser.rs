@@ -157,7 +157,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             return false;
         }
         self.bind_source(reader);
-        self.indexer.prepare(reader.source());
         if self.capture.captures_any() {
             self.next_mode::<true>(reader)
         } else {
@@ -170,10 +169,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             return;
         }
         self.bind_source(reader);
-        // A full run keeps one Reader source, so the index policy only needs
-        // preparation once. `next` prepares per call because its caller owns
-        // the Reader and may step a different source between calls.
-        self.indexer.prepare(reader.source());
         if self.capture.captures_any() {
             while self.next_mode::<true>(reader) {}
         } else {
@@ -187,7 +182,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             return;
         }
         self.bind_source(reader);
-        self.indexer.prepare(reader.source());
         while self.next_mode::<false>(reader) {}
     }
 
@@ -206,6 +200,9 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         } else {
             let html = reader.source_str();
             self.out.store.set_html(html);
+            // The source is borrowed for `'html`, so it cannot change while
+            // the parser holds it: the indexer prepares it once.
+            self.indexer.prepare(source);
             self.source_bound = true;
         }
     }

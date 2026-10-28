@@ -87,12 +87,17 @@ impl TapeTagIndexer {
     fn bind(&mut self, source: &[u8]) {
         let pointer = source.as_ptr() as usize;
         if self.source_pointer != pointer || self.source_len != source.len() {
-            self.source_pointer = pointer;
-            self.source_len = source.len();
-            self.window = 0..0;
-            self.next_window = FIRST_WINDOW_BYTES;
-            self.cursor = 0;
+            self.start(source);
         }
+    }
+
+    /// Start indexing `source` from its first window.
+    fn start(&mut self, source: &[u8]) {
+        self.source_pointer = source.as_ptr() as usize;
+        self.source_len = source.len();
+        self.window = 0..0;
+        self.next_window = FIRST_WINDOW_BYTES;
+        self.cursor = 0;
     }
 
     /// Index the window containing `from`, starting at its 64-byte block.
@@ -180,7 +185,7 @@ impl StructuralSearch for TapeTagIndexer {
 impl TagIndexer for TapeTagIndexer {
     #[inline]
     fn prepare(&mut self, source: &[u8]) {
-        self.bind(source);
+        self.start(source);
     }
 
     // Kept out of line so that this backend does not grow the dispatcher in
