@@ -80,7 +80,8 @@ Rust crates and the Python and npm packages together.
   structural tape (via simdlex) instead of the full-document event index,
   which is removed. The tape records every `<`, `>`, and quote, and is built
   lazily in windows, so a parse that stops early only indexes what it read.
-  Dense documents keep the rolling indexer.
+  Dense documents keep the rolling indexer. On a 409 KB prose page, finding
+  every link is about 1.9× faster.
 
 ### Fixed
 
