@@ -22,6 +22,7 @@ dev-python:
 test: test-rust test-node test-python
 test-rust:
     cargo test --all-targets --all-features
+    cargo test --release --manifest-path crates/scah-differential/Cargo.toml
 test-node:
     cd crates/bindings/scah-node && bun test
 test-python:

@@ -6,6 +6,20 @@ Rust crates and the Python and npm packages together.
 
 ## [Unreleased]
 
+### Breaking
+
+- The cursor engine and `QueryMultiplexer` are removed. `XHtmlParser::new` and
+  `XHtmlParser::with_capacity` take the query slice directly, and debug trace
+  events describe compiled steps instead of cursors. ([#95])
+
+### Changed
+
+- Queries run as one compiled bitset automaton instead of per-query cursors:
+  every query, section, and selector-list alternative is compiled into one
+  `Program`, and each open element carries a few bitsets. Deeply nested
+  descendant chains and nested `.then()` scopes parse up to 15x faster, and
+  parsing documents with no matches is about 14% faster. ([#94], [#95])
+
 ## [0.1.0] - 2026-10-01
 
 Follows 0.0.21. The minor version moves because of the breaking text changes below.
@@ -114,3 +128,5 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#68]: https://github.com/zacharyvmm/scah/pull/68
 [#73]: https://github.com/zacharyvmm/scah/pull/73
 [#79]: https://github.com/zacharyvmm/scah/pull/79
+[#94]: https://github.com/zacharyvmm/scah/pull/94
+[#95]: https://github.com/zacharyvmm/scah/pull/95
