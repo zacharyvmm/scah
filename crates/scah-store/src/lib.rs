@@ -700,8 +700,14 @@ impl<'html, 'query: 'html> StoreBuilder<'html, 'query> {
     ///
     /// # Panics
     ///
-    /// If a section's parent is not an index of `sections`.
+    /// If rows were already saved, since they belong to the old sections and
+    /// their columns follow the old content, or if a section's parent is not
+    /// an index of `sections`.
     pub fn set_sections(&mut self, sections: &[Section<'query>]) {
+        assert!(
+            self.store.is_empty(),
+            "sections are set before any row is saved"
+        );
         let count = sections.len();
         // The nested sections of section `s` are
         // `children[starts[s]..starts[s + 1]]`.
@@ -783,7 +789,8 @@ impl<'html, 'query: 'html> StoreBuilder<'html, 'query> {
     /// attributes if `save_attributes`.
     ///
     /// The row is not a result until [`StoreBuilder::add_edge`] lists it
-    /// under a parent.
+    /// under a parent, unless no section is nested: then every row is a
+    /// result of its section, and edges are not recorded.
     #[inline]
     pub fn add_row(
         &mut self,
@@ -816,6 +823,9 @@ impl<'html, 'query: 'html> StoreBuilder<'html, 'query> {
     }
 
     /// List `row` among the results of `parent` (the document when `None`).
+    ///
+    /// Does nothing when no section is nested, since every row is then a
+    /// result of its root section (see [`StoreBuilder::add_row`]).
     #[inline]
     pub fn add_edge(&mut self, parent: Option<ElementId>, row: ElementId) {
         let store = &mut self.store;
@@ -900,11 +910,14 @@ fn attributes_fit(saved: usize, additional: usize) -> bool {
 /// Span of `value` in `html`, which `value` borrows from.
 ///
 /// Every string the parser hands over is a subslice of the input. An empty
-/// string from elsewhere is stored as an empty span.
+/// string is stored as an empty span at 0, wherever it points: it may point
+/// inside a character, which would make its span unsafe to read back.
 #[inline(always)]
 fn html_span(html: &str, value: &str) -> Span {
     let offset = value.as_ptr().addr().wrapping_sub(html.as_ptr().addr());
-    if offset <= html.len() && value.len() <= html.len() - offset {
+    // `1 <= value.len() <= html.len() - offset` in one comparison: an empty
+    // value wraps to `usize::MAX` and goes to `foreign_span`.
+    if offset <= html.len() && value.len().wrapping_sub(1) < html.len() - offset {
         // The HTML is shorter than `u32::MAX` bytes (`set_html`).
         Span::new(offset, value.len())
     } else {
@@ -912,6 +925,8 @@ fn html_span(html: &str, value: &str) -> Span {
     }
 }
 
+/// Span of an empty `value`, or a panic for a non-empty one that does not
+/// borrow from the HTML.
 #[cold]
 #[inline(never)]
 fn foreign_span(value: &str) -> Span {
@@ -1095,6 +1110,36 @@ mod tests {
             None,
             "nested sections are not roots"
         );
+    }
+
+    #[test]
+    fn empty_strings_inside_a_character_are_stored_as_empty() {
+        let html = "é";
+        let mut store = StoreBuilder::default();
+        store.set_html(html);
+        store.set_sections(&[section("p", None, Content::default())]);
+        // An empty string pointing inside `é`, which `&html[1..1]` would
+        // refuse to make.
+        let inside = std::str::from_utf8(html.as_bytes().get(1..1).unwrap()).unwrap();
+        let row = store.add_row(
+            0,
+            false,
+            &XHtmlElement {
+                name: inside,
+                ..Default::default()
+            },
+        );
+        assert_eq!(store.name(row), "");
+        let store = store.finish();
+        assert_eq!(store.element(row).unwrap().name(), "");
+    }
+
+    #[test]
+    #[should_panic(expected = "sections are set before any row is saved")]
+    fn sections_cannot_change_after_a_row_is_saved() {
+        let mut store = store_for(&[section("p", None, Content::default())]);
+        store.add_row(0, false, &element("a"));
+        store.set_sections(&[section("p", None, ALL)]);
     }
 
     #[test]
