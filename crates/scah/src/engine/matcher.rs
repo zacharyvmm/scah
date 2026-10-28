@@ -517,16 +517,17 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
         let program = self.store.program();
         let spec = program.section(section);
         let candidates = &self.masks[CANDIDATES * words..(CANDIDATES + 1) * words];
-        let parents = self.scopes.parents(program, info, candidates);
-        if parents.is_empty() {
-            return;
-        }
 
         // One row for the element, listed under every scope it is saved in.
-        let row = store.add_row(section, spec, element);
-        for &parent in parents {
-            add_edge(store, Some(parent), row, (section, spec), element);
-        }
+        let mut row = None;
+        self.scopes
+            .for_each_parent(program, info, candidates, |parent| {
+                let row = *row.get_or_insert_with(|| store.add_row(section, spec, element));
+                add_edge(store, Some(parent), row, (section, spec), element);
+            });
+        let Some(row) = row else {
+            return;
+        };
         hits.push(save_hit(row, spec));
         if info.has_children {
             self.scopes

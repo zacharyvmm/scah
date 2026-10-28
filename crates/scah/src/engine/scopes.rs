@@ -11,7 +11,7 @@
 //!   it, so deeper nesting is just more entries on the same stack.
 //! - **Lanes.** For each step of a nested section, the set of open scopes (by
 //!   stack slot) that a partial match is anchored in. A match is saved under
-//!   every scope in its save step's lane ([`Scopes::parents`]).
+//!   every scope in its save step's lane ([`Scopes::for_each_parent`]).
 //!
 //! A lane depends only on where the element is. An entry step's lane comes
 //! from the scope stack, a ` ` step's from the lanes its ancestors inherit,
@@ -153,7 +153,6 @@ pub(super) struct Scopes {
 
     lane_steps: SmallVec<[usize; 8]>,
     slot_scratch: SmallVec<[u64; 2]>,
-    parent_scratch: SmallVec<[ElementId; 4]>,
 }
 
 impl Scopes {
@@ -172,7 +171,6 @@ impl Scopes {
             },
             lane_steps: SmallVec::new(),
             slot_scratch: SmallVec::new(),
-            parent_scratch: SmallVec::new(),
         }
     }
 
@@ -334,16 +332,18 @@ impl Scopes {
         }
     }
 
-    /// Rows of the scopes an element saved by `save`'s section is listed
-    /// under: the union of the lanes of the section's save steps among
-    /// `candidates`. For a `First` section, scopes it already matched in are
-    /// skipped, and the others are claimed.
-    pub(super) fn parents(
+    /// Call `list_under` with the row of each scope an element saved by
+    /// `save`'s section is listed under: the union of the lanes of the
+    /// section's save steps among `candidates`. For a `First` section, scopes
+    /// it already matched in are skipped, and the others are claimed.
+    #[inline(always)]
+    pub(super) fn for_each_parent(
         &mut self,
         program: &Program<'_>,
         save: StepPlan,
         candidates: &[u64],
-    ) -> &[ElementId] {
+        mut list_under: impl FnMut(ElementId),
+    ) {
         let section = save.section;
         self.slot_scratch.clear();
         self.slot_scratch.resize(self.lanes.words, 0);
@@ -360,7 +360,6 @@ impl Scopes {
 
         let child = save.child as usize;
         let claim_words = program.claim_words();
-        self.parent_scratch.clear();
         for slot in bits::iter_ones(&self.slot_scratch) {
             if save.first {
                 let claims = &mut self.claims[slot * claim_words..][..claim_words];
@@ -369,9 +368,8 @@ impl Scopes {
                 }
                 bits::set(claims, child);
             }
-            self.parent_scratch.push(self.stack[slot].row);
+            list_under(self.stack[slot].row);
         }
-        &self.parent_scratch
     }
 
     /// Open a scope for `row`, an element at `depth` saved by `section`.
