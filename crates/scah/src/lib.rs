@@ -172,7 +172,8 @@ pub mod bench_internals {
     }
 
     /// Parse HTML with a fixed indexer strategy for strategy crossover
-    /// benchmarks.
+    /// benchmarks. Apart from the indexer, it parses exactly like
+    /// [`parse`](crate::parse): same limits, result reservation and trace.
     #[cfg(feature = "simd-bench-internals")]
     pub fn parse_with_indexing_mode<'a: 'query, 'html: 'query, 'query: 'html, Q>(
         html: &'html str,
@@ -373,6 +374,21 @@ fn check_limits(html: &str, program: &Program<'_>, capture: bool) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(feature = "simd-bench-internals")]
+    fn indexing_mode_helper_traces_like_parse() {
+        let html = "<main><a href='x'>x</a><a>y</a></main>";
+        let queries = &[Query::all("a", Save::all()).unwrap().build()];
+        let events = |store: &Store<'_, '_>| format!("{:?}", store.trace.events());
+
+        let expected = events(&parse(html, queries).unwrap());
+        for full_index in [false, true] {
+            let store =
+                bench_internals::parse_with_indexing_mode(html, queries, full_index).unwrap();
+            assert_eq!(events(&store), expected, "full_index = {full_index}");
+        }
+    }
 
     #[test]
     fn empty_query_slice_returns_error() {
