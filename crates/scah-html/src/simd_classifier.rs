@@ -201,7 +201,9 @@ unsafe fn find_less_than_neon(source: &[u8], mut position: usize) -> Option<usiz
     use std::arch::aarch64::*;
 
     let needle = vdupq_n_u8(b'<');
-    while position + 16 <= source.len() {
+    // `saturating_sub` rather than `position + 16`, which could wrap: a
+    // `position` past the end skips the loop and panics in the tail slice.
+    while source.len().saturating_sub(position) >= 16 {
         // SAFETY: the loop condition guarantees a complete readable block.
         let bytes = unsafe { vld1q_u8(source.as_ptr().add(position)) };
         let mask = neon_nonzero_mask(vceqq_u8(bytes, needle));
@@ -225,7 +227,9 @@ unsafe fn find_less_than_ssse3(source: &[u8], mut position: usize) -> Option<usi
     use std::arch::x86_64::*;
 
     let needle = _mm_set1_epi8(b'<' as i8);
-    while position + 16 <= source.len() {
+    // `saturating_sub` rather than `position + 16`, which could wrap: a
+    // `position` past the end skips the loop and panics in the tail slice.
+    while source.len().saturating_sub(position) >= 16 {
         // SAFETY: the loop condition guarantees a complete readable block.
         let bytes = unsafe { _mm_loadu_si128(source.as_ptr().add(position).cast()) };
         let mask = _mm_movemask_epi8(_mm_cmpeq_epi8(bytes, needle)) as u16;
@@ -243,6 +247,17 @@ unsafe fn find_less_than_ssse3(source: &[u8], mut position: usize) -> Option<usi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn find_less_than_panics_past_the_end_instead_of_loading() {
+        let classifier = BlockClassifier::default();
+        let source = [b'<'; 16];
+        assert_eq!(classifier.find_less_than(&source, 16), None);
+        for from in [17, usize::MAX - 15, usize::MAX] {
+            let result = std::panic::catch_unwind(|| classifier.find_less_than(&source, from));
+            assert!(result.is_err(), "from={from}");
+        }
+    }
 
     #[test]
     fn generated_tables_classify_all_bytes_exactly() {
