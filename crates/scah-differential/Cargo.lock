@@ -39,6 +39,7 @@ dependencies = [
  "scah-html",
  "scah-macros 0.2.0-dev",
  "scah-query-ir 0.2.0-dev",
+ "scah-store",
  "smallvec",
 ]
 
@@ -99,6 +100,13 @@ name = "scah-reader"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32b092b587ee15027ab003aec183b5a3891d3cd39876e1571f42f4ce77fcb01e"
+
+[[package]]
+name = "scah-store"
+version = "0.2.0-dev"
+dependencies = [
+ "scah-html",
+]
 
 [[package]]
 name = "smallvec"
