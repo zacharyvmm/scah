@@ -167,6 +167,18 @@ pub mod bench_internals {
         }
     }
 
+    /// The tag indexer [`parse_with_indexing_mode`] uses.
+    #[cfg(feature = "simd-bench-internals")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum IndexingStrategy {
+        /// The production choice, as [`parse`](crate::parse) makes it.
+        Policy,
+        /// Search for each tag as the parse reaches it.
+        Rolling,
+        /// Index the whole document ahead with the structural tape.
+        Tape,
+    }
+
     /// Parse HTML with a fixed indexer strategy for strategy crossover
     /// benchmarks. Apart from the indexer, it parses exactly like
     /// [`parse`](crate::parse): same limits, result reservation and trace.
@@ -174,21 +186,21 @@ pub mod bench_internals {
     pub fn parse_with_indexing_mode<'a: 'query, 'html: 'query, 'query: 'html, Q>(
         html: &'html str,
         queries: &'a [Q],
-        full_index: bool,
+        strategy: IndexingStrategy,
     ) -> Result<Store<'html, 'query>, ParseError>
     where
         Q: QuerySpec<'query>,
     {
-        let indexing_mode = if full_index {
-            IndexingMode::ForcedFullDocument
-        } else {
-            IndexingMode::Rolling
+        let indexing_mode = match strategy {
+            IndexingStrategy::Policy => None,
+            IndexingStrategy::Rolling => Some(IndexingMode::Rolling),
+            IndexingStrategy::Tape => Some(IndexingMode::ForcedTape),
         };
         crate::run(
             html,
             std::borrow::Cow::Owned(Program::compile(queries)),
             true,
-            Some(indexing_mode),
+            indexing_mode,
         )
     }
 }
@@ -418,9 +430,13 @@ mod tests {
 
         let (_, expected) = debug::parse_traced(html, queries).unwrap();
         // The indexing modes `parse_with_indexing_mode` chooses between.
-        for mode in [IndexingMode::Rolling, IndexingMode::ForcedFullDocument] {
+        for mode in [
+            None,
+            Some(IndexingMode::Rolling),
+            Some(IndexingMode::ForcedTape),
+        ] {
             let program = Cow::Owned(Program::compile(queries));
-            let (_, trace) = run_traced(html, program, true, Some(mode)).unwrap();
+            let (_, trace) = run_traced(html, program, true, mode).unwrap();
             assert_eq!(events(&trace), events(&expected), "{mode:?}");
         }
     }

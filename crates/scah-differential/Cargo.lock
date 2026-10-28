@@ -54,6 +54,9 @@ dependencies = [
 [[package]]
 name = "scah-html"
 version = "0.2.0-dev"
+dependencies = [
+ "simdlex",
+]
 
 [[package]]
 name = "scah-macros"
@@ -107,6 +110,11 @@ version = "0.2.0-dev"
 dependencies = [
  "scah-html",
 ]
+
+[[package]]
+name = "simdlex"
+version = "0.1.0"
+source = "git+https://github.com/zacharyvmm/simdlex?rev=ec937239b1584bd5500012368472864cbd42c9af#ec937239b1584bd5500012368472864cbd42c9af"
 
 [[package]]
 name = "smallvec"
