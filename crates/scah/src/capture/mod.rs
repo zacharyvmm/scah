@@ -304,30 +304,20 @@ impl Capture {
         reader: &Reader<'html>,
         store: &mut Store<'html, 'query>,
     ) {
-        // The element's records are the innermost ones; finish them in the
-        // order they were saved.
-        let start = self
-            .pending
-            .iter()
-            .rposition(|content| content.depth != depth)
-            .map_or(0, |index| index + 1);
         debug_assert!(
-            self.pending[..start]
+            self.pending
                 .last()
-                .is_none_or(|content| content.depth < depth),
+                .is_none_or(|content| content.depth <= depth),
             "pending content outlived its element"
         );
-        let (mut raw, mut text) = (0, 0);
-        for content in &self.pending[start..] {
-            let (raw_text, normalized) =
-                finish_content::<CAPTURE>(content, inner_html_end, reader, store);
-            raw += usize::from(raw_text);
-            text += usize::from(normalized);
+        // Most elements saved nothing: one comparison rules that out.
+        if self
+            .pending
+            .last()
+            .is_some_and(|content| content.depth == depth)
+        {
+            self.finish_pending::<CAPTURE>(depth, inner_html_end, reader, store);
         }
-        self.pending.truncate(start);
-        debug_assert!(raw <= self.raw_active && text <= self.text_active);
-        self.raw_active -= raw;
-        self.text_active -= text;
         if self.captures_text::<CAPTURE>() {
             self.text.after_close_element(text_flags, depth);
             if self.text_active == 0 {
@@ -340,6 +330,34 @@ impl Capture {
                 }
             }
         }
+    }
+
+    /// Finish the pending records of the element closing at `depth`, which
+    /// are the innermost ones, in the order they were saved.
+    #[inline]
+    fn finish_pending<'html, 'query: 'html, const CAPTURE: bool>(
+        &mut self,
+        depth: DepthSize,
+        inner_html_end: usize,
+        reader: &Reader<'html>,
+        store: &mut Store<'html, 'query>,
+    ) {
+        let start = self
+            .pending
+            .iter()
+            .rposition(|content| content.depth != depth)
+            .map_or(0, |index| index + 1);
+        let (mut raw, mut text) = (0, 0);
+        for content in &self.pending[start..] {
+            let (raw_text, normalized) =
+                finish_content::<CAPTURE>(content, inner_html_end, reader, store);
+            raw += usize::from(raw_text);
+            text += usize::from(normalized);
+        }
+        self.pending.truncate(start);
+        debug_assert!(raw <= self.raw_active && text <= self.text_active);
+        self.raw_active -= raw;
+        self.text_active -= text;
     }
 
     #[cfg(test)]
