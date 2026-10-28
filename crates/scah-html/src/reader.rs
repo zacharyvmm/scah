@@ -109,6 +109,7 @@ impl<'a> Reader<'a> {
         }
     }
 
+    #[inline]
     pub fn next_until(&mut self, character: u8) {
         let len = self.source.len();
         while self.position < len && self.source[self.position] != character {
@@ -165,6 +166,7 @@ impl<'a> Reader<'a> {
         }
     }
 
+    #[inline]
     pub fn skip(&mut self) {
         if self.position < self.source.len() {
             self.position += 1;

@@ -53,6 +53,7 @@ impl<'html> XHtmlElement<'html> {
     /// The reader must begin at the first byte after the already-discovered
     /// element name. Keeping this separate lets tag-only query paths avoid
     /// attribute tokenization entirely.
+    #[inline]
     pub fn parse_attributes(
         &mut self,
         reader: &mut Reader<'html>,
@@ -166,6 +167,7 @@ impl<'html> XHtmlElement<'html> {
         TagFlags::classify(self.name).is_void()
     }
 
+    #[inline]
     pub fn clear(&mut self) {
         self.name = "";
         self.id = None;

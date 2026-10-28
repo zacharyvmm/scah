@@ -66,6 +66,7 @@ impl<'html> Default for OpenElementStack<'html> {
 }
 
 impl<'html> OpenElementStack<'html> {
+    #[inline]
     pub fn depth(&self) -> DepthSize {
         self.entries.len().try_into().unwrap_or(MAX_ELEMENT_DEPTH)
     }
@@ -108,6 +109,7 @@ impl<'html> OpenElementStack<'html> {
         popped
     }
 
+    #[inline]
     pub fn prepare_for_open_into(&mut self, tag: TagFlags, popped: &mut Vec<OpenElement<'html>>) {
         popped.clear();
 
@@ -140,6 +142,7 @@ impl<'html> OpenElementStack<'html> {
         popped
     }
 
+    #[inline]
     pub fn close_by_end_tag_into(
         &mut self,
         name: &str,
@@ -193,6 +196,7 @@ impl<'html> OpenElementStack<'html> {
         popped
     }
 
+    #[inline]
     pub fn close_all_at_eof_into(&mut self, popped: &mut Vec<OpenElement<'html>>) {
         popped.clear();
         popped.extend(self.entries.drain(..).rev());

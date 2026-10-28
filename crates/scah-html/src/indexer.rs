@@ -1390,10 +1390,12 @@ impl AutoTagIndexer {
 }
 
 impl TagIndexer for AutoTagIndexer {
+    #[inline]
     fn prepare(&mut self, source: &[u8]) {
         self.prepare_policy(source);
     }
 
+    #[inline]
     fn next(&mut self, source: &[u8], from: usize) -> Option<TagEvent> {
         if let Some(indexer) = &mut self.full {
             indexer.next(source, from)
@@ -1415,6 +1417,7 @@ impl TagIndexer for AutoTagIndexer {
         }
     }
 
+    #[inline]
     fn find_raw_text_close(
         &mut self,
         source: &[u8],
