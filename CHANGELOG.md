@@ -76,6 +76,11 @@ Rust crates and the Python and npm packages together.
 - Tags that end right after their name, such as `<div>`, skip attribute
   parsing in every parse, and rarely taken paths leave the parse loop. On
   documents of empty `div`s, parsing is about 16% faster. ([#102])
+- Documents the adaptive policy indexes ahead are now indexed with a SIMD
+  structural tape (via simdlex) instead of the full-document event index,
+  which is removed. The tape records every `<`, `>`, and quote, and is built
+  lazily in windows, so a parse that stops early only indexes what it read.
+  Dense documents keep the rolling indexer.
 
 ### Fixed
 
