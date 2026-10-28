@@ -41,7 +41,13 @@ pub enum IndexingMode {
 }
 
 /// The kind of completed structural span discovered by a [`TagIndexer`].
+///
+/// Word-sized so that every field of a [`TagEvent`] is a whole word. With a
+/// one-byte kind, LLVM copied the event's last word in overlapping pieces
+/// and the parse loop's reload of it missed store forwarding on every tag
+/// (+15% on dense documents).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u64)]
 pub enum TagKind {
     Close,
     /// A comment, declaration, or bogus `<!...>` construct. The parser uses
