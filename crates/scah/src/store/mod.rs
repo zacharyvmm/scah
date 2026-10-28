@@ -534,45 +534,33 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         (start < end).then(|| &self.results[start..end])
     }
 
-    /// Record the sections of the queries being parsed.
+    /// Record the sections of the queries being parsed: the program's
+    /// section tree, copied because the store outlives the program.
     pub(crate) fn set_sections(&mut self, program: &Program<'query>) {
         let count = program.section_count();
-        let parent = |index: usize| program.section_parent(SectionIndex(index as u32));
-
-        // Each section's nested sections form one run of `children`, in
-        // declaration order: count them, then place them.
-        let mut starts = vec![0_u32; count + 1];
-        for index in 0..count {
-            if let Some(parent) = parent(index) {
-                starts[parent.index() + 1] += 1;
-            }
-        }
-        Self::prefix_sum(&mut starts);
-        let mut next = starts.clone();
-        let mut children = vec![0_u32; starts[count] as usize];
-        let mut roots = Vec::new();
+        let mut children = Vec::with_capacity(count);
         let mut sections = Vec::with_capacity(count);
         for index in 0..count {
-            let slot = match parent(index) {
-                None => {
-                    roots.push(index as u32);
-                    roots.len() - 1
-                }
-                Some(parent) => {
-                    let position = &mut next[parent.index()];
-                    children[*position as usize] = index as u32;
-                    *position += 1;
-                    (*position - 1 - starts[parent.index()]) as usize
-                }
+            let section = SectionIndex(index as u32);
+            let start = children.len() as u32;
+            children.extend(program.children(section).iter().map(|child| child.0));
+            // A section's result slot is its position among its siblings.
+            let siblings = match program.section_parent(section) {
+                Some(parent) => program.children(parent),
+                None => program.root_sections(),
             };
+            let slot = siblings
+                .iter()
+                .position(|&sibling| sibling == section)
+                .expect("a section is listed under its parent");
             sections.push(StoreSection {
-                selector: program.section(SectionIndex(index as u32)).source,
+                selector: program.section(section).source,
                 slot: slot as u32,
-                children: (starts[index], starts[index + 1]),
+                children: (start, children.len() as u32),
             });
         }
         self.sections = sections.into();
-        self.roots = roots.into();
+        self.roots = program.root_sections().iter().map(|root| root.0).collect();
         self.children = children.into();
         self.record_edges = program.features().has_scoped_sections;
 
