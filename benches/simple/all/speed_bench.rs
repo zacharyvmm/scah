@@ -2,7 +2,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use lexbor_css::HtmlDocument;
 use lol_html::{HtmlRewriter, Settings, element};
 use lxml::HtmlDocument as LxmlDocument;
-use scah::{Query, Save, parse};
+use scah::{Program, Query, Save, parse, parse_compiled};
 use scraper::{Html, Selector};
 use std::hint::black_box;
 use tl::ParserOptions;
@@ -121,14 +121,24 @@ fn bench_comparison(c: &mut Criterion) {
                     .expect("simple bench selector should parse")
                     .build()];
                 let store = parse(html, queries).unwrap();
-
-                for element in store.get(QUERY).unwrap() {
-                    black_box(&element.attributes(&store));
-                    black_box(&element.inner_html);
-                    black_box(&element.text(&store));
-                }
+                consume_scah_results(&store);
             })
         });
+
+        let compiled_queries = [Query::all(QUERY, COMPARISON_SAVE)
+            .expect("simple bench selector should parse")
+            .build()];
+        let program = Program::compile(&compiled_queries);
+        group.bench_with_input(
+            BenchmarkId::new("scah_compiled", size),
+            &content,
+            |b, html| {
+                b.iter(|| {
+                    let store = parse_compiled(html, &program).unwrap();
+                    consume_scah_results(&store);
+                })
+            },
+        );
 
         group.bench_with_input(BenchmarkId::new("tl", size), &content, |b, html| {
             b.iter(|| {

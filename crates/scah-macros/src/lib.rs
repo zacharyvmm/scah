@@ -413,7 +413,6 @@ fn expand_query(node: &QueryNode) -> Result<proc_macro2::TokenStream> {
     });
     let num_states = compiled.states.len();
     let num_sections = compiled.queries.len();
-    let exit = option_query_section_id_tokens(compiled.exit_at_section_end);
 
     Ok(quote! {
         {
@@ -423,7 +422,6 @@ fn expand_query(node: &QueryNode) -> Result<proc_macro2::TokenStream> {
             ::scah::StaticQuery::<#num_states, #num_sections>::new(
                 [#(#states),*],
                 [#(#sections),*],
-                #exit,
                 const { &[#(#alternatives),*] },
             )
         }
