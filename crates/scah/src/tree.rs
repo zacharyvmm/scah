@@ -1,7 +1,11 @@
+//! The stack of open elements, and the HTML rules that close them: end
+//! tags that close elements further down, open tags that close an open `p`,
+//! `li`, `option` or table cell, and the end of the input.
+
 use crate::ParseError;
 use crate::capture::TextElementFlags;
 use crate::engine::{DepthSize, MAX_ELEMENT_DEPTH};
-use crate::html::tag::{ScopeKind, TagFlags};
+use crate::tag::{ScopeKind, TagFlags};
 use scah_query_ir::TagId;
 
 #[derive(Debug, Clone, PartialEq)]

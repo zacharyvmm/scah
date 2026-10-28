@@ -1,6 +1,6 @@
 WHATWG HTML named character references
 
-scah's entity decoding table (src/html/entities_table.rs) is generated from
+scah's entity decoding table (src/capture/entities_table.rs) is generated from
 the WHATWG named character reference dataset:
 
   Source:  https://html.spec.whatwg.org/entities.json
