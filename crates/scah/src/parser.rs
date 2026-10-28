@@ -653,6 +653,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         reason: ImpliedCloseReason,
         named: Option<&'html str>,
     ) -> bool {
+        // Only the trace reads `reason`; release builds compile it out.
+        let _ = reason;
         let mut closing = std::mem::take(&mut self.temp_state.closing);
         let base_depth = self.open_elements.depth();
         let total = closing.len();
