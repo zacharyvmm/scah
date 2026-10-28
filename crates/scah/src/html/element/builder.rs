@@ -45,6 +45,8 @@ pub struct XHtmlElement<'html> {
     pub attributes: &'html [Attribute<'html>],
 }
 
+/// A tag read by the reference tokenizer the builder tests use.
+#[cfg(test)]
 #[derive(Debug, PartialEq)]
 pub enum XHtmlTag<'html> {
     Open,
