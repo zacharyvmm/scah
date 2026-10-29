@@ -189,7 +189,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     /// Point the store at the document being parsed, which saved strings
     /// borrow from. Later calls must read the same document: the matcher and
     /// open elements carry its state, whether or not any row was saved yet.
-    #[inline]
+    /// Out of line: it runs once per call, not once per tag.
+    #[cfg_attr(not(scah_no_layout_hints), inline(never))]
     fn bind_source(&mut self, reader: &Reader<'html>) {
         let source = reader.source();
         if self.source_bound {
