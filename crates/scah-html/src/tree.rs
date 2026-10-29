@@ -2,14 +2,20 @@
 //! tags that close elements further down, open tags that close an open `p`,
 //! `li`, `option` or table cell, and the end of the input.
 
-use crate::ParseError;
-use crate::capture::TextElementFlags;
-use crate::engine::{DepthSize, MAX_ELEMENT_DEPTH};
+use crate::TagId;
 use crate::tag::{ScopeKind, TagFlags};
-use scah_query_ir::TagId;
+
+pub type DepthSize = u16;
+
+/// Maximum real element depth.
+pub const MAX_ELEMENT_DEPTH: DepthSize = DepthSize::MAX - 1;
+
+/// An element would be nested deeper than [`MAX_ELEMENT_DEPTH`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepthExceeded;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct OpenElement<'html> {
+pub struct OpenElement<'html> {
     pub name: &'html str,
     /// `name` resolved once at the open tag; close tags compare ids.
     pub id: TagId,
@@ -17,16 +23,20 @@ pub(crate) struct OpenElement<'html> {
 }
 
 impl<'html> OpenElement<'html> {
-    const TEXT_FLAGS_SHIFT: u32 = 25;
+    const PAYLOAD_SHIFT: u32 = 25;
+    /// Bits left for the payload above the tag flags.
+    pub const PAYLOAD_BITS: u32 = u32::BITS - Self::PAYLOAD_SHIFT;
 
     #[inline]
     pub fn tag(&self) -> TagFlags {
-        TagFlags::from_bits(self.packed_flags & ((1 << Self::TEXT_FLAGS_SHIFT) - 1))
+        TagFlags::from_bits(self.packed_flags & ((1 << Self::PAYLOAD_SHIFT) - 1))
     }
 
+    /// The bits the caller pushed with the element. scah keeps the
+    /// element's text-capture flags here, next to its tag flags.
     #[inline]
-    pub fn text_flags(&self) -> TextElementFlags {
-        TextElementFlags::from_bits((self.packed_flags >> Self::TEXT_FLAGS_SHIFT) as u8)
+    pub fn payload(&self) -> u8 {
+        (self.packed_flags >> Self::PAYLOAD_SHIFT) as u8
     }
 
     /// Whether a close tag named `name`, resolved to `id`, closes this
@@ -42,7 +52,7 @@ impl<'html> OpenElement<'html> {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct OpenElementStack<'html> {
+pub struct OpenElementStack<'html> {
     entries: Vec<OpenElement<'html>>,
 }
 
@@ -56,12 +66,13 @@ impl<'html> Default for OpenElementStack<'html> {
 }
 
 impl<'html> OpenElementStack<'html> {
+    #[inline]
     pub fn depth(&self) -> DepthSize {
         self.entries.len().try_into().unwrap_or(MAX_ELEMENT_DEPTH)
     }
 
     #[inline]
-    pub(crate) const fn would_exceed_max_depth(len: usize) -> bool {
+    pub const fn would_exceed_max_depth(len: usize) -> bool {
         len >= MAX_ELEMENT_DEPTH as usize
     }
 
@@ -71,24 +82,24 @@ impl<'html> OpenElementStack<'html> {
         name: &'html str,
         id: TagId,
         tag: TagFlags,
-        text_flags: TextElementFlags,
-    ) -> Result<(), ParseError> {
+        payload: u8,
+    ) -> Result<(), DepthExceeded> {
+        debug_assert!(u32::from(payload) < 1 << OpenElement::PAYLOAD_BITS);
         if Self::would_exceed_max_depth(self.entries.len()) {
-            return Err(ParseError::MaximumDepthExceeded);
+            return Err(DepthExceeded);
         }
         self.entries.push(OpenElement {
             name,
             id,
-            packed_flags: tag.bits()
-                | ((text_flags.bits() as u32) << OpenElement::TEXT_FLAGS_SHIFT),
+            packed_flags: tag.bits() | (u32::from(payload) << OpenElement::PAYLOAD_SHIFT),
         });
         Ok(())
     }
 
     #[cfg(test)]
-    pub fn push(&mut self, name: &'html str) -> Result<(), ParseError> {
+    pub fn push(&mut self, name: &'html str) -> Result<(), DepthExceeded> {
         let id = TagId::of(name);
-        self.push_classified(name, id, TagFlags::of(id), TextElementFlags::empty())
+        self.push_classified(name, id, TagFlags::of(id), 0)
     }
 
     #[cfg(test)]
@@ -98,6 +109,7 @@ impl<'html> OpenElementStack<'html> {
         popped
     }
 
+    #[inline]
     pub fn prepare_for_open_into(&mut self, tag: TagFlags, popped: &mut Vec<OpenElement<'html>>) {
         popped.clear();
 
@@ -130,6 +142,7 @@ impl<'html> OpenElementStack<'html> {
         popped
     }
 
+    #[inline]
     pub fn close_by_end_tag_into(
         &mut self,
         name: &str,
@@ -183,6 +196,7 @@ impl<'html> OpenElementStack<'html> {
         popped
     }
 
+    #[inline]
     pub fn close_all_at_eof_into(&mut self, popped: &mut Vec<OpenElement<'html>>) {
         popped.clear();
         popped.extend(self.entries.drain(..).rev());
@@ -242,8 +256,7 @@ impl<'html> OpenElementStack<'html> {
 
 #[cfg(test)]
 mod tests {
-    use super::{OpenElement, OpenElementStack};
-    use crate::engine::MAX_ELEMENT_DEPTH;
+    use super::{MAX_ELEMENT_DEPTH, OpenElement, OpenElementStack};
 
     #[test]
     fn would_exceed_max_depth_at_boundary() {

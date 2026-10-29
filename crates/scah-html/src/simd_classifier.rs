@@ -1,10 +1,16 @@
-const TABLES: ([u8; 16], [u8; 16], u8, u8, u8, u8, u8) = scah_macros::simd_nibble_tables! {
-    less_than: [b'<'],
-    greater_than: [b'>'],
-    quote: [b'"', b'\''],
-    equals: [b'='],
-    whitespace: [b' ', b'\t', b'\n', b'\r', b'\x0c'],
-};
+// Nibble lookup tables: a byte is in class `c` when
+// `TLO[byte & 0xf] & THI[byte >> 4]` has one of class `c`'s bits. Generated
+// for the classes `<`, `>`, quotes, `=` and HTML whitespace;
+// `generated_tables_classify_all_bytes_exactly` checks every byte.
+const TABLES: ([u8; 16], [u8; 16], u8, u8, u8, u8, u8) = (
+    [16, 0, 4, 0, 0, 0, 0, 4, 0, 32, 32, 0, 33, 40, 2, 0],
+    [32, 0, 20, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    1,
+    2,
+    4,
+    8,
+    48,
+);
 
 const TLO: [u8; 16] = TABLES.0;
 const THI: [u8; 16] = TABLES.1;
@@ -20,7 +26,7 @@ const TAG_END_BITS: u8 = GREATER_THAN_BITS | QUOTE_BITS;
 const STRUCTURAL_BITS: u8 = LESS_THAN_BITS | TAG_END_BITS | EQUALS_BITS;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ClassMasks {
+pub struct ClassMasks {
     pub tag_end: u16,
     pub less_than: u16,
 }
@@ -36,7 +42,7 @@ enum Backend {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct BlockClassifier {
+pub struct BlockClassifier {
     backend: Backend,
 }
 
@@ -65,9 +71,11 @@ impl BlockClassifier {
         !matches!(self.backend, Backend::Scalar)
     }
 
-    /// Classify exactly 16 bytes from `source` beginning at `start`.
+    /// Classify exactly 16 bytes from `source` beginning at `start`. The
+    /// SIMD backends do not bounds-check the load, so this stays private to
+    /// the crate's indexers.
     #[inline]
-    pub fn classify(&self, source: &[u8], start: usize) -> ClassMasks {
+    pub(crate) fn classify(&self, source: &[u8], start: usize) -> ClassMasks {
         debug_assert!(start + 16 <= source.len());
         match self.backend {
             Backend::Scalar => classify_scalar(&source[start..start + 16]),
@@ -189,52 +197,71 @@ unsafe fn classify_ssse3(pointer: *const u8) -> ClassMasks {
 
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
-unsafe fn find_less_than_neon(source: &[u8], mut position: usize) -> Option<usize> {
+unsafe fn find_less_than_neon(source: &[u8], from: usize) -> Option<usize> {
     use std::arch::aarch64::*;
 
     let needle = vdupq_n_u8(b'<');
-    while position + 16 <= source.len() {
+    // Slicing first panics on a `from` past the end, and bounds `offset`
+    // by the slice length, so `offset + 16` cannot wrap.
+    let rest = &source[from..];
+    let mut offset = 0;
+    while offset + 16 <= rest.len() {
         // SAFETY: the loop condition guarantees a complete readable block.
-        let bytes = unsafe { vld1q_u8(source.as_ptr().add(position)) };
+        let bytes = unsafe { vld1q_u8(rest.as_ptr().add(offset)) };
         let mask = neon_nonzero_mask(vceqq_u8(bytes, needle));
         if mask != 0 {
-            return Some(position + mask.trailing_zeros() as usize);
+            return Some(from + offset + mask.trailing_zeros() as usize);
         }
-        position += 16;
+        offset += 16;
     }
-    source[position..]
+    rest[offset..]
         .iter()
         .position(|&byte| byte == b'<')
-        .map(|offset| position + offset)
+        .map(|index| from + offset + index)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "ssse3")]
-unsafe fn find_less_than_ssse3(source: &[u8], mut position: usize) -> Option<usize> {
+unsafe fn find_less_than_ssse3(source: &[u8], from: usize) -> Option<usize> {
     #[cfg(target_arch = "x86")]
     use std::arch::x86::*;
     #[cfg(target_arch = "x86_64")]
     use std::arch::x86_64::*;
 
     let needle = _mm_set1_epi8(b'<' as i8);
-    while position + 16 <= source.len() {
+    // Slicing first panics on a `from` past the end, and bounds `offset`
+    // by the slice length, so `offset + 16` cannot wrap.
+    let rest = &source[from..];
+    let mut offset = 0;
+    while offset + 16 <= rest.len() {
         // SAFETY: the loop condition guarantees a complete readable block.
-        let bytes = unsafe { _mm_loadu_si128(source.as_ptr().add(position).cast()) };
+        let bytes = unsafe { _mm_loadu_si128(rest.as_ptr().add(offset).cast()) };
         let mask = _mm_movemask_epi8(_mm_cmpeq_epi8(bytes, needle)) as u16;
         if mask != 0 {
-            return Some(position + mask.trailing_zeros() as usize);
+            return Some(from + offset + mask.trailing_zeros() as usize);
         }
-        position += 16;
+        offset += 16;
     }
-    source[position..]
+    rest[offset..]
         .iter()
         .position(|&byte| byte == b'<')
-        .map(|offset| position + offset)
+        .map(|index| from + offset + index)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn find_less_than_panics_past_the_end_instead_of_loading() {
+        let classifier = BlockClassifier::default();
+        let source = [b'<'; 16];
+        assert_eq!(classifier.find_less_than(&source, 16), None);
+        for from in [17, usize::MAX - 15, usize::MAX] {
+            let result = std::panic::catch_unwind(|| classifier.find_less_than(&source, from));
+            assert!(result.is_err(), "from={from}");
+        }
+    }
 
     #[test]
     fn generated_tables_classify_all_bytes_exactly() {

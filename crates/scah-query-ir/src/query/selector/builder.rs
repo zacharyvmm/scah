@@ -1,8 +1,8 @@
 use super::scan::{require_modeled_syntax, scan, split_selector_list};
 use super::string_search::{AttributeCaseSensitivity, AttributeSelectionKind};
 use super::{is_css_whitespace, is_css_whitespace_char};
-use crate::Reader;
 use crate::query::compiler::SelectorParseError;
+use scah_html::{Attribute, Reader, XHtmlElement};
 
 /// Maximum number of selector lists that may be nested inside functional
 /// pseudo-classes such as `:is()`, `:not()` and `:nth-child(An+B of S)`.
@@ -26,12 +26,6 @@ fn is_attribute_selector_boundary(byte: u8) -> bool {
             byte,
             b'"' | b'\'' | b'=' | b']' | b'~' | b'|' | b'^' | b'$' | b'*'
         )
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Attribute<'html> {
-    pub key: &'html str,
-    pub value: Option<&'html str>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -309,6 +303,24 @@ pub trait IElement<'html> {
     fn id(&self) -> Option<&'html str>;
     fn class(&self) -> Option<&'html str>;
     fn attributes(&self) -> &[Attribute<'html>];
+}
+
+impl<'html> IElement<'html> for XHtmlElement<'html> {
+    fn name(&self) -> &'html str {
+        self.name
+    }
+
+    fn id(&self) -> Option<&'html str> {
+        self.id
+    }
+
+    fn class(&self) -> Option<&'html str> {
+        self.class
+    }
+
+    fn attributes(&self) -> &[Attribute<'html>] {
+        self.attributes
+    }
 }
 
 struct KeyValueAttributeSelection<'query> {

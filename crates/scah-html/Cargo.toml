@@ -1,14 +1,14 @@
 [package]
-name = "scah-reader"
+name = "scah-html"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Streaming XML and HTML reader primitives used by scah."
+description = "Streaming HTML tag lexer and open-element tree used by scah."
 repository.workspace = true
 homepage.workspace = true
-documentation = "https://docs.rs/scah-reader"
+documentation = "https://docs.rs/scah-html"
 
 [lints.clippy]
 let-and-return = "allow"

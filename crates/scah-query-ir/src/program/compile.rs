@@ -10,7 +10,7 @@ use crate::query::compiler::{
     ascii_case_insensitive_hash,
 };
 use crate::query::selector::{Combinator, StructuralPredicate};
-use crate::tag::TagId;
+use scah_html::TagId;
 use std::ops::Range;
 
 impl<'q> Program<'q> {

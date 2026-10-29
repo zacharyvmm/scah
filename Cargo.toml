@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/scah-reader",
+    "crates/scah-html",
     "crates/scah-query-ir",
     "crates/scah-macros",
     "crates/scah",
@@ -9,7 +9,7 @@ members = [
     "benches",
 ]
 # Depends on the published scah, so it keeps its own lockfile: sharing this one
-# would put two `scah-reader 0.1.0`s in it and break `cargo package`.
+# would put two `scah-query-ir 0.1.0`s in it and break `cargo package`.
 exclude = ["crates/scah-differential"]
 default-members = ["crates/scah"]
 resolver = "3"
@@ -26,7 +26,7 @@ homepage = "https://github.com/zacharyvmm/scah"
 
 [workspace.dependencies]
 scah = { version = "0.2.0-dev", path = "crates/scah" }
-scah-reader = { version = "0.2.0-dev", path = "crates/scah-reader" }
+scah-html = { version = "0.2.0-dev", path = "crates/scah-html" }
 scah-query-ir = { version = "0.2.0-dev", path = "crates/scah-query-ir" }
 scah-macros = { version = "0.2.0-dev", path = "crates/scah-macros" }
 

@@ -1633,9 +1633,9 @@ name = "scah"
 version = "0.2.0-dev"
 dependencies = [
  "pretty_assertions",
+ "scah-html",
  "scah-macros",
  "scah-query-ir",
- "scah-reader",
  "smallvec",
  "tracing",
 ]
@@ -1654,6 +1654,10 @@ dependencies = [
  "scraper",
  "tl",
 ]
+
+[[package]]
+name = "scah-html"
+version = "0.2.0-dev"
 
 [[package]]
 name = "scah-macros"
@@ -1689,13 +1693,9 @@ name = "scah-query-ir"
 version = "0.2.0-dev"
 dependencies = [
  "pretty_assertions",
- "scah-reader",
+ "scah-html",
  "smallvec",
 ]
-
-[[package]]
-name = "scah-reader"
-version = "0.2.0-dev"
 
 [[package]]
 name = "scopeguard"

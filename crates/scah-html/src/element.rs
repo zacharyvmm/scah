@@ -1,37 +1,24 @@
-use super::attributes::ElementAttributeToken;
 use crate::Reader;
-use crate::engine::attribute_interest::AttributeInterest;
+use crate::attribute_interest::AttributeInterest;
+use crate::attributes::ElementAttributeToken;
 use crate::tag::TagFlags;
-use scah_query_ir::{Attribute, IElement};
 
 /// A key-value pair representing an HTML element attribute.
 ///
 /// Both `key` and `value` are zero-copy `&str` references into the
-/// original HTML source.
-///
-/// # Example
-///
-/// ```rust
-/// use scah::{Query, Save, parse};
-///
-/// let html = r#"<a href="https://example.com" target="_blank">Link</a>"#;
-/// let queries = &[Query::all("a", Save::all())
-///     .expect("valid selector")
-///     .build()];
-/// let store = parse(html, queries).expect("parse succeeds");
-///
-/// let a = store.get("a").unwrap().next().unwrap();
-/// let attrs: Vec<_> = a.attributes().unwrap().collect();
-/// assert_eq!(attrs[0].key, "href");
-/// assert_eq!(attrs[0].value, Some("https://example.com"));
-/// assert_eq!(attrs[1].key, "target");
-/// assert_eq!(attrs[1].value, Some("_blank"));
-/// ```
+/// original HTML source. `value` is `None` for an attribute written without
+/// `=`, such as `<input disabled>`.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Attribute<'html> {
+    pub key: &'html str,
+    pub value: Option<&'html str>,
+}
+
 /// An HTML element as parsed from the token stream.
 ///
-/// This is the *parser-level* representation used during streaming.
-/// Once an element is matched by a query, its data is copied into an
-/// [`Store`](crate::Store) row, read back through [`ElementRef`](crate::ElementRef).
+/// This is the *parser-level* representation used during streaming: it
+/// borrows its attributes from a scratch list that the next tag reuses, so
+/// anything kept past the tag must be copied out.
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct XHtmlElement<'html> {
     /// The tag name (e.g. `"div"`, `"a"`, `"section"`).
@@ -57,7 +44,7 @@ impl<'html> XHtmlElement<'html> {
     /// Set the name discovered by the structural indexer without parsing the
     /// remainder of the tag.
     #[inline]
-    pub(crate) fn set_name(&mut self, name: &'html str) {
+    pub fn set_name(&mut self, name: &'html str) {
         self.name = name;
     }
 
@@ -66,14 +53,31 @@ impl<'html> XHtmlElement<'html> {
     /// The reader must begin at the first byte after the already-discovered
     /// element name. Keeping this separate lets tag-only query paths avoid
     /// attribute tokenization entirely.
-    pub(crate) fn parse_attributes(
+    ///
+    /// # Safety
+    ///
+    /// The parsed attributes are appended to `attribute_tape`, and
+    /// `self.attributes` points at them without borrowing the tape. The
+    /// caller must not use that slice after `attribute_tape` is next
+    /// mutated, moved or dropped. This covers every copy of it: slices and
+    /// references taken from `self.attributes` and clones of `self`.
+    /// Reassigning `self.attributes` (by another parse or
+    /// [`clear`](Self::clear)) does not release copies taken earlier. The
+    /// `&'html str` keys and values borrow the source, not the tape, so they
+    /// may be kept.
+    ///
+    /// `reader` must be at a character boundary, as it is after the name of
+    /// a tag the indexer found.
+    #[inline]
+    pub unsafe fn parse_attributes(
         &mut self,
         reader: &mut Reader<'html>,
         attribute_tape: &mut Vec<Attribute<'html>>,
         interest: &AttributeInterest<'_>,
     ) {
         debug_assert!(!self.name.is_empty());
-        self.parse_from(reader, attribute_tape, Some(interest));
+        // SAFETY: the caller upholds both requirements.
+        unsafe { self.parse_from(reader, attribute_tape, Some(interest)) };
     }
 
     fn add_to_element(
@@ -179,6 +183,7 @@ impl<'html> XHtmlElement<'html> {
         TagFlags::classify(self.name).is_void()
     }
 
+    #[inline]
     pub fn clear(&mut self) {
         self.name = "";
         self.id = None;
@@ -186,11 +191,19 @@ impl<'html> XHtmlElement<'html> {
         self.attributes = &[];
     }
 
-    pub fn from(&mut self, reader: &mut Reader<'html>, attribute_tape: &mut Vec<Attribute<'html>>) {
-        self.parse_from(reader, attribute_tape, None);
+    /// Parse a whole tag, name included. The tests use this; production
+    /// takes the name from the indexer and calls `parse_attributes`.
+    #[cfg(test)]
+    fn from(&mut self, reader: &mut Reader<'html>, attribute_tape: &mut Vec<Attribute<'html>>) {
+        // SAFETY: the tests start readers at a tag, and read
+        // `self.attributes` before touching the tape again.
+        unsafe { self.parse_from(reader, attribute_tape, None) };
     }
 
-    fn parse_from(
+    /// # Safety
+    ///
+    /// As for [`parse_attributes`](Self::parse_attributes).
+    unsafe fn parse_from(
         &mut self,
         reader: &mut Reader<'html>,
         attribute_tape: &mut Vec<Attribute<'html>>,
@@ -203,7 +216,9 @@ impl<'html> XHtmlElement<'html> {
         // Pass `assign` so the tokenizer knows whether the next token is an
         // unquoted attribute *value* (immediately after `=`), where a trailing
         // `/` is a literal character rather than a self-closing marker.
-        while let Some(token) = ElementAttributeToken::next(reader, assign) {
+        // SAFETY: `parse_attributes` requires the reader to start at a
+        // character boundary, and each token leaves it at one.
+        while let Some(token) = unsafe { ElementAttributeToken::next(reader, assign) } {
             match token {
                 ElementAttributeToken::String(string_value) => match key {
                     None => {
@@ -258,10 +273,9 @@ impl<'html> XHtmlElement<'html> {
             );
         }
 
-        // Since we are
-        //  1) assigning after adding the Attributes
-        //  and 2) either transforming it into a Range in Store or removing them
-        //  their is no risk when doing this unsafely
+        // SAFETY: the range is in bounds of `attribute_tape`. Reads stay valid
+        // while the tape is untouched, which `parse_attributes` makes its
+        // caller's obligation.
         self.attributes = unsafe {
             std::slice::from_raw_parts(
                 attribute_tape.as_ptr().add(start_len),
@@ -271,26 +285,8 @@ impl<'html> XHtmlElement<'html> {
     }
 }
 
-impl<'html> IElement<'html> for XHtmlElement<'html> {
-    fn name(&self) -> &'html str {
-        self.name
-    }
-
-    fn id(&self) -> Option<&'html str> {
-        self.id
-    }
-
-    fn class(&self) -> Option<&'html str> {
-        self.class
-    }
-
-    fn attributes(&self) -> &[Attribute<'html>] {
-        self.attributes
-    }
-}
-
 // Retained as a focused tokenizer reference for the builder tests. Production
-// parsing now obtains tag boundaries from `html::indexer`.
+// parsing obtains tag boundaries from `indexer`.
 #[cfg(test)]
 impl<'a> XHtmlTag<'a> {
     pub fn from(reader: &mut Reader<'a>) -> Option<Self> {
@@ -785,8 +781,8 @@ mod tests {
     #[test]
     fn selected_attribute_parsing_retains_only_query_fields() {
         let mut interest = AttributeInterest::new(&["href"]);
-        interest.add(scah_query_ir::AttributeMask {
-            flags: scah_query_ir::AttributeMask::CLASS,
+        interest.add(crate::AttributeMask {
+            flags: crate::AttributeMask::CLASS,
             keys: 0b1,
         });
 
@@ -795,7 +791,8 @@ mod tests {
         let mut element = XHtmlElement::default();
         element.set_name("a");
         let mut attributes = vec![];
-        element.parse_attributes(&mut reader, &mut attributes, &interest);
+        // SAFETY: `attributes` outlives every read of `element.attributes`.
+        unsafe { element.parse_attributes(&mut reader, &mut attributes, &interest) };
 
         assert_eq!(element.class, Some("promoted"));
         assert_eq!(

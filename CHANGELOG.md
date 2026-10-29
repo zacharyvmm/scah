@@ -30,9 +30,18 @@ Rust crates and the Python and npm packages together.
   methods), instead of a slice. ([#100])
 - HTML of 4 GiB or more returns `ParseError::InputTooLarge`. ([#100])
 - `XHtmlParser::next` panics if stepped over a different source than its
-  first call, or over a `Reader::from_bytes` source that is not UTF-8.
-  `Reader::source_str` returns the source as a string when it is valid.
-  ([#100])
+  first call. ([#100])
+- The `scah-reader` crate is replaced by `scah-html`, which also holds the tag
+  lexer and the open-element tree. `Attribute`, `TagId`, `AttributeMask`, and
+  `Reader` move there from `scah-query-ir`, and `scah-macros` no longer exports
+  `simd_nibble_tables!`. `scah` still re-exports `Reader`, `Attribute`, and
+  `XHtmlElement`. ([#112])
+- `Reader` only reads UTF-8, so it can no longer return a string that is not
+  valid UTF-8: `Reader::from_bytes` returns an error for other bytes,
+  `Reader::source_str` returns `&str`, and `Reader::slice` panics on a range
+  that splits a character. `XHtmlElement::parse_attributes` is `unsafe`,
+  because the attributes it lists point into a tape it doesn't borrow.
+  ([#112])
 
 ### Added
 
@@ -193,3 +202,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#98]: https://github.com/zacharyvmm/scah/pull/98
 [#100]: https://github.com/zacharyvmm/scah/pull/100
 [#102]: https://github.com/zacharyvmm/scah/pull/102
+[#112]: https://github.com/zacharyvmm/scah/pull/112

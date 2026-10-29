@@ -1,7 +1,8 @@
 //! Structural context for `:nth-child()` and related pseudo-classes.
 
 use crate::XHtmlElement;
-use scah_query_ir::{AttributeMask, LocalSelectorList, Program, StructuralMatchContext};
+use scah_html::AttributeMask;
+use scah_query_ir::{LocalSelectorList, Program, StructuralMatchContext};
 use smallvec::SmallVec;
 
 type TypeCounts<'html> = SmallVec<[(&'html str, u32); 4]>;

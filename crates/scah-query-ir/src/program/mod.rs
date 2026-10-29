@@ -28,7 +28,7 @@ use crate::query::compiler::{
 use crate::query::selector::{
     ElementPredicate, LocalLogicalPredicate, LocalSelectorList, StructuralPredicate,
 };
-use crate::tag::TagId;
+use scah_html::{AttributeMask, TagId};
 
 /// Marks a known tag that no type selector names.
 const NO_NAME: u32 = u32::MAX;
@@ -135,37 +135,6 @@ impl SectionIndex {
     #[inline(always)]
     pub const fn index(self) -> usize {
         self.0 as usize
-    }
-}
-
-/// Attributes a step inspects, as bits over [`Program::attribute_names`].
-///
-/// `id` and `class` have dedicated flags because the parser stores them in
-/// dedicated element fields.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct AttributeMask {
-    pub flags: u8,
-    /// Bit `i` stands for `attribute_names()[i]`.
-    pub keys: u64,
-}
-
-impl AttributeMask {
-    pub const ID: u8 = 1;
-    pub const CLASS: u8 = 1 << 1;
-    /// Every attribute: the step saves them, or names overflowed `keys`.
-    pub const ALL: u8 = 1 << 2;
-
-    #[inline(always)]
-    pub fn union(self, other: Self) -> Self {
-        Self {
-            flags: self.flags | other.flags,
-            keys: self.keys | other.keys,
-        }
-    }
-
-    #[inline(always)]
-    pub fn is_empty(self) -> bool {
-        self.flags == 0 && self.keys == 0
     }
 }
 
@@ -373,8 +342,9 @@ impl<'q> Program<'q> {
         &self.strings[self.attributes_start..]
     }
 
-    /// Attributes a step inspects, or [`AttributeMask::ALL`] when its match
-    /// saves them.
+    /// Attributes a step inspects, as bits over [`Program::attribute_names`],
+    /// or [`AttributeMask::ALL`] when its match saves them: saved rows keep
+    /// every attribute.
     #[inline(always)]
     pub fn step_interest(&self, step: usize) -> AttributeMask {
         self.steps[step].interest
@@ -804,5 +774,62 @@ mod tests {
         assert_eq!(program.words(), 2);
         assert_eq!(ones(program.mask(StepMask::Save)), [69]);
         assert_eq!(ones(program.name_mask("div").unwrap()).len(), 70);
+    }
+}
+
+#[cfg(test)]
+mod attribute_interest_tests {
+    use super::*;
+    use crate::{Query, Save};
+    use scah_html::AttributeInterest;
+
+    fn interest_for(selector: &'static str, save: Save) -> AttributeInterest<'static> {
+        let queries: &'static [Query<'static>] =
+            Box::leak(Box::new([Query::all(selector, save).unwrap().build()]));
+        let program = Box::leak(Box::new(Program::compile(queries)));
+        let mut interest = AttributeInterest::new(program.attribute_names());
+        for step in 0..program.step_count() {
+            interest.add(program.step_interest(step));
+        }
+        interest
+    }
+
+    #[test]
+    fn merges_dedicated_and_generic_attribute_requirements() {
+        let interest = interest_for("#hero.promoted[href][HREF]", Save::name_only());
+
+        assert!(interest.includes_id());
+        assert!(interest.includes_class());
+        assert!(interest.includes_attribute("href"));
+        assert!(interest.includes_attribute("Href"));
+        assert!(!interest.includes_attribute("rel"));
+    }
+
+    #[test]
+    fn saving_steps_require_every_attribute() {
+        let interest = interest_for("a[href]", Save::none());
+
+        assert!(interest.includes_id());
+        assert!(interest.includes_class());
+        assert!(interest.includes_attribute("anything"));
+    }
+
+    #[test]
+    fn many_attribute_names_stay_selective() {
+        let interest = interest_for("a[href][target][rel][download][data-id]", Save::name_only());
+
+        for name in ["href", "target", "rel", "download", "data-id"] {
+            assert!(interest.includes_attribute(name), "{name}");
+        }
+        assert!(!interest.includes_attribute("title"));
+        assert!(!interest.includes_id());
+    }
+
+    #[test]
+    fn clear_resets_the_mask() {
+        let mut interest = interest_for("a[href]", Save::name_only());
+        interest.clear();
+        assert!(interest.is_empty());
+        assert!(!interest.includes_attribute("href"));
     }
 }

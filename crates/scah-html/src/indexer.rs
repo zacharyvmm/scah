@@ -29,7 +29,7 @@ const FULL_INDEX_MAX_SAMPLED_TAG_BYTES: usize = 1024;
 const FULL_INDEX_MAX_UNKNOWN_PROBE_BYTES: usize = 4 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum IndexingMode {
+pub enum IndexingMode {
     Rolling,
     FullDocument,
     /// Force the full-document backend, bypassing adaptive strategy selection.
@@ -39,7 +39,7 @@ pub(crate) enum IndexingMode {
 
 /// The kind of completed structural span discovered by a [`TagIndexer`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TagKind {
+pub enum TagKind {
     Close,
     /// A comment, declaration, or bogus `<!...>` construct. The parser uses
     /// these spans as text boundaries but does not emit an element event.
@@ -51,7 +51,7 @@ pub(crate) enum TagKind {
 /// `start..end` covers the complete markup, including `<` and the terminating
 /// `>` when present. Close events also carry the zero-copy name range.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TagSpan {
+pub struct TagSpan {
     pub start: usize,
     pub end: usize,
     pub kind: TagKind,
@@ -60,10 +60,26 @@ pub(crate) struct TagSpan {
 
 impl TagSpan {
     #[inline]
-    pub fn name<'html>(&self, source: &'html [u8]) -> &'html str {
-        // SAFETY: input originates from `&str`; the scanner only moves name
-        // boundaries over ASCII structural bytes.
-        unsafe { std::str::from_utf8_unchecked(&source[self.name.clone()]) }
+    pub fn name<'html>(&self, source: &'html str) -> &'html str {
+        &source[self.name.clone()]
+    }
+
+    /// [`name`](Self::name) without the character boundary checks, for the
+    /// parse loop.
+    ///
+    /// # Safety
+    ///
+    /// `self.name` must start and end on character boundaries of `source`.
+    /// That holds when an indexer found `self` in `source` and the bytes
+    /// have not changed since: the indexer ends names only at ASCII bytes or
+    /// the end of the source. An indexer that cached an earlier document in
+    /// the same buffer gives no such guarantee.
+    #[inline]
+    pub unsafe fn name_unchecked<'html>(&self, source: &'html str) -> &'html str {
+        debug_assert!(source.get(self.name.clone()).is_some());
+        // SAFETY: the range is bounds-checked, and the caller guarantees it
+        // starts and ends on character boundaries.
+        unsafe { std::str::from_utf8_unchecked(&source.as_bytes()[self.name.clone()]) }
     }
 }
 
@@ -74,7 +90,7 @@ impl TagSpan {
 /// them, or scan directly to the tag end when it does not. Vector backends may
 /// provide an `end_hint` discovered while classifying a larger input block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OpenTagStart {
+pub struct OpenTagStart {
     pub start: usize,
     pub name: Range<usize>,
     pub attributes_start: usize,
@@ -83,10 +99,26 @@ pub(crate) struct OpenTagStart {
 
 impl OpenTagStart {
     #[inline]
-    pub fn name<'html>(&self, source: &'html [u8]) -> &'html str {
-        // SAFETY: input originates from `&str`; the scanner only moves name
-        // boundaries over ASCII structural bytes.
-        unsafe { std::str::from_utf8_unchecked(&source[self.name.clone()]) }
+    pub fn name<'html>(&self, source: &'html str) -> &'html str {
+        &source[self.name.clone()]
+    }
+
+    /// [`name`](Self::name) without the character boundary checks, for the
+    /// parse loop.
+    ///
+    /// # Safety
+    ///
+    /// `self.name` must start and end on character boundaries of `source`.
+    /// That holds when an indexer found `self` in `source` and the bytes
+    /// have not changed since: the indexer ends names only at ASCII bytes or
+    /// the end of the source. An indexer that cached an earlier document in
+    /// the same buffer gives no such guarantee.
+    #[inline]
+    pub unsafe fn name_unchecked<'html>(&self, source: &'html str) -> &'html str {
+        debug_assert!(source.get(self.name.clone()).is_some());
+        // SAFETY: the range is bounds-checked, and the caller guarantees it
+        // starts and ends on character boundaries.
+        unsafe { std::str::from_utf8_unchecked(&source.as_bytes()[self.name.clone()]) }
     }
 
     #[inline]
@@ -97,7 +129,7 @@ impl OpenTagStart {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum TagEvent {
+pub enum TagEvent {
     Open(OpenTagStart),
     Complete(TagSpan),
 }
@@ -107,7 +139,7 @@ pub(crate) enum TagEvent {
 /// Backends return one span at a time so callers retain early-exit behavior.
 /// A future SWAR/SIMD implementation can cache masks or several spans inside
 /// the backend without changing parser or query-executor semantics.
-pub(crate) trait TagIndexer {
+pub trait TagIndexer {
     fn prepare(&mut self, _source: &[u8]) {}
 
     fn next(&mut self, source: &[u8], from: usize) -> Option<TagEvent>;
@@ -1280,7 +1312,7 @@ fn sample_full_index_windows(
 }
 
 #[derive(Debug)]
-pub(crate) struct AutoTagIndexer {
+pub struct AutoTagIndexer {
     scalar: ScalarTagIndexer,
     rolling: Option<PackedTagIndexer>,
     full: Option<PackedTagIndexer>,
@@ -1298,7 +1330,7 @@ impl Default for AutoTagIndexer {
 }
 
 impl AutoTagIndexer {
-    pub(crate) fn new(mode: IndexingMode, attributes_may_be_parsed: bool) -> Self {
+    pub fn new(mode: IndexingMode, attributes_may_be_parsed: bool) -> Self {
         let classifier = BlockClassifier::default();
         let accelerated = classifier.is_accelerated();
         Self {
@@ -1390,10 +1422,12 @@ impl AutoTagIndexer {
 }
 
 impl TagIndexer for AutoTagIndexer {
+    #[inline]
     fn prepare(&mut self, source: &[u8]) {
         self.prepare_policy(source);
     }
 
+    #[inline]
     fn next(&mut self, source: &[u8], from: usize) -> Option<TagEvent> {
         if let Some(indexer) = &mut self.full {
             indexer.next(source, from)
@@ -1415,6 +1449,7 @@ impl TagIndexer for AutoTagIndexer {
         }
     }
 
+    #[inline]
     fn find_raw_text_close(
         &mut self,
         source: &[u8],
@@ -1466,7 +1501,7 @@ mod tests {
         let TagEvent::Open(open) = next(html, 0) else {
             panic!("expected open tag");
         };
-        assert_eq!(open.name(html.as_bytes()), "a");
+        assert_eq!(open.name(html), "a");
         let open_end = open.finish(html.as_bytes());
         assert_eq!(&html[open.start..open_end], r#"<a href=">" class='x'>"#);
 
@@ -1474,7 +1509,7 @@ mod tests {
             panic!("expected close tag");
         };
         assert_eq!(close.kind, TagKind::Close);
-        assert_eq!(close.name(html.as_bytes()), "a");
+        assert_eq!(close.name(html), "a");
         assert_eq!(&html[close.start..close.end], "</a>");
     }
 
@@ -1489,7 +1524,7 @@ mod tests {
         let TagEvent::Open(paragraph) = next(html, comment.end) else {
             panic!("expected open tag");
         };
-        assert_eq!(paragraph.name(html.as_bytes()), "p");
+        assert_eq!(paragraph.name(html), "p");
     }
 
     #[test]
@@ -1497,12 +1532,12 @@ mod tests {
         let TagEvent::Complete(close) = next("</  div  >", 0) else {
             panic!("expected close tag");
         };
-        assert_eq!(close.name("</  div  >".as_bytes()), "div");
+        assert_eq!(close.name("</  div  >"), "div");
 
         let TagEvent::Open(open) = next("<hr/>", 0) else {
             panic!("expected open tag");
         };
-        assert_eq!(open.name("<hr/>".as_bytes()), "hr");
+        assert_eq!(open.name("<hr/>"), "hr");
         assert_eq!(open.finish("<hr/>".as_bytes()), 5);
     }
 
@@ -1543,7 +1578,7 @@ mod tests {
                 panic!("expected scalar opening tag for source={source:?}");
             };
             assert_eq!(scalar_open.start, expected_start);
-            assert_eq!(scalar_open.name(bytes), "p");
+            assert_eq!(scalar_open.name(source), "p");
 
             for mode in [IndexingMode::Rolling, IndexingMode::FullDocument] {
                 let mut packed = PackedTagIndexer::new(mode);
@@ -1552,7 +1587,7 @@ mod tests {
                     panic!("expected opening tag for source={source:?}, mode={mode:?}");
                 };
                 assert_eq!(open.start, expected_start, "source={source:?}");
-                assert_eq!(open.name(bytes), "p", "source={source:?}, mode={mode:?}");
+                assert_eq!(open.name(source), "p", "source={source:?}, mode={mode:?}");
             }
         }
     }
@@ -1704,7 +1739,7 @@ mod tests {
         let Some(TagEvent::Open(script)) = packed.next(bytes, 0) else {
             panic!("expected script opening tag");
         };
-        assert_eq!(script.name(bytes), "script");
+        assert_eq!(script.name(&source), "script");
 
         let close = packed
             .find_raw_text_close(bytes, script.finish(bytes), "</script")
@@ -1713,7 +1748,7 @@ mod tests {
         let Some(TagEvent::Open(span)) = packed.next(bytes, after_close) else {
             panic!("expected opening tag after raw text");
         };
-        assert_eq!(span.name(bytes), "span");
+        assert_eq!(span.name(&source), "span");
         assert!(packed.cache.masks.is_empty());
     }
 
@@ -1737,7 +1772,7 @@ mod tests {
         let Some(TagEvent::Open(span)) = packed.next(bytes, after_close) else {
             panic!("expected opening tag after raw text");
         };
-        assert_eq!(span.name(bytes), "span");
+        assert_eq!(span.name(&source), "span");
     }
 
     #[test]
@@ -1762,7 +1797,7 @@ mod tests {
         let Some(TagEvent::Open(span)) = packed.next(bytes, after_close) else {
             panic!("expected first span after the raw close");
         };
-        assert_eq!(span.name(bytes), "span");
+        assert_eq!(span.name(&source), "span");
         assert_eq!(&source[span.start..span.finish(bytes)], "<span>");
     }
 
@@ -1881,7 +1916,7 @@ mod tests {
             panic!("expected opening tag after malformed delimiter run");
         };
         assert_eq!(open.start, source.len() - 3);
-        assert_eq!(open.name(bytes), "p");
+        assert_eq!(open.name(&source), "p");
     }
 
     #[test]

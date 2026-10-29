@@ -40,10 +40,10 @@
 
 use std::ops::Range;
 
+use scah_html::{AttributeMask, TagId};
 use scah_query_ir::program::bits;
 use scah_query_ir::{
-    AttributeMask, Program, SectionIndex, SectionMask, StepMask, StepPlan, StructuralMatchContext,
-    TagId,
+    Program, SectionIndex, SectionMask, StepMask, StepPlan, StructuralMatchContext,
 };
 use smallvec::{SmallVec, smallvec};
 use std::borrow::Cow;

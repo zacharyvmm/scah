@@ -14,26 +14,20 @@
 //! Parsing stops at the end of the input, or as soon as every query is a
 //! satisfied `first()`.
 
-use crate::Attribute;
 use crate::ParseError;
-use crate::Reader;
-use crate::XHtmlElement;
 use crate::capture::{Capture, TextElementFlags};
 use crate::debug::ImpliedCloseReason;
 #[cfg(any(debug_assertions, test))]
 use crate::debug::TraceEvent;
-use crate::engine::attribute_interest::AttributeInterest;
 use crate::engine::matcher::{AnyMatcher, SaveHit};
 use crate::engine::structural::StructuralState;
-use crate::engine::{DepthSize, MAX_ELEMENT_DEPTH};
-use crate::lexer::indexer::{
-    AutoTagIndexer, IndexingMode, OpenTagStart, TagEvent, TagIndexer, TagKind,
-};
 use crate::store::Store;
-use crate::tag::{ClassifiedTag, TagFlags};
-use crate::tree::{OpenElement, OpenElementStack};
 use crate::{Program, QuerySpec};
-use scah_query_ir::TagId;
+use scah_html::{
+    Attribute, AttributeInterest, AutoTagIndexer, ClassifiedTag, DepthSize, IndexingMode,
+    MAX_ELEMENT_DEPTH, OpenElement, OpenElementStack, OpenTagStart, Reader, TagEvent, TagFlags,
+    TagId, TagIndexer, TagKind, XHtmlElement,
+};
 use std::borrow::Cow;
 
 /// Where the parser is in the document.
@@ -195,13 +189,14 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     /// Point the store at the document being parsed, which saved strings
     /// borrow from. Later calls must read the same document: the matcher and
     /// open elements carry its state, whether or not any row was saved yet.
-    #[inline]
+    /// Out of line: it runs once per call, not once per tag.
+    #[cfg_attr(not(scah_no_layout_hints), inline(never))]
     fn bind_source(&mut self, reader: &Reader<'html>) {
         let source = reader.source();
         if self.source_bound {
             assert!(self.store.bound_to(source), "a parser reads one document");
         } else {
-            let html = reader.source_str().expect("a parser reads UTF-8 HTML");
+            let html = reader.source_str();
             self.store.set_html(html);
             self.source_bound = true;
         }
@@ -236,7 +231,10 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             TagEvent::Complete(close) => {
                 debug_assert_eq!(close.kind, TagKind::Close);
                 reader.advance_to(close.end);
-                self.end_tag::<CAPTURE>(close.name(reader.source()), close.start, reader)
+                // SAFETY: the parser's own indexer found `close` in the reader's
+                // source, which is borrowed for `'html` and so unchanged.
+                let name = unsafe { close.name_unchecked(reader.source_str()) };
+                self.end_tag::<CAPTURE>(name, close.start, reader)
             }
         };
         self.continue_after_tag::<CAPTURE>(finished, reader)
@@ -275,7 +273,9 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         open: OpenTagStart,
         reader: &mut Reader<'html>,
     ) -> Result<bool, ParseError> {
-        let name = open.name(reader.source());
+        // SAFETY: the parser's own indexer found `open` in the reader's
+        // source, which is borrowed for `'html` and so unchanged.
+        let name = unsafe { open.name_unchecked(reader.source_str()) };
         let id = TagId::of(name);
         let classified = ClassifiedTag::of(id);
         let tag = classified.parser;
@@ -370,15 +370,26 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             {
                 self.attribute_parse_count += 1;
             }
-            let mut attributes = Reader::from_bytes(&source[open.attributes_start..]);
+            // SAFETY: the indexer starts attributes after the tag name, at
+            // an ASCII byte or the end of the source.
+            let mut attributes = Reader::new(unsafe {
+                std::str::from_utf8_unchecked(&source[open.attributes_start..])
+            });
             // The store copies the attributes of rows that save them, so
             // every tag parses into the same scratch list.
             self.temp_state.attributes.clear();
-            self.element.parse_attributes(
-                &mut attributes,
-                &mut self.temp_state.attributes,
-                &self.temp_state.attribute_interest,
-            );
+            // SAFETY: the parser mutates the tape only here, and no copy of
+            // `element.attributes` outlives the tag: the matcher and store
+            // keep the keys and values, which borrow the source, never the
+            // slice. The tape is dropped with the element.
+            // The reader starts at a character boundary (above).
+            unsafe {
+                self.element.parse_attributes(
+                    &mut attributes,
+                    &mut self.temp_state.attributes,
+                    &self.temp_state.attribute_interest,
+                );
+            }
             #[cfg(test)]
             {
                 self.selected_attribute_count += self.element.attributes.len();
@@ -408,7 +419,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             self.position.element_depth = depth;
         } else {
             self.open_elements
-                .push_classified(self.element.name, id, tag, text_flags)?;
+                .push_classified(self.element.name, id, tag, text_flags.bits())?;
             self.position.element_depth = self.open_elements.depth();
         }
         Ok(())
@@ -544,7 +555,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         reader: &Reader<'html>,
     ) -> bool {
         self.capture.close::<CAPTURE>(
-            element.text_flags(),
+            TextElementFlags::from_bits(element.payload()),
             depth,
             self.position.reader_position,
             reader,
@@ -1270,7 +1281,7 @@ mod tests {
         }
 
         let html = generate_html(100);
-        let mut reader = Reader::from_bytes(html.as_bytes());
+        let mut reader = Reader::from_bytes(html.as_bytes()).unwrap();
 
         let query = Query::first("a", Save::all()).unwrap().build();
         let queries = &[query];
@@ -2031,20 +2042,11 @@ mod tests {
         let html = "<p>é</p>";
         let queries = [Query::all("p", Save::all()).unwrap().build()];
         let mut parser = XHtmlParser::new(&queries);
-        let mut reader = Reader::from_bytes(html.as_bytes());
+        let mut reader = Reader::from_bytes(html.as_bytes()).unwrap();
         while parser.next(&mut reader) {}
         let store = parser.matches();
         let p = store.get("p").unwrap().next().unwrap();
         assert_eq!(p.inner_html(), Some("é"));
-    }
-
-    #[test]
-    #[should_panic(expected = "a parser reads UTF-8 HTML")]
-    fn non_utf8_byte_readers_panic_before_binding() {
-        let queries = [Query::all("p", Save::none()).unwrap().build()];
-        let mut parser = XHtmlParser::new(&queries);
-        let mut reader = Reader::from_bytes(b"\xff<p>");
-        parser.next(&mut reader);
     }
 
     #[test]

@@ -1,9 +1,9 @@
-use crate::Reader;
 use crate::query::compiler::SelectorParseError;
 use crate::query::selector::{
     self, Combinator, ElementPredicate, Lexer, LocalLogicalPredicate, MAX_SELECTOR_NESTING_DEPTH,
     StructuralPredicate, is_css_whitespace_char, require_modeled_syntax,
 };
+use scah_html::Reader;
 
 #[inline]
 pub const fn ascii_case_insensitive_hash(value: &str) -> u64 {

@@ -15,9 +15,9 @@ mod scan;
 mod string_search;
 
 pub use builder::{
-    AnPlusB, Attribute, AttributeSelection, AttributeSelections, ClassSelections, ElementPredicate,
-    IElement, LocalLogicalPredicate, LocalSelectorList, LogicalPredicates,
-    MAX_SELECTOR_NESTING_DEPTH, StructuralMatchContext, StructuralPredicate, StructuralPredicates,
+    AnPlusB, AttributeSelection, AttributeSelections, ClassSelections, ElementPredicate, IElement,
+    LocalLogicalPredicate, LocalSelectorList, LogicalPredicates, MAX_SELECTOR_NESTING_DEPTH,
+    StructuralMatchContext, StructuralPredicate, StructuralPredicates,
 };
 pub use lexer::Combinator;
 pub(super) use lexer::Lexer;

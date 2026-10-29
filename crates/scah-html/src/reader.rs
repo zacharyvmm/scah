@@ -1,27 +1,25 @@
 use std::ops::Range;
 
+/// A byte cursor over a string.
+///
+/// The cursor moves by bytes, but [`slice`](Reader::slice) only returns
+/// whole characters, so a reader never yields invalid UTF-8.
 pub struct Reader<'a> {
-    source: &'a [u8],
+    text: &'a str,
     position: usize,
-    /// The source came from a `&str`, so it is known to be UTF-8.
-    utf8: bool,
 }
 
 impl<'a> Reader<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
-            source: input.as_bytes(),
+            text: input,
             position: 0,
-            utf8: true,
         }
     }
 
-    pub fn from_bytes(input: &'a [u8]) -> Self {
-        Self {
-            source: input,
-            position: 0,
-            utf8: false,
-        }
+    /// A reader over `input`, or an error when it is not UTF-8.
+    pub fn from_bytes(input: &'a [u8]) -> Result<Self, std::str::Utf8Error> {
+        std::str::from_utf8(input).map(Self::new)
     }
 
     #[inline]
@@ -35,7 +33,7 @@ impl<'a> Reader<'a> {
     /// bounded region before the token parser consumes it.
     #[inline]
     pub fn source(&self) -> &'a [u8] {
-        self.source
+        self.text.as_bytes()
     }
 
     /// Advance the reader to an already-discovered byte boundary.
@@ -45,73 +43,83 @@ impl<'a> Reader<'a> {
     #[inline]
     pub fn advance_to(&mut self, position: usize) {
         assert!(
-            position >= self.position && position <= self.source.len(),
+            position >= self.position && position <= self.source().len(),
             "reader can only advance to an in-bounds position"
         );
         self.position = position;
     }
 
-    /// The complete source as a string, or `None` when it was given as bytes
-    /// that are not UTF-8.
-    ///
-    /// Free for readers made with [`Reader::new`]; byte sources are validated
-    /// on every call.
+    /// The complete source as a string.
     #[inline]
-    pub fn source_str(&self) -> Option<&'a str> {
-        if self.utf8 {
-            // SAFETY: the source is the bytes of a `&str`.
-            Some(unsafe { std::str::from_utf8_unchecked(self.source) })
-        } else {
-            std::str::from_utf8(self.source).ok()
-        }
+    pub fn source_str(&self) -> &'a str {
+        self.text
     }
 
+    /// The source in `range`.
+    ///
+    /// # Panics
+    ///
+    /// When `range` is out of bounds or splits a character. Positions where
+    /// the cursor stopped at an ASCII byte or the end of the source never
+    /// split one.
     #[inline]
     pub fn slice(&self, range: Range<usize>) -> &'a str {
-        // SAFETY: The source was originally a &str, and structural characters are ASCII.
-        // Should be careful about slicing in the middle of a UTF-8 character.
-        unsafe { std::str::from_utf8_unchecked(&self.source[range]) }
+        &self.text[range]
+    }
+
+    /// [`slice`](Self::slice) without the character boundary checks.
+    ///
+    /// # Safety
+    ///
+    /// `range` must start and end on character boundaries.
+    #[inline]
+    pub unsafe fn slice_unchecked(&self, range: Range<usize>) -> &'a str {
+        debug_assert!(self.text.get(range.clone()).is_some());
+        // SAFETY: the range is bounds-checked, and the caller guarantees it
+        // starts and ends on character boundaries.
+        unsafe { std::str::from_utf8_unchecked(&self.text.as_bytes()[range]) }
     }
 
     #[inline]
     pub fn peek(&self) -> Option<u8> {
-        self.source.get(self.position).copied()
+        self.source().get(self.position).copied()
     }
 
     /// Peek at the byte `offset` positions ahead of the cursor without
     /// advancing. Returns `None` when the position is past the end of input.
     #[inline]
     pub fn peek_at(&self, offset: usize) -> Option<u8> {
-        self.source.get(self.position + offset).copied()
+        self.source().get(self.position + offset).copied()
     }
 
     #[inline]
     pub fn next_while_list(&mut self, characters: &[u8]) {
-        let len = self.source.len();
-        while self.position < len && characters.contains(&self.source[self.position]) {
+        let len = self.source().len();
+        while self.position < len && characters.contains(&self.source()[self.position]) {
             self.position += 1;
         }
     }
 
     #[inline]
     pub fn next_while(&mut self, character: u8) {
-        let len = self.source.len();
-        while self.position < len && self.source[self.position] == character {
+        let len = self.source().len();
+        while self.position < len && self.source()[self.position] == character {
             self.position += 1;
         }
     }
 
     #[inline]
     pub fn next_until_list(&mut self, characters: &[u8]) {
-        let len = self.source.len();
-        while self.position < len && !characters.contains(&self.source[self.position]) {
+        let len = self.source().len();
+        while self.position < len && !characters.contains(&self.source()[self.position]) {
             self.position += 1;
         }
     }
 
+    #[inline]
     pub fn next_until(&mut self, character: u8) {
-        let len = self.source.len();
-        while self.position < len && self.source[self.position] != character {
+        let len = self.source().len();
+        while self.position < len && self.source()[self.position] != character {
             self.position += 1;
         }
     }
@@ -131,11 +139,11 @@ impl<'a> Reader<'a> {
     /// `source.len()` if no unescaped delimiter was found.
     #[inline]
     pub fn next_until_unescaped(&mut self, delimiter: u8, escape: u8) {
-        let len = self.source.len();
+        let len = self.source().len();
 
         while self.position < len {
             // Find the next delimiter byte
-            let slice = &self.source[self.position..];
+            let slice = &self.source()[self.position..];
             match slice.iter().position(|&b| b == delimiter) {
                 None => {
                     self.position = len;
@@ -147,7 +155,7 @@ impl<'a> Reader<'a> {
                     // Count consecutive escape bytes immediately before the delimiter
                     let mut esc_count = 0usize;
                     let mut scan = candidate;
-                    while scan > 0 && self.source[scan - 1] == escape {
+                    while scan > 0 && self.source()[scan - 1] == escape {
                         esc_count += 1;
                         scan -= 1;
                     }
@@ -165,19 +173,20 @@ impl<'a> Reader<'a> {
         }
     }
 
+    #[inline]
     pub fn skip(&mut self) {
-        if self.position < self.source.len() {
+        if self.position < self.source().len() {
             self.position += 1;
         }
     }
 
     #[inline]
     pub fn eof(&self) -> bool {
-        if self.position >= self.source.len() {
+        if self.position >= self.source().len() {
             return true;
         }
 
-        self.source[self.position..]
+        self.source()[self.position..]
             .iter()
             .all(|b| b.is_ascii_whitespace())
     }
@@ -188,14 +197,14 @@ impl<'a> Reader<'a> {
     #[inline]
     pub fn preceding_bytes_eq(&self, suffix: &[u8]) -> bool {
         let position = self.position;
-        position >= suffix.len() && &self.source[position - suffix.len()..position] == suffix
+        position >= suffix.len() && &self.source()[position - suffix.len()..position] == suffix
     }
 
     pub fn match_ignore_case(&self, s: &str) -> bool {
-        if self.position + s.len() > self.source.len() {
+        if self.position + s.len() > self.source().len() {
             return false;
         }
-        let slice = &self.source[self.position..self.position + s.len()];
+        let slice = &self.source()[self.position..self.position + s.len()];
         slice.eq_ignore_ascii_case(s.as_bytes())
     }
 }
@@ -205,8 +214,8 @@ impl<'a> Iterator for Reader<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.position < self.source.len() {
-            let b = self.source[self.position];
+        if self.position < self.source().len() {
+            let b = self.source()[self.position];
             self.position += 1;
             Some(b)
         } else {
@@ -390,12 +399,19 @@ mod tests {
     }
 
     #[test]
-    fn source_str_validates_byte_sources() {
-        assert_eq!(Reader::new("<p>é").source_str(), Some("<p>é"));
+    fn slice_rejects_ranges_inside_a_character() {
+        let reader = Reader::new("<p>é");
+        assert_eq!(reader.source_str(), "<p>é");
+        assert_eq!(reader.slice(3..5), "é");
+        assert!(std::panic::catch_unwind(|| reader.slice(3..4)).is_err());
+    }
+
+    #[test]
+    fn from_bytes_rejects_invalid_utf8() {
         assert_eq!(
-            Reader::from_bytes("<p>é".as_bytes()).source_str(),
-            Some("<p>é")
+            Reader::from_bytes("<p>é".as_bytes()).unwrap().source_str(),
+            "<p>é"
         );
-        assert_eq!(Reader::from_bytes(b"<p>\xff").source_str(), None);
+        assert!(Reader::from_bytes(b"\xff<p>").is_err());
     }
 }

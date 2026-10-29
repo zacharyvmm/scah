@@ -10,8 +10,8 @@ jobs:
     name: Run Tests
     uses: ./.github/workflows/tests.yml
 
-  rust-publish-reader:
-    name: Publish scah-reader
+  rust-publish-html:
+    name: Publish scah-html
     needs: [test]
     runs-on: ubuntu-latest
     environment: release
@@ -24,14 +24,14 @@ jobs:
       - name: Authenticate with crates.io
         id: auth
         uses: rust-lang/crates-io-auth-action@v1
-      - name: Publish scah-reader
-        run: cargo publish --manifest-path crates/scah-reader/Cargo.toml
+      - name: Publish scah-html
+        run: cargo publish --manifest-path crates/scah-html/Cargo.toml
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   rust-publish-query-ir:
     name: Publish scah-query-ir
-    needs: [test, rust-publish-reader]
+    needs: [test, rust-publish-html]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -69,7 +69,7 @@ jobs:
 
   rust-publish:
     name: Publish scah
-    needs: [test, rust-publish-reader, rust-publish-query-ir, rust-publish-macros]
+    needs: [test, rust-publish-html, rust-publish-query-ir, rust-publish-macros]
     runs-on: ubuntu-latest
     environment: release
     permissions:
