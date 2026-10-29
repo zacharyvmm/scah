@@ -231,7 +231,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             TagEvent::Complete(close) => {
                 debug_assert_eq!(close.kind, TagKind::Close);
                 reader.advance_to(close.end);
-                // SAFETY: the indexer found `close` in the reader's source.
+                // SAFETY: the parser's own indexer found `close` in the reader's
+                // source, which is borrowed for `'html` and so unchanged.
                 let name = unsafe { close.name_unchecked(reader.source_str()) };
                 self.end_tag::<CAPTURE>(name, close.start, reader)
             }
@@ -272,7 +273,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         open: OpenTagStart,
         reader: &mut Reader<'html>,
     ) -> Result<bool, ParseError> {
-        // SAFETY: the indexer found `open` in the reader's source.
+        // SAFETY: the parser's own indexer found `open` in the reader's
+        // source, which is borrowed for `'html` and so unchanged.
         let name = unsafe { open.name_unchecked(reader.source_str()) };
         let id = TagId::of(name);
         let classified = ClassifiedTag::of(id);

@@ -69,8 +69,11 @@ impl TagSpan {
     ///
     /// # Safety
     ///
-    /// `self` must have been returned by an indexer for `source`, which
-    /// ends names only at ASCII bytes or the end of the source.
+    /// `self.name` must start and end on character boundaries of `source`.
+    /// That holds when an indexer found `self` in `source` and the bytes
+    /// have not changed since: the indexer ends names only at ASCII bytes or
+    /// the end of the source. An indexer that cached an earlier document in
+    /// the same buffer gives no such guarantee.
     #[inline]
     pub unsafe fn name_unchecked<'html>(&self, source: &'html str) -> &'html str {
         debug_assert!(source.get(self.name.clone()).is_some());
@@ -105,8 +108,11 @@ impl OpenTagStart {
     ///
     /// # Safety
     ///
-    /// `self` must have been returned by an indexer for `source`, which
-    /// ends names only at ASCII bytes or the end of the source.
+    /// `self.name` must start and end on character boundaries of `source`.
+    /// That holds when an indexer found `self` in `source` and the bytes
+    /// have not changed since: the indexer ends names only at ASCII bytes or
+    /// the end of the source. An indexer that cached an earlier document in
+    /// the same buffer gives no such guarantee.
     #[inline]
     pub unsafe fn name_unchecked<'html>(&self, source: &'html str) -> &'html str {
         debug_assert!(source.get(self.name.clone()).is_some());
