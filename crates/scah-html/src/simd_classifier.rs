@@ -197,51 +197,55 @@ unsafe fn classify_ssse3(pointer: *const u8) -> ClassMasks {
 
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
-unsafe fn find_less_than_neon(source: &[u8], mut position: usize) -> Option<usize> {
+unsafe fn find_less_than_neon(source: &[u8], from: usize) -> Option<usize> {
     use std::arch::aarch64::*;
 
     let needle = vdupq_n_u8(b'<');
-    // `saturating_sub` rather than `position + 16`, which could wrap: a
-    // `position` past the end skips the loop and panics in the tail slice.
-    while source.len().saturating_sub(position) >= 16 {
+    // Slicing first panics on a `from` past the end, and bounds `offset`
+    // by the slice length, so `offset + 16` cannot wrap.
+    let rest = &source[from..];
+    let mut offset = 0;
+    while offset + 16 <= rest.len() {
         // SAFETY: the loop condition guarantees a complete readable block.
-        let bytes = unsafe { vld1q_u8(source.as_ptr().add(position)) };
+        let bytes = unsafe { vld1q_u8(rest.as_ptr().add(offset)) };
         let mask = neon_nonzero_mask(vceqq_u8(bytes, needle));
         if mask != 0 {
-            return Some(position + mask.trailing_zeros() as usize);
+            return Some(from + offset + mask.trailing_zeros() as usize);
         }
-        position += 16;
+        offset += 16;
     }
-    source[position..]
+    rest[offset..]
         .iter()
         .position(|&byte| byte == b'<')
-        .map(|offset| position + offset)
+        .map(|index| from + offset + index)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "ssse3")]
-unsafe fn find_less_than_ssse3(source: &[u8], mut position: usize) -> Option<usize> {
+unsafe fn find_less_than_ssse3(source: &[u8], from: usize) -> Option<usize> {
     #[cfg(target_arch = "x86")]
     use std::arch::x86::*;
     #[cfg(target_arch = "x86_64")]
     use std::arch::x86_64::*;
 
     let needle = _mm_set1_epi8(b'<' as i8);
-    // `saturating_sub` rather than `position + 16`, which could wrap: a
-    // `position` past the end skips the loop and panics in the tail slice.
-    while source.len().saturating_sub(position) >= 16 {
+    // Slicing first panics on a `from` past the end, and bounds `offset`
+    // by the slice length, so `offset + 16` cannot wrap.
+    let rest = &source[from..];
+    let mut offset = 0;
+    while offset + 16 <= rest.len() {
         // SAFETY: the loop condition guarantees a complete readable block.
-        let bytes = unsafe { _mm_loadu_si128(source.as_ptr().add(position).cast()) };
+        let bytes = unsafe { _mm_loadu_si128(rest.as_ptr().add(offset).cast()) };
         let mask = _mm_movemask_epi8(_mm_cmpeq_epi8(bytes, needle)) as u16;
         if mask != 0 {
-            return Some(position + mask.trailing_zeros() as usize);
+            return Some(from + offset + mask.trailing_zeros() as usize);
         }
-        position += 16;
+        offset += 16;
     }
-    source[position..]
+    rest[offset..]
         .iter()
         .position(|&byte| byte == b'<')
-        .map(|offset| position + offset)
+        .map(|index| from + offset + index)
 }
 
 #[cfg(test)]
