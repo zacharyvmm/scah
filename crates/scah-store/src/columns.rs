@@ -1,14 +1,12 @@
 use std::ops::Range;
 
-use crate::Save;
-
 /// Offset of a [`Span`] that holds no value.
 const ABSENT: u32 = u32::MAX;
 
 /// A `(offset, len)` byte span into the HTML or a text tape. An offset of
 /// `u32::MAX` marks an absent value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Span {
+pub struct Span {
     offset: u32,
     len: u32,
 }
@@ -70,7 +68,7 @@ impl Span {
 /// What every row has: its tag name, the section that saved it, and where
 /// its attributes start.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct RowHead {
+pub struct RowHead {
     pub(crate) name: Span,
     pub(crate) section: u32,
     /// Index of the row's first attribute in [`Columns::attribute_keys`]
@@ -79,20 +77,33 @@ pub(crate) struct RowHead {
     pub(crate) attributes: u32,
 }
 
+/// The content a query section saves for its rows, besides their names:
+/// scah's `Save` without `attributes`, which is chosen per row (see
+/// [`StoreBuilder::add_row`](crate::StoreBuilder::add_row)).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Content {
+    /// The HTML between the element's open and close tags.
+    pub inner_html: bool,
+    /// Its source-preserving descendant text.
+    pub raw_text: bool,
+    /// Its normalized descendant text.
+    pub text: bool,
+}
+
 /// The optional columns a parse fills: those of the fields some query
 /// section saves.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct ColumnPlan {
+pub struct ColumnPlan {
     pub(crate) inner_html: bool,
     pub(crate) raw_text: bool,
     pub(crate) text: bool,
 }
 
 impl ColumnPlan {
-    pub(crate) fn add(&mut self, save: Save) {
-        self.inner_html |= save.inner_html;
-        self.raw_text |= save.raw_text;
-        self.text |= save.text;
+    pub(crate) fn add(&mut self, content: Content) {
+        self.inner_html |= content.inner_html;
+        self.raw_text |= content.raw_text;
+        self.text |= content.text;
     }
 }
 
@@ -109,18 +120,21 @@ impl ColumnPlan {
 /// others in source order. The `class` and `id` keys are
 /// [`Span::CLASS_KEY`] and [`Span::ID_KEY`], so finding them compares no
 /// strings. A value is [`Span::ABSENT`] for an attribute without one.
+///
+/// Public only for scah's tests, which read it through the hidden
+/// `Store::columns`.
 #[derive(Debug, Default)]
-pub(crate) struct Columns {
-    pub(crate) plan: ColumnPlan,
+pub struct Columns {
+    pub plan: ColumnPlan,
     /// Rows this parse asked to reserve. Reused buffers can hold more, which
     /// optional columns should not copy.
-    pub(crate) reserved_rows: usize,
-    pub(crate) rows: Vec<RowHead>,
-    pub(crate) attribute_keys: Vec<Span>,
-    pub(crate) attribute_values: Vec<Span>,
-    pub(crate) inner_html: Vec<Span>,
-    pub(crate) raw_text: Vec<Span>,
-    pub(crate) text: Vec<Span>,
+    pub reserved_rows: usize,
+    pub rows: Vec<RowHead>,
+    pub attribute_keys: Vec<Span>,
+    pub attribute_values: Vec<Span>,
+    pub inner_html: Vec<Span>,
+    pub raw_text: Vec<Span>,
+    pub text: Vec<Span>,
 }
 
 /// Equal when the plan and every column's values are, whatever was

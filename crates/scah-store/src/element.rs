@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use super::columns::{Columns, Span};
 use super::{ElementId, Store};
-use crate::Attribute;
+use scah_html::Attribute;
 
 /// A matched HTML element: a handle to one row of a [`Store`].
 ///
@@ -135,7 +135,9 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     }
 
     /// The raw HTML between the opening and closing tags.
-    /// Only saved when [`Save::inner_html`](crate::Save::inner_html) is `true`.
+    /// Only saved when
+    /// [`Save::inner_html`](https://docs.rs/scah/latest/scah/struct.Save.html#structfield.inner_html)
+    /// is `true`.
     #[inline]
     pub fn inner_html(&self) -> Option<&'html str> {
         let span = *self.store.columns.inner_html.get(self.row.index())?;
@@ -163,7 +165,7 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use scah::{Query, Save, parse};
     ///
     /// let html = r#"<a href="https://example.com">Link</a>"#;
@@ -185,7 +187,9 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
 
     /// The element's source-preserving descendant text.
     ///
-    /// Only saved when [`Save::raw_text`](crate::Save::raw_text) is `true`.
+    /// Only saved when
+    /// [`Save::raw_text`](https://docs.rs/scah/latest/scah/struct.Save.html#structfield.raw_text)
+    /// is `true`.
     #[inline]
     pub fn raw_text(&self) -> Option<&'store str> {
         Columns::cell(&self.store.columns.raw_text, self.row.index())
@@ -195,7 +199,9 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// The element's normalized, human-readable descendant text.
     ///
     /// Returns the whitespace-trimmed, concatenated text nodes within this
-    /// element. Only saved when [`Save::text`](crate::Save::text) is `true`.
+    /// element. Only saved when
+    /// [`Save::text`](https://docs.rs/scah/latest/scah/struct.Save.html#structfield.text)
+    /// is `true`.
     #[inline]
     pub fn text(&self) -> Option<&'store str> {
         Columns::cell(&self.store.columns.text, self.row.index())
@@ -231,7 +237,9 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     }
 
     /// Elements matched under this one by its first **nested query** (one
-    /// added via [`QueryBuilder::then`](crate::QueryBuilder::then)) whose
+    /// added via
+    /// [`QueryBuilder::then`](https://docs.rs/scah/latest/scah/struct.QueryBuilder.html#method.then))
+    /// whose
     /// selector is `selector`.
     ///
     /// Returns `None` if there is no such nested query, or it matched

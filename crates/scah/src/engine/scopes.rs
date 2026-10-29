@@ -32,7 +32,7 @@ use scah_query_ir::{
 use smallvec::{SmallVec, smallvec};
 
 use super::matcher::FrameMeta;
-use crate::store::ElementId;
+use scah_store::ElementId;
 
 /// An open element saved by a section that has nested sections.
 #[derive(Debug, Clone)]

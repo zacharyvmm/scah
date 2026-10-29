@@ -50,7 +50,8 @@ use std::borrow::Cow;
 
 use super::scopes::Scopes;
 use crate::XHtmlElement;
-use crate::store::{ElementId, Store};
+use crate::output::Output;
+use scah_store::ElementId;
 
 /// Store writes made for one opened element.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -332,7 +333,7 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
         &mut self,
         element: &XHtmlElement<'html>,
         structural: Option<&StructuralMatchContext<'q>>,
-        store: &mut Store<'html, 'q>,
+        out: &mut Output<'html, 'q>,
         hits: &mut Vec<SaveHit>,
     ) where
         'q: 'html,
@@ -344,7 +345,7 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
             return;
         }
         if self.candidates_in(StepMask::Filter) {
-            self.filter(element, structural, store);
+            self.filter(element, structural, out);
         }
 
         let top = self.top();
@@ -382,7 +383,7 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
         }
 
         if self.candidates_in(StepMask::Save) {
-            self.save(element, store, hits);
+            self.save(element, out, hits);
         }
     }
 
@@ -392,7 +393,7 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
         &mut self,
         element: &XHtmlElement<'html>,
         structural: Option<&StructuralMatchContext<'q>>,
-        store: &mut Store<'html, 'q>,
+        out: &mut Output<'html, 'q>,
     ) where
         'q: 'html,
     {
@@ -412,7 +413,7 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
                 {
                     self.masks[CANDIDATES * words + word] &= !(1 << bit);
                     crate::scah_trace!(
-                        store,
+                        out.trace,
                         crate::debug::TraceEvent::StepRejected {
                             selector: self
                                 .store
@@ -428,14 +429,14 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
             }
         }
         #[cfg(not(any(debug_assertions, test)))]
-        let _ = store;
+        let _ = out;
     }
 
     #[inline(always)]
     fn save<'html>(
         &mut self,
         element: &XHtmlElement<'html>,
-        store: &mut Store<'html, 'q>,
+        out: &mut Output<'html, 'q>,
         hits: &mut Vec<SaveHit>,
     ) where
         'q: 'html,
@@ -455,9 +456,9 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
                 }
                 last_section = Some(info.section);
                 if info.root {
-                    self.save_root(info, element, store, hits);
+                    self.save_root(info, element, out, hits);
                 } else {
-                    self.save_scoped(info, element, store, hits);
+                    self.save_scoped(info, element, out, hits);
                 }
             }
         }
@@ -468,7 +469,7 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
         &mut self,
         info: StepPlan,
         element: &XHtmlElement<'html>,
-        store: &mut Store<'html, 'q>,
+        out: &mut Output<'html, 'q>,
         hits: &mut Vec<SaveHit>,
     ) where
         'q: 'html,
@@ -478,8 +479,8 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
             self.claim_root(section);
         }
         let spec = self.store.program().section(section);
-        let row = store.add_row(section, spec, element);
-        add_edge(store, None, row, (section, spec), element);
+        let row = out.store.add_row(section.0, spec.save.attributes, element);
+        add_edge(out, None, row, (section, spec), element);
         hits.push(save_hit(row, spec));
         if info.has_children {
             self.scopes
@@ -507,7 +508,7 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
         &mut self,
         info: StepPlan,
         element: &XHtmlElement<'html>,
-        store: &mut Store<'html, 'q>,
+        out: &mut Output<'html, 'q>,
         hits: &mut Vec<SaveHit>,
     ) where
         'q: 'html,
@@ -522,8 +523,10 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
         let mut row = None;
         self.scopes
             .for_each_parent(program, info, candidates, |parent| {
-                let row = *row.get_or_insert_with(|| store.add_row(section, spec, element));
-                add_edge(store, Some(parent), row, (section, spec), element);
+                let row = *row.get_or_insert_with(|| {
+                    out.store.add_row(section.0, spec.save.attributes, element)
+                });
+                add_edge(out, Some(parent), row, (section, spec), element);
             });
         let Some(row) = row else {
             return;
@@ -672,12 +675,12 @@ impl<'q> AnyMatcher<'q> {
         &mut self,
         element: &XHtmlElement<'html>,
         structural: Option<&StructuralMatchContext<'q>>,
-        store: &mut Store<'html, 'q>,
+        out: &mut Output<'html, 'q>,
         hits: &mut Vec<SaveHit>,
     ) where
         'q: 'html,
     {
-        dispatch!(self, matcher => matcher.open(element, structural, store, hits))
+        dispatch!(self, matcher => matcher.open(element, structural, out, hits))
     }
 
     #[inline(always)]
@@ -704,17 +707,17 @@ fn save_hit(element_id: ElementId, spec: &scah_query_ir::QuerySection<'_>) -> Sa
 /// List `row` under `parent` (the document when `None`).
 #[inline(always)]
 fn add_edge<'html, 'q: 'html>(
-    store: &mut Store<'html, 'q>,
+    out: &mut Output<'html, 'q>,
     parent: Option<ElementId>,
     row: ElementId,
     section: (SectionIndex, &'q scah_query_ir::QuerySection<'q>),
     element: &XHtmlElement<'html>,
 ) {
-    store.add_edge(parent, row);
+    out.store.add_edge(parent, row);
     let (_index, _spec) = section;
     let _ = element;
     crate::scah_trace!(
-        store,
+        out.trace,
         crate::debug::TraceEvent::ElementSaved {
             section: _index.index(),
             selector: _spec.source,
@@ -731,8 +734,9 @@ fn add_edge<'html, 'q: 'html>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Attribute, Query, QuerySpec, Save};
+    use crate::{Attribute, Query, QuerySpec, Save, Store};
     use pretty_assertions::assert_eq;
+    use scah_store::StoreBuilder;
 
     /// Every tag name, id and class the tests use, space-separated. The
     /// store keeps strings as spans of the parsed document, so the driver's
@@ -761,19 +765,19 @@ mod tests {
     /// `name#id.class`.
     struct Driver<'q> {
         matcher: AnyMatcher<'q>,
-        store: Store<'q, 'q>,
+        out: Output<'q, 'q>,
         hits: Vec<SaveHit>,
     }
 
     impl<'q> Driver<'q> {
         fn new<Q: QuerySpec<'q>>(queries: &'q [Q]) -> Self {
             let program = Program::compile(queries);
-            let mut store = Store::default();
+            let mut store = StoreBuilder::default();
             store.set_html(&VOCABULARY);
-            store.set_sections(&program);
+            let out = Output::new(store, &program, 0);
             Self {
                 matcher: AnyMatcher::new(Cow::Owned(program)),
-                store,
+                out,
                 hits: Vec::new(),
             }
         }
@@ -804,7 +808,7 @@ mod tests {
             };
             self.matcher.prepare(TagId::of(name), name);
             self.matcher
-                .open(&element, None, &mut self.store, &mut self.hits);
+                .open(&element, None, &mut self.out, &mut self.hits);
             self
         }
 
@@ -848,7 +852,7 @@ mod tests {
         }
 
         /// Results as `selector[elem{child[...]}, ...]`, elements by id.
-        fn render(&mut self) -> String {
+        fn render(self) -> String {
             fn label(element: crate::ElementRef<'_, '_, '_>) -> String {
                 element.id().unwrap_or(element.name()).to_string()
             }
@@ -875,13 +879,13 @@ mod tests {
                     .collect();
                 out.push_str(&items.join(", "));
             }
-            self.store.finish();
+            let store = self.out.store.finish();
             let mut out = Vec::new();
             let mut index = 0;
-            while let Some(selector) = self.store.query_selector(index) {
-                if let Some(ids) = self.store.query_results(index) {
+            while let Some(selector) = store.query_selector(index) {
+                if let Some(ids) = store.query_results(index) {
                     let mut list = String::new();
-                    rows(&self.store, ids, &mut list);
+                    rows(&store, ids, &mut list);
                     out.push(format!("{selector}[{list}]"));
                 }
                 index += 1;
@@ -1203,7 +1207,7 @@ mod tests {
         let tree: &'static str = Box::leak(tree.into_boxed_str());
         let mut driver = Driver::new(&queries);
         driver.feed(tree);
-        assert_eq!(driver.store.len(), 1);
+        assert_eq!(driver.out.store.len(), 1);
     }
 
     #[test]

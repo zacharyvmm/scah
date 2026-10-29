@@ -106,8 +106,8 @@ use std::borrow::Cow;
 mod capture;
 pub mod debug;
 mod engine;
+mod output;
 mod parser;
-mod store;
 mod support;
 
 #[cfg(all(any(debug_assertions, test), feature = "otel"))]
@@ -125,7 +125,9 @@ pub use scah_query_ir::{
     QuerySpec, Save, SelectionKind, SelectorParseError, StaticQuery, StructuralMatchContext,
     StructuralPredicate, StructuralPredicates, TextRequirements, Transition, TransitionId,
 };
-pub use store::{Attributes, CapacityOptions, ElementId, ElementRef, Elements, HeapUsage, Store};
+pub use scah_store::{
+    Attributes, CapacityOptions, ElementId, ElementRef, Elements, HeapUsage, Store,
+};
 
 /// Implementation details referenced by `query!` expansions.
 #[doc(hidden)]
@@ -144,9 +146,7 @@ pub mod bench_internals {
     #[cfg(feature = "bench-internals")]
     pub use crate::capture::TextPathStats;
     #[cfg(feature = "simd-bench-internals")]
-    use crate::store::Store;
-    #[cfg(feature = "simd-bench-internals")]
-    use crate::{ParseError, Program, QuerySpec};
+    use crate::{ParseError, Program, QuerySpec, Store};
     #[cfg(feature = "simd-bench-internals")]
     use scah_html::BlockClassifier;
     #[cfg(feature = "simd-bench-internals")]
@@ -341,6 +341,30 @@ fn run<'html, 'query: 'html>(
     capture: bool,
     indexing_mode: Option<scah_html::IndexingMode>,
 ) -> Result<Store<'html, 'query>, ParseError> {
+    let parser = parse_document(html, program, capture, indexing_mode)?;
+    checked(parser.finish())
+}
+
+/// [`run`], also returning the trace of the parse.
+#[cfg(any(debug_assertions, test))]
+fn run_traced<'html, 'query: 'html>(
+    html: &'html str,
+    program: Cow<'query, Program<'query>>,
+    capture: bool,
+    indexing_mode: Option<scah_html::IndexingMode>,
+) -> Result<(Store<'html, 'query>, debug::TraceStore<'html, 'query>), ParseError> {
+    let parser = parse_document(html, program, capture, indexing_mode)?;
+    let (store, trace) = parser.finish_traced();
+    Ok((checked(store)?, trace))
+}
+
+/// A parser that read all of `html`, ready to finish.
+fn parse_document<'html, 'query: 'html>(
+    html: &'html str,
+    program: Cow<'query, Program<'query>>,
+    capture: bool,
+    indexing_mode: Option<scah_html::IndexingMode>,
+) -> Result<XHtmlParser<'html, 'query>, ParseError> {
     check_limits(html, &program, capture)?;
     let query_count = program.root_sections().len();
     // Parses that can stop early do not reserve result rows for the whole input.
@@ -350,10 +374,16 @@ fn run<'html, 'query: 'html>(
     parser.trace_parse_started(html.len(), query_count);
     parser.run(&mut reader);
 
-    if let Some(err) = parser.take_parse_error() {
-        return Err(err);
+    match parser.take_parse_error() {
+        Some(err) => Err(err),
+        None => Ok(parser),
     }
-    let store = parser.finish();
+}
+
+/// `store`, unless a text range or an attribute index did not fit in it.
+fn checked<'html, 'query: 'html>(
+    store: Store<'html, 'query>,
+) -> Result<Store<'html, 'query>, ParseError> {
     if store.overflowed() {
         return Err(ParseError::InputTooLarge);
     }
@@ -380,15 +410,18 @@ mod tests {
     #[test]
     #[cfg(feature = "simd-bench-internals")]
     fn indexing_mode_helper_traces_like_parse() {
+        use scah_html::IndexingMode;
+
         let html = "<main><a href='x'>x</a><a>y</a></main>";
         let queries = &[Query::all("a", Save::all()).unwrap().build()];
-        let events = |store: &Store<'_, '_>| format!("{:?}", store.trace.events());
+        let events = |trace: &debug::TraceStore<'_, '_>| format!("{:?}", trace.events());
 
-        let expected = events(&parse(html, queries).unwrap());
-        for full_index in [false, true] {
-            let store =
-                bench_internals::parse_with_indexing_mode(html, queries, full_index).unwrap();
-            assert_eq!(events(&store), expected, "full_index = {full_index}");
+        let (_, expected) = debug::parse_traced(html, queries).unwrap();
+        // The indexing modes `parse_with_indexing_mode` chooses between.
+        for mode in [IndexingMode::Rolling, IndexingMode::ForcedFullDocument] {
+            let program = Cow::Owned(Program::compile(queries));
+            let (_, trace) = run_traced(html, program, true, Some(mode)).unwrap();
+            assert_eq!(events(&trace), events(&expected), "{mode:?}");
         }
     }
 
@@ -466,12 +499,12 @@ mod tests {
 
         // Text buffers should NOT be reserved when Save::none().
         assert_eq!(
-            store.text.raw_text.capacity(),
+            store.text_tapes().raw_text.capacity(),
             0,
             "capacity path with Save::none must skip raw-text buffer preallocation"
         );
         assert_eq!(
-            store.text.text.capacity(),
+            store.text_tapes().text.capacity(),
             0,
             "capacity path with Save::none must skip normalized-text buffer preallocation"
         );
@@ -501,7 +534,7 @@ mod tests {
 
         // Normalized text should be preallocated when saving text.
         assert!(
-            store.text.text.capacity() > 0,
+            store.text_tapes().text.capacity() > 0,
             "normalized-text buffer must be preallocated when queries need text"
         );
     }

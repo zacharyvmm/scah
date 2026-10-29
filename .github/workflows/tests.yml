@@ -84,7 +84,7 @@ jobs:
           # Package the published crates together so their path dependencies
           # resolve to each other. Packaging scah alone resolves them on
           # crates.io, which fails whenever the version has just been bumped.
-          cargo package -p scah-html -p scah-query-ir -p scah-macros -p scah
+          cargo package -p scah-html -p scah-store -p scah-query-ir -p scah-macros -p scah
       - name: Check escape scanner benchmark
         run: cargo bench -p scah-benches --bench speed_bench_escape_scanner -- --test
       - name: Check cursor-dominance benchmark
@@ -138,7 +138,7 @@ jobs:
       - name: Build docs
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps -p scah -p scah-html -p scah-query-ir -p scah-macros
+        run: cargo doc --no-deps -p scah -p scah-store -p scah-html -p scah-query-ir -p scah-macros
 
   msrv:
     name: Rust MSRV (1.88)
@@ -147,7 +147,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88
       - name: Check published crates
-        run: cargo check -p scah -p scah-html -p scah-query-ir -p scah-macros
+        run: cargo check -p scah -p scah-store -p scah-html -p scah-query-ir -p scah-macros
 
   rust-aarch64:
     name: Rust AArch64 SIMD Checks

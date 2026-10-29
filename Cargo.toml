@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/scah-html",
+    "crates/scah-store",
     "crates/scah-query-ir",
     "crates/scah-macros",
     "crates/scah",
@@ -27,6 +28,7 @@ homepage = "https://github.com/zacharyvmm/scah"
 [workspace.dependencies]
 scah = { version = "0.2.0-dev", path = "crates/scah" }
 scah-html = { version = "0.2.0-dev", path = "crates/scah-html" }
+scah-store = { version = "0.2.0-dev", path = "crates/scah-store" }
 scah-query-ir = { version = "0.2.0-dev", path = "crates/scah-query-ir" }
 scah-macros = { version = "0.2.0-dev", path = "crates/scah-macros" }
 

@@ -29,6 +29,25 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
+  rust-publish-store:
+    name: Publish scah-store
+    needs: [test, rust-publish-html]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish scah-store
+        run: cargo publish --manifest-path crates/scah-store/Cargo.toml
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
   rust-publish-query-ir:
     name: Publish scah-query-ir
     needs: [test, rust-publish-html]
@@ -69,7 +88,7 @@ jobs:
 
   rust-publish:
     name: Publish scah
-    needs: [test, rust-publish-html, rust-publish-query-ir, rust-publish-macros]
+    needs: [test, rust-publish-html, rust-publish-store, rust-publish-query-ir, rust-publish-macros]
     runs-on: ubuntu-latest
     environment: release
     permissions:

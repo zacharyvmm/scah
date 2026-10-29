@@ -2,9 +2,9 @@ use super::entities::{
     contains_ampersand, decode_character_references,
     decode_character_references_normalizing_source_newlines,
 };
-use crate::store::TextTape;
 use scah_html::{DepthSize, TextTagFlags};
 use scah_query_ir::TextRequirements;
+use scah_store::TextTape;
 
 /// Which text representations the current parse is capturing.
 ///
@@ -319,7 +319,9 @@ impl ParserTextState {
             }
 
             self.flush_pending(tape);
-            tape.push_bytes(&decoded[run_start..i]);
+            // SAFETY: the run starts and ends at ASCII whitespace or the end
+            // of `decoded`, which are character boundaries.
+            unsafe { tape.push_bytes(&decoded[run_start..i]) };
         }
     }
 
@@ -392,7 +394,9 @@ impl ParserTextState {
             }
 
             self.flush_pending(tape);
-            tape.push_bytes(&bytes[run_start..i]);
+            // SAFETY: `bytes` is UTF-8 and the run ends at a newline, after a
+            // whole character, or at the end of `bytes`.
+            unsafe { tape.push_bytes(&bytes[run_start..i]) };
         }
     }
 

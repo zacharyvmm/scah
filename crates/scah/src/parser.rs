@@ -18,16 +18,17 @@ use crate::ParseError;
 use crate::capture::{Capture, TextElementFlags};
 use crate::debug::ImpliedCloseReason;
 #[cfg(any(debug_assertions, test))]
-use crate::debug::TraceEvent;
+use crate::debug::{TraceEvent, TraceStore};
 use crate::engine::matcher::{AnyMatcher, SaveHit};
 use crate::engine::structural::StructuralState;
-use crate::store::Store;
-use crate::{Program, QuerySpec};
+use crate::output::Output;
+use crate::{CapacityOptions, Program, QuerySpec, Store};
 use scah_html::{
     Attribute, AttributeInterest, AutoTagIndexer, ClassifiedTag, DepthSize, IndexingMode,
     MAX_ELEMENT_DEPTH, OpenElement, OpenElementStack, OpenTagStart, Reader, TagEvent, TagFlags,
     TagId, TagIndexer, TagKind, XHtmlElement,
 };
+use scah_store::StoreBuilder;
 use std::borrow::Cow;
 
 /// Where the parser is in the document.
@@ -53,7 +54,7 @@ struct ParserTempState<'html, 'query> {
 pub struct XHtmlParser<'html, 'query> {
     position: DocumentPosition,
     matcher: AnyMatcher<'query>,
-    store: Store<'html, 'query>,
+    out: Output<'html, 'query>,
     element: crate::XHtmlElement<'html>,
     open_elements: OpenElementStack<'html>,
     temp_state: ParserTempState<'html, 'query>,
@@ -96,24 +97,28 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         } else {
             IndexingMode::FullDocument
         });
-        let store = capacity.map_or_else(Store::default, |capacity| {
-            Store::with_capacity_requirements(
+        let options = CapacityOptions {
+            reserve_raw_text: requirements.raw_text,
+            reserve_text: requirements.text,
+            ..CapacityOptions::default()
+        };
+        let store = capacity.map_or_else(StoreBuilder::default, |capacity| {
+            StoreBuilder::with_capacity_requirements(
                 capacity,
-                crate::CapacityOptions {
-                    reserve_raw_text: requirements.raw_text,
-                    reserve_text: requirements.text,
-                    ..crate::CapacityOptions::default()
-                },
+                options,
                 features.stores_attributes,
                 false,
             )
+        });
+        // The trace reserves an event per reserved row, up to a limit.
+        let trace_capacity = capacity.map_or(0, |capacity| {
+            (capacity / options.element_bytes_per_slot.max(1)).min(options.trace_capacity_limit)
         });
         let structural = features
             .has_structural
             .then(|| Box::new(StructuralState::new(&program)));
         let attribute_interest = AttributeInterest::new(program.attribute_names());
-        let mut store = store;
-        store.set_sections(&program);
+        let out = Output::new(store, &program, trace_capacity);
 
         Self {
             position: DocumentPosition::default(),
@@ -136,7 +141,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             attribute_parse_count: 0,
             #[cfg(test)]
             selected_attribute_count: 0,
-            store,
+            out,
         }
     }
 
@@ -194,10 +199,13 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     fn bind_source(&mut self, reader: &Reader<'html>) {
         let source = reader.source();
         if self.source_bound {
-            assert!(self.store.bound_to(source), "a parser reads one document");
+            assert!(
+                self.out.store.bound_to(source),
+                "a parser reads one document"
+            );
         } else {
             let html = reader.source_str();
-            self.store.set_html(html);
+            self.out.store.set_html(html);
             self.source_bound = true;
         }
     }
@@ -253,7 +261,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
                         reader,
                         span.start,
                         self.position.element_depth,
-                        &mut self.store,
+                        &mut self.out,
                     );
                     self.capture.cancel_initial_newline::<CAPTURE>();
                     reader.advance_to(span.end);
@@ -285,7 +293,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             reader,
             open.start,
             self.position.element_depth,
-            &mut self.store,
+            &mut self.out,
         );
         let mut finished = self.close_implied_by::<CAPTURE>(tag, reader);
 
@@ -306,7 +314,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             .as_deref_mut()
             .map(|state| state.open(self.element.name, !void, &self.element));
         crate::scah_trace!(
-            self.store,
+            self.out.trace,
             TraceEvent::OpenTag {
                 tag: self.element.name,
                 depth: self.position.element_depth,
@@ -318,7 +326,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         self.matcher.open(
             &self.element,
             structural.as_ref(),
-            &mut self.store,
+            &mut self.out,
             &mut self.temp_state.save_hits,
         );
         self.capture.open::<CAPTURE>(
@@ -327,7 +335,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             void,
             self.position.reader_position,
             self.position.element_depth,
-            &mut self.store,
+            &mut self.out,
         );
         if void {
             self.matcher.close();
@@ -439,7 +447,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             reader,
             start,
             self.position.element_depth,
-            &mut self.store,
+            &mut self.out,
         );
         self.capture.cancel_initial_newline::<CAPTURE>();
         let finished = self.close_named::<CAPTURE>(name, reader);
@@ -486,7 +494,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     ) -> bool {
         if finished {
             crate::scah_trace!(
-                self.store,
+                self.out.trace,
                 TraceEvent::EarlyExit {
                     reader_position: reader.get_position(),
                 }
@@ -500,9 +508,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         true
     }
 
-    pub fn matches(mut self) -> Store<'html, 'query> {
-        self.store.finish();
-        self.store
+    pub fn matches(self) -> Store<'html, 'query> {
+        self.out.store.finish()
     }
 
     pub fn trace_parse_started(
@@ -511,7 +518,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] query_count: usize,
     ) {
         crate::scah_trace!(
-            self.store,
+            self.out.trace,
             TraceEvent::ParseStarted {
                 html_len,
                 query_count,
@@ -530,19 +537,33 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         }
     }
 
-    pub fn finish(mut self) -> Store<'html, 'query> {
-        self.store.finish();
+    pub fn finish(self) -> Store<'html, 'query> {
+        // Debug and test builds trace the end of the parse.
+        #[cfg(any(debug_assertions, test))]
+        let (store, _trace) = self.finish_traced();
+        #[cfg(not(any(debug_assertions, test)))]
+        let store = self.out.store.finish();
+        store
+    }
+
+    /// [`XHtmlParser::finish`], also returning the trace of the parse.
+    #[cfg(any(debug_assertions, test))]
+    pub(crate) fn finish_traced(self) -> (Store<'html, 'query>, TraceStore<'html, 'query>) {
+        let Output { store, mut trace } = self.out;
+        let tapes = store.text();
+        let (raw_text_len, text_len) = (tapes.raw_text.len(), tapes.text.len());
+        let store = store.finish();
         crate::scah_trace!(
-            self.store,
+            trace,
             TraceEvent::ParseFinished {
-                element_count: self.store.len(),
-                result_count: self.store.result_count(),
-                attribute_count: self.store.attribute_count(),
-                raw_text_len: self.store.text.raw_text.len(),
-                text_len: self.store.text.text.len(),
+                element_count: store.len(),
+                result_count: store.result_count(),
+                attribute_count: store.attribute_count(),
+                raw_text_len,
+                text_len,
             }
         );
-        self.store
+        (store, trace)
     }
 
     /// Close an element popped from the open-element stack. Returns whether
@@ -559,7 +580,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             depth,
             self.position.reader_position,
             reader,
-            &mut self.store,
+            &mut self.out,
         );
         if let Some(structural) = self.temp_state.structural.as_deref_mut() {
             structural.close();
@@ -578,7 +599,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         reader: &Reader<'html>,
     ) -> bool {
         crate::scah_trace!(
-            self.store,
+            self.out.trace,
             TraceEvent::CloseTag {
                 tag: name,
                 depth: self.position.element_depth,
@@ -645,7 +666,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             reader,
             reader.get_position(),
             self.position.element_depth,
-            &mut self.store,
+            &mut self.out,
         );
         self.position.reader_position = reader.get_position();
         self.open_elements
@@ -674,7 +695,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             let depth = base_depth.saturating_add((total - index) as DepthSize);
             if named.is_none_or(|named| !element.name.eq_ignore_ascii_case(named)) {
                 crate::scah_trace!(
-                    self.store,
+                    self.out.trace,
                     TraceEvent::ImpliedClose {
                         tag: element.name,
                         depth,
@@ -704,7 +725,7 @@ mod tests {
 
     use super::*;
     use crate::Attribute;
-    use crate::store::ElementRef;
+    use crate::ElementRef;
     use crate::{Query, Reader, Save, parse};
     use pretty_assertions::assert_eq;
 
@@ -800,7 +821,7 @@ mod tests {
         let anchor = store.get("a").unwrap().next().unwrap();
         assert_eq!(anchor.inner_html(), Some("Hello <b>World</b>"));
         assert_eq!(anchor.text(), None);
-        assert!(store.text.text.as_bytes().is_empty());
+        assert!(store.text_tapes().text.as_bytes().is_empty());
     }
 
     #[test]
@@ -812,8 +833,8 @@ mod tests {
 
         parser.run(&mut reader);
 
-        assert!(parser.store.text.raw_text.as_bytes().is_empty());
-        assert!(parser.store.text.text.as_bytes().is_empty());
+        assert!(parser.out.store.text().raw_text.as_bytes().is_empty());
+        assert!(parser.out.store.text().text.as_bytes().is_empty());
         assert_eq!(parser.capture.active_counts(), (0, 0));
         #[cfg(feature = "bench-internals")]
         {
@@ -835,8 +856,11 @@ mod tests {
 
         assert_eq!(hit.raw_text(), Some("selected &amp; nested"));
         assert_eq!(hit.text(), Some("selected & nested"));
-        assert_eq!(store.text.raw_text.as_bytes(), b"selected &amp; nested");
-        assert_eq!(store.text.text.as_bytes(), b"selected & nested");
+        assert_eq!(
+            store.text_tapes().raw_text.as_bytes(),
+            b"selected &amp; nested"
+        );
+        assert_eq!(store.text_tapes().text.as_bytes(), b"selected & nested");
     }
 
     #[test]
@@ -1604,7 +1628,7 @@ mod tests {
 
         let anchor = store.get("a").unwrap().next().unwrap();
         assert_eq!(anchor.text(), None);
-        assert_eq!(store.text.text.len(), 0);
+        assert_eq!(store.text_tapes().text.len(), 0);
     }
 
     #[test]
@@ -2060,7 +2084,7 @@ mod tests {
         let mut parser = XHtmlParser::new(&queries);
         let mut reader = Reader::new(first);
         parser.next(&mut reader);
-        assert!(parser.store.is_empty());
+        assert_eq!(parser.out.store.len(), 0);
         let mut reader = Reader::new(&second);
         parser.next(&mut reader);
     }

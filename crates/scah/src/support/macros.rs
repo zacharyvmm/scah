@@ -9,23 +9,24 @@ macro_rules! mut_prt_unchecked {
     }};
 }
 
+// Record a `TraceEvent` in `$trace`, a `TraceStore`, and with the `otel`
+// feature emit it to `tracing`. Release builds expand to nothing: neither
+// argument is evaluated, so `$trace` may name a field only debug builds have.
 #[cfg(any(debug_assertions, test))]
 #[macro_export]
 macro_rules! scah_trace {
-    ($store:expr, $event:expr) => {{
+    ($trace:expr, $event:expr) => {{
         let event = $event;
         #[cfg(feature = "otel")]
         {
             $crate::otel::emit_trace_event(&event);
         }
-        $store.trace_event(event);
+        $trace.push(event);
     }};
 }
 
 #[cfg(not(any(debug_assertions, test)))]
 #[macro_export]
 macro_rules! scah_trace {
-    ($store:expr, $event:expr) => {{
-        let _ = &$store;
-    }};
+    ($trace:expr, $event:expr) => {{}};
 }
