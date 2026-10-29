@@ -169,15 +169,18 @@ impl Capture {
         {
             self.text.path_stats.flush_calls += 1;
         }
+        // SAFETY (both slices): text starts after a tag and ends at the next
+        // tag or the end of the source. The parser takes those positions from
+        // the indexer, which stops only at ASCII bytes, so they are character
+        // boundaries.
         if let Some(start) = raw_start.filter(|start| *start < end) {
-            store.text.raw_text.push_str(reader.slice(start..end));
+            let raw = unsafe { reader.slice_unchecked(start..end) };
+            store.text.raw_text.push_str(raw);
         }
         if let Some(start) = text_start.filter(|start| *start < end) {
-            self.text.write_normalized_fragment(
-                &mut store.text.text,
-                reader.slice(start..end),
-                depth,
-            );
+            let text = unsafe { reader.slice_unchecked(start..end) };
+            self.text
+                .write_normalized_fragment(&mut store.text.text, text, depth);
         }
     }
 
@@ -377,7 +380,10 @@ fn finish_content<'html, 'query: 'html, const CAPTURE: bool>(
 ) -> (bool, bool) {
     let inner_html = content
         .inner_html_start()
-        .map(|start| reader.slice(start..inner_html_end));
+        // SAFETY: inner HTML starts after an open tag and ends at its close
+        // tag or the end of the source, which are character boundaries for
+        // the same reason as in `flush_source_text`.
+        .map(|start| unsafe { reader.slice_unchecked(start..inner_html_end) });
     if !CAPTURE {
         store.set_content(content.element_id, inner_html, None, None);
         return (false, false);

@@ -73,7 +73,7 @@ impl<'a> Reader<'a> {
     ///
     /// `range` must start and end on character boundaries.
     #[inline]
-    pub(crate) unsafe fn slice_unchecked(&self, range: Range<usize>) -> &'a str {
+    pub unsafe fn slice_unchecked(&self, range: Range<usize>) -> &'a str {
         debug_assert!(self.text.get(range.clone()).is_some());
         // SAFETY: the range is bounds-checked, and the caller guarantees it
         // starts and ends on character boundaries.
