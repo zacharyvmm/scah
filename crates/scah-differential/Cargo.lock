@@ -54,6 +54,9 @@ dependencies = [
 [[package]]
 name = "scah-html"
 version = "0.2.0-dev"
+dependencies = [
+ "simdlex",
+]
 
 [[package]]
 name = "scah-macros"
@@ -107,6 +110,12 @@ version = "0.2.0-dev"
 dependencies = [
  "scah-html",
 ]
+
+[[package]]
+name = "simdlex"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6142cbdb1b631695d86272a84792f8b5f52e59300ff6deb87dc2981b53a0940"
 
 [[package]]
 name = "smallvec"

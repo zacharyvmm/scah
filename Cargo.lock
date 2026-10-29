@@ -1659,6 +1659,9 @@ dependencies = [
 [[package]]
 name = "scah-html"
 version = "0.2.0-dev"
+dependencies = [
+ "simdlex",
+]
 
 [[package]]
 name = "scah-macros"
@@ -1817,6 +1820,12 @@ name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+
+[[package]]
+name = "simdlex"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6142cbdb1b631695d86272a84792f8b5f52e59300ff6deb87dc2981b53a0940"
 
 [[package]]
 name = "siphasher"

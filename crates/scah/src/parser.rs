@@ -95,7 +95,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         let indexing_mode = indexing_mode.unwrap_or(if features.all_roots_first {
             IndexingMode::Rolling
         } else {
-            IndexingMode::FullDocument
+            IndexingMode::Adaptive
         });
         let options = CapacityOptions {
             reserve_raw_text: requirements.raw_text,
@@ -157,7 +157,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             return false;
         }
         self.bind_source(reader);
-        self.indexer.prepare(reader.source());
         if self.capture.captures_any() {
             self.next_mode::<true>(reader)
         } else {
@@ -170,10 +169,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             return;
         }
         self.bind_source(reader);
-        // A full run keeps one Reader source, so the index policy only needs
-        // preparation once. `next` prepares per call because its caller owns
-        // the Reader and may step a different source between calls.
-        self.indexer.prepare(reader.source());
         if self.capture.captures_any() {
             while self.next_mode::<true>(reader) {}
         } else {
@@ -187,7 +182,6 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             return;
         }
         self.bind_source(reader);
-        self.indexer.prepare(reader.source());
         while self.next_mode::<false>(reader) {}
     }
 
@@ -206,6 +200,9 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         } else {
             let html = reader.source_str();
             self.out.store.set_html(html);
+            // The source is borrowed for `'html`, so it cannot change while
+            // the parser holds it: the indexer prepares it once.
+            self.indexer.prepare(source);
             self.source_bound = true;
         }
     }
@@ -1027,7 +1024,7 @@ mod tests {
     }
 
     #[test]
-    fn full_index_skips_false_events_inside_long_raw_text() {
+    fn index_ahead_skips_false_events_inside_long_raw_text() {
         let html = format!(
             "<script>{}<span>fake</span></script><span>real</span>",
             "const x = 1;".repeat(2_000)
@@ -1042,7 +1039,7 @@ mod tests {
     }
 
     #[test]
-    fn full_index_finds_raw_close_after_tag_like_quote_inside_script() {
+    fn index_ahead_finds_raw_close_after_tag_like_quote_inside_script() {
         let html = format!(
             "<script>{}const s = \"<div data='unterminated\";</script><span>real</span>",
             "x".repeat(20_000)
@@ -1055,7 +1052,7 @@ mod tests {
     }
 
     #[test]
-    fn full_index_uses_earliest_literal_raw_close() {
+    fn index_ahead_uses_earliest_literal_raw_close() {
         for (open, close) in [("script", "script"), ("style", "style")] {
             let html = format!(
                 "<{open}>{}<div data=\"</{close}><span>first</span>\"></{close}><span>second</span>",
@@ -1585,7 +1582,7 @@ mod tests {
     }
 
     #[test]
-    fn full_index_trailing_bare_delimiter_still_drains_open_elements() {
+    fn index_ahead_trailing_bare_delimiter_still_drains_open_elements() {
         let unit = format!("{}<span></span>", "x".repeat(900));
         let html = format!("<div>{}<", unit.repeat(200));
         let queries = &[Query::all("div", Save::all()).unwrap().build()];
@@ -1597,7 +1594,7 @@ mod tests {
     }
 
     #[test]
-    fn full_index_ignores_a_trailing_bare_open_delimiter() {
+    fn index_ahead_ignores_a_trailing_bare_open_delimiter() {
         let unit = format!("<p data-x='1'>a</p>{}", "y".repeat(400));
         let html = format!("{}<", unit.repeat(512));
         let queries = &[Query::all("[data-x]", Save::name_only()).unwrap().build()];

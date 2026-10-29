@@ -4,6 +4,7 @@
 //! ```text
 //! reader      a byte cursor over the document
 //! indexer     the next open or close tag, comment or raw-text end (SIMD)
+//! tape        a structural tape for documents worth indexing ahead (simdlex)
 //! element     the attributes of an open tag, only those asked for
 //! tag_id      tag names resolved to a one-byte TagId
 //! tag         what HTML says about a tag: void, raw text, implied closes
@@ -21,6 +22,7 @@ mod reader;
 mod simd_classifier;
 mod tag;
 mod tag_id;
+mod tape_indexer;
 mod tree;
 
 pub use attribute_interest::{AttributeInterest, AttributeMask};

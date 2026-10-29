@@ -20,7 +20,7 @@
 //! open-element stack, runs query cursors, stores matches, and handles recovery.
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use scah::bench_internals::{LessThanScanner, parse_with_indexing_mode};
+use scah::bench_internals::{IndexingStrategy, LessThanScanner, parse_with_indexing_mode};
 use scah::{Query, Save, parse};
 use std::hint::black_box;
 use std::time::Duration;
@@ -1374,7 +1374,7 @@ fn bench_density_crossover(c: &mut Criterion) {
     let queries = &[Query::all("span", Save::name_only())
         .expect("density selector should compile")
         .build()];
-    let mut group = c.benchmark_group("full_index_density_crossover");
+    let mut group = c.benchmark_group("index_ahead_density_crossover");
     group.sample_size(20);
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(2));
@@ -1402,7 +1402,7 @@ fn bench_density_crossover_by_document_size(c: &mut Criterion) {
     let queries = &[Query::all("span", Save::name_only())
         .expect("density selector should compile")
         .build()];
-    let mut group = c.benchmark_group("full_index_size_crossover");
+    let mut group = c.benchmark_group("index_ahead_size_crossover");
     group.sample_size(20);
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(2));
@@ -1503,7 +1503,7 @@ fn bench_attribute_span_policy(c: &mut Criterion) {
         ),
     ];
 
-    let mut group = c.benchmark_group("full_index_attribute_shape");
+    let mut group = c.benchmark_group("index_ahead_attribute_shape");
     group.sample_size(20);
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(2));
@@ -1557,7 +1557,7 @@ fn bench_huge_attribute_policy(c: &mut Criterion) {
         .expect("attribute selector should compile")
         .build()];
 
-    let mut group = c.benchmark_group("full_index_huge_attribute");
+    let mut group = c.benchmark_group("index_ahead_huge_attribute");
     group.sample_size(20);
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(2));
@@ -1589,7 +1589,7 @@ fn bench_single_long_text_gap_policy(c: &mut Criterion) {
         .expect("attribute selector should compile")
         .build();
     let queries = std::slice::from_ref(&query);
-    let mut group = c.benchmark_group("full_index_single_long_text_gap");
+    let mut group = c.benchmark_group("index_ahead_single_long_text_gap");
     group.sample_size(10);
     group.warm_up_time(Duration::from_millis(500));
     group.measurement_time(Duration::from_secs(1));
@@ -1640,19 +1640,22 @@ fn bench_attribute_index_strategy_crossover(c: &mut Criterion) {
     ] {
         let html = format!("<a data-x=\"yes\">{}</a>", "x".repeat(text_bytes));
         group.throughput(Throughput::Bytes(html.len() as u64));
-        for (strategy, full_index) in [("rolling", false), ("full_index", true)] {
+        for (strategy_name, strategy) in [
+            ("rolling", IndexingStrategy::Rolling),
+            ("tape", IndexingStrategy::Tape),
+        ] {
             assert_eq!(
-                parse_with_indexing_mode(&html, queries, full_index)
+                parse_with_indexing_mode(&html, queries, strategy)
                     .unwrap()
                     .get("[data-x]")
                     .unwrap()
                     .count(),
                 1
             );
-            group.bench_with_input(BenchmarkId::new(strategy, name), &html, |b, html| {
+            group.bench_with_input(BenchmarkId::new(strategy_name, name), &html, |b, html| {
                 b.iter(|| {
                     let store =
-                        parse_with_indexing_mode(black_box(html), black_box(queries), full_index)
+                        parse_with_indexing_mode(black_box(html), black_box(queries), strategy)
                             .unwrap();
                     black_box(store.get("[data-x]").unwrap().count())
                 })
@@ -1679,19 +1682,22 @@ fn bench_tag_only_index_strategy_crossover(c: &mut Criterion) {
     ] {
         let html = format!("<a>{}</a>", "x".repeat(text_bytes));
         group.throughput(Throughput::Bytes(html.len() as u64));
-        for (strategy, full_index) in [("rolling", false), ("full_index", true)] {
+        for (strategy_name, strategy) in [
+            ("rolling", IndexingStrategy::Rolling),
+            ("tape", IndexingStrategy::Tape),
+        ] {
             assert_eq!(
-                parse_with_indexing_mode(&html, queries, full_index)
+                parse_with_indexing_mode(&html, queries, strategy)
                     .unwrap()
                     .get("a")
                     .unwrap()
                     .count(),
                 1
             );
-            group.bench_with_input(BenchmarkId::new(strategy, name), &html, |b, html| {
+            group.bench_with_input(BenchmarkId::new(strategy_name, name), &html, |b, html| {
                 b.iter(|| {
                     let store =
-                        parse_with_indexing_mode(black_box(html), black_box(queries), full_index)
+                        parse_with_indexing_mode(black_box(html), black_box(queries), strategy)
                             .unwrap();
                     black_box(store.get("a").unwrap().count())
                 })
