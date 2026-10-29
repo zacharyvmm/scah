@@ -378,9 +378,10 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
             // The store copies the attributes of rows that save them, so
             // every tag parses into the same scratch list.
             self.temp_state.attributes.clear();
-            // SAFETY: the parser mutates the tape only here, and
-            // `parse_attributes` reassigns `element.attributes` before
-            // anything reads it again. The tape is dropped with the element.
+            // SAFETY: the parser mutates the tape only here, and no copy of
+            // `element.attributes` outlives the tag: the matcher and store
+            // keep the keys and values, which borrow the source, never the
+            // slice. The tape is dropped with the element.
             // The reader starts at a character boundary (above).
             unsafe {
                 self.element.parse_attributes(

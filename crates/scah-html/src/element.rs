@@ -57,10 +57,14 @@ impl<'html> XHtmlElement<'html> {
     /// # Safety
     ///
     /// The parsed attributes are appended to `attribute_tape`, and
-    /// `self.attributes` points at them without borrowing the tape. Until
-    /// `self.attributes` is reassigned (by another parse or
-    /// [`clear`](Self::clear)), the caller must not read it after
-    /// `attribute_tape` is mutated, moved or dropped.
+    /// `self.attributes` points at them without borrowing the tape. The
+    /// caller must not use that slice after `attribute_tape` is next
+    /// mutated, moved or dropped. This covers every copy of it: slices and
+    /// references taken from `self.attributes` and clones of `self`.
+    /// Reassigning `self.attributes` (by another parse or
+    /// [`clear`](Self::clear)) does not release copies taken earlier. The
+    /// `&'html str` keys and values borrow the source, not the tape, so they
+    /// may be kept.
     ///
     /// `reader` must be at a character boundary, as it is after the name of
     /// a tag the indexer found.
