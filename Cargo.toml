@@ -8,6 +8,7 @@ members = [
     "crates/scah-ffi",
     "crates/bindings/scah-python",
     "crates/bindings/scah-node",
+    "crates/bindings/scah-c",
     "benches",
 ]
 # Depends on the published scah, so it keeps its own lockfile: sharing this one
