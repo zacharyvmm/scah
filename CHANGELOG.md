@@ -56,6 +56,9 @@ Rust crates and the Python and npm packages together.
 - `parse_compiled` and `parse_compiled_without_text_capture` run a `Program`
   compiled once with `Program::compile`, for parsing many documents with the
   same queries. ([#98])
+- A C ABI in `crates/bindings/scah-c`, with a generated `scah.h` header and
+  C and C++ smoke tests. It shares its owned query and store handles with the
+  Python and Node bindings. ([#48], [#49], [#53])
 
 ### Changed
 
@@ -220,3 +223,6 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#115]: https://github.com/zacharyvmm/scah/pull/115
 [#50]: https://github.com/zacharyvmm/scah/pull/50
 [#51]: https://github.com/zacharyvmm/scah/pull/51
+[#48]: https://github.com/zacharyvmm/scah/pull/48
+[#49]: https://github.com/zacharyvmm/scah/pull/49
+[#53]: https://github.com/zacharyvmm/scah/pull/53
