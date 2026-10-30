@@ -87,15 +87,24 @@ train_node() {
 }
 
 profdata="$(find_profdata)"
+# Apple's linker drops the profile records of functions that were inlined into
+# every caller, so their counts never reach the profile. Keep dead code there,
+# in both builds: the flag also changes which functions are exported, and so
+# the names the profile knows them by.
+flags=""
+if [[ "$host" == *-apple-darwin ]]; then
+  flags="-Clink-dead-code"
+fi
+generate="$flags -Cprofile-generate=$(native_path "$profiles")"
 mkdir -p "$work"
 case "$binding" in
   python)
     mkdir -p "${1:?build.sh python needs a wheel directory}"
     wheels="$(cd "$1" && pwd)"
     shift
-    build_python "-Cprofile-generate=$(native_path "$profiles")" "$work/instrumented" "$@"
+    build_python "$generate" "$work/instrumented" "$@"
     ;;
-  node) build_node "-Cprofile-generate=$(native_path "$profiles")" "$@" ;;
+  node) build_node "$generate" "$@" ;;
   *) echo "unknown binding: $binding (expected python or node)" >&2; exit 1 ;;
 esac
 
@@ -108,7 +117,7 @@ rm -rf "$profiles"
 # does, so name the profile after its contents.
 profile="$work/merged-$(cksum < "$work/merged.profdata" | cut -d' ' -f1).profdata"
 mv "$work/merged.profdata" "$profile"
-use="-Cprofile-use=$(native_path "$profile") -Cllvm-args=-pgo-warn-missing-function"
+use="$flags -Cprofile-use=$(native_path "$profile") -Cllvm-args=-pgo-warn-missing-function"
 log="$work/profile-use.log"
 case "$binding" in
   python) build_python "$use" "$wheels" "$@" 2> >(tee "$log" >&2) ;;
