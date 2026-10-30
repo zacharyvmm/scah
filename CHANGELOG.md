@@ -59,6 +59,11 @@ Rust crates and the Python and npm packages together.
 - A C ABI in `crates/bindings/scah-c`, with a generated `scah.h` header and
   C and C++ smoke tests. It shares its owned query and store handles with the
   Python and Node bindings. ([#48], [#49], [#53])
+- Arrow export: `Store.to_arrow()` in Python and `scah_store_export_arrow` in C
+  hand matches over as an Arrow table whose string columns point into the
+  parsed HTML and text buffers, ready for polars, pyarrow, DuckDB, and other
+  Arrow consumers. In Rust, `Store::field_range` and `Store::buffer` read any
+  string field as a byte range of the buffer it lives in.
 
 ### Changed
 
