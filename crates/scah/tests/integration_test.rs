@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 #[cfg(debug_assertions)]
 use scah::debug;
 use scah::{
@@ -57,19 +55,17 @@ fn trace_records_open_and_save_events() {
     let query = Query::all("main section a", Save::all()).unwrap().build();
     let queries = [query];
 
-    let store = parse(html, &queries).unwrap();
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
 
-    assert!(!store.trace.is_empty());
+    assert!(!trace.is_empty());
     assert!(
-        store
-            .trace
+        trace
             .events()
             .iter()
             .any(|event| { matches!(event, debug::TraceEvent::OpenTag { tag: "main", .. }) })
     );
     assert!(
-        store
-            .trace
+        trace
             .events()
             .iter()
             .any(|event| { matches!(event, debug::TraceEvent::ElementSaved { element: "a", .. }) })
@@ -83,9 +79,9 @@ fn trace_records_implied_li_close() {
     let query = Query::all("li", Save::all()).unwrap().build();
     let queries = [query];
 
-    let store = parse(html, &queries).unwrap();
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
 
-    assert!(store.trace.events().iter().any(|event| {
+    assert!(trace.events().iter().any(|event| {
         matches!(
             event,
             debug::TraceEvent::ImpliedClose {
@@ -99,16 +95,46 @@ fn trace_records_implied_li_close() {
 
 #[test]
 #[cfg(debug_assertions)]
+fn trace_finalizes_an_elements_rows_in_save_order() {
+    let html = r#"<p class="x">hello</p>"#;
+    let queries = [
+        Query::all("p", Save::only_inner_html()).unwrap().build(),
+        Query::all(".x", Save::only_raw_text()).unwrap().build(),
+    ];
+
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
+
+    let finalized: Vec<_> = trace
+        .events()
+        .iter()
+        .filter_map(|event| match event {
+            debug::TraceEvent::ContentFinalized { element_id, .. } => Some(*element_id),
+            _ => None,
+        })
+        .collect();
+    let saved: Vec<_> = trace
+        .events()
+        .iter()
+        .filter_map(|event| match event {
+            debug::TraceEvent::ElementSaved { element_id, .. } => Some(*element_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(finalized.len(), 2);
+    assert_eq!(finalized, saved);
+}
+
+#[test]
+#[cfg(debug_assertions)]
 fn trace_records_first_query_early_exit() {
     let html = "<div><a>one</a><a>two</a></div>";
     let query = Query::first("a", Save::all()).unwrap().build();
     let queries = [query];
 
-    let store = parse(html, &queries).unwrap();
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
 
     assert!(
-        store
-            .trace
+        trace
             .events()
             .iter()
             .any(|event| matches!(event, debug::TraceEvent::EarlyExit { .. }))
@@ -117,19 +143,38 @@ fn trace_records_first_query_early_exit() {
 
 #[test]
 #[cfg(debug_assertions)]
-fn trace_records_transition_rejections() {
-    let html = "<main><span>no</span><a>yes</a></main>";
-    let query = Query::all("main > a", Save::all()).unwrap().build();
+fn trace_records_raw_text_early_exit() {
+    let html = "<style>a{}</style><style>b{}</style>";
+    let query = Query::first("style", Save::only_inner_html())
+        .unwrap()
+        .build();
     let queries = [query];
 
-    let store = parse(html, &queries).unwrap();
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
 
-    assert!(store.trace.events().iter().any(|event| {
+    assert!(
+        trace
+            .events()
+            .iter()
+            .any(|event| matches!(event, debug::TraceEvent::EarlyExit { .. }))
+    );
+}
+
+#[test]
+#[cfg(debug_assertions)]
+fn trace_records_step_rejections() {
+    let html = "<main><a class='no'>no</a><a class='yes'>yes</a></main>";
+    let query = Query::all("main > a.yes", Save::all()).unwrap().build();
+    let queries = [query];
+
+    let (_, trace) = debug::parse_traced(html, &queries).unwrap();
+
+    assert!(trace.events().iter().any(|event| {
         matches!(
             event,
-            debug::TraceEvent::TransitionRejected {
-                element: "span",
-                reason: debug::TransitionRejectReason::PredicateFailed,
+            debug::TraceEvent::StepRejected {
+                element: "a",
+                selector: "main > a.yes",
                 ..
             }
         )
@@ -232,7 +277,7 @@ fn scope_selector_anchors_nested_child_queries() {
     )
     .unwrap();
     let section = store.get("section").unwrap().next().unwrap();
-    assert_eq!(section.get(&store, ":scope > a").unwrap().count(), 1);
+    assert_eq!(section.get(":scope > a").unwrap().count(), 1);
 }
 
 #[test]
@@ -280,7 +325,7 @@ fn scope_anchor_is_normalized_once_across_builder_forms() {
         let queries = [query];
         let store = parse("<main><a>unexpected</a></main>", &queries).unwrap();
         let main = store.get("main").unwrap().next().unwrap();
-        assert_eq!(main.get(&store, selector).into_iter().flatten().count(), 0);
+        assert_eq!(main.get(selector).into_iter().flatten().count(), 0);
     }
 
     let static_query = query! {
@@ -294,7 +339,7 @@ fn scope_anchor_is_normalized_once_across_builder_forms() {
     )
     .unwrap();
     let main = store.get("main").unwrap().next().unwrap();
-    assert_eq!(main.get(&store, selector).into_iter().flatten().count(), 0);
+    assert_eq!(main.get(selector).into_iter().flatten().count(), 0);
 }
 
 #[test]
@@ -320,7 +365,7 @@ fn explicit_child_scope_is_not_the_parent_anchor() {
         let queries = [query];
         let store = parse("<main><a>unexpected</a></main>", &queries).unwrap();
         let main = store.get("main").unwrap().next().unwrap();
-        assert_eq!(main.get(&store, selector).into_iter().flatten().count(), 0);
+        assert_eq!(main.get(selector).into_iter().flatten().count(), 0);
     }
     let store = parse(
         "<main><a>unexpected</a></main>",
@@ -328,7 +373,7 @@ fn explicit_child_scope_is_not_the_parent_anchor() {
     )
     .unwrap();
     let main = store.get("main").unwrap().next().unwrap();
-    assert_eq!(main.get(&store, selector).into_iter().flatten().count(), 0);
+    assert_eq!(main.get(selector).into_iter().flatten().count(), 0);
 }
 
 #[test]
@@ -389,21 +434,21 @@ fn test_html_page() {
 
     let last = list.last().unwrap();
 
-    assert!(last.inner_html.is_some());
+    assert!(last.inner_html().is_some());
     assert_eq!(
-        last.inner_html.unwrap().trim(),
+        last.inner_html().unwrap().trim(),
         r#"<a href="wrong-main">Not selected (main has no red-background class)</a>"#
     );
 
-    assert!(last.text(&store).is_some());
+    assert!(last.text().is_some());
     assert_eq!(
-        last.text(&store).unwrap(),
+        last.text().unwrap(),
         r#"Not selected (main has no red-background class)"#
     );
 
     let first = list.first().unwrap();
     assert_eq!(
-        first.inner_html.unwrap().trim(),
+        first.inner_html().unwrap().trim(),
         r#"<!-- These 3 links will be selected by the selector -->
             <a href="link1">Link 1</a>
             <a href="link2">Link 2</a>
@@ -417,7 +462,7 @@ fn test_html_page() {
     );
 
     assert_eq!(
-        first.text(&store).unwrap(),
+        first.text().unwrap(),
         "Link 1 Link 2 Link 3\nNot selected (nested in div)\nNo link here"
     );
 }
@@ -441,23 +486,16 @@ fn test_html_page_first_anchor_tag_selection() {
     let mut children = store.get("a").unwrap();
 
     let a = children.next().unwrap();
+    assert_eq!(a.name(), "a");
     assert_eq!(
-        store.attributes.deref().clone(),
-        vec![Attribute {
-            key: "href",
-            value: Some("link1")
-        }]
-    );
-    assert_eq!(a.name, "a");
-    assert_eq!(
-        a.attributes(&store).unwrap(),
+        a.attributes().unwrap().collect::<Vec<_>>(),
         &[Attribute {
             key: "href",
             value: Some("link1")
         }]
     );
-    assert_eq!(a.attribute(&store, "href"), Some("link1"));
-    assert_eq!(a.text(&store).unwrap(), "Link 1");
+    assert_eq!(a.attribute("href"), Some("link1"));
+    assert_eq!(a.text().unwrap(), "Link 1");
 }
 
 #[test]
@@ -580,7 +618,7 @@ fn test_top_level_scope_anchors_to_document_root() {
     let ids = store
         .get(":scope > a")
         .unwrap()
-        .filter_map(|element| element.id)
+        .filter_map(|element| element.id())
         .collect::<Vec<_>>();
 
     assert_eq!(ids, ["child"]);
@@ -624,10 +662,13 @@ fn test_macro_query_matches_runtime_query_structure() {
     }
 
     assert_eq!(static_query.queries(), runtime_query.queries());
-    assert_eq!(
-        static_query.exit_at_section_end(),
-        runtime_query.exit_at_section_end()
-    );
+    for section in 0..static_query.queries().len() {
+        let section = scah::QuerySectionId(section);
+        assert_eq!(
+            static_query.selection_ranges(section),
+            runtime_query.selection_ranges(section)
+        );
+    }
 }
 
 #[test]
@@ -666,10 +707,10 @@ fn test_macro_query_matches_runtime_store_contents() {
             .flatten()
             .map(|element| {
                 (
-                    element.name.to_string(),
-                    element.attribute(store, "href").map(str::to_string),
-                    element.inner_html.map(str::trim).map(str::to_string),
-                    element.text(store).map(str::to_string),
+                    element.name().to_string(),
+                    element.attribute("href").map(str::to_string),
+                    element.inner_html().map(str::trim).map(str::to_string),
+                    element.text().map(str::to_string),
                 )
             })
             .collect()
@@ -695,7 +736,7 @@ fn replacing_transition_predicate_refreshes_parser_preflight() {
     let store = parse("<a></a><div></div>", &queries).unwrap();
     let mut matches = store.get("a").unwrap();
 
-    assert_eq!(matches.next().unwrap().name, "div");
+    assert_eq!(matches.next().unwrap().name(), "div");
     assert!(matches.next().is_none());
 }
 
@@ -933,7 +974,7 @@ fn selector_lists_match_in_document_order_and_deduplicate() {
     let names: Vec<_> = store
         .get(selector)
         .unwrap()
-        .map(|element| element.name)
+        .map(|element| element.name())
         .collect();
     assert_eq!(names, vec!["h2", "h1", "h1"]);
 
@@ -941,7 +982,7 @@ fn selector_lists_match_in_document_order_and_deduplicate() {
     let query = Query::first(complex, Save::only_text()).unwrap().build();
     let queries = [query];
     let store = parse(html, &queries).unwrap();
-    assert_eq!(store.get(complex).unwrap().next().unwrap().name, "h2");
+    assert_eq!(store.get(complex).unwrap().next().unwrap().name(), "h2");
 
     let overlap = "div, .hit";
     let query = Query::all(overlap, Save::none()).unwrap().build();
@@ -968,7 +1009,7 @@ fn child_selector_lists_share_one_output_parent() {
     let queries = [query];
     let store = parse("<main><h2></h2><h1></h1></main>", &queries).unwrap();
     let main = store.get("main").unwrap().next().unwrap();
-    assert_eq!(main.get(&store, "h1, h2").unwrap().count(), 2);
+    assert_eq!(main.get("h1, h2").unwrap().count(), 2);
 }
 
 #[test]
@@ -1079,7 +1120,7 @@ fn overlapping_parent_alternatives_reuse_the_saved_output_scope() {
     let store = parse("<div class='hit'><span></span></div>", &queries).unwrap();
     let parent = store.get("div, .hit").unwrap().next().unwrap();
 
-    assert_eq!(parent.get(&store, "span").unwrap().count(), 1);
+    assert_eq!(parent.get("span").unwrap().count(), 1);
     assert_eq!(store.get("span").map_or(0, Iterator::count), 0);
 }
 
@@ -1276,7 +1317,7 @@ fn logical_pseudos_reject_unsupported_alternatives_instead_of_narrowing_results(
     let texts: Vec<_> = store
         .get("div:is(.x, .bad])")
         .unwrap()
-        .map(|element| element.text(&store))
+        .map(|element| element.text())
         .collect();
     assert_eq!(texts, vec![Some("X")]);
 }
@@ -1303,7 +1344,7 @@ fn repeated_id_texts<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> 
         .get(selector)
         .map(|elements| {
             elements
-                .map(|element| element.text(&store).unwrap_or_default().to_string())
+                .map(|element| element.text().unwrap_or_default().to_string())
                 .collect()
         })
         .unwrap_or_default()
@@ -1387,10 +1428,10 @@ fn root_alternative_owners(
             roots
                 .map(|parent| {
                     let children = parent
-                        .get(store, child)
-                        .map(|it| it.map(|a| a.id.unwrap().to_string()).collect())
+                        .get(child)
+                        .map(|it| it.map(|a| a.id().unwrap().to_string()).collect())
                         .unwrap_or_default();
-                    (parent.id.unwrap().to_string(), children)
+                    (parent.id().unwrap().to_string(), children)
                 })
                 .collect()
         })
@@ -1431,7 +1472,7 @@ fn root_alternatives_keep_root_parent_after_nested_close() {
         .build();
     let queries = [query];
     let store = parse(html, &queries).unwrap();
-    let ids: Vec<_> = store.get("span, div").unwrap().map(|e| e.id).collect();
+    let ids: Vec<_> = store.get("span, div").unwrap().map(|e| e.id()).collect();
     assert_eq!(ids.len(), 3);
 
     let saved_all = parse_root_alternatives("span, div", html);
@@ -1547,16 +1588,16 @@ fn nested_child_alternatives_keep_parent_after_nested_close() {
     let mains: Vec<_> = store.get("main").unwrap().collect();
     assert_eq!(mains.len(), 2);
 
-    let nested = |main: &scah::Element<'_>| -> Vec<(String, Vec<String>)> {
-        main.get(&store, "span, div")
+    let nested = |main: scah::ElementRef<'_, '_, '_>| -> Vec<(String, Vec<String>)> {
+        main.get("span, div")
             .map(|parents| {
                 parents
                     .map(|parent| {
                         let children = parent
-                            .get(&store, "a")
-                            .map(|it| it.map(|a| a.id.unwrap().to_string()).collect())
+                            .get("a")
+                            .map(|it| it.map(|a| a.id().unwrap().to_string()).collect())
                             .unwrap_or_default();
-                        (parent.id.unwrap().to_string(), children)
+                        (parent.id().unwrap().to_string(), children)
                     })
                     .collect()
             })
@@ -1618,7 +1659,7 @@ fn forgiving_texts<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> Ve
         .get(selector)
         .map(|elements| {
             elements
-                .map(|element| element.text(&store).unwrap_or_default().to_string())
+                .map(|element| element.text().unwrap_or_default().to_string())
                 .collect()
         })
         .unwrap_or_default()
@@ -1760,7 +1801,7 @@ fn streaming_forgiving_ids<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &st
     let store = parse(STREAMING_FORGIVING_HTML, queries).unwrap();
     store
         .get(selector)
-        .map(|elements| elements.map(|e| e.id.unwrap().to_string()).collect())
+        .map(|elements| elements.map(|e| e.id().unwrap().to_string()).collect())
         .unwrap_or_default()
 }
 
@@ -1856,7 +1897,7 @@ fn pipe_texts<'q, Q: QuerySpec<'q>>(queries: &'q [Q], selector: &str) -> Vec<Str
         .get(selector)
         .map(|elements| {
             elements
-                .map(|element| element.text(&store).unwrap_or_default().to_string())
+                .map(|element| element.text().unwrap_or_default().to_string())
                 .collect()
         })
         .unwrap_or_default()
@@ -1892,4 +1933,24 @@ fn attribute_pipes_and_quoted_pipes_match_in_macro_queries() {
     check!(4, r#"div:is([data-x="a|b"], !!!)"#);
     check!(5, r#"div:not(:is([data-x="a|b"]))"#);
     assert_eq!(PIPE_CASES.len(), 6);
+}
+
+#[test]
+fn nested_matches_are_stored_once_and_listed_under_every_scope() {
+    let html = "<div id='outer'><div id='inner'><a id='link'></a></div></div>";
+    let queries = [Query::all("div", Save::none())
+        .unwrap()
+        .all("a", Save::none())
+        .unwrap()
+        .build()];
+    let store = parse(html, &queries).unwrap();
+
+    // Two divs and one shared `a` row, rather than one `a` copy per div.
+    assert_eq!(store.elements().len(), 3);
+    for div in store.get("div").unwrap() {
+        let links: Vec<_> = div.get("a").unwrap().map(|a| a.id()).collect();
+        assert_eq!(links, [Some("link")], "{:?}", div.id());
+        let by_index: Vec<_> = div.nested(0).unwrap().map(|a| a.id()).collect();
+        assert_eq!(by_index, links);
+    }
 }

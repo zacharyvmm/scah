@@ -1,5 +1,6 @@
-use super::builder::{Attribute, AttributeSelection, ElementPredicate, IElement};
+use super::builder::{AttributeSelection, ElementPredicate, IElement};
 use super::string_search::{AttributeSelectionKind, css_words};
+use scah_html::Attribute;
 
 impl<'a> AttributeSelection<'a> {
     pub fn matches_attribute(&self, other: &Attribute<'_>) -> bool {
@@ -148,6 +149,20 @@ impl<'a> ElementPredicate<'a> {
             && (self.is_ordinary() || self.matches_extensions(other, structural))
     }
 
+    /// [`Self::matches_element_with_context`] for an element whose name is
+    /// already known to match, as after a matcher's name lookup.
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn matches_named_element_with_context<'b, E: IElement<'b>>(
+        &self,
+        other: &E,
+        structural: Option<&super::builder::StructuralMatchContext<'_>>,
+    ) -> bool {
+        debug_assert!(self.matches_name(other.name()));
+        self.matches_local_after_name(other)
+            && (self.is_ordinary() || self.matches_extensions(other, structural))
+    }
+
     /// Match the element-local portion of this predicate without structural
     /// context. Streaming engines may use this for prevalidated local lists.
     #[doc(hidden)]
@@ -166,10 +181,12 @@ impl<'a> ElementPredicate<'a> {
     /// Name, id, class, and attribute checks. Never recurses.
     #[inline(always)]
     fn matches_local<'b, E: IElement<'b>>(&self, other: &E) -> bool {
-        if !self.matches_name(other.name()) {
-            return false;
-        }
+        self.matches_name(other.name()) && self.matches_local_after_name(other)
+    }
 
+    /// Id, class, and attribute checks. Never recurses.
+    #[inline(always)]
+    fn matches_local_after_name<'b, E: IElement<'b>>(&self, other: &E) -> bool {
         if self.id.is_some() && self.id != other.id() {
             return false;
         }
@@ -187,11 +204,11 @@ impl<'a> ElementPredicate<'a> {
         let attributes = self.attributes.as_slice();
         attributes.is_empty()
             || attributes.iter().all(|selector_attribute| {
-                // `id` and `class` live in dedicated element fields, not the
-                // generic attribute list, so route `[id]`/`[class]` selectors
-                // there. Attribute names are case-insensitive in HTML. A rare
-                // valueless `id`/`class` that landed in the attribute list is
-                // still matched via the fallback scan.
+                // `id` and `class` have dedicated element fields (the first
+                // of each with a value), so `[id]`/`[class]` selectors check
+                // those first. Attribute names are case-insensitive in HTML.
+                // Valueless or duplicate `id`/`class` attributes are matched
+                // by the fallback scan of the attribute list.
                 if selector_attribute.name.eq_ignore_ascii_case("id") {
                     selector_attribute.matches_field(other.id())
                         || other

@@ -1,0 +1,26 @@
+[package]
+name = "scah-html"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Streaming HTML tag lexer and open-element tree used by scah."
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/scah-html"
+
+[dependencies]
+# Structural tape for documents the adaptive policy indexes ahead.
+simdlex = "0.1"
+
+[lints.rust]
+# `--cfg scah_no_layout_hints` drops the `#[cold]` and `#[inline(never)]`
+# hints that keep rare paths out of the parse loop (see scah's Cargo.toml).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(scah_no_layout_hints)"] }
+
+[lints.clippy]
+let-and-return = "allow"
+byte_char_slices = "allow"
+redundant-field-names = "allow"
+len_without_is_empty = "allow"

@@ -40,3 +40,22 @@ fn consecutive_unclosed_p_tags_split_before_eof() {
     assert_eq!(inner_htmls(&store, "p"), vec![Some("One"), Some("Two")]);
     assert_eq!(elements(&store, "div > p").len(), 2);
 }
+
+#[test]
+fn elements_finalize_when_input_ends_right_after_a_tag() {
+    // Regression test for #93: the drain used to run only when text followed
+    // the last tag.
+    for html in ["<div><p>x</p>", "<div><p>x</p>\n  ", "<div><p>x</p>y"] {
+        let store = parse_all(html, &["div"]);
+        let expected = html.trim_start_matches("<div>");
+        assert_eq!(inner_htmls(&store, "div"), vec![Some(expected)], "{html:?}");
+    }
+}
+
+#[test]
+fn implied_closes_finalize_at_eof_after_a_tag() {
+    let html = "<ul><li>One<li><b>Two</b>";
+    let store = parse_all(html, &["li"]);
+
+    assert_eq!(texts(&store, "li"), vec![Some("One"), Some("Two")]);
+}

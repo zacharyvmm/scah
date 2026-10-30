@@ -22,7 +22,8 @@ path = "src/lib.rs"
 
 [dependencies]
 smallvec = "1.15.1"
-scah-reader.workspace = true
+scah-html.workspace = true
+scah-store.workspace = true
 scah-query-ir.workspace = true
 scah-macros.workspace = true
 tracing = { version = "0.1", optional = true }
@@ -33,12 +34,14 @@ bench-internals = []
 simd-bench-internals = []
 otel = ["dep:tracing"]
 
-[[example]]
-name = "cursor_stats"
-required-features = ["bench-internals"]
-
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+
+[lints.rust]
+# `--cfg scah_no_layout_hints` drops the `#[cold]` and `#[inline(never)]`
+# hints that keep rare paths out of the parse loop, to compare against them
+# or to lay the code out with PGO instead (see benches/layout).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(scah_no_layout_hints)"] }
 
 [lints.clippy]
 let-and-return = "allow"

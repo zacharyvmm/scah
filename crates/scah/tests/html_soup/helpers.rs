@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use scah::{Element, Query, Save, Store, parse};
+use scah::{ElementRef, Query, Save, Store, parse};
 
 pub fn parse_all<'a>(html: &'a str, selectors: &[&'a str]) -> Store<'a, 'a> {
     let queries = selectors
@@ -24,7 +24,7 @@ pub fn parse_with_saves<'a>(html: &'a str, queries: &[(&'a str, Save)]) -> Store
     parse(html, queries).expect("parse succeeds")
 }
 
-pub fn elements<'a>(store: &'a Store<'a, 'a>, selector: &str) -> Vec<&'a Element<'a>> {
+pub fn elements<'a>(store: &'a Store<'a, 'a>, selector: &str) -> Vec<ElementRef<'a, 'a, 'a>> {
     store
         .get(selector)
         .map(|items| items.collect())
@@ -34,20 +34,20 @@ pub fn elements<'a>(store: &'a Store<'a, 'a>, selector: &str) -> Vec<&'a Element
 pub fn texts<'a>(store: &'a Store<'a, 'a>, selector: &str) -> Vec<Option<&'a str>> {
     elements(store, selector)
         .into_iter()
-        .map(|element| element.text(store))
+        .map(|element| element.text())
         .collect()
 }
 
 pub fn inner_htmls<'a>(store: &'a Store<'a, 'a>, selector: &str) -> Vec<Option<&'a str>> {
     elements(store, selector)
         .into_iter()
-        .map(|element| element.inner_html)
+        .map(|element| element.inner_html())
         .collect()
 }
 
 pub fn attr<'a>(store: &'a Store<'a, 'a>, selector: &str, key: &str) -> Vec<Option<&'a str>> {
     elements(store, selector)
         .into_iter()
-        .map(|element| element.attribute(store, key))
+        .map(|element| element.attribute(key))
         .collect()
 }

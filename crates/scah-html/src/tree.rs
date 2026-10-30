@@ -1,0 +1,379 @@
+//! The stack of open elements, and the HTML rules that close them: end
+//! tags that close elements further down, open tags that close an open `p`,
+//! `li`, `option` or table cell, and the end of the input.
+
+use crate::TagId;
+use crate::tag::{ScopeKind, TagFlags};
+
+pub type DepthSize = u16;
+
+/// Maximum real element depth.
+pub const MAX_ELEMENT_DEPTH: DepthSize = DepthSize::MAX - 1;
+
+/// An element would be nested deeper than [`MAX_ELEMENT_DEPTH`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepthExceeded;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenElement<'html> {
+    pub name: &'html str,
+    /// `name` resolved once at the open tag; close tags compare ids.
+    pub id: TagId,
+    packed_flags: u32,
+}
+
+impl<'html> OpenElement<'html> {
+    const PAYLOAD_SHIFT: u32 = 25;
+    /// Bits left for the payload above the tag flags.
+    pub const PAYLOAD_BITS: u32 = u32::BITS - Self::PAYLOAD_SHIFT;
+
+    #[inline]
+    pub fn tag(&self) -> TagFlags {
+        TagFlags::from_bits(self.packed_flags & ((1 << Self::PAYLOAD_SHIFT) - 1))
+    }
+
+    /// The bits the caller pushed with the element. scah keeps the
+    /// element's text-capture flags here, next to its tag flags.
+    #[inline]
+    pub fn payload(&self) -> u8 {
+        (self.packed_flags >> Self::PAYLOAD_SHIFT) as u8
+    }
+
+    /// Whether a close tag named `name`, resolved to `id`, closes this
+    /// element. Known tags compare ids; other names compare ignoring case.
+    #[inline(always)]
+    fn closed_by(&self, name: &str, id: TagId) -> bool {
+        if id.is_known() || self.id.is_known() {
+            self.id == id
+        } else {
+            self.name == name || self.name.eq_ignore_ascii_case(name)
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct OpenElementStack<'html> {
+    entries: Vec<OpenElement<'html>>,
+}
+
+impl<'html> Default for OpenElementStack<'html> {
+    fn default() -> Self {
+        const ASSUMED_MAX_DEPTH: usize = 16;
+        Self {
+            entries: Vec::with_capacity(ASSUMED_MAX_DEPTH),
+        }
+    }
+}
+
+impl<'html> OpenElementStack<'html> {
+    #[inline]
+    pub fn depth(&self) -> DepthSize {
+        self.entries.len().try_into().unwrap_or(MAX_ELEMENT_DEPTH)
+    }
+
+    #[inline]
+    pub const fn would_exceed_max_depth(len: usize) -> bool {
+        len >= MAX_ELEMENT_DEPTH as usize
+    }
+
+    #[inline(always)]
+    pub fn push_classified(
+        &mut self,
+        name: &'html str,
+        id: TagId,
+        tag: TagFlags,
+        payload: u8,
+    ) -> Result<(), DepthExceeded> {
+        debug_assert!(u32::from(payload) < 1 << OpenElement::PAYLOAD_BITS);
+        if Self::would_exceed_max_depth(self.entries.len()) {
+            return Err(DepthExceeded);
+        }
+        self.entries.push(OpenElement {
+            name,
+            id,
+            packed_flags: tag.bits() | (u32::from(payload) << OpenElement::PAYLOAD_SHIFT),
+        });
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn push(&mut self, name: &'html str) -> Result<(), DepthExceeded> {
+        let id = TagId::of(name);
+        self.push_classified(name, id, TagFlags::of(id), 0)
+    }
+
+    #[cfg(test)]
+    pub fn prepare_for_open(&mut self, name: &str) -> Vec<OpenElement<'html>> {
+        let mut popped = Vec::new();
+        self.prepare_for_open_into(TagFlags::classify(name), &mut popped);
+        popped
+    }
+
+    #[inline]
+    pub fn prepare_for_open_into(&mut self, tag: TagFlags, popped: &mut Vec<OpenElement<'html>>) {
+        popped.clear();
+
+        if tag.closes_open_p() {
+            self.pop_matching_in_scope_into(TagFlags::P_MASK, ScopeKind::Default, popped);
+        }
+
+        if tag.intersects(TagFlags::BUTTON_MASK) {
+            self.pop_matching_in_scope_into(TagFlags::BUTTON_MASK, ScopeKind::Button, popped);
+        } else if tag.intersects(TagFlags::LI_MASK) {
+            self.pop_matching_in_scope_into(TagFlags::LI_MASK, ScopeKind::ListItem, popped);
+        } else if tag.intersects(TagFlags::DT_DD_MASK) {
+            self.pop_matching_in_scope_into(TagFlags::DT_DD_MASK, ScopeKind::ListItem, popped);
+        } else if tag.intersects(TagFlags::OPTION_MASK) {
+            self.pop_matching_in_scope_into(TagFlags::OPTION_MASK, ScopeKind::Select, popped);
+        } else if tag.intersects(TagFlags::OPTGROUP_MASK) {
+            self.pop_matching_in_scope_into(TagFlags::OPTION_MASK, ScopeKind::Select, popped);
+            self.pop_matching_in_scope_into(TagFlags::OPTGROUP_MASK, ScopeKind::Select, popped);
+        } else if tag.intersects(TagFlags::TR_MASK) {
+            self.pop_matching_in_scope_into(TagFlags::TR_MASK, ScopeKind::Table, popped);
+        } else if tag.intersects(TagFlags::CELL_MASK) {
+            self.pop_matching_in_scope_into(TagFlags::CELL_MASK, ScopeKind::Table, popped);
+        }
+    }
+
+    #[cfg(test)]
+    pub fn close_by_end_tag(&mut self, name: &str) -> Vec<OpenElement<'html>> {
+        let mut popped = Vec::new();
+        self.close_by_end_tag_into(name, TagId::of(name), &mut popped);
+        popped
+    }
+
+    #[inline]
+    pub fn close_by_end_tag_into(
+        &mut self,
+        name: &str,
+        id: TagId,
+        popped: &mut Vec<OpenElement<'html>>,
+    ) {
+        popped.clear();
+
+        if let Some(open) = self.pop_matching_top(name, id) {
+            popped.push(open);
+            return;
+        }
+
+        let tag = TagFlags::of(id);
+        if let Some(index) = self.find_matching_index(name, id, tag.close_scope()) {
+            while self.entries.len() > index {
+                if let Some(open) = self.entries.pop() {
+                    popped.push(open);
+                }
+            }
+        }
+    }
+
+    /// Pop the top entry when it is the element that `name` closes.
+    ///
+    /// This is exactly `find_matching_index`'s first iteration: that loop tests
+    /// the entry name before the scope barrier, so a matching top always wins
+    /// there too. Callers can take this path without deriving `close_scope()`.
+    /// Pop the top entry when its name is exactly `name`.
+    #[inline(always)]
+    pub fn pop_exact_top(&mut self, name: &str) -> Option<OpenElement<'html>> {
+        self.entries
+            .last()
+            .is_some_and(|entry| entry.name == name)
+            .then(|| self.entries.pop().expect("matching top element must exist"))
+    }
+
+    #[inline]
+    pub fn pop_matching_top(&mut self, name: &str, id: TagId) -> Option<OpenElement<'html>> {
+        self.entries
+            .last()
+            .is_some_and(|entry| entry.closed_by(name, id))
+            .then(|| self.entries.pop().expect("matching top element must exist"))
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub fn close_all_at_eof(&mut self) -> Vec<OpenElement<'html>> {
+        let mut popped = Vec::new();
+        self.close_all_at_eof_into(&mut popped);
+        popped
+    }
+
+    #[inline]
+    pub fn close_all_at_eof_into(&mut self, popped: &mut Vec<OpenElement<'html>>) {
+        popped.clear();
+        popped.extend(self.entries.drain(..).rev());
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code)]
+    fn pop_matching_in_scope(
+        &mut self,
+        tags: TagFlags,
+        scope: ScopeKind,
+    ) -> Vec<OpenElement<'html>> {
+        let mut popped = Vec::new();
+        self.pop_matching_in_scope_into(tags, scope, &mut popped);
+        popped
+    }
+
+    fn pop_matching_in_scope_into(
+        &mut self,
+        tags: TagFlags,
+        scope: ScopeKind,
+        popped: &mut Vec<OpenElement<'html>>,
+    ) {
+        if let Some(index) = self.find_first_of(tags, scope) {
+            while self.entries.len() > index {
+                if let Some(open) = self.entries.pop() {
+                    popped.push(open);
+                }
+            }
+        }
+    }
+
+    fn find_first_of(&self, tags: TagFlags, scope: ScopeKind) -> Option<usize> {
+        for (index, entry) in self.entries.iter().enumerate().rev() {
+            if entry.tag().intersects(tags) {
+                return Some(index);
+            }
+            if entry.tag().is_scope_barrier(scope) {
+                return None;
+            }
+        }
+        None
+    }
+
+    fn find_matching_index(&self, name: &str, id: TagId, scope: ScopeKind) -> Option<usize> {
+        for (index, entry) in self.entries.iter().enumerate().rev() {
+            if entry.closed_by(name, id) {
+                return Some(index);
+            }
+            if entry.tag().is_scope_barrier(scope) {
+                return None;
+            }
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_ELEMENT_DEPTH, OpenElement, OpenElementStack};
+
+    #[test]
+    fn would_exceed_max_depth_at_boundary() {
+        assert!(!OpenElementStack::would_exceed_max_depth(
+            MAX_ELEMENT_DEPTH as usize - 1
+        ));
+        assert!(OpenElementStack::would_exceed_max_depth(
+            MAX_ELEMENT_DEPTH as usize
+        ));
+    }
+
+    #[test]
+    fn open_element_keeps_hot_stack_entries_compact() {
+        assert!(std::mem::size_of::<OpenElement<'_>>() <= 32);
+    }
+
+    #[test]
+    fn test_misnested_close_bubbles_to_match() {
+        let mut stack = OpenElementStack::default();
+        stack.push("div").unwrap();
+        stack.push("span").unwrap();
+
+        let popped = stack.close_by_end_tag("div");
+        assert_eq!(popped.len(), 2);
+        assert_eq!(popped[0].name, "span");
+        assert_eq!(popped[1].name, "div");
+    }
+
+    #[test]
+    fn test_well_formed_mixed_case_close_pops_top() {
+        let mut stack = OpenElementStack::default();
+        stack.push("div").unwrap();
+        stack.push("SpAn").unwrap();
+
+        let popped = stack.close_by_end_tag("span");
+        assert_eq!(popped.len(), 1);
+        assert_eq!(popped[0].name, "SpAn");
+        assert_eq!(stack.depth(), 1);
+    }
+
+    #[test]
+    fn test_stray_close_is_ignored() {
+        let mut stack = OpenElementStack::default();
+        stack.push("div").unwrap();
+
+        let popped = stack.close_by_end_tag("span");
+        assert!(popped.is_empty());
+        assert_eq!(stack.depth(), 1);
+    }
+
+    #[test]
+    fn test_opening_li_closes_previous_li() {
+        let mut stack = OpenElementStack::default();
+        stack.push("ul").unwrap();
+        stack.push("li").unwrap();
+
+        let popped = stack.prepare_for_open("li");
+        assert_eq!(popped.len(), 1);
+        assert_eq!(popped[0].name, "li");
+    }
+
+    #[test]
+    fn test_opening_option_closes_previous_option() {
+        let mut stack = OpenElementStack::default();
+        stack.push("select").unwrap();
+        stack.push("option").unwrap();
+
+        let popped = stack.prepare_for_open("option");
+        assert_eq!(popped.len(), 1);
+        assert_eq!(popped[0].name, "option");
+    }
+
+    #[test]
+    fn test_opening_optgroup_closes_option_then_optgroup() {
+        let mut stack = OpenElementStack::default();
+        stack.push("select").unwrap();
+        stack.push("optgroup").unwrap();
+        stack.push("option").unwrap();
+
+        let popped = stack.prepare_for_open("optgroup");
+        assert_eq!(popped.len(), 2);
+        assert_eq!(popped[0].name, "option");
+        assert_eq!(popped[1].name, "optgroup");
+    }
+
+    #[test]
+    fn test_opening_td_closes_previous_cell() {
+        let mut stack = OpenElementStack::default();
+        stack.push("table").unwrap();
+        stack.push("tr").unwrap();
+        stack.push("td").unwrap();
+
+        let popped = stack.prepare_for_open("td");
+        assert_eq!(popped.len(), 1);
+        assert_eq!(popped[0].name, "td");
+    }
+
+    #[test]
+    fn test_opening_button_closes_previous_button() {
+        let mut stack = OpenElementStack::default();
+        stack.push("div").unwrap();
+        stack.push("button").unwrap();
+
+        let popped = stack.prepare_for_open("button");
+        assert_eq!(popped.len(), 1);
+        assert_eq!(popped[0].name, "button");
+        assert_eq!(stack.depth(), 1);
+    }
+
+    #[test]
+    fn test_select_scope_ignores_non_select_end_tags() {
+        let mut stack = OpenElementStack::default();
+        stack.push("select").unwrap();
+        stack.push("option").unwrap();
+
+        let popped = stack.close_by_end_tag("div");
+        assert!(popped.is_empty());
+        assert_eq!(stack.depth(), 2);
+    }
+}

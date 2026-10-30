@@ -1,5 +1,6 @@
 use ::scah::lazy::{LazyQuery, LazyQueryBuilder};
-use ::scah::{Query, QuerySectionId, Save};
+use ::scah::{QuerySectionId, Save};
+use ::scah_ffi::OwnedQuery;
 
 use napi::Result;
 use napi::bindgen_prelude::*;
@@ -84,9 +85,9 @@ impl JsQueryBuilder {
 
     #[napi]
     pub fn build(&self) -> Result<JsQuery> {
-        let (_tape, query) = unsafe { self.builder.clone().try_to_query() }
+        let query = OwnedQuery::build(self.builder.clone())
             .map_err(|err| Error::from_reason(err.to_string()))?;
-        Ok(JsQuery { _tape, query })
+        Ok(JsQuery { query })
     }
 }
 
@@ -116,8 +117,7 @@ impl JsQueryFactory {
 #[napi]
 #[derive(Clone)]
 pub struct JsQuery {
-    pub(crate) _tape: std::sync::Arc<Vec<u8>>,
-    pub(crate) query: Query<'static>,
+    pub(crate) query: OwnedQuery,
 }
 
 #[napi(js_name = "Query")]

@@ -1,7 +1,7 @@
 use super::builder::ElementPredicate;
 use super::is_css_whitespace;
-use crate::Reader;
 use crate::query::compiler::SelectorParseError;
+use scah_html::Reader;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Combinator {
@@ -58,15 +58,6 @@ impl<'a> Combinator {
         }
 
         combinator
-    }
-
-    pub(crate) fn evaluate(&self, last_depth: u16, current_depth: u16) -> bool {
-        match self {
-            Combinator::Child => last_depth + 1 == current_depth,
-            Combinator::Descendant => last_depth == 0 || current_depth != last_depth,
-            Combinator::NextSibling | Combinator::SubsequentSibling => last_depth == current_depth,
-            Combinator::Namespace => panic!("Why are you using Namespace Selector ???"),
-        }
     }
 }
 

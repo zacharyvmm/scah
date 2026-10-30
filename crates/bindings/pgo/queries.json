@@ -1,0 +1,31 @@
+[
+  { "all": "a[href]", "save": { "inner_html": true, "text": true } },
+  { "first": "title", "save": { "text": true } },
+  { "first": "#comments", "save": { "raw_text": true } },
+  {
+    "all": "article.post",
+    "save": { "attributes": true },
+    "then": [
+      { "first": "h2.title > a", "save": { "text": true } },
+      { "all": "p", "save": { "inner_html": true, "raw_text": true } },
+      { "all": ".meta span.tag", "save": { "text": true } }
+    ]
+  },
+  {
+    "all": "table#prices tbody > tr.row",
+    "save": { "attributes": false },
+    "then": [{ "all": ":scope > td", "save": { "text": true } }]
+  },
+  { "all": "nav ul > li a[href^=\"/\"]", "save": { "text": true } },
+  { "all": "a[href^=\"http\"], a[rel*=\"external\"]", "save": {} },
+  { "all": "img[src$=\".png\"], img[src$=\".jpg\"]", "save": {} },
+  { "all": "div.card[data-id*=\"x-\"]:not(.sponsored)", "save": { "text": true } },
+  { "all": "a[href=\"/notes/108\" i]", "save": { "inner_html": true } },
+  { "all": "h2 + div.meta, h3 ~ div.grid", "save": {} },
+  { "all": "li:first-child, tr:nth-child(2n+1), span:nth-of-type(2)", "save": { "text": true } },
+  { "all": ":is(input, textarea, select)[name]", "save": { "inner_html": true } },
+  { "all": "div.comment div.comment > p", "save": { "text": true, "raw_text": true } },
+  { "all": "script, style", "save": { "raw_text": true } },
+  { "all": "*", "save": { "attributes": false } },
+  { "first": "footer p a:nth-child(2 of [href])", "save": { "text": true } }
+]

@@ -1,0 +1,812 @@
+use crate::Reader;
+use crate::attribute_interest::AttributeInterest;
+use crate::attributes::ElementAttributeToken;
+use crate::tag::TagFlags;
+
+/// A key-value pair representing an HTML element attribute.
+///
+/// Both `key` and `value` are zero-copy `&str` references into the
+/// original HTML source. `value` is `None` for an attribute written without
+/// `=`, such as `<input disabled>`.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Attribute<'html> {
+    pub key: &'html str,
+    pub value: Option<&'html str>,
+}
+
+/// An HTML element as parsed from the token stream.
+///
+/// This is the *parser-level* representation used during streaming: it
+/// borrows its attributes from a scratch list that the next tag reuses, so
+/// anything kept past the tag must be copied out.
+#[derive(Debug, PartialEq, Clone, Default)]
+pub struct XHtmlElement<'html> {
+    /// The tag name (e.g. `"div"`, `"a"`, `"section"`).
+    pub name: &'html str,
+    /// The value of the `id` attribute, if present.
+    pub id: Option<&'html str>,
+    /// The value of the `class` attribute, if present.
+    pub class: Option<&'html str>,
+    /// Every attribute parsed: the `class` and `id` above first, then the
+    /// others in source order.
+    pub attributes: &'html [Attribute<'html>],
+}
+
+/// A tag read by the reference tokenizer the builder tests use.
+#[cfg(test)]
+#[derive(Debug, PartialEq)]
+pub enum XHtmlTag<'html> {
+    Open,
+    Close(&'html str),
+}
+
+impl<'html> XHtmlElement<'html> {
+    /// Set the name discovered by the structural indexer without parsing the
+    /// remainder of the tag.
+    #[inline]
+    pub fn set_name(&mut self, name: &'html str) {
+        self.name = name;
+    }
+
+    /// Parse only the attribute portion of an opening tag.
+    ///
+    /// The reader must begin at the first byte after the already-discovered
+    /// element name. Keeping this separate lets tag-only query paths avoid
+    /// attribute tokenization entirely.
+    ///
+    /// # Safety
+    ///
+    /// The parsed attributes are appended to `attribute_tape`, and
+    /// `self.attributes` points at them without borrowing the tape. The
+    /// caller must not use that slice after `attribute_tape` is next
+    /// mutated, moved or dropped. This covers every copy of it: slices and
+    /// references taken from `self.attributes` and clones of `self`.
+    /// Reassigning `self.attributes` (by another parse or
+    /// [`clear`](Self::clear)) does not release copies taken earlier. The
+    /// `&'html str` keys and values borrow the source, not the tape, so they
+    /// may be kept.
+    ///
+    /// `reader` must be at a character boundary, as it is after the name of
+    /// a tag the indexer found.
+    #[inline]
+    pub unsafe fn parse_attributes(
+        &mut self,
+        reader: &mut Reader<'html>,
+        attribute_tape: &mut Vec<Attribute<'html>>,
+        interest: &AttributeInterest<'_>,
+    ) {
+        debug_assert!(!self.name.is_empty());
+        // SAFETY: the caller upholds both requirements.
+        unsafe { self.parse_from(reader, attribute_tape, Some(interest)) };
+    }
+
+    fn add_to_element(
+        &mut self,
+        attribute: Attribute<'html>,
+        attribute_tape: &mut Vec<Attribute<'html>>,
+        start: usize,
+    ) {
+        if self.name.is_empty() && attribute.value.is_none() {
+            self.name = attribute.key;
+            return;
+        }
+        if self.class.is_none()
+            && attribute.key.eq_ignore_ascii_case("class")
+            && attribute.value.is_some()
+        {
+            self.list_class(attribute, attribute_tape, start);
+        } else if self.id.is_none()
+            && attribute.key.eq_ignore_ascii_case("id")
+            && attribute.value.is_some()
+        {
+            self.list_id(attribute, attribute_tape, start);
+        } else {
+            attribute_tape.push(attribute);
+        }
+    }
+
+    /// Make `attribute` the element's `class`, listed first.
+    #[inline]
+    fn list_class(
+        &mut self,
+        attribute: Attribute<'html>,
+        attribute_tape: &mut Vec<Attribute<'html>>,
+        start: usize,
+    ) {
+        self.class = attribute.value;
+        attribute_tape.insert(start, attribute);
+    }
+
+    /// Make `attribute` the element's `id`, listed right after its `class`.
+    #[inline]
+    fn list_id(
+        &mut self,
+        attribute: Attribute<'html>,
+        attribute_tape: &mut Vec<Attribute<'html>>,
+        start: usize,
+    ) {
+        self.id = attribute.value;
+        attribute_tape.insert(start + usize::from(self.class.is_some()), attribute);
+    }
+
+    fn add_selected_attribute(
+        &mut self,
+        attribute: Attribute<'html>,
+        attribute_tape: &mut Vec<Attribute<'html>>,
+        interest: &AttributeInterest<'_>,
+        start: usize,
+    ) {
+        // `class` and `id` are kept in the list too, so a saved row has every
+        // attribute. The first of each with a value is also the element's
+        // field, and is listed first (see `XHtmlElement::attributes`).
+        if attribute.key.eq_ignore_ascii_case("class") {
+            if !interest.includes_class() {
+                return;
+            }
+            if self.class.is_none() && attribute.value.is_some() {
+                return self.list_class(attribute, attribute_tape, start);
+            }
+        } else if attribute.key.eq_ignore_ascii_case("id") {
+            if !interest.includes_id() {
+                return;
+            }
+            if self.id.is_none() && attribute.value.is_some() {
+                return self.list_id(attribute, attribute_tape, start);
+            }
+        } else if !interest.includes_attribute(attribute.key) {
+            return;
+        }
+        attribute_tape.push(attribute);
+    }
+
+    #[inline]
+    fn add_parsed_attribute(
+        &mut self,
+        attribute: Attribute<'html>,
+        attribute_tape: &mut Vec<Attribute<'html>>,
+        interest: Option<&AttributeInterest<'_>>,
+        start: usize,
+    ) {
+        if let Some(interest) = interest {
+            self.add_selected_attribute(attribute, attribute_tape, interest, start);
+        } else {
+            self.add_to_element(attribute, attribute_tape, start);
+        }
+    }
+
+    pub fn is_self_closing(&self) -> bool {
+        // HTML void elements are always self-closing, with or without a
+        // trailing `/`. In HTML mode a trailing `/` on a non-void element is
+        // ignored (it does not make the element self-closing), so tag name is
+        // the only signal here. The trailing solidus is stripped during
+        // tokenization and never reaches the attribute list.
+        TagFlags::classify(self.name).is_void()
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.name = "";
+        self.id = None;
+        self.class = None;
+        self.attributes = &[];
+    }
+
+    /// Parse a whole tag, name included. The tests use this; production
+    /// takes the name from the indexer and calls `parse_attributes`.
+    #[cfg(test)]
+    fn from(&mut self, reader: &mut Reader<'html>, attribute_tape: &mut Vec<Attribute<'html>>) {
+        // SAFETY: the tests start readers at a tag, and read
+        // `self.attributes` before touching the tape again.
+        unsafe { self.parse_from(reader, attribute_tape, None) };
+    }
+
+    /// # Safety
+    ///
+    /// As for [`parse_attributes`](Self::parse_attributes).
+    unsafe fn parse_from(
+        &mut self,
+        reader: &mut Reader<'html>,
+        attribute_tape: &mut Vec<Attribute<'html>>,
+        interest: Option<&AttributeInterest<'_>>,
+    ) {
+        let mut assign = false;
+        let mut key = None;
+        let start_len = attribute_tape.len();
+
+        // Pass `assign` so the tokenizer knows whether the next token is an
+        // unquoted attribute *value* (immediately after `=`), where a trailing
+        // `/` is a literal character rather than a self-closing marker.
+        // SAFETY: `parse_attributes` requires the reader to start at a
+        // character boundary, and each token leaves it at one.
+        while let Some(token) = unsafe { ElementAttributeToken::next(reader, assign) } {
+            match token {
+                ElementAttributeToken::String(string_value) => match key {
+                    None => {
+                        // A dangling `=` with no pending key (malformed input
+                        // such as `key=a=b`) is ignored rather than panicking.
+                        assign = false;
+                        key = Some(string_value);
+                    }
+                    Some(k) => {
+                        if assign {
+                            self.add_parsed_attribute(
+                                Attribute {
+                                    key: k,
+                                    value: Some(string_value),
+                                },
+                                attribute_tape,
+                                interest,
+                                start_len,
+                            );
+                            key = None;
+                        } else {
+                            self.add_parsed_attribute(
+                                Attribute {
+                                    key: k,
+                                    value: None,
+                                },
+                                attribute_tape,
+                                interest,
+                                start_len,
+                            );
+                            key = Some(string_value)
+                        }
+                        assign = false;
+                    }
+                },
+
+                ElementAttributeToken::Equal => {
+                    assign = true;
+                }
+            }
+        }
+
+        if let Some(attribute) = key {
+            self.add_parsed_attribute(
+                Attribute {
+                    key: attribute,
+                    value: None,
+                },
+                attribute_tape,
+                interest,
+                start_len,
+            );
+        }
+
+        // SAFETY: the range is in bounds of `attribute_tape`. Reads stay valid
+        // while the tape is untouched, which `parse_attributes` makes its
+        // caller's obligation.
+        self.attributes = unsafe {
+            std::slice::from_raw_parts(
+                attribute_tape.as_ptr().add(start_len),
+                attribute_tape.len() - start_len,
+            )
+        };
+    }
+}
+
+// Retained as a focused tokenizer reference for the builder tests. Production
+// parsing obtains tag boundaries from `indexer`.
+#[cfg(test)]
+impl<'a> XHtmlTag<'a> {
+    pub fn from(reader: &mut Reader<'a>) -> Option<Self> {
+        reader.next_while_list(&[b' ', b'\n', b'\r', b'\t', 0x0C, b'<']);
+        if let Some(character) = reader.peek() {
+            if character == b'/' {
+                let start = reader.get_position() + 1;
+                reader.next_until(b'>');
+
+                let end = reader.get_position();
+                reader.skip();
+
+                // BUG: Handle start and end not conforming to the rules of slices.
+
+                // BUG: The Formating of the string breaks this code
+
+                return Some(Self::Close(reader.slice(start..end).trim()));
+            } else if character == b'!' {
+                reader.skip(); // consume '!'
+                if reader.match_ignore_case("--") {
+                    reader.skip();
+                    reader.skip();
+                    skip_html_comment(reader);
+                } else {
+                    // DOCTYPE, CDATA, or bogus comment: terminates at the
+                    // first `>`.
+                    reader.next_until(b'>');
+                    reader.skip();
+                }
+                return None;
+            }
+        }
+        Some(Self::Open)
+    }
+}
+
+/// Consume an HTML comment after the opening `<!--` has already been read.
+///
+/// Handles the abrupt-close forms `<!-->` and `<!--->`, the `--!>` end
+/// sequence, and comments containing bare `>` characters. An unterminated
+/// comment simply stops at end of input instead of panicking or swallowing
+/// the remainder of the document past a stray `>`.
+#[cfg(test)]
+fn skip_html_comment(reader: &mut Reader<'_>) {
+    // Abrupt closes immediately after `<!--`.
+    if reader.peek() == Some(b'>') {
+        reader.skip();
+        return;
+    }
+    if reader.match_ignore_case("->") {
+        reader.skip();
+        reader.skip();
+        return;
+    }
+
+    loop {
+        reader.next_until(b'>');
+        if reader.peek().is_none() {
+            // Unterminated comment at EOF.
+            return;
+        }
+
+        let closed = reader.preceding_bytes_eq(b"--") || reader.preceding_bytes_eq(b"--!");
+        reader.skip(); // consume the '>'
+
+        if closed {
+            return;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_key_no_quote_and_value_with_quote() {
+        let mut reader = Reader::new("p key=\"value\"");
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "key",
+                value: Some("value")
+            }
+        );
+    }
+
+    #[test]
+    fn test_key_no_quote_and_value_no_quote() {
+        let mut reader = Reader::new("p key=value");
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(element.attributes.len(), 1);
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "key",
+                value: Some("value")
+            }
+        );
+    }
+
+    #[test]
+    fn test_key_with_quote_and_value_with_quote() {
+        let mut reader = Reader::new("p \"key\"=\"value\"");
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "key",
+                value: Some("value")
+            }
+        );
+    }
+
+    #[test]
+    fn test_multiple_key_value_pairs() {
+        let mut reader = Reader::new("p key=\"value\" \"key1\"=value1 \"key2\"=\"value2\" keey");
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "key",
+                value: Some("value")
+            }
+        );
+        assert_eq!(
+            element.attributes[1],
+            Attribute {
+                key: "key1",
+                value: Some("value1")
+            }
+        );
+        assert_eq!(
+            element.attributes[2],
+            Attribute {
+                key: "key2",
+                value: Some("value2")
+            }
+        );
+        assert_eq!(
+            element.attributes[3],
+            Attribute {
+                key: "keey",
+                value: None
+            }
+        );
+    }
+
+    #[test]
+    fn test_key_with_quote_and_no_value() {
+        let mut reader = Reader::new("p \"key\"");
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "key",
+                value: None
+            }
+        );
+    }
+
+    #[test]
+    fn test_key_no_quote_and_no_value() {
+        let mut reader = Reader::new("p key");
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "key",
+                value: None
+            }
+        );
+    }
+
+    #[test]
+    #[ignore = "Known issue: Escapes are not handled"]
+    fn test_key_no_quote_and_escaped_space_value() {
+        let mut reader = Reader::new("p key = hello\\ world");
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "key",
+                value: Some("hello\\ world")
+            }
+        );
+    }
+
+    #[test]
+    fn test_long_key_with_spaces() {
+        let mut reader = Reader::new("p \"long key with spaces\"=\"value\"");
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "long key with spaces",
+                value: Some("value")
+            }
+        );
+    }
+
+    #[test]
+    fn test_long_key_with_spaces_and_different_quote_inside() {
+        let mut reader = Reader::new("p \"long key's with spaces\"=\"value\"");
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "long key's with spaces",
+                value: Some("value")
+            }
+        );
+    }
+
+    #[test]
+    fn test_long_key_with_spaces_and_real_same_quote_inside() {
+        let mut reader = Reader::new(r#"p "long key\"s with spaces"="value""#);
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: r#"long key\"s with spaces"#,
+                value: Some("value")
+            }
+        );
+    }
+
+    #[test]
+    fn test_long_key_and_value_with_spaces_and_real_same_quote_inside() {
+        let mut reader = Reader::new(
+            r#"p "long key\"s with spaces"="value\"s of an other person \\\\\\ \\\\\ \ \  \"""#,
+        );
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: r#"long key\"s with spaces"#,
+                value: Some(r#"value\"s of an other person \\\\\\ \\\\\ \ \  \""#)
+            }
+        );
+    }
+
+    #[test]
+    fn test_valid_anchor_tag_attributes() {
+        let mut reader = Reader::new(
+            "a target=\"_blank\" href=\"/my_cv.pdf\" class=\"px-7 py-3\" hello-world=hello-world",
+        );
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "a");
+        assert_eq!(element.class, Some("px-7 py-3"));
+        // The element's `class` is listed first, then the others in source
+        // order.
+        assert_eq!(
+            element.attributes,
+            &[
+                Attribute {
+                    key: "class",
+                    value: Some("px-7 py-3")
+                },
+                Attribute {
+                    key: "target",
+                    value: Some("_blank")
+                },
+                Attribute {
+                    key: "href",
+                    value: Some("/my_cv.pdf")
+                },
+                Attribute {
+                    key: "hello-world",
+                    value: Some("hello-world")
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_complex_open_tag() {
+        let mut reader = Reader::new(
+            r#"a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/crossorigin" title="The crossorigin attribute, valid on the <audio>, <img>, <link>, <script>, and <video> elements, provides support for CORS, defining how the element handles cross-origin requests, thereby enabling the configuration of the CORS requests for the element's fetched data. Depending on the element, the attribute can be a CORS settings attribute.""#,
+        );
+
+        let tag = XHtmlTag::from(&mut reader);
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(tag, Some(XHtmlTag::Open));
+
+        assert_eq!(
+            element,
+            XHtmlElement {
+                name: "a",
+                id: None,
+                class: None,
+                attributes: &[
+                    Attribute {
+                        key: "href",
+                        value: Some(
+                            "https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/crossorigin"
+                        )
+                    },
+                    Attribute {
+                        key: "title",
+                        value: Some(
+                            "The crossorigin attribute, valid on the <audio>, <img>, <link>, <script>, and <video> elements, provides support for CORS, defining how the element handles cross-origin requests, thereby enabling the configuration of the CORS requests for the element's fetched data. Depending on the element, the attribute can be a CORS settings attribute."
+                        )
+                    }
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn test_xhtml_tag_open() {
+        let mut reader = Reader::new("p key=\"value\"");
+        let tag = XHtmlTag::from(&mut reader);
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(tag, Some(XHtmlTag::Open));
+
+        assert_eq!(
+            element,
+            XHtmlElement {
+                name: "p",
+                id: None,
+                class: None,
+                attributes: &[Attribute {
+                    key: "key",
+                    value: Some("value")
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn test_xhtml_tag_close() {
+        let mut reader = Reader::new("/p>");
+        let tag = XHtmlTag::from(&mut reader);
+
+        assert_eq!(tag, Some(XHtmlTag::Close("p")));
+    }
+
+    #[test]
+    fn test_xhtml_tag_close_weird_formatting() {
+        let mut reader = Reader::new("  /   p   >");
+        let tag = XHtmlTag::from(&mut reader);
+
+        assert_eq!(tag, Some(XHtmlTag::Close("p")));
+    }
+
+    #[test]
+    fn test_parsing_comment() {
+        let mut reader = Reader::new("<!-- These 3 links will be selected by the selector -->");
+        let tag = XHtmlTag::from(&mut reader);
+
+        assert!(tag.is_none())
+    }
+
+    #[test]
+    fn test_parsing_mutiline_comment() {
+        let mut reader = Reader::new(
+            r#"
+            <!-- These 3 links will be selected by the selector -->
+        "#,
+        );
+        let tag = XHtmlTag::from(&mut reader);
+
+        assert!(tag.is_none())
+    }
+
+    #[test]
+    fn quoted_attribute_value_ignores_odd_backslash_quote() {
+        let mut reader = Reader::new(r#"p title="hello \"world\" end""#);
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "title",
+                value: Some(r#"hello \"world\" end"#),
+            }
+        );
+    }
+
+    #[test]
+    fn quoted_attribute_value_closes_after_even_backslashes() {
+        let mut reader = Reader::new(r#"p title="hello \\" next=value"#);
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(element.name, "p");
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "title",
+                value: Some(r#"hello \\"#),
+            }
+        );
+        assert_eq!(
+            element.attributes[1],
+            Attribute {
+                key: "next",
+                value: Some("value"),
+            }
+        );
+    }
+
+    #[test]
+    fn single_quoted_attribute_value_ignores_escaped_single_quote() {
+        let mut reader = Reader::new(r#"p title='hello \'world\' end'"#);
+        let mut element = XHtmlElement::default();
+        let mut attributes = vec![];
+
+        element.from(&mut reader, &mut attributes);
+
+        assert_eq!(
+            element.attributes[0],
+            Attribute {
+                key: "title",
+                value: Some(r#"hello \'world\' end"#),
+            }
+        );
+    }
+
+    #[test]
+    fn selected_attribute_parsing_retains_only_query_fields() {
+        let mut interest = AttributeInterest::new(&["href"]);
+        interest.add(crate::AttributeMask {
+            flags: crate::AttributeMask::CLASS,
+            keys: 0b1,
+        });
+
+        let mut reader =
+            Reader::new(" class='promoted' href='/kept' rel='discarded' data-extra='discarded'>");
+        let mut element = XHtmlElement::default();
+        element.set_name("a");
+        let mut attributes = vec![];
+        // SAFETY: `attributes` outlives every read of `element.attributes`.
+        unsafe { element.parse_attributes(&mut reader, &mut attributes, &interest) };
+
+        assert_eq!(element.class, Some("promoted"));
+        assert_eq!(
+            element.attributes,
+            &[
+                Attribute {
+                    key: "class",
+                    value: Some("promoted"),
+                },
+                Attribute {
+                    key: "href",
+                    value: Some("/kept"),
+                }
+            ]
+        );
+    }
+}

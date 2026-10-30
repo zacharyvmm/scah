@@ -3,13 +3,14 @@ use pyo3::ffi::c_str;
 use pyo3::types::PyDict;
 use pyo3::{Bound, IntoPyObjectExt, prelude::*};
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use scah_core::{Attribute, ElementId, Store};
+use scah_core::{Attribute, ElementId, ElementRef};
+use scah_ffi::OwnedStore;
 use std::sync::Arc;
 
 #[gen_stub_pyclass]
 #[pyclass(module = "scah", name = "Element")]
 pub struct PyElement {
-    pub(crate) store: Arc<Store<'static, 'static>>,
+    pub(crate) store: Arc<OwnedStore>,
     pub(crate) id: ElementId,
 }
 
@@ -18,41 +19,31 @@ pub struct PyElement {
 impl PyElement {
     #[getter]
     pub fn name(&self) -> Option<&str> {
-        self.store.elements.get(self.id.index()).map(|e| e.name)
+        self.element().map(|e| e.name())
     }
 
     #[getter]
     pub fn class_name(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.class)
+        self.element().and_then(|e| e.class())
     }
 
     #[getter]
     pub fn id(&self) -> Option<&str> {
-        self.store.elements.get(self.id.index()).and_then(|e| e.id)
+        self.element().and_then(|e| e.id())
     }
 
     pub fn get_attribute(&self, key: String) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.attribute(&self.store, &key))
+        self.element().and_then(|e| e.attribute(&key))
     }
 
     #[getter]
     pub fn attributes<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyDict>> {
         let object = PyDict::new(py);
-        let attributes = self
-            .store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.attributes(&self.store));
+        let attributes = self.element().and_then(|e| e.attributes());
 
         if let Some(attrs) = attributes {
             for Attribute { key, value } in attrs {
-                object.set_item(*key, *value)?
+                object.set_item(key, value)?
             }
         }
         Ok(object)
@@ -60,26 +51,17 @@ impl PyElement {
 
     #[getter]
     pub fn inner_html(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.inner_html)
+        self.element().and_then(|e| e.inner_html())
     }
 
     #[getter]
     pub fn raw_text(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.raw_text(&self.store))
+        self.element().and_then(|e| e.raw_text())
     }
 
     #[getter]
     pub fn text(&self) -> Option<&str> {
-        self.store
-            .elements
-            .get(self.id.index())
-            .and_then(|e| e.text(&self.store))
+        self.element().and_then(|e| e.text())
     }
 
     #[getter]
@@ -94,20 +76,15 @@ impl PyElement {
     }
 
     pub fn get(&self, query: String) -> PyResult<Vec<PyElement>> {
-        let element = self
-            .store
-            .elements
-            .get(self.id.index())
-            .expect("The Element ID should be valid");
-        let children = element.get(&self.store, &query);
-        match children {
+        match self.store.store().child_results(self.id, &query) {
             None => Err(PyValueError::new_err(format!(
                 "This Element does not have children selected with `{query}`"
             ))),
             Some(children) => Ok(children
-                .map(|e| PyElement {
+                .iter()
+                .map(|&id| PyElement {
                     store: self.store.clone(),
-                    id: unsafe { self.store.elements.index_of(e) },
+                    id,
                 })
                 .collect()),
         }
@@ -141,29 +118,49 @@ impl PyElement {
     }
 }
 
+impl PyElement {
+    fn element(&self) -> Option<ElementRef<'_, '_, '_>> {
+        self.store.store().element(self.id)
+    }
+}
+
 #[gen_stub_pyclass]
 #[pyclass(module = "scah", name = "Store")]
 pub(crate) struct PyStore {
-    pub(crate) store: Arc<Store<'static, 'static>>,
-    pub(crate) _html: Arc<String>,
-    pub(crate) _query_tapes: Vec<Arc<Vec<u8>>>,
+    pub(crate) store: Arc<OwnedStore>,
 }
 
 #[gen_stub_pymethods]
 #[pymethods]
 impl PyStore {
+    /// Results of the first query whose selector is `query`.
     fn get(&self, query: String) -> Option<Vec<PyElement>> {
-        self.store.get(&query).map(|iter| {
-            iter.map(|e| unsafe { self.store.elements.index_of(e) })
-                .map(|i| PyElement {
-                    store: self.store.clone(),
-                    id: i,
-                })
-                .collect()
-        })
+        self.store
+            .store()
+            .results(&query)
+            .map(|ids| self.elements(ids))
+    }
+
+    /// Results of the query at `index` in the list given to `parse`.
+    fn query(&self, index: usize) -> Option<Vec<PyElement>> {
+        self.store
+            .store()
+            .query_results(index)
+            .map(|ids| self.elements(ids))
     }
 
     fn __len__(&self) -> usize {
-        self.store.elements.len()
+        self.store.store().len()
+    }
+}
+
+impl PyStore {
+    fn elements(&self, ids: &[ElementId]) -> Vec<PyElement> {
+        ids.iter()
+            .map(|&id| PyElement {
+                store: self.store.clone(),
+                id,
+            })
+            .collect()
     }
 }

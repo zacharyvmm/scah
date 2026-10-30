@@ -6,6 +6,104 @@ Rust crates and the Python and npm packages together.
 
 ## [Unreleased]
 
+### Breaking
+
+- The cursor engine and `QueryMultiplexer` are removed. `XHtmlParser::new` and
+  `XHtmlParser::with_capacity` take the query slice directly, and debug trace
+  events describe compiled steps instead of cursors. ([#95])
+- Results are stored in flat tables. `Element` no longer has `next_sibling` or
+  `first_child_query`, and `Store::push`, `Store::queries`, `QueryNode`, and
+  `QueryId` are removed. An element saved by a nested query under several
+  parent matches is stored once and listed under each of them. ([#97])
+- `Position`, the `QuerySpec` navigation methods, `Transition::next`, and
+  `exit_at_section_end` are removed from the query IR; `QuerySpec` only exposes
+  query data. ([#98])
+- `Element` is replaced by `ElementRef`, a handle to a row of the store.
+  Fields become methods (`name()`, `class()`, `id()`, `inner_html()`), and
+  accessors no longer take the store: `element.text()`,
+  `element.attribute("href")`, `element.get(selector)`. `Store::get` and
+  `Store::query` return `Elements`, an iterator of handles, and the public
+  `Store::elements` and `Store::attributes` fields give way to
+  `Store::element(id)`, `Store::elements()`, and `Store::len()`.
+  `element.attributes()` returns `Attributes`, an iterator over the same
+  attributes as before (all but the `class` and `id` that have their own
+  methods), instead of a slice. ([#100])
+- HTML of 4 GiB or more returns `ParseError::InputTooLarge`. ([#100])
+- `XHtmlParser::next` panics if stepped over a different source than its
+  first call. ([#100])
+- The `scah-reader` crate is replaced by `scah-html`, which also holds the tag
+  lexer and the open-element tree. `Attribute`, `TagId`, `AttributeMask`, and
+  `Reader` move there from `scah-query-ir`, and `scah-macros` no longer exports
+  `simd_nibble_tables!`. `scah` still re-exports `Reader`, `Attribute`, and
+  `XHtmlElement`. ([#112])
+- `Reader` only reads UTF-8, so it can no longer return a string that is not
+  valid UTF-8: `Reader::from_bytes` returns an error for other bytes,
+  `Reader::source_str` returns `&str`, and `Reader::slice` panics on a range
+  that splits a character. `XHtmlElement::parse_attributes` is `unsafe`,
+  because the attributes it lists point into a tape it doesn't borrow.
+  ([#112])
+- The result store moves to a new `scah-store` crate, which knows nothing of
+  queries. The `scah` API is unchanged except for the debug trace:
+  `Store::trace` is removed, and `scah::debug::parse_traced` returns the store
+  together with its `TraceStore`. ([#113])
+
+### Added
+
+- `Store::query(index)` and `Element::nested(&store, index)` select results by
+  query position, and `Store::results`, `query_results`, `child_results`, and
+  `nested_results` return element ids. Python and Node gain `Store.query`.
+  ([#97])
+- `parse_compiled` and `parse_compiled_without_text_capture` run a `Program`
+  compiled once with `Program::compile`, for parsing many documents with the
+  same queries. ([#98])
+- A C ABI in `crates/bindings/scah-c`, with a generated `scah.h` header and
+  C and C++ smoke tests. It shares its owned query and store handles with the
+  Python and Node bindings. ([#48], [#49], [#53])
+
+### Changed
+
+- Queries run as one compiled bitset automaton instead of per-query cursors:
+  every query, section, and selector-list alternative is compiled into one
+  `Program`, and each open element carries a few bitsets. Deeply nested
+  descendant chains and nested `.then()` scopes parse up to 15x faster, and
+  parsing documents with no matches is about 14% faster. ([#94], [#95])
+- Tag names are resolved once per tag to a one-byte id that drives parser,
+  text, and selector lookups. ([#96])
+- Saved elements are stored as columns of 32-bit spans, one per saved field,
+  and a column exists only if some query saves that field. Attributes are two
+  columns of key and value spans, `class` and `id` included, so an element
+  without attributes stores nothing for them. ([#100])
+- A dropped `Store` keeps its allocations, up to 32 MiB, for the next parse on
+  the same thread, so parsing many documents in a loop no longer allocates
+  and page-faults a fresh store each time. ([#100])
+- Tags that end right after their name, such as `<div>`, skip attribute
+  parsing in every parse, and rarely taken paths leave the parse loop. On
+  documents of empty `div`s, parsing is about 16% faster. ([#102])
+- Documents the adaptive policy indexes ahead are now indexed with a SIMD
+  structural tape (via simdlex) instead of the full-document event index,
+  which is removed. The tape records every `<`, `>`, and quote, and is built
+  lazily in windows, so a parse that stops early only indexes what it read.
+  Dense documents keep the rolling indexer. On a 409 KB prose page, finding
+  every link is about 1.9× faster. ([#115])
+- Python wheels and Node addons are built with profile-guided optimization,
+  trained through each binding on `crates/bindings/pgo`. On the binding
+  performance gate's workloads, Python parses 19–22% faster and Node 7–12%
+  faster. Every wheel is now built on a native runner. ([#117])
+
+### Fixed
+
+- End tags with attributes, such as `</div class=x>`, close their element.
+  ([#92], [#96])
+- A `/` ends a tag name, so `<x/y>` opens `x` and `</x/y>` closes it.
+  ([#96])
+- Elements left open when the input ends right after a tag, optionally
+  followed by whitespace, keep their saved content. ([#93], [#96])
+- Queries with the same selector string keep separate results; `Store::get`
+  returns the first query with that selector. ([#91], [#97])
+- Python and Node elements could read freed memory after their `Store` was
+  garbage collected. Elements now keep the parsed HTML and queries alive.
+  ([#50], [#51])
+
 ## [0.1.0] - 2026-10-01
 
 Follows 0.0.21. The minor version moves because of the breaking text changes below.
@@ -114,3 +212,22 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#68]: https://github.com/zacharyvmm/scah/pull/68
 [#73]: https://github.com/zacharyvmm/scah/pull/73
 [#79]: https://github.com/zacharyvmm/scah/pull/79
+[#94]: https://github.com/zacharyvmm/scah/pull/94
+[#95]: https://github.com/zacharyvmm/scah/pull/95
+[#92]: https://github.com/zacharyvmm/scah/issues/92
+[#93]: https://github.com/zacharyvmm/scah/issues/93
+[#96]: https://github.com/zacharyvmm/scah/pull/96
+[#91]: https://github.com/zacharyvmm/scah/issues/91
+[#97]: https://github.com/zacharyvmm/scah/pull/97
+[#98]: https://github.com/zacharyvmm/scah/pull/98
+[#100]: https://github.com/zacharyvmm/scah/pull/100
+[#102]: https://github.com/zacharyvmm/scah/pull/102
+[#112]: https://github.com/zacharyvmm/scah/pull/112
+[#113]: https://github.com/zacharyvmm/scah/pull/113
+[#115]: https://github.com/zacharyvmm/scah/pull/115
+[#50]: https://github.com/zacharyvmm/scah/pull/50
+[#51]: https://github.com/zacharyvmm/scah/pull/51
+[#48]: https://github.com/zacharyvmm/scah/pull/48
+[#49]: https://github.com/zacharyvmm/scah/pull/49
+[#53]: https://github.com/zacharyvmm/scah/pull/53
+[#117]: https://github.com/zacharyvmm/scah/pull/117

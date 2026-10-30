@@ -5,51 +5,50 @@
   "title": "The first <a> in a flat list of <div><a> pairs",
   "unit": "ms",
   "environment": {
-    "date": "2026-04-08",
-    "commit": null,
-    "dirty": null,
-    "os": null,
-    "arch": null,
-    "cpu": null,
-    "runtime": null,
-    "note": "Read from the bar labels of the former PNG chart (3 decimal places); the run did not record stdev, commit, or machine details."
+    "date": "2026-10-03",
+    "commit": "29df6d08a64d91e196ce575bbd65ec9651a8e5cb",
+    "dirty": false,
+    "os": "Darwin 25.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "runtime": "bun 1.3.14"
   },
   "results": [
     {
       "library": "scah",
       "size": 10000,
-      "mean": 0.247,
-      "stdev": null
-    },
-    {
-      "library": "node-html-parser",
-      "size": 10000,
-      "mean": 64.092,
-      "stdev": null
+      "mean": 0.05825832946065129,
+      "stdev": 0.005267049150406924
     },
     {
       "library": "cheerio",
       "size": 10000,
-      "mean": 68.178,
-      "stdev": null
+      "mean": 24.05711008,
+      "stdev": 3.102176408862783
+    },
+    {
+      "library": "node-html-parser",
+      "size": 10000,
+      "mean": 31.161934157894738,
+      "stdev": 1.3268051638806444
     },
     {
       "library": "linkedom",
       "size": 10000,
-      "mean": 146.95,
-      "stdev": null
+      "mean": 85.767302,
+      "stdev": 23.85994256698942
     },
     {
       "library": "happy-dom",
       "size": 10000,
-      "mean": 251.732,
-      "stdev": null
+      "mean": 125.12040975,
+      "stdev": 24.230477733758715
     },
     {
       "library": "jsdom",
       "size": 10000,
-      "mean": 291.487,
-      "stdev": null
+      "mean": 297.29422925,
+      "stdev": 176.2127144276891
     }
   ]
 }

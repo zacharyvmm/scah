@@ -2,7 +2,7 @@
 
 `generate_entities.py` turns `entities.json`, a committed copy of the
 [WHATWG named character reference dataset](https://html.spec.whatwg.org/entities.json),
-into `src/html/entities_table.rs`. This directory is excluded from the
+into `src/capture/entities_table.rs`. This directory is excluded from the
 published crate; only the generated table ships.
 
 * Source SHA-256: `d741d877ac77c4194c4ad526b5b4a19aef8dfe411ab840a466891cdbb9f362e6`

@@ -25,12 +25,16 @@ Run `just` to list every recipe.
 
 | Path | Contents |
 | ---- | -------- |
-| `crates/scah` | The public crate: parser, query engine, and result store |
-| `crates/scah-reader` | Low-level streaming reader primitives |
+| `crates/scah` | The public crate: parser, query engine, and content capture |
+| `crates/scah-html` | Finding tags, reading attributes, and the open-element tree |
+| `crates/scah-store` | The result store: saved elements, their content, and the result index |
 | `crates/scah-query-ir` | Selector parsing and the compiled query representation |
 | `crates/scah-macros` | The `query!` macro |
+| `crates/scah-ffi` | Owned query and store handles shared by the Python, Node, and C bindings |
 | `crates/bindings/scah-python` | Python bindings (PyO3 and maturin) |
 | `crates/bindings/scah-node` | Node and Bun bindings (napi-rs) |
+| `crates/bindings/scah-c` | C ABI, its generated `include/scah.h`, and C/C++ smoke tests |
+| `crates/bindings/pgo` | Profile-guided build of the Python and Node release artifacts, and the workload it trains on |
 | `benches` | Benchmarks, published results, and CI performance gates; see [`benches/README.md`](benches/README.md) |
 
 ## Pull requests
@@ -40,7 +44,8 @@ Run `just` to list every recipe.
 - Add an entry under `## [Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md) for
   user-visible changes.
 - If you change a binding's public API, regenerate the Python stub with
-  `cargo run -p scah-python --bin stub_gen`.
+  `cargo run -p scah-python --bin stub_gen`. If you change the C ABI,
+  regenerate `crates/bindings/scah-c/include/scah.h` with `just header`.
 - CI runs formatting, clippy, tests on x86-64 and AArch64, docs, and the MSRV
   check. Pull requests that touch more than docs or benchmark results also run
   performance gates that compare the branch against its base.
@@ -53,6 +58,7 @@ pull request, run them locally on an x86-64 machine:
 ```bash
 just gate-sibling   # ordinary and sibling selector parsing
 just gate-text      # text extraction
+just gate-bindings  # Python and Node binding overhead
 ```
 
 Both compare the working tree against `origin/main`; pass another revision to
@@ -60,7 +66,7 @@ compare against it instead, for example `just gate-text HEAD~1`.
 
 ### HTML entity table
 
-`crates/scah/src/html/entities_table.rs` is generated. Don't edit it by hand;
+`crates/scah/src/capture/entities_table.rs` is generated. Don't edit it by hand;
 see [`crates/scah/scripts/README.md`](crates/scah/scripts/README.md).
 
 ## Releases

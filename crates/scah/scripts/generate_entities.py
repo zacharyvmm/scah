@@ -25,7 +25,7 @@ from urllib.request import urlopen
 
 SCRIPT_PATH = Path(__file__).resolve()
 DEFAULT_INPUT = SCRIPT_PATH.with_name("entities.json")
-DESTINATION = SCRIPT_PATH.parents[1] / "src" / "html" / "entities_table.rs"
+DESTINATION = SCRIPT_PATH.parents[1] / "src" / "capture" / "entities_table.rs"
 SOURCE_URL = "https://html.spec.whatwg.org/entities.json"
 GENERATOR_REL = "crates/scah/scripts/generate_entities.py"
 FIXTURE_REL = "crates/scah/scripts/entities.json"
