@@ -126,7 +126,7 @@ pub use scah_query_ir::{
     StructuralPredicate, StructuralPredicates, TextRequirements, Transition, TransitionId,
 };
 pub use scah_store::{
-    Attributes, CapacityOptions, ElementId, ElementRef, Elements, HeapUsage, Store,
+    Attributes, Buffer, CapacityOptions, ElementId, ElementRef, Elements, Field, HeapUsage, Store,
 };
 
 /// Implementation details referenced by `query!` expansions.
