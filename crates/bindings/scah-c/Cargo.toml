@@ -15,6 +15,16 @@ publish = false
 name = "scah_c"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "generate_header"
+path = "src/bin/generate_header.rs"
+required-features = ["header-gen"]
+
+[features]
+# Builds the `generate_header` binary, which rewrites include/scah.h.
+header-gen = ["dep:cbindgen"]
+
 [dependencies]
 scah.workspace = true
 scah-ffi = { path = "../../scah-ffi" }
+cbindgen = { version = "0.29", optional = true, default-features = false }
