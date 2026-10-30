@@ -195,6 +195,45 @@ jobs:
           SCAH_BINDING_GATE_LIMIT: "1.10"
         run: ./benches/gates/check-binding-performance.sh "$BASE_SHA"
 
+  pgo-changes:
+    name: Detect PGO Build Changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.changes.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Release builds run the PGO build on every platform; pull requests run
+      # it only when the build itself or the bindings' manifests change.
+      - name: Detect PGO-relevant changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- Cargo.toml crates/bindings/pgo \
+            crates/bindings/scah-python/Cargo.toml crates/bindings/scah-python/pyproject.toml \
+            crates/bindings/scah-node/Cargo.toml crates/bindings/scah-node/package.json \
+            .github/workflows/bindings-pgo.yml .github/workflows/deploy.yml ':(exclude)*.md'; then
+            echo "No PGO-relevant changes; skipping the PGO build."
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  bindings-pgo:
+    name: Bindings PGO Build (${{ matrix.binding }})
+    needs: pgo-changes
+    if: needs.pgo-changes.outputs.relevant == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        binding: [python, node]
+    uses: ./.github/workflows/bindings-pgo.yml
+    with:
+      binding: ${{ matrix.binding }}
+
   rust-aarch64:
     name: Rust AArch64 SIMD Checks
     runs-on: ubuntu-24.04-arm

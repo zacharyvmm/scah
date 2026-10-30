@@ -85,6 +85,10 @@ Rust crates and the Python and npm packages together.
   lazily in windows, so a parse that stops early only indexes what it read.
   Dense documents keep the rolling indexer. On a 409 KB prose page, finding
   every link is about 1.9× faster. ([#115])
+- Python wheels and Node addons are built with profile-guided optimization,
+  trained through each binding on `crates/bindings/pgo`. On the binding
+  performance gate's workloads, Python parses 19–22% faster and Node 7–12%
+  faster. Every wheel is now built on a native runner. ([#117])
 
 ### Fixed
 
@@ -226,3 +230,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#48]: https://github.com/zacharyvmm/scah/pull/48
 [#49]: https://github.com/zacharyvmm/scah/pull/49
 [#53]: https://github.com/zacharyvmm/scah/pull/53
+[#117]: https://github.com/zacharyvmm/scah/pull/117

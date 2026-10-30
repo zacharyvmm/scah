@@ -12,6 +12,11 @@ build-node:
     cd crates/bindings/scah-node && bun install && bun run build
 build-python:
     cd crates/bindings/scah-python && cargo run --bin stub_gen && uvx maturin build --release
+# Profile-guided builds, as releases ship them (needs the llvm-tools component)
+build-python-pgo:
+    MATURIN="uvx maturin" crates/bindings/pgo/build.sh python target/wheels
+build-node-pgo:
+    crates/bindings/pgo/build.sh node
 
 dev: dev-rust dev-node dev-python
 dev-rust:
