@@ -7,6 +7,10 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    ignore:
+      # Tags on this action are Rust toolchain versions, not action releases;
+      # the MSRV job must stay pinned to the declared rust-version.
+      - dependency-name: dtolnay/rust-toolchain
 
   - package-ecosystem: cargo
     directory: /
