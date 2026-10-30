@@ -34,6 +34,7 @@ Run `just` to list every recipe.
 | `crates/bindings/scah-python` | Python bindings (PyO3 and maturin) |
 | `crates/bindings/scah-node` | Node and Bun bindings (napi-rs) |
 | `crates/bindings/scah-c` | C ABI, its generated `include/scah.h`, and C/C++ smoke tests |
+| `crates/bindings/pgo` | Profile-guided build of the Python and Node release artifacts, and the workload it trains on |
 | `benches` | Benchmarks, published results, and CI performance gates; see [`benches/README.md`](benches/README.md) |
 
 ## Pull requests

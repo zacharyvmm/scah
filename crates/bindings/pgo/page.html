@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Field Notes &mdash; Weekly Digest</title>
+  <link rel="stylesheet" href="/static/site.css">
+  <link rel="alternate" type="application/rss+xml" href="/feed.xml">
+  <style>
+    .card > .meta { color: #555; }
+    a[href^="http"]::after { content: "\2197"; }
+  </style>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    if (navigator.languages.length < 2 && "</div>".length > 0) { track("lang"); }
+  </script>
+</head>
+<body class="digest theme-light" data-page="home">
+  <!-- Navigation -->
+  <header id="top" class="site-header">
+    <a class="logo" href="/"><img src="/static/logo.png" alt="Field Notes" width=120 height=32></a>
+    <nav id="main-nav" aria-label="Main">
+      <ul class="menu">
+        <li class="active"><a href="/" aria-current="page">Home</a>
+        <li><a href="/archive">Archive</a>
+        <li><a href="/topics">Topics</a>
+        <li><a href="https://example.org/about" rel="external">About</a>
+      </ul>
+    </nav>
+    <form class="search" action="/search" method="get">
+      <input type="text" name="q" placeholder="Search notes" required>
+      <input type="checkbox" name="exact" id="exact" checked><label for="exact">Exact</label>
+      <button type="submit">Go</button>
+    </form>
+  </header>
+
+  <main id="content">
+    <section class="featured">
+      <article class="post card" data-id="x-101" data-tags="rust,parsing">
+        <h2 class="title"><a href="/notes/101">Streaming parsers &amp; you</a></h2>
+        <div class="meta"><span class="author">Ada</span> &middot; <time datetime="2026-10-01">Oct 1</time>
+          <span class="tag">rust</span><span class="tag">html</span></div>
+        <p>Selectors run <em>while</em> the document streams, so nothing waits for a tree.
+           Compare &lt;div&gt; soup with well-formed markup&nbsp;&mdash; both work.</p>
+        <p>Read the <a href="/notes/101#bench">benchmarks</a> or the <a href="https://example.org/spec">spec</a>.<br>
+           Footnotes follow.<br/></p>
+        <figure><img src="/img/101-chart.png" alt="Throughput chart"><figcaption>Throughput, MB/s</figcaption></figure>
+      </article>
+
+      <article class="post card" data-id="x-102" data-tags="python">
+        <h2 class="title"><a href="/notes/102">Bindings without copies</a></h2>
+        <div class="meta"><span class="author">Grace</span> &middot; <time datetime="2026-10-08">Oct 8</time>
+          <span class="tag">python</span></div>
+        <p>Elements keep the store alive &#8212; and the store keeps the HTML.
+        <p>Unclosed paragraphs close themselves when the next one starts.
+        <ul class="steps">
+          <li>Build the query
+          <li>Parse once
+          <li>Read fields lazily
+        </ul>
+        <pre><code>store = parse(html, [query])
+for a in store.get("a"): print(a.text)</code></pre>
+      </article>
+
+      <article class="post card sponsored" data-id="y-7">
+        <h2 class="title"><a href="/partners/7" rel="sponsored nofollow">A word from our sponsor</a></h2>
+        <p class="lede">Fast &amp; <strong>friendly</strong> hosting &copy; 2026.</p>
+        <img src="/img/ad-7.jpg" alt="">
+      </article>
+    </section>
+
+    <section class="listing">
+      <h3>Recent notes</h3>
+      <div class="grid">
+        <div class="card mini" data-id="x-103"><a href="/notes/103">Tag atoms</a><div class="meta"><span class="tag">internals</span></div></div>
+        <div class="card mini" data-id="x-104"><a href="/notes/104">Columnar rows</a><div class="meta"><span class="tag">internals</span></div></div>
+        <div class="card mini" data-id="x-105"><a href="/notes/105">Bitset matching</a><div class="meta"><span class="tag">engine</span></div></div>
+        <div class="card mini" data-id="z-106"><a href="/notes/106">Implied closes</a><div class="meta"><span class="tag">html</span></div></div>
+        <div class="card mini" data-id="x-107"><a href="/notes/107">Raw text elements</a><div class="meta"><span class="tag">html</span></div></div>
+        <div class="card mini" data-id="x-108"><A HREF="/notes/108" CLASS="upper">Upper-case markup</A><div class="meta"><span class="tag">html</span></div></div>
+      </div>
+    </section>
+
+    <section class="pricing">
+      <table id="prices" class="data">
+        <caption>Plans</caption>
+        <thead><tr><th scope="col">Plan</th><th scope="col">Price</th><th scope="col">Notes</th></tr></thead>
+        <tbody>
+          <tr class="row"><td>Free</td><td class="price">$0</td><td>1 project</td></tr>
+          <tr class="row"><td>Team</td><td class="price">$12</td><td>10 projects &amp; SSO</td></tr>
+          <tr class="row highlight"><td>Scale</td><td class="price">$49</td><td><a href="/contact">Talk to us</a></td></tr>
+          <tr class="row"><td>Custom<td class="price">&mdash;<td>Unclosed cells</tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="comments" id="comments">
+      <div class="comment" data-depth="0"><span class="user">kim</span><p>Does it handle <code>&lt;template&gt;</code>?</p>
+        <div class="comment" data-depth="1"><span class="user">ada</span><p>Yes, and <code>&lt;textarea&gt;</code> too.</p>
+          <div class="comment" data-depth="2"><span class="user">lin</span><p>Nested <b><i>deeply</i></b> works.</p></div>
+        </div>
+      </div>
+      <form class="reply" action="/comments" method="post">
+        <textarea name="body" rows=4>Type <b>here</b> &amp; submit</textarea>
+        <select name="notify"><option value="none">None<option value="all" selected>All</select>
+        <input type="hidden" name="token" value="a1b2c3">
+        <input type="text" name="name" disabled>
+      </form>
+    </section>
+  </main>
+
+  <aside class="sidebar">
+    <h4>Topics</h4>
+    <ul class="topics"><li><a href="/t/rust">rust</a></li><li><a href="/t/python">python</a></li><li><a href="/t/node">node</a></li></ul>
+    <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7"/></svg>
+  </aside>
+
+  <footer class="site-footer">
+    <p>&copy; 2026 Field Notes. <a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a></p>
+    <script src="/static/app.js" defer></script>
+    <script type="application/ld+json">{"@type": "Blog", "name": "Field Notes <weekly>"}</script>
+  </footer>
+</body>
+</html>
