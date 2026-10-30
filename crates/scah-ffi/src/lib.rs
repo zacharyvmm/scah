@@ -11,6 +11,12 @@
 //!
 //! Both are immutable, `Send` and `Sync`, and hand out borrows that last no
 //! longer than `self`.
+//!
+//! The [`arrow`] module exports query results as Apache Arrow columns through
+//! the Arrow C Data Interface, borrowing strings from the store instead of
+//! copying them.
+
+pub mod arrow;
 
 use scah::lazy::LazyQueryBuilder;
 use scah::{ParseError, Query, SelectorParseError, Store};
