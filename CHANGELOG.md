@@ -93,8 +93,9 @@ Rust crates and the Python and npm packages together.
   followed by whitespace, keep their saved content. ([#93], [#96])
 - Queries with the same selector string keep separate results; `Store::get`
   returns the first query with that selector. ([#91], [#97])
-- Python elements could read freed memory after their `Store` was garbage
-  collected. Elements now keep the parsed HTML and queries alive. ([#50])
+- Python and Node elements could read freed memory after their `Store` was
+  garbage collected. Elements now keep the parsed HTML and queries alive.
+  ([#50], [#51])
 
 ## [0.1.0] - 2026-10-01
 
@@ -218,3 +219,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#113]: https://github.com/zacharyvmm/scah/pull/113
 [#115]: https://github.com/zacharyvmm/scah/pull/115
 [#50]: https://github.com/zacharyvmm/scah/pull/50
+[#51]: https://github.com/zacharyvmm/scah/pull/51

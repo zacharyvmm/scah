@@ -1761,6 +1761,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "scah",
+ "scah-ffi",
 ]
 
 [[package]]
