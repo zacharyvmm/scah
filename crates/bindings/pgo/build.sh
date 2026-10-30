@@ -14,6 +14,10 @@
 # as with `bun run build`. Extra arguments go to both builds. Needs the
 # `llvm-tools` rustup component; MATURIN, PYTHON, BUN, and NODE select the
 # tools.
+#
+# Both builds name the host target explicitly. Cargo then applies RUSTFLAGS
+# to the binding only, not to build scripts and proc macros, which would
+# otherwise be instrumented too and report missing profile data.
 set -euo pipefail
 
 binding="${1:?usage: build.sh python WHEEL_DIR [ARGS...] | build.sh node [ARGS...]}"
@@ -33,11 +37,12 @@ native_path() {
   if command -v cygpath > /dev/null; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
 }
 
+host="$(rustc -vV | sed -n 's/^host: //p')"
+
 find_profdata() {
-  local sysroot host
+  local sysroot
   sysroot="$(rustc --print sysroot)"
   command -v cygpath > /dev/null && sysroot="$(cygpath -u "$sysroot")"
-  host="$(rustc -vV | sed -n 's/^host: //p')"
   for tool in "$sysroot/lib/rustlib/$host/bin/llvm-profdata"{,.exe}; do
     if [[ -x "$tool" ]]; then
       printf '%s\n' "$tool"
@@ -55,7 +60,8 @@ build_python() {
   rm -rf "$wheels"
   (
     cd "$bindings_dir/scah-python"
-    RUSTFLAGS="${RUSTFLAGS:-} $flag" "${maturin[@]}" build --release --out "$wheels" "$@"
+    RUSTFLAGS="${RUSTFLAGS:-} $flag" "${maturin[@]}" build --release --target "$host" \
+      --out "$wheels" "$@"
   )
 }
 
@@ -72,7 +78,7 @@ build_node() {
   (
     cd "$bindings_dir/scah-node"
     "$bun" install --frozen-lockfile
-    RUSTFLAGS="${RUSTFLAGS:-} $flag" "$bun" run build "$@"
+    RUSTFLAGS="${RUSTFLAGS:-} $flag" "$bun" run build --target "$host" "$@"
   )
 }
 
@@ -93,8 +99,7 @@ case "$binding" in
   *) echo "unknown binding: $binding (expected python or node)" >&2; exit 1 ;;
 esac
 
-# Build scripts and proc macros are instrumented too when building for the
-# host; drop what they recorded during the build.
+# Nothing should have run yet, but start training from an empty directory.
 rm -rf "$profiles"
 "train_$binding"
 "$profdata" merge -o "$work/merged.profdata" "$profiles"
@@ -103,8 +108,22 @@ rm -rf "$profiles"
 # does, so name the profile after its contents.
 profile="$work/merged-$(cksum < "$work/merged.profdata" | cut -d' ' -f1).profdata"
 mv "$work/merged.profdata" "$profile"
-use="-Cprofile-use=$(native_path "$profile")"
+use="-Cprofile-use=$(native_path "$profile") -Cllvm-args=-pgo-warn-missing-function"
+log="$work/profile-use.log"
 case "$binding" in
-  python) build_python "$use" "$wheels" "$@" ;;
-  node) build_node "$use" "$@" ;;
+  python) build_python "$use" "$wheels" "$@" 2> >(tee "$log" >&2) ;;
+  node) build_node "$use" "$@" 2> >(tee "$log" >&2) ;;
 esac
+wait
+
+# A profile that doesn't match the build is ignored without an error: for
+# example, after a change to the Cargo profile, which renames every symbol.
+# LLVM names each function it finds no data for; fail if that's more than a
+# few.
+profiled="$("$profdata" show "$profile" | sed -n 's/^Total functions: //p')"
+missing="$(grep -c 'no profile data available for function' "$log" || true)"
+echo "PGO: $missing of $profiled profiled functions had no profile data in the optimized build"
+if (( missing * 100 > profiled )); then
+  echo "PGO: the profile did not apply; check that both builds use the same flags" >&2
+  exit 1
+fi
