@@ -32,6 +32,11 @@ pub enum ScahStatus {
     InternalPanic = 7,
     /// The HTML, or the text saved from it, is 4 GiB or longer.
     InputTooLarge = 8,
+    /// An argument was invalid, such as an Arrow column requested twice.
+    InvalidArgument = 9,
+    /// A result was too large to export, such as an Arrow string column over
+    /// a buffer of 2 GiB or more, past Arrow's 32-bit offsets.
+    ExportTooLarge = 10,
 }
 
 /// An error message returned through `out_error`.

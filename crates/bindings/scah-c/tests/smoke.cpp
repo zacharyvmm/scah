@@ -3,7 +3,9 @@
 #include "scah.h"
 
 #include <cstdio>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <initializer_list>
 #include <memory>
 #include <optional>
@@ -253,6 +255,37 @@ int main() {
     CHECK(false);
   } catch (const Error &err) {
     CHECK(err.status == SCAH_STATUS_INDEX_OUT_OF_BOUNDS);
+  }
+
+  // Arrow export: the `> li` rows under `ul`, each with its parent's index.
+  {
+    ArrowSchema schema;
+    ArrowArray array;
+    const ScahStringView names[] = {view("class")};
+    call([&](ScahError **e) {
+      return scah_store_export_arrow(s, view("> li"), view("ul"), names, 1,
+                                     &schema, &array, e);
+    });
+    const char *columns[] = {"index",    "parent", "tag",  "inner_html",
+                             "raw_text", "text",   "class"};
+    CHECK(std::string_view(schema.format) == "+s");
+    CHECK(schema.n_children == 7 && array.n_children == 7);
+    CHECK(array.length == 3);
+    for (int i = 0; i < 7; i++) {
+      CHECK(std::string_view(schema.children[i]->name) == columns[i]);
+    }
+    auto parents = static_cast<const uint32_t *>(array.children[1]->buffers[1]);
+    auto tags = static_cast<const uint8_t *>(array.children[2]->buffers[1]);
+    for (int row = 0; row < 3; row++) {
+      CHECK(parents[row] == uls[0]);
+      int32_t length;
+      std::memcpy(&length, tags + 16 * row, 4);
+      CHECK(length == 2 && std::memcmp(tags + 16 * row + 4, "li", 2) == 0);
+    }
+    CHECK(array.children[6]->null_count == 3);  // no `li` has a class
+    schema.release(&schema);
+    array.release(&array);
+    CHECK(schema.release == nullptr && array.release == nullptr);
   }
 
   std::puts("C++ smoke test passed");
