@@ -1657,6 +1657,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "scah-ffi"
+version = "0.2.0-dev"
+dependencies = [
+ "scah",
+]
+
+[[package]]
 name = "scah-html"
 version = "0.2.0-dev"
 dependencies = [
