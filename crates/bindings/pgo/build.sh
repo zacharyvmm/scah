@@ -15,9 +15,11 @@
 # `llvm-tools` rustup component; MATURIN, PYTHON, BUN, and NODE select the
 # tools.
 #
-# Both builds name the host target explicitly. Cargo then applies RUSTFLAGS
-# to the binding only, not to build scripts and proc macros, which would
-# otherwise be instrumented too and report missing profile data.
+# Both builds name the host target explicitly and pass their flags as that
+# target's rustflags. Cargo then applies them to the binding only, not to build
+# scripts and proc macros, which would otherwise be instrumented too and report
+# missing profile data. Unlike RUSTFLAGS, they add to the target flags in
+# .cargo/config.toml (Windows' +crt-static) instead of replacing them.
 set -euo pipefail
 
 binding="${1:?usage: build.sh python WHEEL_DIR [ARGS...] | build.sh node [ARGS...]}"
@@ -38,6 +40,7 @@ native_path() {
 }
 
 host="$(rustc -vV | sed -n 's/^host: //p')"
+target_flags="CARGO_TARGET_$(tr 'a-z-' 'A-Z_' <<< "$host")_RUSTFLAGS"
 
 find_profdata() {
   local sysroot
@@ -60,7 +63,7 @@ build_python() {
   rm -rf "$wheels"
   (
     cd "$bindings_dir/scah-python"
-    RUSTFLAGS="${RUSTFLAGS:-} $flag" "${maturin[@]}" build --release --target "$host" \
+    env "$target_flags=${!target_flags:-} $flag" "${maturin[@]}" build --release --target "$host" \
       --out "$wheels" "$@"
   )
 }
@@ -78,7 +81,7 @@ build_node() {
   (
     cd "$bindings_dir/scah-node"
     "$bun" install --frozen-lockfile
-    RUSTFLAGS="${RUSTFLAGS:-} $flag" "$bun" run build --target "$host" "$@"
+    env "$target_flags=${!target_flags:-} $flag" "$bun" run build --target "$host" "$@"
   )
 }
 
@@ -113,7 +116,7 @@ rm -rf "$profiles"
 "train_$binding"
 "$profdata" merge -o "$work/merged.profdata" "$profiles"
 
-# Cargo rebuilds when RUSTFLAGS change but not when the profile they name
+# Cargo rebuilds when rustflags change but not when the profile they name
 # does, so name the profile after its contents.
 profile="$work/merged-$(cksum < "$work/merged.profdata" | cut -d' ' -f1).profdata"
 mv "$work/merged.profdata" "$profile"
