@@ -45,8 +45,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - name: Build PGO wheel in manylinux
@@ -68,7 +68,7 @@ jobs:
           python -m pip install pytest crates/bindings/scah-python/dist/*.whl
           python -m pytest crates/bindings/scah-python/tests
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-wheels-${{ matrix.os }}-${{ matrix.target }}
           path: crates/bindings/scah-python/dist
@@ -95,9 +95,9 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Training runs on Node: Bun exits without writing the profile.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
@@ -113,7 +113,7 @@ jobs:
         working-directory: crates/bindings/scah-node
         run: bun test
       - name: Upload addon
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nodejs-addon-${{ matrix.settings.target }}
           path: crates/bindings/scah-node/*.node
