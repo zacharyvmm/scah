@@ -109,7 +109,9 @@ impl<'html> OpenElementStack<'html> {
         popped
     }
 
-    #[inline]
+    // Called for every start tag. LLVM declines to inline it into the parse
+    // loop without a profile; inlining it saves about 1% of cycles.
+    #[inline(always)]
     pub fn prepare_for_open_into(&mut self, tag: TagFlags, popped: &mut Vec<OpenElement<'html>>) {
         popped.clear();
 
