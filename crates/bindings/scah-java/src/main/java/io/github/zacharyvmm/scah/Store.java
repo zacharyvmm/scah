@@ -49,9 +49,11 @@ public final class Store implements AutoCloseable {
      * encoded, and no copy of the whole document is allocated.
      */
     private static long encode(Backend backend, String html) {
-        // Backends reserve the worst case, 3 bytes a unit, before each block; the slack keeps
-        // that from regrowing an ASCII document's exact-sized buffer near its end.
-        long encoded = backend.htmlNew(html.length() + 3L * BLOCK);
+        // Backends reserve the worst case, 3 bytes a unit, before each block. Twice a block of
+        // slack keeps that from regrowing an ASCII document's buffer near its end; the library
+        // trims what is left over once the string is encoded.
+        int length = html.length();
+        long encoded = backend.htmlNew(length + 2L * Math.min(length, BLOCK) + 3);
         try {
             char[] block = new char[Math.min(html.length(), BLOCK)];
             // Counted from the remainder, so no index passes the length near Integer.MAX_VALUE.

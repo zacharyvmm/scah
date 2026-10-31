@@ -119,6 +119,9 @@ impl Utf16Encoder {
         if let Some(high) = self.pending.take() {
             self.lone(high, self.units - 1)?;
         }
+        // Callers reserve for the worst case, and the store keeps the buffer
+        // for its lifetime; shrinking in place is cheap.
+        self.bytes.shrink_to_fit();
         debug_assert!(std::str::from_utf8(&self.bytes).is_ok());
         // SAFETY: `bytes` only ever receives whole UTF-8 sequences: ASCII
         // bytes, and the encodings of scalar values and U+FFFD below.
@@ -409,6 +412,16 @@ mod tests {
                 let _ = encoder.push(&[0xD83D]);
             }
         }
+    }
+
+    #[test]
+    fn finishing_trims_the_reserve() {
+        let mut encoder = Utf16Encoder::with_capacity(1000, LoneSurrogates::Replace);
+        encoder.reserve(100);
+        encoder.push(&[0x41, 0xE9]).unwrap();
+        let text = encoder.finish().unwrap();
+        assert_eq!(text, "Aé");
+        assert_eq!(text.capacity(), text.len());
     }
 
     #[test]

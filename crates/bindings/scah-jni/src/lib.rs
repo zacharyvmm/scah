@@ -12,7 +12,6 @@
 //! never unwind into the JVM.
 
 use jni::errors::ThrowRuntimeExAndDefault;
-use jni::objects::ReleaseMode;
 use jni::objects::{
     JByteArray, JCharArray, JClass, JLongArray, JObject, JObjectArray, JString, JThrowable, JValue,
 };
@@ -360,6 +359,62 @@ pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_htmlNew0<'local
     })
 }
 
+/// A `char[]` pinned with `GetPrimitiveArrayCritical`, released on drop.
+///
+/// The `jni` crate's own critical access checks for exceptions while the
+/// array is pinned, which JNI forbids, so this calls JNI directly. No JNI call
+/// may be made while one is alive.
+struct PinnedChars<'env> {
+    env: *mut jni::sys::JNIEnv,
+    array: jni::sys::jarray,
+    chars: *const u16,
+    len: usize,
+    _env: std::marker::PhantomData<&'env Env<'env>>,
+}
+
+impl<'env> PinnedChars<'env> {
+    fn new(env: &'env Env<'_>, array: &JCharArray<'_>) -> Result<Self> {
+        let len = array.len(env)?;
+        let raw = env.get_raw();
+        let array = array.as_raw();
+        // SAFETY: `raw` is this thread's JNIEnv, no exception is pending, and
+        // `array` is a live `char[]` reference.
+        let chars =
+            unsafe { ((**raw).v1_2.GetPrimitiveArrayCritical)(raw, array, std::ptr::null_mut()) };
+        if chars.is_null() {
+            // JNI has thrown an OutOfMemoryError.
+            return Err(Failure::Jni(jni::errors::Error::JavaException));
+        }
+        Ok(Self {
+            env: raw,
+            array,
+            chars: chars.cast(),
+            len,
+            _env: std::marker::PhantomData,
+        })
+    }
+
+    fn as_slice(&self) -> &[u16] {
+        // SAFETY: the array holds `len` chars and stays pinned while `self`
+        // lives.
+        unsafe { std::slice::from_raw_parts(self.chars, self.len) }
+    }
+}
+
+impl Drop for PinnedChars<'_> {
+    fn drop(&mut self) {
+        // SAFETY: releases the pin `new` took; the chars were only read.
+        unsafe {
+            ((**self.env).v1_2.ReleasePrimitiveArrayCritical)(
+                self.env,
+                self.array,
+                self.chars.cast_mut().cast(),
+                jni::sys::JNI_ABORT,
+            );
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_htmlPush0<'local>(
     mut env: EnvUnowned<'local>,
@@ -382,10 +437,9 @@ pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_htmlPush0<'loca
         // document so far. Encoding is then bounded by `length`, which the
         // Java side keeps to one block, so the pin is short.
         html.reserve(length);
-        // SAFETY: no JNI calls are made while the elements are held.
-        let elements = unsafe { units.get_elements_critical(env, ReleaseMode::NoCopyBack) }?;
-        let length = length.min(elements.len());
-        html.push(&elements[..length])
+        let pinned = PinnedChars::new(env, &units)?;
+        let chars = pinned.as_slice();
+        html.push(&chars[..length.min(chars.len())])
             .expect("replacing lone surrogates cannot fail");
         Ok(())
     })
