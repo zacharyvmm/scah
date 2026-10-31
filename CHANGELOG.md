@@ -63,6 +63,10 @@ Rust crates and the Python and npm packages together.
   `Store.query` in Python and Node. `crates/bindings/native/build.sh` builds
   `libscah_c` for Linux (glibc 2.17+ and musl), macOS, and Windows on x64 and
   arm64. ([#122])
+- A .NET binding, the `Scah` NuGet package, in `crates/bindings/scah-csharp`.
+  It calls the C ABI through `LibraryImport`, targets .NET 8 and newer, is
+  Native AOT-compatible, and ships the native library for every platform
+  `libscah_c` builds for. ([#123])
 - Arrow export: `Store.to_arrow()` in Python and `scah_store_export_arrow` in C
   hand matches over as an Arrow table whose string columns point into the
   parsed HTML and text buffers, ready for polars, pyarrow, DuckDB, and other
@@ -241,3 +245,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#53]: https://github.com/zacharyvmm/scah/pull/53
 [#117]: https://github.com/zacharyvmm/scah/pull/117
 [#122]: https://github.com/zacharyvmm/scah/pull/122
+[#123]: https://github.com/zacharyvmm/scah/pull/123

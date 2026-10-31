@@ -26,7 +26,7 @@ dev-node:
 dev-python:
     cd crates/bindings/scah-python && cargo run --bin stub_gen && uvx maturin build
 
-test: test-rust test-node test-python test-c
+test: test-rust test-node test-python test-c test-csharp
 test-rust:
     cargo test --all-targets --all-features
     cargo test --release --manifest-path crates/scah-differential/Cargo.toml
@@ -36,6 +36,9 @@ test-python:
     cd crates/bindings/scah-python && uv run --with pytest --reinstall-package scah pytest tests/
 test-c:
     crates/bindings/scah-c/scripts/smoke-test.sh
+test-csharp:
+    cargo build -p scah-c
+    cd crates/bindings/scah-csharp && dotnet test Scah.Tests
 
 # Regenerate the committed C header after changing the C ABI
 header:
@@ -117,6 +120,7 @@ bump new_version:
     just bump-rust "{{new_version}}"
     just bump-node "{{new_version}}"
     just bump-python "{{new_version}}"
+    just bump-csharp "{{new_version}}"
     cargo check
 bump-rust new_version:
     sed -E -i.bak 's/^(version = |scah(-[a-z-]+)? = \{ version = )"[^"]*"/\1"{{new_version}}"/' Cargo.toml
@@ -129,6 +133,9 @@ bump-node new_version:
 bump-python new_version:
     sed -i.bak 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/bindings/scah-python/pyproject.toml
     rm -f crates/bindings/scah-python/pyproject.toml.bak
+bump-csharp new_version:
+    sed -i.bak 's|<Version>[^<]*</Version>|<Version>{{new_version}}</Version>|' crates/bindings/scah-csharp/Scah/Scah.csproj
+    rm -f crates/bindings/scah-csharp/Scah/Scah.csproj.bak
 trigger-release new_version:
     git tag -a v{{new_version}} -m "Version {{new_version}} release"
     git push origin v{{new_version}}

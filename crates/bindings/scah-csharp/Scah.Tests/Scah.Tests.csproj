@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The library's own target, and the newest LTS. -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- The library cargo built for this checkout; override for other builds. -->
+    <ScahNativeLibraryDir Condition="'$(ScahNativeLibraryDir)' == ''">$(MSBuildThisFileDirectory)../../../../target/debug</ScahNativeLibraryDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ScahUsePackage)' == ''">
+    <ProjectReference Include="../Scah/Scah.csproj" />
+    <None Include="$(ScahNativeLibraryDir)/libscah_c.so" Condition="Exists('$(ScahNativeLibraryDir)/libscah_c.so')" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(ScahNativeLibraryDir)/libscah_c.dylib" Condition="Exists('$(ScahNativeLibraryDir)/libscah_c.dylib')" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(ScahNativeLibraryDir)/scah_c.dll" Condition="Exists('$(ScahNativeLibraryDir)/scah_c.dll')" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+  <!-- Test a packed Scah.nupkg instead: -p:ScahUsePackage=VERSION. -->
+  <ItemGroup Condition="'$(ScahUsePackage)' != ''">
+    <PackageReference Include="Scah" Version="$(ScahUsePackage)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
