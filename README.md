@@ -14,7 +14,8 @@ single forward pass. You write CSS selectors; scah compiles them, streams the
 document through its parser once, and keeps only the matches. There is no
 tree to build or walk, so it is fast on large pages and cheap on memory.
 
-It has a Rust core and bindings for Python and JavaScript/TypeScript.
+It has a Rust core and bindings for Python, JavaScript/TypeScript, Java,
+.NET, and C.
 
 ```python
 from scah import Query, Save, parse
@@ -28,9 +29,9 @@ for link in store.get("a[href]"):
 
 - **Fast.** Finding every link in the 15 MB WHATWG HTML specification takes
   scah about 1.3× less time than lol_html and 7× less than scraper in Rust,
-  4× less than selectolax and 50× less than BeautifulSoup in Python, and 8×
-  less than linkedom and 13× less than cheerio in JavaScript. See
-  [Benchmarks](#benchmarks).
+  4× less than selectolax and 50× less than BeautifulSoup in Python, 8× less
+  than linkedom and 13× less than cheerio in JavaScript, 3.5× less than jsoup
+  in Java, and 15× less than AngleSharp in .NET. See [Benchmarks](#benchmarks).
 - **Only what you ask for.** Each query says what to keep: attributes, inner
   HTML, source text, or normalized text. Nothing else is stored.
 - **Structured results.** Nest queries with `.then()` to extract records,
@@ -43,6 +44,9 @@ for link in store.get("a[href]"):
   rules.
 - **Early exit.** When every query is a `first()`, the parse stops as soon as
   each one has its match.
+- **Columnar output.** Export matches as a zero-copy Apache Arrow table for
+  polars, pyarrow, or DuckDB, or scrape a whole column of HTML pages inside
+  polars with `scah.polars.parse`.
 
 ## Install
 
@@ -51,6 +55,9 @@ for link in store.get("a[href]"):
 | Rust | [`scah`](https://crates.io/crates/scah) | `cargo add scah` |
 | Python 3.10+ | [`scah`](https://pypi.org/project/scah/) | `pip install scah` |
 | JavaScript / TypeScript | [`@zacharymm/scah`](https://www.npmjs.com/package/@zacharymm/scah) | `npm install @zacharymm/scah` |
+| Java 11+ | [`crates/bindings/scah-java`](https://github.com/zacharyvmm/scah/tree/main/crates/bindings/scah-java) | See its README |
+| .NET 8+ | [`crates/bindings/scah-csharp`](https://github.com/zacharyvmm/scah/tree/main/crates/bindings/scah-csharp) | See its README |
+| C / C++ | [`crates/bindings/scah-c`](https://github.com/zacharyvmm/scah/tree/main/crates/bindings/scah-c) | `cargo build --release -p scah-c` |
 
 ```toml
 [dependencies]
@@ -104,6 +111,15 @@ for (const a of store.get('a[href]') ?? []) {
   console.log(`${a.text}: ${a.getAttribute('href')}`)
 }
 ```
+
+### Java, .NET, C, and C++
+
+The Java and .NET bindings, and the C ABI they are built on, expose the same
+queries and results. Their READMEs have install instructions and complete
+examples:
+[Java](https://github.com/zacharyvmm/scah/blob/main/crates/bindings/scah-java/README.md),
+[.NET](https://github.com/zacharyvmm/scah/blob/main/crates/bindings/scah-csharp/README.md),
+[C and C++](https://github.com/zacharyvmm/scah/blob/main/crates/bindings/scah-c/README.md).
 
 ## Structured extraction
 
@@ -191,6 +207,35 @@ attributes. Normalized text decodes character references, skips `script`,
 `style`, and `hidden` content, and adds line breaks for block elements; see
 [Text extraction](https://github.com/zacharyvmm/scah/blob/main/docs/text-extraction.md).
 
+## Arrow export
+
+For bulk work, export matches as an [Apache Arrow](https://arrow.apache.org/)
+table instead of element objects. String columns point straight into the
+parsed HTML and text buffers, so nothing is copied and no per-element objects
+are created. Any library that reads the Arrow C Data Interface can import the
+table:
+
+```python
+import polars as pl
+from scah import Query, Save, parse
+
+store = parse(html, [Query.all("a", Save(text=True)).build()])
+df = pl.DataFrame(store.to_arrow("a", attributes=["href"]))
+# columns: index, tag, inner_html, raw_text, text, href
+```
+
+Pass `parent=` to export a child section, for example
+`store.to_arrow("h1", parent="div.product")`. Each row then carries a
+`parent` column holding the parent's `index`, ready to join. On 100,000 links,
+building a polars DataFrame this way takes about a tenth of the time it takes
+through element objects. Reading values back one by one (`to_pylist()`) is no
+faster than element objects, so use Arrow when the data stays columnar.
+From C, `scah_store_export_arrow` fills the standard `ArrowSchema` and
+`ArrowArray` structs.
+
+To scrape a whole column of HTML pages in polars, see
+[`scah.polars`](https://github.com/zacharyvmm/scah/blob/main/crates/bindings/scah-python/README.md#polars).
+
 ## Selectors
 
 scah supports type, id, class, universal, and attribute selectors (`=`,
@@ -262,6 +307,35 @@ Mean time per parse and query; lower is better. Multipliers are relative to scah
 
 Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-29; raw data and run details in [`benches/results/node`](https://github.com/zacharyvmm/scah/tree/main/benches/results/node).
 <!-- /benchmarks:node -->
+
+### Java
+
+<!-- benchmarks:java -->
+| Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
+| :--- | ---: | ---: | ---: | ---: |
+| **scah** | **71.0 ms** | **25.5 ms** | **6.74 ms** | **76.1 µs** |
+| scah (JNI) | 90.7 ms (1.28×) | 38.2 ms (1.50×) | 9.97 ms (1.48×) | 81.2 µs (1.07×) |
+| jsoup | 252 ms (3.54×) | 55.6 ms (2.18×) | 22.0 ms (3.26×) | 16.5 ms (216×) |
+| jsoup (StreamParser) | 308 ms (4.34×) | 58.2 ms (2.28×) | 28.7 ms (4.25×) | 5.24 µs (0.07×) |
+| Jericho | 383 ms (5.40×) | 75.6 ms (2.96×) | 22.7 ms (3.37×) | 2.91 µs (0.04×) |
+| HtmlCleaner | 1.36 s (19.1×) | 225 ms (8.80×) | 98.3 ms (14.6×) | 66.2 ms (870×) |
+| Jodd Jerry | 1.63 s (22.9×) | 70.2 ms (2.75×) | 45.8 ms (6.78×) | 44.9 ms (590×) |
+
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-31; raw data and run details in [`benches/results/java`](https://github.com/zacharyvmm/scah/tree/main/benches/results/java).
+<!-- /benchmarks:java -->
+
+### C#
+
+<!-- benchmarks:csharp -->
+| Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
+| :--- | ---: | ---: | ---: | ---: |
+| **scah** | **63.4 ms** | **20.1 ms** | **5.16 ms** | **56.6 µs** |
+| AngleSharp | 935 ms (14.7×) | 176 ms (8.72×) | 75.0 ms (14.5×) | 62.1 ms (1,097×) |
+| HtmlAgilityPack | 1.62 s (25.5×) | 325 ms (16.1×) | 132 ms (25.5×) | 96.9 ms (1,710×) |
+| HtmlAgilityPack + Fizzler | 1.68 s (26.4×) | 263 ms (13.0×) | 135 ms (26.2×) | 97.2 ms (1,717×) |
+
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-31; raw data and run details in [`benches/results/csharp`](https://github.com/zacharyvmm/scah/tree/main/benches/results/csharp).
+<!-- /benchmarks:csharp -->
 
 Each column is one scenario: every link in the WHATWG HTML specification;
 nested `.then()` queries; and every match, or only the first, in a flat

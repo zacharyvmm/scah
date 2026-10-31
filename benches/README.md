@@ -9,15 +9,21 @@
 | `text_extraction/` | Text-mode throughput and memory, plus the text performance gate |
 | `cursor_dominance/`, `sibling/`, `structural/`, `ordinary_gate/` | Parser engine workloads; `ordinary_gate` backs the sibling performance gate |
 | `element_tape/`, `escape_scanner/`, `tag_classification/`, `tape_indexer/` | Microbenchmarks for internal design experiments; `tape_indexer` compares tag-indexing strategies |
-| `gates/` | Scripts that compare a pull request against its base revision in CI |
+| `experiments/` | Same-process comparisons for design experiments; `experiments/arrow/` compares Arrow export with the Python handle API |
+| `gates/` | Scripts that compare a pull request against its base revision in CI; `gates/bindings/` holds the Python and Node workloads |
 | `profiling/` | `capacity_profile`, a harness for measuring allocation peaks under valgrind massif |
 | `notes/` | Write-ups of past performance experiments and proposals |
 | `layout/` | Scripts that separate code-layout effects from code changes (see below) |
 | `results/` | Published comparison results, one JSON file per suite and scenario |
 | `report/` | Converts raw benchmark output into `results/` and renders the README tables |
 
-The Python and Node comparisons live with their bindings, in
-`crates/bindings/scah-python/benches/` and `crates/bindings/scah-node/benchmark/`.
+The binding comparisons live with their bindings: Python in
+`crates/bindings/scah-python/benches/` (pytest-benchmark), Node in
+`crates/bindings/scah-node/benchmark/` (mitata on Bun), Java in
+`crates/bindings/scah-java/benchmark/` (JMH), and C# in
+`crates/bindings/scah-csharp/Scah.Benchmarks/` (BenchmarkDotNet). Each times a
+parse plus a query and reads the inner HTML and text of every match; the Java
+and C# suites also read its `href`, as the Rust suite does.
 
 ## Running
 
@@ -34,8 +40,8 @@ just bench-rust-simple-all   # or bench-rust-first, bench-rust-nested, bench-rus
 ```
 
 Record published results and refresh the README tables in one go (needs
-`cargo-criterion`, `bun`, and `uv` on `PATH`; install the first with
-`cargo install cargo-criterion`):
+`cargo-criterion`, `bun`, `uv`, `dotnet` (SDK 10), and JDK 22 or newer on
+`PATH` or `JAVA_HOME`; install the first with `cargo install cargo-criterion`):
 
 ```bash
 just bench
@@ -44,7 +50,8 @@ just bench
 This checks the tools up front, rebuilds the Node and Python bindings in release
 mode, runs every suite into `results/`, and regenerates the README tables. The
 suites can also run one at a time with `just bench-rust`, `just bench-node`,
-`just bench-python`, and `just bench-readme`.
+`just bench-python`, `just bench-java`, `just bench-csharp`, and
+`just bench-readme`.
 
 Commit the updated `results/` files together with the README changes. Each
 file records the date, commit, OS, CPU, and runtime of its run; record results
@@ -89,8 +96,8 @@ verdict from `pgo-sections.sh` with where the hints are.
 
 ## Result format
 
-`results/<suite>/<scenario>.json`, where `suite` is `rust`, `python`, or
-`node`:
+`results/<suite>/<scenario>.json`, where `suite` is `rust`, `python`, `node`,
+`java`, or `csharp`:
 
 ```json
 {

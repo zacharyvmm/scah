@@ -30,9 +30,16 @@ Run `just` to list every recipe.
 | `crates/scah-store` | The result store: saved elements, their content, and the result index |
 | `crates/scah-query-ir` | Selector parsing and the compiled query representation |
 | `crates/scah-macros` | The `query!` macro |
+| `crates/scah-ffi` | Owned query and store handles shared by the foreign-language bindings, and Arrow export |
 | `crates/scah-differential` | Compares results with the last published release |
-| `crates/bindings/scah-python` | Python bindings (PyO3 and maturin) |
+| `crates/bindings/scah-python` | Python bindings (PyO3 and maturin), including the polars plugin |
 | `crates/bindings/scah-node` | Node and Bun bindings (napi-rs) |
+| `crates/bindings/scah-c` | C ABI, its generated `include/scah.h`, and C/C++ smoke tests |
+| `crates/bindings/scah-csharp` | .NET bindings over the C ABI |
+| `crates/bindings/scah-java` | Java bindings over the C ABI (Panama), with a JNI fallback |
+| `crates/bindings/scah-jni` | The native half of the Java binding's JNI backend |
+| `crates/bindings/native` | Builds the shared libraries the C, .NET, and Java packages ship |
+| `crates/bindings/pgo` | Profile-guided build of the Python and Node release artifacts, and the workload it trains on |
 | `benches` | Benchmarks, published results, CI performance gates, and performance notes; see [`benches/README.md`](benches/README.md) |
 | `docs` | User guides: selectors, text extraction, and architecture |
 
@@ -49,7 +56,8 @@ is the best place to start reading the code.
 - Add an entry under `## [Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md) for
   user-visible changes.
 - If you change a binding's public API, regenerate the Python stub with
-  `cargo run -p scah-python --bin stub_gen`.
+  `cargo run -p scah-python --bin stub_gen`. If you change the C ABI,
+  regenerate `crates/bindings/scah-c/include/scah.h` with `just header`.
 - CI runs formatting, clippy, tests on x86-64 and AArch64, docs, and the MSRV
   check. Pull requests that touch more than docs or benchmark results also run
   performance gates that compare the branch against its base.
@@ -62,6 +70,7 @@ pull request, run them locally on an x86-64 machine:
 ```bash
 just gate-sibling   # ordinary and sibling selector parsing
 just gate-text      # text extraction
+just gate-bindings  # Python and Node binding overhead
 ```
 
 Both compare the working tree against `origin/main`; pass another revision to

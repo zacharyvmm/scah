@@ -22,14 +22,14 @@ jobs:
     name: Rust Workspace Checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -42,6 +42,12 @@ jobs:
         run: cargo clippy --workspace --all-targets --exclude scah-benches -- -D warnings
       - name: Test
         run: cargo test --workspace --exclude scah-benches
+      - name: Verify generated C header
+        run: |
+          cargo run -p scah-c --features header-gen --bin generate_header
+          git diff --exit-code -- crates/bindings/scah-c/include/scah.h
+      - name: Run C and C++ smoke tests
+        run: crates/bindings/scah-c/scripts/smoke-test.sh --debug
       - name: Test optimized parser semantics
         run: cargo test --release -p scah
       - name: Compare results with the last release
@@ -62,7 +68,9 @@ jobs:
           python3 benches/report/report.py readme --check \
             README.md \
             crates/bindings/scah-python/README.md \
-            crates/bindings/scah-node/README.md
+            crates/bindings/scah-node/README.md \
+            crates/bindings/scah-java/README.md \
+            crates/bindings/scah-csharp/README.md
       - name: Verify third-party license notice
         run: |
           test -f crates/scah/THIRD_PARTY_LICENSES/WHATWG-HTML.txt
@@ -133,27 +141,460 @@ jobs:
     name: Rust Docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Build docs
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps -p scah -p scah-store -p scah-html -p scah-query-ir -p scah-macros
+        run: cargo doc --no-deps -p scah -p scah-store -p scah-html -p scah-query-ir -p scah-macros -p scah-ffi -p scah-c
 
   msrv:
     name: Rust MSRV (1.88)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.88
       - name: Check published crates
         run: cargo check -p scah -p scah-store -p scah-html -p scah-query-ir -p scah-macros
+
+  bindings-performance:
+    name: Binding Performance Gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # Only changes that can reach the compiled bindings need the gate.
+      - name: Detect binding-relevant changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- Cargo.toml Cargo.lock crates \
+            benches/gates/bindings benches/gates/check-binding-performance.sh \
+            ':(exclude)*.md' ':(exclude)crates/bindings/scah-c/**' \
+            ':(exclude)crates/bindings/scah-csharp/**' ':(exclude)crates/bindings/scah-java/**' \
+            ':(exclude)crates/bindings/scah-jni/**' ':(exclude)crates/bindings/native/**'; then
+            echo "No binding-relevant changes; skipping the binding performance gate."
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v7
+        if: steps.changes.outputs.relevant == 'true'
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v7
+        if: steps.changes.outputs.relevant == 'true'
+      - uses: oven-sh/setup-bun@v2
+        if: steps.changes.outputs.relevant == 'true'
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.changes.outputs.relevant == 'true'
+      - name: Enforce binding performance gate
+        if: steps.changes.outputs.relevant == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # Shared runners are noisier than a local machine.
+          SCAH_BINDING_GATE_LIMIT: "1.10"
+        run: ./benches/gates/check-binding-performance.sh "$BASE_SHA"
+
+  pgo-changes:
+    name: Detect PGO Build Changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.changes.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # Release builds run the PGO build on every platform; pull requests run
+      # it only when the build itself or the bindings' manifests change.
+      - name: Detect PGO-relevant changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- Cargo.toml crates/bindings/pgo \
+            crates/bindings/scah-python/Cargo.toml crates/bindings/scah-python/pyproject.toml \
+            crates/bindings/scah-node/Cargo.toml crates/bindings/scah-node/package.json \
+            .github/workflows/bindings-pgo.yml .github/workflows/deploy.yml ':(exclude)*.md'; then
+            echo "No PGO-relevant changes; skipping the PGO build."
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  bindings-pgo:
+    name: Bindings PGO Build (${{ matrix.binding }})
+    needs: pgo-changes
+    if: needs.pgo-changes.outputs.relevant == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        binding: [python, node]
+    uses: ./.github/workflows/bindings-pgo.yml
+    with:
+      binding: ${{ matrix.binding }}
+
+  native-changes:
+    name: Detect Native Library Build Changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.changes.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # Building and testing the packages on every platform is slow, so pull
+      # requests do so only when the build, the C ABI, or a package changes.
+      - name: Detect native-library-relevant changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- Cargo.toml .cargo/config.toml \
+            crates/bindings/native crates/bindings/scah-c/Cargo.toml \
+            crates/bindings/scah-c/include crates/bindings/scah-csharp crates/bindings/scah-java \
+            crates/bindings/scah-jni \
+            .github/workflows/native-libraries.yml .github/workflows/tests.yml \
+            ':(exclude)*.md' ':(exclude)crates/bindings/scah-csharp/Scah.Benchmarks/**' \
+            ':(exclude)crates/bindings/scah-java/benchmark/**'; then
+            echo "No native-library-relevant changes; skipping the native library build."
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  native-libraries:
+    name: Native Libraries
+    needs: native-changes
+    if: needs.native-changes.outputs.relevant == 'true'
+    uses: ./.github/workflows/native-libraries.yml
+
+  csharp:
+    name: C# Binding Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-26, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build native library
+        run: cargo build -p scah-c
+      - name: Run C# tests
+        working-directory: crates/bindings/scah-csharp
+        run: dotnet test Scah.Tests
+
+  csharp-package:
+    name: C# Package
+    needs: native-libraries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Download native libraries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: target/native/out
+      - name: Pack
+        run: |
+          # Each artifact downloads to native-<rid>; the package wants <rid>.
+          for dir in target/native/out/native-*; do
+            mv "$dir" "target/native/out/${dir##*/native-}"
+          done
+          dotnet pack crates/bindings/scah-csharp/Scah -c Release -o dist \
+            -p:ScahNativeDir="$PWD/target/native/out"
+      - name: Check native libraries
+        run: |
+          libraries="$(unzip -Z1 dist/*.nupkg 'runtimes/*' | sort)"
+          echo "$libraries"
+          test "$(wc -l <<< "$libraries")" -eq 8
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: csharp-package
+          path: dist
+          if-no-files-found: error
+
+  csharp-package-test:
+    name: C# Package Test (${{ matrix.rid }})
+    needs: csharp-package
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+          - rid: linux-musl-x64
+            os: ubuntu-latest
+            alpine: true
+          - rid: linux-musl-arm64
+            os: ubuntu-24.04-arm
+            alpine: true
+          - rid: osx-x64
+            os: macos-26-intel
+          - rid: osx-arm64
+            os: macos-26
+          - rid: win-x64
+            os: windows-latest
+          - rid: win-arm64
+            os: windows-11-arm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: csharp-package
+          path: dist
+      - name: Read package version
+        run: |
+          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' \
+            crates/bindings/scah-csharp/Scah/Scah.csproj)"
+          echo "SCAH_VERSION=$version" >> "$GITHUB_ENV"
+      - uses: actions/setup-dotnet@v5
+        if: ${{ !matrix.alpine }}
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Run C# tests against the package
+        if: ${{ !matrix.alpine }}
+        working-directory: crates/bindings/scah-csharp
+        run: |
+          dotnet test Scah.Tests -p:ScahUsePackage="$SCAH_VERSION" \
+            -p:RestoreAdditionalProjectSources="$GITHUB_WORKSPACE/dist"
+      # JavaScript actions cannot run in Alpine containers, so run Docker directly.
+      - name: Run C# tests against the package on Alpine
+        if: matrix.alpine
+        run: |
+          docker run --rm -v "$PWD:/io" -w /io/crates/bindings/scah-csharp \
+            mcr.microsoft.com/dotnet/sdk:10.0-alpine \
+            dotnet test Scah.Tests -f net10.0 -p:ScahUsePackage="$SCAH_VERSION" \
+              -p:RestoreAdditionalProjectSources=/io/dist
+
+  java:
+    name: Java Binding Tests (${{ matrix.os }}, JDK ${{ matrix.java }}, ${{ matrix.backend }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Panama on its oldest JDK and on the newest LTS everywhere; JNI on
+          # the oldest supported JDK and next to Panama on the newest LTS.
+          - os: ubuntu-latest
+            java: 22
+            backend: panama
+          - os: ubuntu-latest
+            java: 25
+            backend: panama
+          - os: macos-26
+            java: 25
+            backend: panama
+          - os: windows-latest
+            java: 25
+            backend: panama
+          - os: ubuntu-latest
+            java: 11
+            backend: jni
+          - os: ubuntu-latest
+            java: 25
+            backend: jni
+          - os: windows-latest
+            java: 25
+            backend: jni
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      # Building needs Java 22+; the tests run on matrix.java.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            ${{ matrix.java }}
+            25
+          cache: maven
+      - name: Build native libraries
+        run: cargo build -p scah-c -p scah-jni
+      - name: Run Java tests
+        working-directory: crates/bindings/scah-java
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then mvnw=./mvnw.cmd; else mvnw=./mvnw; fi
+          args=(-Dscah.backend=${{ matrix.backend }})
+          if [[ ${{ matrix.java }} != 25 ]]; then
+            # setup-java exports each JDK's home; only x64 runners test older JDKs.
+            home="JAVA_HOME_${{ matrix.java }}_X64"
+            args+=(-Dscah.test.jvm="${!home}/bin/java")
+          fi
+          # Java 11 to 21 reject the option that allows native access.
+          if (( ${{ matrix.java }} < 22 )); then args+=(-Dscah.test.argLine=); fi
+          "$mvnw" -B verify "${args[@]}"
+
+  benchmark-harnesses:
+    name: Java and C# Benchmark Harnesses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Build native libraries
+        run: cargo build --release -p scah-c -p scah-jni
+      # One short pass each: every benchmark first checks that its library
+      # finds what it should. The WHATWG scenario needs a download, so it is
+      # left out.
+      - name: Check Java benchmarks
+        working-directory: crates/bindings/scah-java
+        run: |
+          ./mvnw -B install -DskipTests -DskipITs
+          cd benchmark
+          ../mvnw -B package
+          java --enable-native-access=ALL-UNNAMED -Dscah.library.dir="$GITHUB_WORKSPACE/target/release" \
+            -jar target/benchmarks.jar -e whatwgAllLinks -foe true -f 1 -wi 0 -i 1 -r 100ms
+      - name: Check C# benchmarks
+        working-directory: crates/bindings/scah-csharp/Scah.Benchmarks
+        run: dotnet run -c Release -- --job dry --filter '*SimpleAll*' '*SimpleFirst*' '*NestedAll*'
+
+  java-package:
+    name: Java Package
+    needs: native-libraries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+      - name: Download native libraries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: target/native/out
+      # Testing with an empty scah.library.dir loads the jar's own libraries.
+      - name: Pack and test
+        working-directory: crates/bindings/scah-java
+        run: |
+          # Each artifact downloads to native-<rid>; the jar wants <rid>.
+          for dir in ../../../target/native/out/native-*; do
+            mv "$dir" "../../../target/native/out/${dir##*/native-}"
+          done
+          ./mvnw -B verify -Dscah.native.dir="$GITHUB_WORKSPACE/target/native/out" -Dscah.library.dir=
+          ./mvnw -B verify -Dscah.native.dir="$GITHUB_WORKSPACE/target/native/out" -Dscah.library.dir= \
+            -Dscah.backend=jni
+      - name: Check native libraries
+        run: |
+          # Skip the folders' own entries.
+          libraries="$(unzip -Z1 crates/bindings/scah-java/target/scah-*.jar \
+            'io/github/zacharyvmm/scah/native/*/*' | grep -v '/$' | sort)"
+          echo "$libraries"
+          test "$(wc -l <<< "$libraries")" -eq 16
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: java-package
+          path: crates/bindings/scah-java/target/scah-*.jar
+          if-no-files-found: error
+
+  java-package-test:
+    name: Java Package Test (${{ matrix.rid }})
+    needs: java-package
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+          - rid: linux-musl-x64
+            os: ubuntu-latest
+            alpine: true
+          - rid: linux-musl-arm64
+            os: ubuntu-24.04-arm
+            alpine: true
+          - rid: osx-x64
+            os: macos-26-intel
+          - rid: osx-arm64
+            os: macos-26
+          - rid: win-x64
+            os: windows-latest
+          - rid: win-arm64
+            os: windows-11-arm
+            # Temurin publishes no Windows arm64 JDK 25.
+            java-distribution: microsoft
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: java-package
+          path: dist
+      - uses: actions/setup-java@v5
+        if: ${{ !matrix.alpine }}
+        with:
+          distribution: ${{ matrix.java-distribution || 'temurin' }}
+          java-version: 25
+          cache: maven
+      # The tests run against the downloaded jar and the libraries packed in it.
+      - name: Run Java tests against the package
+        if: ${{ !matrix.alpine }}
+        working-directory: crates/bindings/scah-java
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then mvnw=./mvnw.cmd; else mvnw=./mvnw; fi
+          jar="$(ls "$GITHUB_WORKSPACE"/dist/scah-*.jar)"
+          for backend in panama jni; do
+            "$mvnw" -B verify -Dscah.library.dir= -Dscah.test.jar="$jar" -Dscah.backend=$backend
+          done
+      # JavaScript actions cannot run in Alpine containers, so run Docker directly.
+      - name: Run Java tests against the package on Alpine
+        if: matrix.alpine
+        run: |
+          jar="$(cd dist && ls scah-*.jar)"
+          for backend in panama jni; do
+            docker run --rm -v "$PWD:/io" -w /io/crates/bindings/scah-java \
+              eclipse-temurin:25-jdk-alpine \
+              ./mvnw -B verify -Dscah.library.dir= -Dscah.test.jar="/io/dist/$jar" \
+                -Dscah.backend=$backend
+          done
 
   rust-aarch64:
     name: Rust AArch64 SIMD Checks
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Test SIMD indexer in release mode
         run: cargo test -p scah-html --release
@@ -164,14 +605,14 @@ jobs:
     name: Node Binding Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
 
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -192,24 +633,29 @@ jobs:
         run: bun test
 
   python:
-    name: Python Binding Tests (${{ matrix.python-version }})
+    name: Python Binding Tests (${{ matrix.python-version }}, ${{ matrix.polars }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # Oldest supported and newest stable CPython.
-        python-version: ["3.10", "3.14"]
+        # Oldest supported CPython with the oldest polars `scah[polars]`
+        # allows, and the newest of both.
+        include:
+          - python-version: "3.10"
+            polars: polars==1.25.0
+          - python-version: "3.14"
+            polars: polars
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -220,7 +666,9 @@ jobs:
       - name: Install test tooling
         run: |
           python -m pip install -U pip
-          python -m pip install pytest
+          # pyarrow and polars run the Arrow export and polars plugin tests,
+          # which skip without them.
+          python -m pip install pytest pyarrow "${{ matrix.polars }}"
 
       - name: Build and install Python package
         working-directory: crates/bindings/scah-python

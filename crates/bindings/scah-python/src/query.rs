@@ -1,8 +1,10 @@
+use crate::polars::SectionSpec;
 use crate::save::PySave;
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use scah_core::QuerySectionId;
 use scah_core::lazy::{LazyQuery, LazyQueryBuilder};
-use scah_core::{Query, QuerySectionId};
+use scah_ffi::OwnedQuery;
 
 /// A query being built. Add child queries with `all`, `first`, or `then`,
 /// then call `build`.
@@ -53,9 +55,9 @@ impl PyQueryBuilder {
     /// Raises `ValueError` if a selector is invalid or uses syntax scah cannot
     /// evaluate in one pass, such as `:has()` or `:last-child`.
     fn build(&self) -> PyResult<PyQuery> {
-        let (tape, query) = unsafe { self.builder.clone().try_to_query() }
+        let query = OwnedQuery::build(self.builder.clone())
             .map_err(|err| pyo3::exceptions::PyValueError::new_err(err.to_string()))?;
-        Ok(PyQuery { tape, query })
+        Ok(PyQuery { query })
     }
 }
 
@@ -88,15 +90,31 @@ impl PyQueryFactory {
 #[pyclass]
 #[derive(Clone)]
 pub struct PyQuery {
-    pub(super) tape: std::sync::Arc<Vec<u8>>,
-    pub(super) query: Query<'static>,
+    pub(super) query: OwnedQuery,
 }
 
 #[gen_stub_pymethods]
 #[pymethods]
 impl PyQuery {
     fn __repr__(&self) -> String {
-        format!("PyQuery(tape={:?}, query={:?})", self.tape, self.query)
+        format!("PyQuery(query={:?})", self.query)
+    }
+
+    /// The query's sections, root first, as dicts: how `scah.polars`
+    /// passes the query to its plugin.
+    #[gen_stub(override_return_type(
+        type_repr = "builtins.list[builtins.dict[builtins.str, typing.Any]]",
+        imports = ("builtins", "typing")
+    ))]
+    fn _sections(&self) -> Vec<SectionSpec> {
+        self.query
+            .query()
+            .queries
+            .iter()
+            .map(|section| {
+                SectionSpec::new(section.source, section.kind, section.parent, section.save)
+            })
+            .collect()
     }
 }
 

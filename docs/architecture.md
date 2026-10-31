@@ -104,11 +104,34 @@ store each time.
 | [`scah-query-ir`](../crates/scah-query-ir) | Selector parsing, the query builders, and the compiled `Program` |
 | [`scah-macros`](../crates/scah-macros) | The `query!` macro |
 | [`scah-store`](../crates/scah-store) | The columnar result store |
-| [`scah-python`](../crates/bindings/scah-python) | Python bindings, built with PyO3 and maturin |
+| [`scah-ffi`](../crates/scah-ffi) | Owned query and store handles for the foreign-language bindings, and Arrow export |
+| [`scah-python`](../crates/bindings/scah-python) | Python bindings, built with PyO3 and maturin, and the polars plugin |
 | [`scah-node`](../crates/bindings/scah-node) | Node.js and Bun bindings, built with napi-rs |
+| [`scah-c`](../crates/bindings/scah-c) | The C ABI and its `scah.h` header |
+| [`scah-csharp`](../crates/bindings/scah-csharp) | .NET bindings over the C ABI |
+| [`scah-java`](../crates/bindings/scah-java) | Java bindings: the C ABI through Panama on Java 22+, JNI before |
+| [`scah-jni`](../crates/bindings/scah-jni) | The native half of the Java binding's JNI backend |
 
 Only `scah` has a stable API. The other published crates are implementation
 details and may change in any release.
+
+### How the bindings fit together
+
+A `Store` borrows the HTML it parsed and its queries' selector strings, which
+other languages can't express. `scah-ffi` pairs each of them with the memory
+it borrows from, so every binding shares one set of owned handles:
+
+```mermaid
+flowchart LR
+    scah --> ffi[scah-ffi]
+    ffi --> python[Python]
+    ffi --> node[Node.js and Bun]
+    ffi --> c["scah-c<br/>(C ABI)"]
+    ffi --> jni[scah-jni]
+    c --> dotnet[.NET]
+    c -->|"Java 22+"| java[Java]
+    jni -->|"Java 11 to 21"| java
+```
 
 Inside `crates/scah/src`, modules follow the pipeline: `parser.rs` is the
 parse loop, `engine/` the matcher and scopes, `capture/` text extraction and

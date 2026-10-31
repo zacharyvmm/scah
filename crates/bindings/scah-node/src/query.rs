@@ -1,5 +1,6 @@
 use ::scah::lazy::{LazyQuery, LazyQueryBuilder};
-use ::scah::{Query, QuerySectionId, Save};
+use ::scah::{QuerySectionId, Save};
+use ::scah_ffi::OwnedQuery;
 
 use napi::Result;
 use napi::bindgen_prelude::*;
@@ -105,9 +106,9 @@ impl JsQueryBuilder {
     /// Throws if a selector is invalid or uses syntax scah cannot evaluate in
     /// one pass, such as `:has()` or `:last-child`.
     pub fn build(&self) -> Result<JsQuery> {
-        let (_tape, query) = unsafe { self.builder.clone().try_to_query() }
+        let query = OwnedQuery::build(self.builder.clone())
             .map_err(|err| Error::from_reason(err.to_string()))?;
-        Ok(JsQuery { _tape, query })
+        Ok(JsQuery { query })
     }
 }
 
@@ -142,8 +143,7 @@ impl JsQueryFactory {
 /// A built query, ready to pass to `parse`. It can be reused across
 /// documents.
 pub struct JsQuery {
-    pub(crate) _tape: std::sync::Arc<Vec<u8>>,
-    pub(crate) query: Query<'static>,
+    pub(crate) query: OwnedQuery,
 }
 
 /// Entry point for building queries.

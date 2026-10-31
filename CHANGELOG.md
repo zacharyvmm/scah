@@ -2,12 +2,12 @@
 
 All notable changes to scah are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions apply to the
-Rust crates and the Python and npm packages together.
+Rust crates and the Python, npm, .NET, and Java packages together.
 
 ## [Unreleased]
 
-The Python and JavaScript APIs are unchanged apart from the new
-`Store.query`. Rust code that reads results needs the changes in
+Existing Python and JavaScript code keeps working; the bindings only gain
+features. Rust code that reads results needs the changes in
 [Migrating from 0.1](#migrating-from-01).
 
 ### Breaking
@@ -60,6 +60,37 @@ The Python and JavaScript APIs are unchanged apart from the new
 - `parse_compiled` and `parse_compiled_without_text_capture` run a `Program`
   compiled once with `Program::compile`, for parsing many documents with the
   same queries. ([#98])
+- A C ABI in `crates/bindings/scah-c`, with a generated `scah.h` header and
+  C and C++ smoke tests. It shares its owned query and store handles with the
+  Python and Node bindings. ([#48], [#49], [#53])
+- `scah_store_query` looks up C results by query position, like
+  `Store.query` in Python and Node. `crates/bindings/native/build.sh` builds
+  `libscah_c` for Linux (glibc 2.17+ and musl), macOS, and Windows on x64 and
+  arm64. ([#122])
+- A .NET binding, the `Scah` NuGet package, in `crates/bindings/scah-csharp`.
+  It calls the C ABI through `LibraryImport`, targets .NET 8 and newer, is
+  Native AOT-compatible, and ships the native library for every platform
+  `libscah_c` builds for. ([#123])
+- A Java binding, `io.github.zacharyvmm:scah`, in `crates/bindings/scah-java`.
+  It calls the C ABI through the Foreign Function and Memory API on Java 22
+  and newer, and extracts the native library for its platform from the jar.
+  ([#124]) On Java 11 to 21 it uses JNI, through `crates/bindings/scah-jni`.
+  ([#125])
+- `scah_parse_utf16`, and `ScahHtml` for UTF-16 that arrives in pieces, parse
+  UTF-16 HTML, encoding it as UTF-8 straight into the store's copy in one
+  pass. The .NET and Java bindings parse strings through them, which makes
+  the conversion two to three times faster; Java now replaces lone
+  surrogates with U+FFFD rather than `?`. ([#130])
+- Arrow export: `Store.to_arrow()` in Python and `scah_store_export_arrow` in C
+  hand matches over as an Arrow table whose string columns point into the
+  parsed HTML and text buffers, ready for polars, pyarrow, DuckDB, and other
+  Arrow consumers. In Rust, `Store::field_range` and `Store::buffer` read any
+  string field as a byte range of the buffer it lives in.
+- `scah.polars.parse(expr, query)` runs a query on every HTML document in a
+  polars String column, as a polars expression plugin: in Rust, on polars'
+  threads, in eager, lazy, and streaming queries. Each document gives a
+  `list[struct]` of matches (`struct` for `Query.first`), with child sections
+  nested as fields named by their selector. Install with `scah[polars]`.
 
 ### Changed
 
@@ -86,6 +117,13 @@ The Python and JavaScript APIs are unchanged apart from the new
   lazily in windows, so a parse that stops early only indexes what it read.
   Dense documents keep the rolling indexer. On a 409 KB prose page, finding
   every link is about 1.9× faster. ([#115])
+- Python wheels and Node addons are built with profile-guided optimization,
+  trained through each binding on `crates/bindings/pgo`. On the binding
+  performance gate's workloads, Python parses 19–22% faster and Node 7–12%
+  faster. Every wheel is now built on a native runner. ([#117])
+- Python's `parse` releases the GIL while it parses, so parses from several
+  Python threads run in parallel. On 8 threads, parsing a batch of 64 KB pages
+  is 4× faster than before; single-threaded parsing is unchanged.
 
 ### Documentation
 
@@ -106,6 +144,9 @@ The Python and JavaScript APIs are unchanged apart from the new
   followed by whitespace, keep their saved content. ([#93], [#96])
 - Queries with the same selector string keep separate results; `Store::get`
   returns the first query with that selector. ([#91], [#97])
+- Python and Node elements could read freed memory after their `Store` was
+  garbage collected. Elements now keep the parsed HTML and queries alive.
+  ([#50], [#51])
 
 ### Migrating from 0.1
 
@@ -247,3 +288,14 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#112]: https://github.com/zacharyvmm/scah/pull/112
 [#113]: https://github.com/zacharyvmm/scah/pull/113
 [#115]: https://github.com/zacharyvmm/scah/pull/115
+[#50]: https://github.com/zacharyvmm/scah/pull/50
+[#51]: https://github.com/zacharyvmm/scah/pull/51
+[#48]: https://github.com/zacharyvmm/scah/pull/48
+[#49]: https://github.com/zacharyvmm/scah/pull/49
+[#53]: https://github.com/zacharyvmm/scah/pull/53
+[#117]: https://github.com/zacharyvmm/scah/pull/117
+[#122]: https://github.com/zacharyvmm/scah/pull/122
+[#123]: https://github.com/zacharyvmm/scah/pull/123
+[#124]: https://github.com/zacharyvmm/scah/pull/124
+[#125]: https://github.com/zacharyvmm/scah/pull/125
+[#130]: https://github.com/zacharyvmm/scah/pull/130

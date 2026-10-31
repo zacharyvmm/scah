@@ -8,7 +8,7 @@ use scah_core::Save;
 ///
 /// Every option except `name_only()` and `attributes=False` also keeps the
 /// element's id, class, and attributes.
-#[gen_stub_pyclass]
+#[gen_stub_pyclass(module = "scah._scah")]
 #[pyclass(module = "scah", name = "Save")]
 #[derive(Clone, Copy, Debug)]
 pub struct PySave {

@@ -1,0 +1,83 @@
+package io.github.zacharyvmm.scah;
+
+/**
+ * The calls the public API makes into the native library.
+ *
+ * <p>Each method maps to one or a few functions of the C ABI ({@code scah.h}) and passes
+ * handles as raw addresses. Callers keep every handle alive for the duration of a call (see
+ * {@link NativeResource}). Failures throw {@link ScahException}.
+ */
+interface Backend {
+    /** The fields read by {@link #field}. */
+    enum Field {
+        ID,
+        CLASS,
+        INNER_HTML,
+        RAW_TEXT,
+        TEXT
+    }
+
+    /** Start a native builder with one section. The caller frees it. */
+    long builderNew(boolean first, String selector, Save save);
+
+    /** Append a section to a native builder. */
+    void builderAppend(long builder, boolean first, String selector, Save save);
+
+    /** Nest copies of {@code children} under a native builder's last section. */
+    void builderThen(long builder, long[] children);
+
+    /** Free a native builder; 0 is ignored. */
+    void builderFree(long builder);
+
+    /** Compile a native builder into a query. */
+    long build(long builder);
+
+    /** Free a query. */
+    void queryFree(long query);
+
+    /** Start empty native HTML with room for {@code capacity} bytes of UTF-8. The caller parses or frees it. */
+    long htmlNew(long capacity);
+
+    /**
+     * Append {@code length} UTF-16 units of {@code units} to native HTML, replacing lone surrogates
+     * with U+FFFD. Backends may pin {@code units} for the call, holding off safepoints, so keep
+     * it to a block of a few thousand units; they grow the buffer before pinning.
+     */
+    void htmlPush(long html, char[] units, int length);
+
+    /** Free native HTML that was not parsed. */
+    void htmlFree(long html);
+
+    /** Parse native HTML against {@code queries}, freeing the HTML whether or not it succeeds. */
+    long parseHtml(long html, long[] queries);
+
+    /** Parse UTF-8 {@code html} against {@code queries}. */
+    long parse(byte[] html, long[] queries);
+
+    /** Free a store. */
+    void storeFree(long store);
+
+    /** The number of elements in a store. */
+    long storeLength(long store);
+
+    /** The ids matched by a top-level section; empty when there are none. */
+    long[] storeGet(long store, String selector);
+
+    /** The ids matched by the query at {@code index}; empty when there are none. */
+    long[] storeQuery(long store, long index);
+
+    /** The ids matched under {@code element} by section {@code selector}; empty when there are none. */
+    long[] elementGet(long store, long element, String selector);
+
+    /** The element's tag name. */
+    String name(long store, long element);
+
+    /** One of the element's optional fields, or null when it is missing. */
+    String field(long store, long element, Field field);
+
+    /** The value of the attribute named {@code key}, or null when it is missing. */
+    String attribute(long store, long element, String key);
+
+    /** The element's attributes as alternating names and values; a valueless attribute has a null value. */
+    String[] attributes(long store, long element);
+}

@@ -1,4 +1,5 @@
-use ::scah::{Attribute, ElementId, Store};
+use ::scah::{Attribute, ElementId, ElementRef};
+use ::scah_ffi::OwnedStore;
 
 use napi::bindgen_prelude::*;
 use napi::{Env, Error, Result, Status};
@@ -20,7 +21,7 @@ pub struct JsonElement<'a> {
 /// save them.
 #[napi(js_name = "Element")]
 pub struct JsElement {
-    pub(super) store: std::sync::Arc<Store<'static, 'static>>,
+    pub(super) store: std::sync::Arc<OwnedStore>,
     pub(super) id: ElementId,
 }
 
@@ -29,10 +30,7 @@ impl JsElement {
     #[napi]
     /// This element as a plain object.
     pub fn to_json<'a>(&'a self, env: Env) -> Result<JsonElement<'a>> {
-        let element = self
-            .store
-            .element(self.id)
-            .expect("The Element ID should be valid");
+        let element = self.element().expect("The Element ID should be valid");
 
         let json = JsonElement {
             name: element.name().to_string(),
@@ -50,32 +48,32 @@ impl JsElement {
     #[napi(getter)]
     /// The tag name.
     pub fn name(&self) -> Option<&str> {
-        self.store.element(self.id).map(|e| e.name())
+        self.element().map(|e| e.name())
     }
 
     #[napi(getter)]
     /// The `class` attribute.
     pub fn class_name(&self) -> Option<&str> {
-        self.store.element(self.id).and_then(|e| e.class())
+        self.element().and_then(|e| e.class())
     }
 
     #[napi(getter)]
     /// The `id` attribute.
     pub fn id(&self) -> Option<&str> {
-        self.store.element(self.id).and_then(|e| e.id())
+        self.element().and_then(|e| e.id())
     }
 
     #[napi]
     /// The value of the attribute named `key`, matched case-insensitively.
     pub fn get_attribute(&self, key: String) -> Option<&str> {
-        self.store.element(self.id).and_then(|e| e.attribute(&key))
+        self.element().and_then(|e| e.attribute(&key))
     }
 
     #[napi(getter)]
     /// The attributes other than `id` and `class`.
     pub fn attributes<'a>(&'a self, env: Env) -> Result<Object<'a>> {
         let mut object = Object::new(&env)?;
-        let attributes = self.store.element(self.id).and_then(|e| e.attributes());
+        let attributes = self.element().and_then(|e| e.attributes());
 
         if let Some(attrs) = attributes {
             for Attribute { key, value } in attrs {
@@ -88,19 +86,19 @@ impl JsElement {
     #[napi(getter)]
     /// The markup inside the element.
     pub fn inner_html(&self) -> Option<&str> {
-        self.store.element(self.id).and_then(|e| e.inner_html())
+        self.element().and_then(|e| e.inner_html())
     }
 
     #[napi(getter)]
     /// The source text of the element's descendants, with markup removed.
     pub fn raw_text(&self) -> Option<&str> {
-        self.store.element(self.id).and_then(|e| e.raw_text())
+        self.element().and_then(|e| e.raw_text())
     }
 
     #[napi(getter)]
     /// Normalized, readable text.
     pub fn text(&self) -> Option<&str> {
-        self.store.element(self.id).and_then(|e| e.text())
+        self.element().and_then(|e| e.text())
     }
 
     #[napi(getter)]
@@ -114,7 +112,7 @@ impl JsElement {
     /// element has no matches for `query`, or `query` is not one of its
     /// child queries.
     pub fn get(&self, query: String) -> Result<Vec<JsElement>> {
-        match self.store.child_results(self.id, &query) {
+        match self.store.store().child_results(self.id, &query) {
             None => Err(Error::new(
                 Status::GenericFailure,
                 format!("This Element does not have children selected with `{query}`"),
@@ -127,5 +125,11 @@ impl JsElement {
                 })
                 .collect()),
         }
+    }
+}
+
+impl JsElement {
+    fn element(&self) -> Option<ElementRef<'_, '_, '_>> {
+        self.store.store().element(self.id)
     }
 }

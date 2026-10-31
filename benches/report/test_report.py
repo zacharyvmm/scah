@@ -66,6 +66,73 @@ class ReportTests(unittest.TestCase):
             [("scah", 100, 1.0), ("tl", 100, 3.0)],
         )
 
+    def test_import_jmh_splits_methods_into_scenarios(self):
+        def run(method, library, score, raw):
+            return {
+                "benchmark": f"io.github.zacharyvmm.scah.bench.ScrapeBenchmark.{method}",
+                "jdkVersion": "25",
+                "vmName": "OpenJDK 64-Bit Server VM",
+                "params": {"library": library},
+                "primaryMetric": {"score": score, "scoreUnit": "ms/op", "rawData": raw},
+            }
+
+        source = Path(self.tmp.name) / "jmh.json"
+        source.write_text(
+            json.dumps(
+                [
+                    run("simpleAll", "jsoup", 4.0, [[3.0, 5.0], [4.0, 4.0]]),
+                    run("simpleAll", "scah (JNI)", 1.0, [[1.0, 1.0]]),
+                    run("whatwgAllLinks", "scah", 2.0, [[2.0]]),
+                ]
+            )
+        )
+        with mock.patch.object(report, "capture_environment", side_effect=lambda r: {"runtime": r}):
+            written = report.import_jmh(source, size=100)
+
+        self.assertEqual(sorted(p.name for p in written), ["simple-all.json", "whatwg-all-links.json"])
+        simple = json.loads((Path(self.tmp.name) / "java" / "simple-all.json").read_text())
+        self.assertEqual(simple["environment"]["runtime"], "Java 25 (OpenJDK 64-Bit Server VM)")
+        self.assertEqual(
+            [(r["library"], r["size"], r["mean"]) for r in simple["results"]],
+            [("scah (JNI)", 100, 1.0), ("jsoup", 100, 4.0)],
+        )
+        self.assertAlmostEqual(simple["results"][1]["stdev"], (2 / 3) ** 0.5)
+        whatwg = json.loads((Path(self.tmp.name) / "java" / "whatwg-all-links.json").read_text())
+        self.assertIsNone(whatwg["results"][0]["size"])
+
+    def test_import_benchmarkdotnet_reads_library_parameter_and_converts_ns(self):
+        def bench(method, library, mean_ns):
+            return {
+                "Method": method,
+                "Parameters": "Library=HtmlA(...)zzler [25]",
+                "FullName": f'Scah.Benchmarks.ScrapeBenchmark.{method}(Library: "{library}")',
+                "Statistics": {"Mean": mean_ns, "StandardDeviation": mean_ns / 10},
+            }
+
+        source = Path(self.tmp.name) / "report-full.json"
+        source.write_text(
+            json.dumps(
+                {
+                    "HostEnvironmentInfo": {"RuntimeVersion": ".NET 10.0.14 (10.0.14, 10.0.1426.52326)"},
+                    "Benchmarks": [
+                        bench("NestedAll", "HtmlAgilityPack + Fizzler", 3_000_000),
+                        bench("NestedAll", "scah", 1_000_000),
+                    ],
+                }
+            )
+        )
+        with mock.patch.object(report, "capture_environment", side_effect=lambda r: {"runtime": r}):
+            written = report.import_benchmarkdotnet(source, size=100)
+
+        document = json.loads(written[0].read_text())
+        self.assertEqual(written[0].parent.name, "csharp")
+        self.assertEqual(document["scenario"], "nested-all")
+        self.assertEqual(document["environment"]["runtime"], ".NET 10.0.14")
+        self.assertEqual(
+            [(r["library"], r["mean"], r["stdev"]) for r in document["results"]],
+            [("scah", 1.0, 0.1), ("HtmlAgilityPack + Fizzler", 3.0, 0.3)],
+        )
+
     def test_readme_block_is_regenerated_from_results(self):
         report.write_result(
             "python",

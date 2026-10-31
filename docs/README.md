@@ -1,7 +1,7 @@
 # scah documentation
 
 Start with the [project README](../README.md) for installation and a quick
-start in Rust, Python, and JavaScript.
+start in each language.
 
 ## Guides
 
@@ -16,9 +16,15 @@ start in Rust, Python, and JavaScript.
 
 - **Rust API**: [docs.rs/scah](https://docs.rs/scah)
 - **Python**: [package README](../crates/bindings/scah-python/README.md) and
-  the bundled type stubs ([`scah.pyi`](../crates/bindings/scah-python/scah.pyi))
+  the bundled type stubs ([`_scah.pyi`](../crates/bindings/scah-python/python/scah/_scah.pyi))
 - **JavaScript and TypeScript**: [package README](../crates/bindings/scah-node/README.md)
   and the bundled type definitions ([`index.d.ts`](../crates/bindings/scah-node/index.d.ts))
+- **Java**: [README](../crates/bindings/scah-java/README.md)
+- **.NET**: [README](../crates/bindings/scah-csharp/README.md)
+- **C and C++**: [README](../crates/bindings/scah-c/README.md) and the
+  documented header ([`scah.h`](../crates/bindings/scah-c/include/scah.h))
+- **Arrow export and polars**: the [project README](../README.md#arrow-export)
+  and the [Python README](../crates/bindings/scah-python/README.md#polars)
 - **Examples**: [`crates/scah/examples`](../crates/scah/examples)
 
 ## Project

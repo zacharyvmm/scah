@@ -3,13 +3,20 @@ set shell := ["bash", "-c"]
 default:
     @just --list
 
-build: build-rust build-node build-python
+build: build-rust build-node build-python build-c
 build-rust:
     cargo build --release
+build-c:
+    cargo build --release -p scah-c
 build-node:
     cd crates/bindings/scah-node && bun install && bun run build
 build-python:
     cd crates/bindings/scah-python && cargo run --bin stub_gen && uvx maturin build --release
+# Profile-guided builds, as releases ship them (needs the llvm-tools component)
+build-python-pgo:
+    MATURIN="uvx maturin" crates/bindings/pgo/build.sh python target/wheels
+build-node-pgo:
+    crates/bindings/pgo/build.sh node
 
 dev: dev-rust dev-node dev-python
 dev-rust:
@@ -19,7 +26,7 @@ dev-node:
 dev-python:
     cd crates/bindings/scah-python && cargo run --bin stub_gen && uvx maturin build
 
-test: test-rust test-node test-python
+test: test-rust test-node test-python test-c test-csharp test-java
 test-rust:
     cargo test --all-targets --all-features
     cargo test --release --manifest-path crates/scah-differential/Cargo.toml
@@ -27,6 +34,18 @@ test-node:
     cd crates/bindings/scah-node && bun test
 test-python:
     cd crates/bindings/scah-python && uv run --with pytest --reinstall-package scah pytest tests/
+test-c:
+    crates/bindings/scah-c/scripts/smoke-test.sh
+test-csharp:
+    cargo build -p scah-c
+    cd crates/bindings/scah-csharp && dotnet test Scah.Tests
+test-java:
+    cargo build -p scah-c -p scah-jni
+    cd crates/bindings/scah-java && ./mvnw -B verify && ./mvnw -B verify -Dscah.backend=jni
+
+# Regenerate the committed C header after changing the C ABI
+header:
+    cargo run -p scah-c --features header-gen --bin generate_header
 
 format:
     cargo fmt --all
@@ -37,9 +56,9 @@ lint:
     cd crates/bindings/scah-node && bun run lint
 
 # Run every comparison benchmark into benches/results, then refresh README tables
-bench: bench-preflight bench-rust bench-node bench-python bench-readme
+bench: bench-preflight bench-rust bench-node bench-python bench-java bench-csharp bench-readme
 bench-readme:
-    python3 benches/report/report.py readme README.md crates/bindings/scah-python/README.md crates/bindings/scah-node/README.md
+    python3 benches/report/report.py readme README.md crates/bindings/scah-python/README.md crates/bindings/scah-node/README.md crates/bindings/scah-java/README.md crates/bindings/scah-csharp/README.md
 
 # Requires cargo-criterion: cargo install cargo-criterion
 # One bench per invocation: cargo-criterion forwards repeated --bench flags as `--bench a b c`, which cargo bench rejects
@@ -62,9 +81,13 @@ bench-rust-nested:
 bench-preflight:
     #!/usr/bin/env bash
     missing=0
-    for tool in cargo-criterion bun uv python3; do
+    for tool in cargo-criterion bun uv python3 dotnet; do
         command -v "$tool" > /dev/null || { echo "missing $tool on PATH" >&2; missing=1; }
     done
+    java="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+    if ! version=$("$java" -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java.specification.version = //p') || (( ${version:-0} < 22 )); then
+        echo "bench-java needs JDK 22 or newer on JAVA_HOME or PATH" >&2; missing=1
+    fi
     [ -f benches/bench_data/html.spec.whatwg.org.html ] || { echo "missing WHATWG spec; run: just download-html-spec-bench" >&2; missing=1; }
     exit $missing
 
@@ -82,11 +105,27 @@ bench-python-scenario test scenario size="":
     python3 benches/report/report.py import-pytest crates/bindings/scah-python/benches/{{scenario}}.json --suite python --scenario {{scenario}} {{ if size != "" { "--size " + size } else { "" } }}
     rm crates/bindings/scah-python/benches/{{scenario}}.json
 
+# Needs JDK 22+ (for the Panama backend) on JAVA_HOME or PATH
+bench-java:
+    cargo build --release -p scah-c -p scah-jni
+    cd crates/bindings/scah-java && ./mvnw -B -q install -DskipTests -DskipITs
+    cd crates/bindings/scah-java/benchmark && ../mvnw -B -q package
+    cd crates/bindings/scah-java/benchmark && "${JAVA_HOME:+$JAVA_HOME/bin/}java" --enable-native-access=ALL-UNNAMED \
+        -Dscah.library.dir="$PWD/../../../../target/release" -jar target/benchmarks.jar -rf json -rff target/jmh.json
+    python3 benches/report/report.py import-jmh crates/bindings/scah-java/benchmark/target/jmh.json --size 10000
+
+bench-csharp:
+    cargo build --release -p scah-c
+    cd crates/bindings/scah-csharp/Scah.Benchmarks && dotnet run -c Release -- --artifacts bin/BenchmarkDotNet.Artifacts
+    python3 benches/report/report.py import-benchmarkdotnet crates/bindings/scah-csharp/Scah.Benchmarks/bin/BenchmarkDotNet.Artifacts/results/Scah.Benchmarks.ScrapeBenchmark-report-full.json --size 10000
+
 # Performance gates: compare this checkout against a base revision (x86-64 only)
 gate-sibling base="origin/main":
     ./benches/gates/check-sibling-performance.sh {{base}}
 gate-text base="origin/main":
     ./benches/gates/check-text-performance.sh {{base}}
+gate-bindings base="origin/main":
+    ./benches/gates/check-binding-performance.sh {{base}}
 
 # Compare against a base revision over several shuffled code layouts (x86-64 only)
 layout-compare base="origin/main" seeds="4":
@@ -102,6 +141,8 @@ bump new_version:
     just bump-rust "{{new_version}}"
     just bump-node "{{new_version}}"
     just bump-python "{{new_version}}"
+    just bump-csharp "{{new_version}}"
+    just bump-java "{{new_version}}"
     cargo check
 bump-rust new_version:
     sed -E -i.bak 's/^(version = |scah(-[a-z-]+)? = \{ version = )"[^"]*"/\1"{{new_version}}"/' Cargo.toml
@@ -114,6 +155,12 @@ bump-node new_version:
 bump-python new_version:
     sed -i.bak 's/^version = "[^"]*"/version = "{{new_version}}"/' crates/bindings/scah-python/pyproject.toml
     rm -f crates/bindings/scah-python/pyproject.toml.bak
+bump-csharp new_version:
+    sed -i.bak 's|<Version>[^<]*</Version>|<Version>{{new_version}}</Version>|' crates/bindings/scah-csharp/Scah/Scah.csproj
+    rm -f crates/bindings/scah-csharp/Scah/Scah.csproj.bak
+bump-java new_version:
+    sed -i.bak 's|^  <version>[^<]*</version>|  <version>{{new_version}}</version>|' crates/bindings/scah-java/pom.xml crates/bindings/scah-java/README.md
+    rm -f crates/bindings/scah-java/pom.xml.bak crates/bindings/scah-java/README.md.bak
 trigger-release new_version:
     git tag -a v{{new_version}} -m "Version {{new_version}} release"
     git push origin v{{new_version}}

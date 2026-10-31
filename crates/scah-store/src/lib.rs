@@ -7,6 +7,7 @@
 //! StoreBuilder   the write side: rows, edges and content, as a parse finds them
 //! Section        what the store knows of a query section
 //! columns        one column per saved field, as spans of the HTML or a text tape
+//! field          a row's field read back as a range of its buffer, for zero-copy export
 //! text           the raw-text and normalized-text tapes
 //! spare          the buffers of dropped stores, for the next parse
 //! ```
@@ -22,6 +23,7 @@ use std::ops::Range;
 
 mod columns;
 mod element;
+mod field;
 mod id;
 mod spare;
 mod text;
@@ -29,6 +31,7 @@ mod text;
 pub use columns::Content;
 use columns::{ColumnPlan, Columns, RowHead, Span};
 pub use element::{Attributes, ElementRef, Elements};
+pub use field::{Buffer, Field};
 pub use id::ElementId;
 pub use text::{TextStore, TextTape, trim_collapsed_range};
 

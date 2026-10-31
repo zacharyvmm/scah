@@ -13,6 +13,10 @@ is fast on large pages: finding every link in the 15 MB WHATWG HTML
 specification is about 4× faster than selectolax and 50× faster than
 BeautifulSoup.
 
+Results can also leave as a zero-copy Apache Arrow table, and
+`scah.polars.parse` scrapes a whole column of HTML pages inside polars.
+`parse` releases the GIL, so threads parse in parallel.
+
 ```bash
 pip install scah
 ```
@@ -107,6 +111,7 @@ class, and attributes. Save only what you read: each extra field costs time.
 | ------- | - |
 | `store.get(selector)` | The matches of the first query with that selector, or `None` if it matched nothing or no query has it |
 | `store.query(index)` | The matches of the query at `index` in the list passed to `parse`, or `None` as for `get` |
+| `store.to_arrow(selector, *, attributes=None, parent=None)` | The matches as an Arrow table; see [Arrow export](#arrow-export) |
 | `len(store)` | The number of saved elements |
 
 | `Element` | |
@@ -115,6 +120,74 @@ class, and attributes. Save only what you read: each extra field costs time.
 | `attributes`, `get_attribute(name)` | The other attributes, as a `dict` or one at a time |
 | `inner_html`, `raw_text`, `text` | Saved content, or `None` if the query didn't save it |
 | `get(selector)` | The element's matches for a child query; raises `ValueError` if there are none |
+
+## Arrow export
+
+For bulk work, `store.to_arrow()` returns the matches as an
+[Apache Arrow](https://arrow.apache.org/) table instead of element objects.
+String columns point straight into the parsed HTML and text buffers, so
+nothing is copied, and any library that reads the Arrow C Data Interface can
+import the table:
+
+```python
+import polars as pl
+from scah import Query, Save, parse
+
+store = parse(html, [Query.all("a", Save.only_text()).build()])
+df = pl.DataFrame(store.to_arrow("a", attributes=["href"]))
+# columns: index, tag, inner_html, raw_text, text, href
+```
+
+Pass `parent=` to export a child section, for example
+`store.to_arrow("h1", parent="div.product")`. Each row then carries a
+`parent` column holding the parent's `index`, ready to join. Use Arrow when
+the data stays columnar: building a polars DataFrame this way is about ten
+times faster than through element objects, but reading values back one by
+one is not.
+
+## polars
+
+`scah.polars.parse` runs a query on every document in a column of HTML,
+inside polars 1.25 or later (`pip install 'scah[polars]'`):
+
+```python
+import polars as pl
+import scah
+
+pages = pl.DataFrame({
+    "site": ["a", "b"],
+    "html": ["<a href='/1'>One</a><a href='/2'>Two</a>", "<p><a href='/3'>Three</a></p>"],
+})
+query = scah.Query.all("a[href]", scah.Save.only_text()).build()
+
+pages = pages.with_columns(
+    scah.polars.parse(pl.col("html"), query, attributes=["href"]).alias("links")
+)
+pages.select("site", "links").explode("links").unnest("links")
+# site  tag   text  href
+# a     a     One   /1
+# a     a     Two   /2
+# b     a     Three /3
+```
+
+Each document gives a `list[struct]` of matches (a `struct`, or null, for
+`Query.first`). A struct holds the match's `tag`, the content its `Save` keeps
+(`inner_html`, `raw_text`, `text`), and its attributes: one field per name in
+`attributes=[...]`, or by default an `attributes` list of `{name, value}`
+pairs. Child sections from `.then(...)` become fields named by their
+selector, shaped the same way.
+
+The query runs in Rust on polars' threads, without the GIL, and works in lazy
+and streaming queries, so a crawl stored as Parquet can be scraped without
+loading it into memory:
+
+```python
+(
+    pl.scan_parquet("pages/*.parquet")
+    .select("url", scah.polars.parse("html", query, attributes=["href"]).alias("links"))
+    .sink_parquet("links.parquet")
+)
+```
 
 ## Selectors and text
 

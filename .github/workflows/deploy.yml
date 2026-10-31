@@ -19,7 +19,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Authenticate with crates.io
         id: auth
@@ -38,7 +38,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Authenticate with crates.io
         id: auth
@@ -57,7 +57,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Authenticate with crates.io
         id: auth
@@ -76,7 +76,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Authenticate with crates.io
         id: auth
@@ -95,7 +95,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Authenticate with crates.io
         id: auth
@@ -106,34 +106,11 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   python-build:
-    name: Python Build Wheels (${{ matrix.target }})
+    name: Build Python wheels with PGO
     needs: [test]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        target: [x86_64, aarch64]
-        os: [ubuntu-latest, macos-latest]
-        include:
-          - os: windows-latest
-            target: x64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          args: --release --out dist
-          sccache: 'true'
-          working-directory: crates/bindings/scah-python
-          manylinux: auto
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-wheels-${{ matrix.os }}-${{ matrix.target }}
-          path: crates/bindings/scah-python/dist
+    uses: ./.github/workflows/bindings-pgo.yml
+    with:
+      binding: python
 
   python-publish:
     name: Publish Python wheels to PyPI
@@ -144,7 +121,7 @@ jobs:
       id-token: write
     steps:
       - name: Download all wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: python-wheels-*
           merge-multiple: true
@@ -156,57 +133,11 @@ jobs:
           skip-existing: true
 
   nodejs-build:
-    name: Node.js Addon Build (${{ matrix.settings.target }})
+    name: Build Node.js addons with PGO
     needs: [test]
-    runs-on: ${{ matrix.settings.host }}
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - host: macos-26-intel
-            target: x86_64-apple-darwin
-          - host: macos-26
-            target: aarch64-apple-darwin
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - host: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - host: windows-latest
-            target: x86_64-pc-windows-msvc
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.settings.target }}
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-node-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install dependencies
-        working-directory: crates/bindings/scah-node
-        run: bun install
-      - name: Build addon
-        working-directory: crates/bindings/scah-node
-        run: bun run build
-      - name: Upload addon artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: nodejs-addon-${{ matrix.settings.target }}
-          path: crates/bindings/scah-node/*.node
-          if-no-files-found: error
+    uses: ./.github/workflows/bindings-pgo.yml
+    with:
+      binding: node
 
   nodejs-publish:
     name: Publish Node.js Addon to NPM
@@ -218,9 +149,9 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
@@ -235,7 +166,7 @@ jobs:
         working-directory: crates/bindings/scah-node
         run: bun install
       - name: Download all built addons
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: nodejs-addon-*
           path: crates/bindings/scah-node/artifacts

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "suite": "csharp",
+  "scenario": "nested-all",
+  "title": "Every product card, with nested title, rating, and description queries",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-10-31",
+    "commit": "4c8310970f894c165f4bb24372fa6e6b6b5d5cb8",
+    "dirty": false,
+    "os": "Linux 7.0.0-38-generic",
+    "arch": "x86_64",
+    "cpu": "Intel(R) Core(TM) i7-1065G7 CPU @ 1.30GHz",
+    "runtime": ".NET 10.0.14"
+  },
+  "results": [
+    {
+      "library": "scah",
+      "size": 10000,
+      "mean": 20.14332078794643,
+      "stdev": 0.07044201126611101
+    },
+    {
+      "library": "AngleSharp",
+      "size": 10000,
+      "mean": 175.57407394444442,
+      "stdev": 0.684309615186947
+    },
+    {
+      "library": "HtmlAgilityPack + Fizzler",
+      "size": 10000,
+      "mean": 262.74339665384616,
+      "stdev": 1.9109162222905383
+    },
+    {
+      "library": "HtmlAgilityPack",
+      "size": 10000,
+      "mean": 324.6815139444444,
+      "stdev": 6.765958389586977
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+name: Native Libraries
+
+# Build libscah_c, and the Java binding's libscah_jni, for every platform the
+# C, C#, and Java packages support, with crates/bindings/native/build.sh. Each
+# platform's libraries, together with scah.h, upload as the artifact
+# `native-<rid>`. tests.yml runs this on pull requests that change the build.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Native Library (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Native runners only, so every library is checked on its own platform.
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+          - rid: linux-musl-x64
+            os: ubuntu-latest
+          - rid: linux-musl-arm64
+            os: ubuntu-24.04-arm
+          - rid: osx-x64
+            os: macos-26-intel
+          - rid: osx-arm64
+            os: macos-26
+          - rid: win-x64
+            os: windows-latest
+          - rid: win-arm64
+            os: windows-11-arm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      # Linux builds bring their own toolchain in a container.
+      - uses: dtolnay/rust-toolchain@stable
+        if: ${{ !startsWith(matrix.rid, 'linux-') }}
+      - name: Build
+        env:
+          SCAH_NATIVE_CRATES: scah-c scah-jni
+        run: crates/bindings/native/build.sh "${{ matrix.rid }}" target/native/out
+      - name: Check exported symbols
+        if: ${{ !startsWith(matrix.rid, 'win-') }}
+        run: |
+          library="$(ls target/native/out/${{ matrix.rid }}/libscah_c.*)"
+          # Every function the header declares, and nothing beyond scah's own.
+          declared="$(grep -o 'scah_[a-z0-9_]*(' crates/bindings/scah-c/include/scah.h \
+            | tr -d '(' | sort -u)"
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            exported="$(nm -gU "$library" | awk '{print $3}' | sed 's/^_//' | sort -u)"
+          else
+            exported="$(nm -D --defined-only "$library" | awk '{print $3}' | sort -u)"
+          fi
+          diff <(echo "$declared") <(grep '^scah_' <<< "$exported")
+      - name: Add header
+        run: |
+          mkdir -p target/native/out/${{ matrix.rid }}/include
+          cp crates/bindings/scah-c/include/scah.h target/native/out/${{ matrix.rid }}/include/
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.rid }}
+          path: target/native/out/${{ matrix.rid }}
+          if-no-files-found: error

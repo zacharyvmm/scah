@@ -1,0 +1,120 @@
+name: Bindings PGO Build
+
+# Build the Python wheels or Node addons that releases publish, with
+# profile-guided optimization (crates/bindings/pgo), and test each one.
+# deploy.yml publishes the artifacts. tests.yml runs this on pull requests that
+# change the PGO build.
+
+on:
+  workflow_call:
+    inputs:
+      binding:
+        description: "`python` or `node`"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  python:
+    name: Python PGO Wheel (${{ matrix.os }}, ${{ matrix.target }})
+    if: inputs.binding == 'python'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Native runners only: training runs the instrumented wheel.
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: quay.io/pypa/manylinux2014_x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64
+            manylinux: quay.io/pypa/manylinux2014_aarch64
+          - os: macos-26-intel
+            target: x86_64
+          - os: macos-26
+            target: aarch64
+          - os: windows-latest
+            target: x64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Build PGO wheel in manylinux
+        if: matrix.manylinux
+        run: crates/bindings/pgo/manylinux.sh "${{ matrix.manylinux }}" crates/bindings/scah-python/dist
+      - uses: dtolnay/rust-toolchain@stable
+        if: ${{ !matrix.manylinux }}
+        with:
+          components: llvm-tools
+      - name: Build PGO wheel
+        if: ${{ !matrix.manylinux }}
+        env:
+          PYTHON: python
+        run: |
+          python -m pip install maturin
+          crates/bindings/pgo/build.sh python crates/bindings/scah-python/dist
+      - name: Test wheel
+        run: |
+          python -m pip install pytest crates/bindings/scah-python/dist/*.whl
+          python -m pytest crates/bindings/scah-python/tests
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-wheels-${{ matrix.os }}-${{ matrix.target }}
+          path: crates/bindings/scah-python/dist
+
+  node:
+    name: Node PGO Addon (${{ matrix.settings.target }})
+    if: inputs.binding == 'node'
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-26-intel
+            target: x86_64-apple-darwin
+          - host: macos-26
+            target: aarch64-apple-darwin
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      # Training runs on Node: Bun exits without writing the profile.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+          components: llvm-tools
+      - name: Build PGO addon
+        run: crates/bindings/pgo/build.sh node
+      - name: Test addon
+        working-directory: crates/bindings/scah-node
+        run: bun test
+      - name: Upload addon
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodejs-addon-${{ matrix.settings.target }}
+          path: crates/bindings/scah-node/*.node
+          if-no-files-found: error
