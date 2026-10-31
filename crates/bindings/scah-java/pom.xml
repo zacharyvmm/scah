@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.zacharyvmm</groupId>
+  <artifactId>scah</artifactId>
+  <version>0.2.0-dev</version>
+  <packaging>jar</packaging>
+
+  <name>scah</name>
+  <description>CSS selectors meet streaming HTML parsing. Extract exactly what you select, without building a DOM.</description>
+  <url>https://github.com/zacharyvmm/scah</url>
+
+  <licenses>
+    <license>
+      <name>MIT</name>
+      <url>https://github.com/zacharyvmm/scah/blob/main/LICENSE</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>Zachary McSween Manickchand</name>
+      <email>contact@zacharymm.com</email>
+    </developer>
+  </developers>
+
+  <scm>
+    <url>https://github.com/zacharyvmm/scah</url>
+    <connection>scm:git:https://github.com/zacharyvmm/scah.git</connection>
+  </scm>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!--
+      The public API and the backend loader target Java 11. The Panama
+      backend, in src/main/java22, is a multi-release class for Java 22+.
+    -->
+    <maven.compiler.release>11</maven.compiler.release>
+    <!--
+      Where the tests load the native library from. Defaults to cargo's debug
+      build of this checkout; set it empty to test the libraries packed into
+      the jar.
+    -->
+    <scah.library.dir>${project.basedir}/../../../target/debug</scah.library.dir>
+    <!-- The jar the tests run against; set it to test a jar built elsewhere. -->
+    <scah.test.jar>${project.build.directory}/${project.build.finalName}.jar</scah.test.jar>
+    <junit.version>5.14.4</junit.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.16.0</version>
+        <configuration>
+          <compilerArgs>
+            <arg>-Xlint:all</arg>
+            <arg>-Werror</arg>
+          </compilerArgs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>java22</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <release>22</release>
+              <compileSourceRoots>
+                <compileSourceRoot>${project.basedir}/src/main/java22</compileSourceRoot>
+              </compileSourceRoots>
+              <multiReleaseOutput>true</multiReleaseOutput>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.1</version>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <Multi-Release>true</Multi-Release>
+              <Automatic-Module-Name>io.github.zacharyvmm.scah</Automatic-Module-Name>
+              <!-- Honored when the jar is launched with java -jar. -->
+              <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+
+      <!--
+        The JVM only picks multi-release classes from a jar, so the tests run
+        after packaging, against the jar.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.6.1</version>
+        <configuration>
+          <skip>true</skip>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.6.1</version>
+        <configuration>
+          <classesDirectory>${scah.test.jar}</classesDirectory>
+          <includes>
+            <include>**/*Test.java</include>
+          </includes>
+          <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+          <systemPropertyVariables>
+            <scah.library.dir>${scah.library.dir}</scah.library.dir>
+          </systemPropertyVariables>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!--
+      Pack the native libraries that crates/bindings/native/build.sh writes to
+      SCAH_NATIVE_DIR/<rid>/ into the jar:
+
+        mvn verify -Dscah.native.dir=$PWD/../../../target/native/out
+    -->
+    <profile>
+      <id>native-libraries</id>
+      <activation>
+        <property>
+          <name>scah.native.dir</name>
+        </property>
+      </activation>
+      <build>
+        <resources>
+          <resource>
+            <directory>${scah.native.dir}</directory>
+            <targetPath>io/github/zacharyvmm/scah/native</targetPath>
+            <includes>
+              <include>*/libscah_c.so</include>
+              <include>*/libscah_c.dylib</include>
+              <include>*/scah_c.dll</include>
+            </includes>
+          </resource>
+        </resources>
+      </build>
+    </profile>
+  </profiles>
+</project>

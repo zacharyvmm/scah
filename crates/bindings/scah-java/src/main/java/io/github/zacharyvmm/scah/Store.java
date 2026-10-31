@@ -1,0 +1,125 @@
+package io.github.zacharyvmm.scah;
+
+import java.lang.ref.Cleaner;
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * The elements that one or more queries matched in a document.
+ *
+ * <p>A store owns a copy of the HTML and is immutable, so it may be read from several threads
+ * at once. Close it to free its memory right away; reading a closed store throws {@link
+ * IllegalStateException}. Stores that are never closed are freed once neither they nor any of
+ * their elements are reachable.
+ */
+public final class Store implements AutoCloseable {
+    final NativeResource resource;
+    private final Cleaner.Cleanable cleanable;
+
+    private Store(long handle) {
+        Backend backend = Native.backend();
+        resource = new NativeResource(handle, backend::storeFree, "store");
+        cleanable = Query.CLEANER.register(this, resource);
+    }
+
+    /**
+     * Parse {@code html} against {@code queries}.
+     *
+     * <p>Unpaired surrogates in {@code html} are replaced with {@code ?}, as {@link
+     * String#getBytes(java.nio.charset.Charset)} does.
+     *
+     * @throws ScahException when no queries are given, or the HTML nests too deeply or is 4 GiB
+     *     or longer
+     * @throws IllegalStateException when a query is closed
+     */
+    public static Store parse(String html, Query... queries) {
+        Objects.requireNonNull(html, "html");
+        return parse(queries, (backend, handles) -> backend.parse(html, handles));
+    }
+
+    /**
+     * Parse UTF-8 {@code html} against {@code queries}.
+     *
+     * @throws ScahException when the HTML is not valid UTF-8, no queries are given, or the HTML
+     *     nests too deeply or is 4 GiB or longer
+     * @throws IllegalStateException when a query is closed
+     */
+    public static Store parse(byte[] html, Query... queries) {
+        Objects.requireNonNull(html, "html");
+        return parse(queries, (backend, handles) -> backend.parse(html, handles));
+    }
+
+    private interface Parser {
+        long parse(Backend backend, long[] queries);
+    }
+
+    private static Store parse(Query[] queries, Parser parser) {
+        Backend backend = Native.backend();
+        long[] handles = new long[queries.length];
+        int acquired = 0;
+        try {
+            // Keep every query open while the native call reads it.
+            for (; acquired < queries.length; acquired++) {
+                Objects.requireNonNull(queries[acquired], "queries");
+                handles[acquired] = queries[acquired].resource.acquire();
+            }
+            return new Store(parser.parse(backend, handles));
+        } finally {
+            for (int i = 0; i < acquired; i++) {
+                queries[i].resource.release();
+            }
+        }
+    }
+
+    /** The number of elements saved, across all queries. */
+    public long elementCount() {
+        long handle = resource.acquire();
+        try {
+            return Native.backend().storeLength(handle);
+        } finally {
+            resource.release();
+        }
+    }
+
+    /**
+     * The elements matched by the top-level section built with {@code selector}, in document
+     * order.
+     *
+     * <p>{@code selector} must be the exact string the section was built with. When several
+     * queries share it, the first one's results are returned; use {@link #queryResults} to pick
+     * another. The list is empty when nothing matched or no section has that selector.
+     */
+    public List<Element> get(String selector) {
+        Objects.requireNonNull(selector, "selector");
+        long handle = resource.acquire();
+        try {
+            return new ElementList(this, Native.backend().storeGet(handle, selector));
+        } finally {
+            resource.release();
+        }
+    }
+
+    /**
+     * The elements matched by the query at {@code index} in the array given to {@link
+     * #parse(String, Query...)}, in document order.
+     *
+     * <p>The list is empty when nothing matched or there is no such query.
+     */
+    public List<Element> queryResults(int index) {
+        if (index < 0) {
+            throw new IndexOutOfBoundsException("Negative query index " + index);
+        }
+        long handle = resource.acquire();
+        try {
+            return new ElementList(this, Native.backend().storeQuery(handle, index));
+        } finally {
+            resource.release();
+        }
+    }
+
+    /** Free the store. Its elements can no longer be read. Closing twice does nothing. */
+    @Override
+    public void close() {
+        cleanable.clean();
+    }
+}
