@@ -1,9 +1,9 @@
 name: Native Libraries
 
-# Build libscah_c for every platform the C, C#, and Java packages support,
-# with crates/bindings/native/build.sh. Each platform's libraries, together
-# with scah.h, upload as the artifact `native-<rid>`. tests.yml runs this on
-# pull requests that change the build.
+# Build libscah_c, and the Java binding's libscah_jni, for every platform the
+# C, C#, and Java packages support, with crates/bindings/native/build.sh. Each
+# platform's libraries, together with scah.h, upload as the artifact
+# `native-<rid>`. tests.yml runs this on pull requests that change the build.
 
 on:
   workflow_call:
@@ -49,6 +49,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         if: ${{ !startsWith(matrix.rid, 'linux-') }}
       - name: Build
+        env:
+          SCAH_NATIVE_CRATES: scah-c scah-jni
         run: crates/bindings/native/build.sh "${{ matrix.rid }}" target/native/out
       - name: Check exported symbols
         if: ${{ !startsWith(matrix.rid, 'win-') }}

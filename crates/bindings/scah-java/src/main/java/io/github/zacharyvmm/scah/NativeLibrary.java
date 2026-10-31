@@ -63,8 +63,7 @@ final class NativeLibrary {
         }
 
         try {
-            Cache cache = cacheRoot(Paths.get(
-                    System.getProperty("scah.library.cache", System.getProperty("java.io.tmpdir"))));
+            Cache cache = cacheRoot(cacheBase());
             Path directory = cache.root.resolve(checksum(library));
             Path target = extract(library, directory.resolve(rid).resolve(file));
             if (cache.temporary) {
@@ -77,6 +76,16 @@ final class NativeLibrary {
         } catch (IOException e) {
             throw new UncheckedIOException("Cannot extract " + resource, e);
         }
+    }
+
+    /** The directory caches go in: {@code scah.library.cache}, or {@code java.io.tmpdir}. */
+    static Path cacheBase() {
+        return Paths.get(System.getProperty("scah.library.cache", System.getProperty("java.io.tmpdir")));
+    }
+
+    /** A new directory in the private cache, for this JVM alone. */
+    static Path privateDirectory(String prefix) throws IOException {
+        return Files.createTempDirectory(cacheRoot(cacheBase()).root, prefix);
     }
 
     /** Write {@code library} to {@code target} unless an identical copy is already there. */
@@ -122,7 +131,7 @@ final class NativeLibrary {
     static Cache cacheRoot(Path base) throws IOException {
         base = base.toAbsolutePath();
         if (!FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
-            return new Cache(base.resolve("scah"), false);
+            return new Cache(Files.createDirectories(base.resolve("scah")), false);
         }
         Files.createDirectories(base);
         String user = System.getProperty("user.name", "").replaceAll("[^A-Za-z0-9._-]", "_");

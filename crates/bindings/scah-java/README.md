@@ -14,13 +14,14 @@ the document and stores only the matches.
 </dependency>
 ```
 
-The jar calls the native library through the Foreign Function and Memory API,
-so it needs **Java 22 or newer**. It ships the library for Linux (glibc 2.17+
-and musl), macOS, and Windows, on x64 and arm64.
+The jar runs on **Java 11 and newer**. On Java 22 and newer it calls the
+native library through the Foreign Function and Memory API; before, through
+JNI. It ships both libraries for Linux (glibc 2.17+ and musl), macOS, and
+Windows, on x64 and arm64.
 
-Run with `--enable-native-access=ALL-UNNAMED` (or the name of your module) to
-allow the native calls. Without it, the JVM prints a warning when scah first
-loads.
+On Java 22 and newer, run with `--enable-native-access=ALL-UNNAMED` (or the
+name of your module) to allow the native calls. Without it, the JVM prints a
+warning when scah first loads.
 
 ## Usage
 
@@ -81,26 +82,37 @@ Failures throw `ScahException`, whose `status()` says why, such as
 The jar extracts the library for the current platform into
 `java.io.tmpdir/scah-<checksum>/`, once per version, shared by every JVM. Set
 `-Dscah.library.cache=<dir>` to extract it elsewhere, or
-`-Dscah.library.dir=<dir>` to load `libscah_c` from a directory instead.
+`-Dscah.library.dir=<dir>` to load the libraries from a directory instead:
+`libscah_c` for the Foreign Function and Memory API, `libscah_jni` for JNI.
+
+`-Dscah.backend=jni` selects JNI on Java 22 and newer too. The Foreign
+Function and Memory API reads element fields several times faster, while JNI
+copies the HTML once less when parsing.
 
 See the [main README](https://github.com/zacharyvmm/scah#selector-support) for
 supported selectors and text-extraction semantics.
 
 ## Development
 
-The public API targets Java 11; the backend that calls the C ABI in
-[`crates/bindings/scah-c`](../scah-c) lives in `src/main/java22` and is packed
-as a multi-release class. The JVM only loads such classes from a jar, so the
-tests run after packaging, against the jar. Build the library and run them with
-JDK 22 or newer:
+The public API and the JNI backend, whose native half is
+[`crates/bindings/scah-jni`](../scah-jni), target Java 11. The backend that
+calls the C ABI in [`crates/bindings/scah-c`](../scah-c) lives in
+`src/main/java22` and is packed as a multi-release class. The JVM only loads
+such classes from a jar, so the tests run after packaging, against the jar.
+Build the libraries and run the tests with JDK 22 or newer:
 
 ```bash
-cargo build -p scah-c
-./mvnw verify
+cargo build -p scah-c -p scah-jni
+./mvnw verify                      # Foreign Function and Memory API
+./mvnw verify -Dscah.backend=jni   # JNI
 ```
 
-The tests load `target/debug`'s library; pass `-Dscah.library.dir=<dir>` to
-test another. To pack the libraries that
+To run them on an older JDK, which uses JNI, point `scah.test.jvm` at its
+`java` and drop the native-access option:
+`./mvnw verify -Dscah.test.jvm=$JDK11/bin/java -Dscah.test.argLine=`.
+
+The tests load `target/debug`'s libraries; pass `-Dscah.library.dir=<dir>` to
+test others. To pack the libraries that
 [`crates/bindings/native/build.sh`](../native/build.sh) built, and test the
 jar's own copy:
 

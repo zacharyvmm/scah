@@ -40,8 +40,8 @@ test-csharp:
     cargo build -p scah-c
     cd crates/bindings/scah-csharp && dotnet test Scah.Tests
 test-java:
-    cargo build -p scah-c
-    cd crates/bindings/scah-java && ./mvnw -B verify
+    cargo build -p scah-c -p scah-jni
+    cd crates/bindings/scah-java && ./mvnw -B verify && ./mvnw -B verify -Dscah.backend=jni
 
 # Regenerate the committed C header after changing the C ABI
 header:

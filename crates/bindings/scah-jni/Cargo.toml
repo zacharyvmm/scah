@@ -1,0 +1,19 @@
+[package]
+name = "scah-jni"
+description = "JNI backend of scah's Java binding"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "scah_jni"
+crate-type = ["cdylib"]
+
+[dependencies]
+scah.workspace = true
+scah-ffi = { path = "../../scah-ffi" }
+jni = "0.22"
