@@ -183,6 +183,20 @@ static void check_sections(const ScahStore *store) {
   CHECK(some_eq(value, "Intro"));
   scah_element_list_free(headings);
 
+  /* The first query passed to scah_parse is the sections query. */
+  {
+    ScahElementList *first = NULL;
+    ScahElementList *missing = sections;
+    OK(scah_store_query(store, 0, &first, &err));
+    CHECK(scah_element_list_len(first) == 2);
+    CHECK(scah_element_list_ids(first)[0] == ids[0]);
+    scah_element_list_free(first);
+    OK(scah_store_query(store, 99, &missing, &err));
+    CHECK(missing == NULL);
+    CHECK(scah_store_query(NULL, 0, &missing, NULL) ==
+          SCAH_STATUS_NULL_POINTER);
+  }
+
   /* The second section has no heading: success with a NULL list. */
   CHECK(get_nested(store, ids[1], "> h2") == NULL);
   CHECK(scah_element_list_len(NULL) == 0);

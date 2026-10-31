@@ -170,6 +170,37 @@ pub unsafe extern "C" fn scah_store_get(
     })
 }
 
+/// Look up the elements matched by the query at `index` in the array given to
+/// `scah_parse`.
+///
+/// Unlike `scah_store_get`, this tells apart queries that share a selector.
+/// When the query matched nothing, or `index` is not below the number of
+/// queries, this succeeds and sets `*out_list` to NULL.
+///
+/// # Safety
+///
+/// `store` must be NULL or a live store. `out_list` and `out_error` must be
+/// NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scah_store_query(
+    store: *const ScahStore,
+    index: usize,
+    out_list: *mut *mut ScahElementList,
+    out_error: *mut *mut ScahError,
+) -> ScahStatus {
+    // SAFETY: the caller passes a NULL or writable `out_error`.
+    let out_error = unsafe { ErrorSlot::new(out_error) };
+    guard(out_error, || {
+        // SAFETY: the caller passes a NULL or writable `out_list`.
+        let out_list = unsafe { out_handle(out_list, "out_list") }?;
+        // SAFETY: the caller passes NULL or a live store.
+        let store = unsafe { deref(store, "store") }?.inner.store();
+        // SAFETY: checked non-NULL and writable above.
+        unsafe { out_list.write(new_list(store.query(index))) };
+        Ok(())
+    })
+}
+
 /// Look up the elements matched by a child query nested under `element`
 /// with `scah_query_builder_then`.
 ///
@@ -612,6 +643,14 @@ pub(crate) mod tests {
         (!list.is_null()).then(|| ids(list))
     }
 
+    fn query(store: *const ScahStore, index: usize) -> Option<Vec<ScahElementId>> {
+        let mut list = ptr::dangling_mut();
+        // SAFETY: `store` is live and the out-pointer is a local.
+        let status = unsafe { scah_store_query(store, index, &mut list, ptr::null_mut()) };
+        assert_eq!(status, ScahStatus::Ok);
+        (!list.is_null()).then(|| ids(list))
+    }
+
     fn nested(
         store: *const ScahStore,
         element: ScahElementId,
@@ -817,6 +856,30 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn queries_are_looked_up_by_position() {
+        let store = parse(
+            "<a></a><b></b><a></a>",
+            &[
+                build(builder("a", ALL)),
+                build(builder("b", NAME_ONLY)),
+                build(builder("a", NAME_ONLY)),
+                build(builder("i", ALL)),
+            ],
+        );
+        let first = query(store, 0).unwrap();
+        let third = query(store, 2).unwrap();
+        assert_eq!(first.len(), 2);
+        assert_eq!(third.len(), 2);
+        assert_ne!(first, third, "each query saves its own rows");
+        assert_eq!(get(store, "a"), Some(first), "get finds the first query");
+        assert_eq!(query(store, 1).map(|b| b.len()), Some(1));
+        assert_eq!(query(store, 3), None, "a query without matches");
+        assert_eq!(query(store, 4), None, "past the last query");
+        // SAFETY: the test owns `store`.
+        unsafe { scah_store_free(store) };
+    }
+
+    #[test]
     fn out_of_range_ids_and_indexes_are_rejected() {
         let store = parse("<a href='/'></a>", &[build(builder("a", ALL))]);
         let mut value = ScahOptionalStringView::from(None);
@@ -922,6 +985,9 @@ pub(crate) mod tests {
             assert_eq!(status, ScahStatus::NullPointer);
             assert_eq!(take_message(error), "`store` must not be NULL");
 
+            let status = scah_store_query(ptr::null(), 0, &mut list, ptr::null_mut());
+            assert_eq!(status, ScahStatus::NullPointer);
+
             let status = scah_element_text(ptr::null(), 0, &mut value, ptr::null_mut());
             assert_eq!(status, ScahStatus::NullPointer);
 
@@ -936,6 +1002,8 @@ pub(crate) mod tests {
         // SAFETY: `store` is live; NULL out-pointers are rejected before use.
         unsafe {
             let status = scah_store_get(store, view("a"), ptr::null_mut(), ptr::null_mut());
+            assert_eq!(status, ScahStatus::NullPointer);
+            let status = scah_store_query(store, 0, ptr::null_mut(), ptr::null_mut());
             assert_eq!(status, ScahStatus::NullPointer);
             let status = scah_element_text(store, 0, ptr::null_mut(), &mut error);
             assert_eq!(status, ScahStatus::NullPointer);

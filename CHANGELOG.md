@@ -59,6 +59,10 @@ Rust crates and the Python and npm packages together.
 - A C ABI in `crates/bindings/scah-c`, with a generated `scah.h` header and
   C and C++ smoke tests. It shares its owned query and store handles with the
   Python and Node bindings. ([#48], [#49], [#53])
+- `scah_store_query` looks up C results by query position, like
+  `Store.query` in Python and Node. `crates/bindings/native/build.sh` builds
+  `libscah_c` for Linux (glibc 2.17+ and musl), macOS, and Windows on x64 and
+  arm64. ([#121])
 - Arrow export: `Store.to_arrow()` in Python and `scah_store_export_arrow` in C
   hand matches over as an Arrow table whose string columns point into the
   parsed HTML and text buffers, ready for polars, pyarrow, DuckDB, and other
@@ -236,3 +240,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#49]: https://github.com/zacharyvmm/scah/pull/49
 [#53]: https://github.com/zacharyvmm/scah/pull/53
 [#117]: https://github.com/zacharyvmm/scah/pull/117
+[#121]: https://github.com/zacharyvmm/scah/pull/121

@@ -63,7 +63,7 @@ pub use store::{
     scah_element_attribute_count, scah_element_class_name, scah_element_get, scah_element_id,
     scah_element_inner_html, scah_element_list_free, scah_element_list_ids, scah_element_list_len,
     scah_element_name, scah_element_raw_text, scah_element_text, scah_parse, scah_store_free,
-    scah_store_get, scah_store_len,
+    scah_store_get, scah_store_len, scah_store_query,
 };
 pub use string::{ScahOptionalStringView, ScahStringView};
 
