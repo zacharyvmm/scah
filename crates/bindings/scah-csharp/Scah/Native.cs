@@ -41,9 +41,9 @@ internal readonly struct NativeSave(Save save)
 /// <summary>The C ABI declared by <c>crates/bindings/scah-c/include/scah.h</c>.</summary>
 /// <remarks>
 /// Statuses are returned as <see cref="int"/> so that codes added by a newer
-/// library still map to an exception. Builders, element lists, and errors are
-/// passed as raw pointers because they never outlive the call that uses them;
-/// queries and stores are <see cref="SafeHandle"/>s.
+/// library still map to an exception. Every handle is passed as a raw pointer:
+/// queries and stores are owned by <see cref="SafeHandle"/>s, and callers hold
+/// a <see cref="StoreLease"/> until they have decoded the views a call returned.
 /// </remarks>
 internal static unsafe partial class Native
 {
@@ -112,19 +112,19 @@ internal static unsafe partial class Native
     internal static partial void scah_store_free(nint store);
 
     [LibraryImport(Library)]
-    internal static partial nuint scah_store_len(StoreHandle store);
+    internal static partial nuint scah_store_len(nint store);
 
     [LibraryImport(Library)]
     internal static partial int scah_store_get(
-        StoreHandle store, StringView selector, nint* list, nint* error);
+        nint store, StringView selector, nint* list, nint* error);
 
     [LibraryImport(Library)]
     internal static partial int scah_store_query(
-        StoreHandle store, nuint index, nint* list, nint* error);
+        nint store, nuint index, nint* list, nint* error);
 
     [LibraryImport(Library)]
     internal static partial int scah_element_get(
-        StoreHandle store, nuint element, StringView selector, nint* list, nint* error);
+        nint store, nuint element, StringView selector, nint* list, nint* error);
 
     [LibraryImport(Library)]
     internal static partial nuint scah_element_list_len(nint list);
@@ -137,39 +137,39 @@ internal static unsafe partial class Native
 
     [LibraryImport(Library)]
     internal static partial int scah_element_name(
-        StoreHandle store, nuint element, StringView* value, nint* error);
+        nint store, nuint element, StringView* value, nint* error);
 
     [LibraryImport(Library)]
     internal static partial int scah_element_id(
-        StoreHandle store, nuint element, OptionalStringView* value, nint* error);
+        nint store, nuint element, OptionalStringView* value, nint* error);
 
     [LibraryImport(Library)]
     internal static partial int scah_element_class_name(
-        StoreHandle store, nuint element, OptionalStringView* value, nint* error);
+        nint store, nuint element, OptionalStringView* value, nint* error);
 
     [LibraryImport(Library)]
     internal static partial int scah_element_inner_html(
-        StoreHandle store, nuint element, OptionalStringView* value, nint* error);
+        nint store, nuint element, OptionalStringView* value, nint* error);
 
     [LibraryImport(Library)]
     internal static partial int scah_element_raw_text(
-        StoreHandle store, nuint element, OptionalStringView* value, nint* error);
+        nint store, nuint element, OptionalStringView* value, nint* error);
 
     [LibraryImport(Library)]
     internal static partial int scah_element_text(
-        StoreHandle store, nuint element, OptionalStringView* value, nint* error);
+        nint store, nuint element, OptionalStringView* value, nint* error);
 
     [LibraryImport(Library)]
     internal static partial int scah_element_attribute(
-        StoreHandle store, nuint element, StringView key, OptionalStringView* value, nint* error);
+        nint store, nuint element, StringView key, OptionalStringView* value, nint* error);
 
     [LibraryImport(Library)]
     internal static partial int scah_element_attribute_count(
-        StoreHandle store, nuint element, nuint* count, nint* error);
+        nint store, nuint element, nuint* count, nint* error);
 
     [LibraryImport(Library)]
     internal static partial int scah_element_attribute_at(
-        StoreHandle store, nuint element, nuint index, StringView* key,
+        nint store, nuint element, nuint index, StringView* key,
         OptionalStringView* value, nint* error);
 
     /// <summary>Throw the error a failed call reported, freeing it.</summary>

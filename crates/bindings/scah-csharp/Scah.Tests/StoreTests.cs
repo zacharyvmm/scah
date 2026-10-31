@@ -170,6 +170,54 @@ public class StoreTests
     }
 
     [Fact]
+    public void DisposingDuringAReadWaitsForTheRead()
+    {
+        // Large enough that decoding takes a while after the native call returns.
+        string body = new('x', 8 << 20);
+        using Query query = Query.All("div", Save.OnlyInnerHtml).Build();
+        for (int round = 0; round < 8; round++)
+        {
+            Store store = Store.Parse($"<div>{body}</div>", query);
+            Element div = Assert.Single(store.Get("div"));
+            using var reading = new CountdownEvent(4);
+            Exception? failure = null;
+            Thread[] readers = Enumerable.Range(0, 4).Select(_ => new Thread(() =>
+            {
+                try
+                {
+                    reading.Signal();
+                    while (true)
+                    {
+                        if (div.InnerHtml!.Length != body.Length)
+                        {
+                            throw new InvalidOperationException("Read a truncated string");
+                        }
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The store was disposed before this read began.
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+            })).ToArray();
+            foreach (Thread reader in readers)
+            {
+                reader.Start();
+            }
+            reading.Wait();
+            store.Dispose();
+            foreach (Thread reader in readers)
+            {
+                reader.Join();
+            }
+            Assert.Null(failure);
+        }
+    }
+
+    [Fact]
     public void DefaultElementsBelongToNoStore()
     {
         Element element = default;

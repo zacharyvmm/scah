@@ -66,7 +66,14 @@ public sealed class Store : IDisposable
     }
 
     /// <summary>The number of elements saved, across all queries.</summary>
-    public long ElementCount => (long)Native.scah_store_len(Handle);
+    public long ElementCount
+    {
+        get
+        {
+            using var store = new StoreLease(Handle);
+            return (long)Native.scah_store_len(store.Pointer);
+        }
+    }
 
     /// <summary>
     /// The elements matched by the top-level section built with
@@ -81,11 +88,13 @@ public sealed class Store : IDisposable
     public unsafe ElementList Get(string selector)
     {
         using Utf8.Buffer bytes = Utf8.Encode(selector, stackalloc byte[Utf8.StackLimit]);
+        using var store = new StoreLease(Handle);
         fixed (byte* data = bytes.Bytes)
         {
             nint list;
             nint error;
-            int status = Native.scah_store_get(Handle, new StringView(data, (nuint)bytes.Bytes.Length), &list, &error);
+            int status = Native.scah_store_get(
+                store.Pointer, new StringView(data, (nuint)bytes.Bytes.Length), &list, &error);
             Native.Check(status, error);
             return ElementList.Take(this, list);
         }
@@ -99,9 +108,10 @@ public sealed class Store : IDisposable
     public unsafe ElementList QueryResults(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
+        using var store = new StoreLease(Handle);
         nint list;
         nint error;
-        Native.Check(Native.scah_store_query(Handle, (nuint)index, &list, &error), error);
+        Native.Check(Native.scah_store_query(store.Pointer, (nuint)index, &list, &error), error);
         return ElementList.Take(this, list);
     }
 

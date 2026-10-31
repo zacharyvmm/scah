@@ -5,7 +5,8 @@ namespace Scah;
 /// Elements are cheap handles; each property reads the store and returns a
 /// new string. An element keeps its store from being finalized, but not from
 /// being disposed: reading an element of a disposed store throws
-/// <see cref="ObjectDisposedException"/>. Properties whose content the query
+/// <see cref="ObjectDisposedException"/>. A store disposed during a read is
+/// freed once the read finishes. Properties whose content the query
 /// did not save are <see langword="null"/>.
 /// </remarks>
 public readonly struct Element : IEquatable<Element>
@@ -30,9 +31,10 @@ public readonly struct Element : IEquatable<Element>
     {
         get
         {
+            using var lease = Lease();
             StringView value;
             nint error;
-            Native.Check(Native.scah_element_name(Handle, id, &value, &error), error);
+            Native.Check(Native.scah_element_name(lease.Pointer, id, &value, &error), error);
             return value.Decode();
         }
     }
@@ -62,7 +64,8 @@ public readonly struct Element : IEquatable<Element>
     {
         get
         {
-            StoreHandle handle = Handle;
+            using var lease = Lease();
+            nint handle = lease.Pointer;
             nuint count;
             nint error;
             Native.Check(Native.scah_element_attribute_count(handle, id, &count, &error), error);
@@ -95,12 +98,13 @@ public readonly struct Element : IEquatable<Element>
     public unsafe string? GetAttribute(string name)
     {
         using Utf8.Buffer bytes = Utf8.Encode(name, stackalloc byte[Utf8.StackLimit]);
+        using var lease = Lease();
         fixed (byte* data = bytes.Bytes)
         {
             OptionalStringView value;
             nint error;
             int status = Native.scah_element_attribute(
-                Handle, id, new StringView(data, (nuint)bytes.Bytes.Length), &value, &error);
+                lease.Pointer, id, new StringView(data, (nuint)bytes.Bytes.Length), &value, &error);
             Native.Check(status, error);
             return value.Decode();
         }
@@ -118,12 +122,13 @@ public readonly struct Element : IEquatable<Element>
     public unsafe ElementList Get(string selector)
     {
         using Utf8.Buffer bytes = Utf8.Encode(selector, stackalloc byte[Utf8.StackLimit]);
+        using var lease = Lease();
         fixed (byte* data = bytes.Bytes)
         {
             nint list;
             nint error;
             int status = Native.scah_element_get(
-                Handle, id, new StringView(data, (nuint)bytes.Bytes.Length), &list, &error);
+                lease.Pointer, id, new StringView(data, (nuint)bytes.Bytes.Length), &list, &error);
             Native.Check(status, error);
             return ElementList.Take(store, list);
         }
@@ -144,14 +149,16 @@ public readonly struct Element : IEquatable<Element>
     /// <summary>Whether two elements differ.</summary>
     public static bool operator !=(Element left, Element right) => !left.Equals(right);
 
-    private StoreHandle Handle => Store.Handle;
+    /// <summary>Keep the store alive until the views a read returns are decoded.</summary>
+    private StoreLease Lease() => new(Store.Handle);
 
     private unsafe string? Read(
-        delegate*<StoreHandle, nuint, OptionalStringView*, nint*, int> getter)
+        delegate*<nint, nuint, OptionalStringView*, nint*, int> getter)
     {
+        using var lease = Lease();
         OptionalStringView value;
         nint error;
-        Native.Check(getter(Handle, id, &value, &error), error);
+        Native.Check(getter(lease.Pointer, id, &value, &error), error);
         return value.Decode();
     }
 
