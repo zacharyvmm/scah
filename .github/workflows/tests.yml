@@ -244,8 +244,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      # Building every platform is slow, so pull requests do so only when the
-      # build itself or the C ABI changes.
+      # Building and testing the packages on every platform is slow, so pull
+      # requests do so only when the build, the C ABI, or a package changes.
       - name: Detect native-library-relevant changes
         id: changes
         env:
@@ -253,7 +253,8 @@ jobs:
         run: |
           if git diff --quiet "$BASE_SHA" HEAD -- Cargo.toml .cargo/config.toml \
             crates/bindings/native crates/bindings/scah-c/Cargo.toml \
-            crates/bindings/scah-c/include .github/workflows/native-libraries.yml \
+            crates/bindings/scah-c/include crates/bindings/scah-csharp \
+            .github/workflows/native-libraries.yml .github/workflows/tests.yml \
             ':(exclude)*.md'; then
             echo "No native-library-relevant changes; skipping the native library build."
             echo "relevant=false" >> "$GITHUB_OUTPUT"
@@ -266,6 +267,125 @@ jobs:
     needs: native-changes
     if: needs.native-changes.outputs.relevant == 'true'
     uses: ./.github/workflows/native-libraries.yml
+
+  csharp:
+    name: C# Binding Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-26, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build native library
+        run: cargo build -p scah-c
+      - name: Run C# tests
+        working-directory: crates/bindings/scah-csharp
+        run: dotnet test Scah.Tests
+
+  csharp-package:
+    name: C# Package
+    needs: native-libraries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Download native libraries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: target/native/out
+      - name: Pack
+        run: |
+          # Each artifact downloads to native-<rid>; the package wants <rid>.
+          for dir in target/native/out/native-*; do
+            mv "$dir" "target/native/out/${dir##*/native-}"
+          done
+          dotnet pack crates/bindings/scah-csharp/Scah -c Release -o dist \
+            -p:ScahNativeDir="$PWD/target/native/out"
+      - name: Check native libraries
+        run: |
+          libraries="$(unzip -Z1 dist/*.nupkg 'runtimes/*' | sort)"
+          echo "$libraries"
+          test "$(wc -l <<< "$libraries")" -eq 8
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: csharp-package
+          path: dist
+          if-no-files-found: error
+
+  csharp-package-test:
+    name: C# Package Test (${{ matrix.rid }})
+    needs: csharp-package
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+          - rid: linux-musl-x64
+            os: ubuntu-latest
+            alpine: true
+          - rid: linux-musl-arm64
+            os: ubuntu-24.04-arm
+            alpine: true
+          - rid: osx-x64
+            os: macos-26-intel
+          - rid: osx-arm64
+            os: macos-26
+          - rid: win-x64
+            os: windows-latest
+          - rid: win-arm64
+            os: windows-11-arm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: csharp-package
+          path: dist
+      - name: Read package version
+        run: |
+          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' \
+            crates/bindings/scah-csharp/Scah/Scah.csproj)"
+          echo "SCAH_VERSION=$version" >> "$GITHUB_ENV"
+      - uses: actions/setup-dotnet@v5
+        if: ${{ !matrix.alpine }}
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Run C# tests against the package
+        if: ${{ !matrix.alpine }}
+        working-directory: crates/bindings/scah-csharp
+        run: |
+          dotnet test Scah.Tests -p:ScahUsePackage="$SCAH_VERSION" \
+            -p:RestoreAdditionalProjectSources="$GITHUB_WORKSPACE/dist"
+      # JavaScript actions cannot run in Alpine containers, so run Docker directly.
+      - name: Run C# tests against the package on Alpine
+        if: matrix.alpine
+        run: |
+          docker run --rm -v "$PWD:/io" -w /io/crates/bindings/scah-csharp \
+            mcr.microsoft.com/dotnet/sdk:10.0-alpine \
+            dotnet test Scah.Tests -f net10.0 -p:ScahUsePackage="$SCAH_VERSION" \
+              -p:RestoreAdditionalProjectSources=/io/dist
 
   rust-aarch64:
     name: Rust AArch64 SIMD Checks

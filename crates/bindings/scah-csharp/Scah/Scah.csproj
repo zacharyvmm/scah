@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Scah</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <PackageId>Scah</PackageId>
+    <Version>0.2.0-dev</Version>
+    <Authors>Zachary McSween Manickchand</Authors>
+    <Description>CSS selectors meet streaming HTML parsing. Extract exactly what you select, without building a DOM.</Description>
+    <PackageTags>html;parser;css;selector;scraping</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/zacharyvmm/scah</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/zacharyvmm/scah</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <!--
+    Ship the native libraries that crates/bindings/native/build.sh writes to
+    ScahNativeDir/<rid>/, under the runtimes/<rid>/native/ folders .NET loads
+    them from:
+
+      dotnet pack -p:ScahNativeDir=$PWD/target/native/out
+  -->
+  <ItemGroup Condition="'$(ScahNativeDir)' != ''">
+    <None Include="$(ScahNativeDir)/**/libscah_c.so;$(ScahNativeDir)/**/libscah_c.dylib;$(ScahNativeDir)/**/scah_c.dll"
+          Pack="true"
+          PackagePath="runtimes/%(RecursiveDir)native/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>
