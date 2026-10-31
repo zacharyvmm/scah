@@ -35,8 +35,8 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <!--
-      The public API and the backend loader target Java 11. The Panama
-      backend, in src/main/java22, is a multi-release class for Java 22+.
+      The public API and the JNI backend target Java 11. The Panama backend,
+      in src/main/java22, is a multi-release class for Java 22+.
     -->
     <maven.compiler.release>11</maven.compiler.release>
     <!--
@@ -45,6 +45,18 @@
       the jar.
     -->
     <scah.library.dir>${project.basedir}/../../../target/debug</scah.library.dir>
+    <!--
+      The backend the tests use: empty for the default (Panama on Java 22+,
+      JNI before), or panama or jni.
+    -->
+    <scah.backend></scah.backend>
+    <!--
+      The JVM the tests run on, and its options. Set scah.test.jvm to a Java 11
+      to 21 java, with an empty scah.test.argLine, to test the JNI backend on
+      an older JDK.
+    -->
+    <scah.test.jvm>${java.home}/bin/java</scah.test.jvm>
+    <scah.test.argLine>--enable-native-access=ALL-UNNAMED</scah.test.argLine>
     <!-- The jar the tests run against; set it to test a jar built elsewhere. -->
     <scah.test.jar>${project.build.directory}/${project.build.finalName}.jar</scah.test.jar>
     <junit.version>5.14.4</junit.version>
@@ -125,9 +137,11 @@
           <includes>
             <include>**/*Test.java</include>
           </includes>
-          <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+          <jvm>${scah.test.jvm}</jvm>
+          <argLine>${scah.test.argLine}</argLine>
           <systemPropertyVariables>
             <scah.library.dir>${scah.library.dir}</scah.library.dir>
+            <scah.backend>${scah.backend}</scah.backend>
           </systemPropertyVariables>
         </configuration>
         <executions>
@@ -165,6 +179,9 @@
               <include>*/libscah_c.so</include>
               <include>*/libscah_c.dylib</include>
               <include>*/scah_c.dll</include>
+              <include>*/libscah_jni.so</include>
+              <include>*/libscah_jni.dylib</include>
+              <include>*/scah_jni.dll</include>
             </includes>
           </resource>
         </resources>

@@ -70,7 +70,8 @@ Rust crates and the Python and npm packages together.
 - A Java binding, `io.github.zacharyvmm:scah`, in `crates/bindings/scah-java`.
   It calls the C ABI through the Foreign Function and Memory API on Java 22
   and newer, and extracts the native library for its platform from the jar.
-  ([#124])
+  ([#124]) On Java 11 to 21 it uses JNI, through `crates/bindings/scah-jni`.
+  ([#125])
 - Arrow export: `Store.to_arrow()` in Python and `scah_store_export_arrow` in C
   hand matches over as an Arrow table whose string columns point into the
   parsed HTML and text buffers, ready for polars, pyarrow, DuckDB, and other
@@ -251,3 +252,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#122]: https://github.com/zacharyvmm/scah/pull/122
 [#123]: https://github.com/zacharyvmm/scah/pull/123
 [#124]: https://github.com/zacharyvmm/scah/pull/124
+[#125]: https://github.com/zacharyvmm/scah/pull/125
