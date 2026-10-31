@@ -8,7 +8,9 @@
 //!
 //! 1. Describe a query with a [`ScahQueryBuilder`], nesting child builders
 //!    with [`scah_query_builder_then`], and compile it with [`scah_query_build`].
-//! 2. Parse HTML against one or more queries with [`scah_parse`].
+//! 2. Parse HTML against one or more queries with [`scah_parse`]. UTF-16
+//!    HTML, such as a Java or .NET string, goes to [`scah_parse_utf16`], or
+//!    piece by piece through a [`ScahHtml`] to [`scah_parse_html`].
 //! 3. Look up matches with [`scah_store_get`] and [`scah_element_get`], then
 //!    read element fields with the `scah_element_*` getters, or export a
 //!    whole result set as Arrow columns with [`scah_store_export_arrow`].
@@ -43,6 +45,7 @@
 //! once.
 
 mod error;
+mod html;
 mod query;
 mod store;
 mod string;
@@ -52,6 +55,7 @@ mod arrow;
 
 pub use arrow::scah_store_export_arrow;
 pub use error::{ScahError, ScahStatus, scah_error_free, scah_error_message};
+pub use html::{ScahHtml, scah_html_free, scah_html_new, scah_html_push_utf16};
 pub use query::{
     ScahQuery, ScahQueryBuilder, ScahSave, scah_query_build, scah_query_builder_all,
     scah_query_builder_clone, scah_query_builder_first, scah_query_builder_free,
@@ -62,8 +66,8 @@ pub use store::{
     ScahElementId, ScahElementList, ScahStore, scah_element_attribute, scah_element_attribute_at,
     scah_element_attribute_count, scah_element_class_name, scah_element_get, scah_element_id,
     scah_element_inner_html, scah_element_list_free, scah_element_list_ids, scah_element_list_len,
-    scah_element_name, scah_element_raw_text, scah_element_text, scah_parse, scah_store_free,
-    scah_store_get, scah_store_len, scah_store_query,
+    scah_element_name, scah_element_raw_text, scah_element_text, scah_parse, scah_parse_html,
+    scah_parse_utf16, scah_store_free, scah_store_get, scah_store_len, scah_store_query,
 };
 pub use string::{ScahOptionalStringView, ScahStringView};
 

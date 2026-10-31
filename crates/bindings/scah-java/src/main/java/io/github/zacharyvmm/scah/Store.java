@@ -25,8 +25,8 @@ public final class Store implements AutoCloseable {
     /**
      * Parse {@code html} against {@code queries}.
      *
-     * <p>Unpaired surrogates in {@code html} are replaced with {@code ?}, as {@link
-     * String#getBytes(java.nio.charset.Charset)} does.
+     * <p>Unpaired surrogates in {@code html} are replaced with U+FFFD, as the Encoding Standard
+     * does.
      *
      * @throws ScahException when no queries are given, or the HTML nests too deeply or is 4 GiB
      *     or longer
@@ -34,7 +34,34 @@ public final class Store implements AutoCloseable {
      */
     public static Store parse(String html, Query... queries) {
         Objects.requireNonNull(html, "html");
-        return parse(queries, (backend, handles) -> backend.parse(html, handles));
+        return parse(queries, (backend, handles) -> backend.parseHtml(encode(backend, html), handles));
+    }
+
+    /** UTF-16 units of a string handed to the native library per call. */
+    private static final int BLOCK = 8192;
+
+    /**
+     * Native HTML holding {@code html} as UTF-8.
+     *
+     * <p>The library encodes the string a block at a time, straight into the buffer the store
+     * will own: one pass over the document, where encoding it here, copying it into native
+     * memory, and validating it there would be three. Each block is still in cache when it is
+     * encoded, and no copy of the whole document is allocated.
+     */
+    private static long encode(Backend backend, String html) {
+        long encoded = backend.htmlNew(html.length());
+        try {
+            char[] block = new char[Math.min(html.length(), BLOCK)];
+            for (int start = 0; start < html.length(); start += BLOCK) {
+                int end = Math.min(html.length(), start + BLOCK);
+                html.getChars(start, end, block, 0);
+                backend.htmlPush(encoded, block, end - start);
+            }
+            return encoded;
+        } catch (RuntimeException | Error e) {
+            backend.htmlFree(encoded);
+            throw e;
+        }
     }
 
     /**

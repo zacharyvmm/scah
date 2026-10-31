@@ -60,6 +60,10 @@ final class PanamaBackend implements Backend {
     private final MethodHandle queryBuild;
     private final MethodHandle queryFree;
     private final MethodHandle parse;
+    private final MethodHandle htmlNew;
+    private final MethodHandle htmlPushUtf16;
+    private final MethodHandle htmlFree;
+    private final MethodHandle parseHtml;
     private final MethodHandle storeFree;
     private final MethodHandle storeLen;
     private final MethodHandle storeGet;
@@ -111,6 +115,13 @@ final class PanamaBackend implements Backend {
 
         parse = bind.function(
                 "scah_parse", FunctionDescriptor.of(JAVA_INT, STRING_VIEW, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS));
+        htmlNew = bind.function(
+                "scah_html_new", FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_BOOLEAN, ADDRESS, ADDRESS));
+        htmlPushUtf16 = bind.arrayReader(
+                "scah_html_push_utf16", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, JAVA_LONG, ADDRESS));
+        htmlFree = bind.function("scah_html_free", FunctionDescriptor.ofVoid(ADDRESS));
+        parseHtml = bind.function(
+                "scah_parse_html", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS));
         storeFree = bind.function("scah_store_free", FunctionDescriptor.ofVoid(ADDRESS));
         storeLen = bind.reader("scah_store_len", FunctionDescriptor.of(JAVA_LONG, ADDRESS));
         storeGet = bind.function(
@@ -208,8 +219,45 @@ final class PanamaBackend implements Backend {
     }
 
     @Override
-    public long parse(String html, long[] queries) {
-        return parse(html.getBytes(StandardCharsets.UTF_8), queries);
+    public long htmlNew(long capacity) {
+        Scratch s = scratch.get();
+        try {
+            check((int) htmlNew.invokeExact(capacity, false, s.out, s.error));
+            return s.out.get(ADDRESS, 0).address();
+        } catch (Throwable e) {
+            throw rethrow(e);
+        }
+    }
+
+    @Override
+    public void htmlPush(long html, char[] units, int length) {
+        try {
+            check((int) htmlPushUtf16.invokeExact(
+                    MemorySegment.ofAddress(html), MemorySegment.ofArray(units), (long) length, scratch.get().error));
+        } catch (Throwable e) {
+            throw rethrow(e);
+        }
+    }
+
+    @Override
+    public void htmlFree(long html) {
+        try {
+            htmlFree.invokeExact(MemorySegment.ofAddress(html));
+        } catch (Throwable e) {
+            throw rethrow(e);
+        }
+    }
+
+    @Override
+    public long parseHtml(long html, long[] queries) {
+        Scratch s = scratch.get();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment list = arena.allocateFrom(JAVA_LONG, queries);
+            check((int) parseHtml.invokeExact(MemorySegment.ofAddress(html), list, (long) queries.length, s.out, s.error));
+            return s.out.get(ADDRESS, 0).address();
+        } catch (Throwable e) {
+            throw rethrow(e);
+        }
     }
 
     @Override
@@ -444,6 +492,14 @@ final class PanamaBackend implements Backend {
         /** A short, bounded call that only reads, linked without a thread-state transition. */
         MethodHandle reader(String name, FunctionDescriptor descriptor) {
             return linker.downcallHandle(find(name), descriptor, Linker.Option.critical(false));
+        }
+
+        /**
+         * A short, bounded call that may also read Java arrays in place, linked without a
+         * thread-state transition.
+         */
+        MethodHandle arrayReader(String name, FunctionDescriptor descriptor) {
+            return linker.downcallHandle(find(name), descriptor, Linker.Option.critical(true));
         }
 
         private MemorySegment find(String name) {

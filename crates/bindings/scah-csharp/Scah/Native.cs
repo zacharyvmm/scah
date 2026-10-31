@@ -109,6 +109,16 @@ internal static unsafe partial class Native
         StringView html, nint* queries, nuint count, nint* store, nint* error);
 
     [LibraryImport(Library)]
+    internal static partial int scah_parse_utf16(
+        char* html,
+        nuint len,
+        byte rejectLoneSurrogates,
+        nint* queries,
+        nuint count,
+        nint* store,
+        nint* error);
+
+    [LibraryImport(Library)]
     internal static partial void scah_store_free(nint store);
 
     [LibraryImport(Library)]

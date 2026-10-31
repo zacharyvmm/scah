@@ -3,10 +3,12 @@
 use crate::error::{
     ErrorSlot, Failure, Result, ScahError, ScahStatus, deref, guard, guard_value, out, out_handle,
 };
+use crate::html::{ScahHtml, check_input_size, lone_surrogates, utf16_slice};
 use crate::query::ScahQuery;
 use crate::string::{ScahOptionalStringView, ScahStringView};
 use scah::{ElementId, ElementRef, Elements, ParseError};
-use scah_ffi::OwnedStore;
+use scah_ffi::utf16::utf16_to_string;
+use scah_ffi::{OwnedQuery, OwnedStore};
 use std::sync::Arc;
 
 /// Identifies an element within the store that produced it.
@@ -57,40 +59,132 @@ pub unsafe extern "C" fn scah_parse(
     // SAFETY: the caller passes a NULL or writable `out_error`.
     let out_error = unsafe { ErrorSlot::new(out_error) };
     guard(out_error, || {
-        // SAFETY: the caller passes a NULL or writable `out_store`.
-        let out_store = unsafe { out_handle(out_store, "out_store") }?;
-        if count == 0 {
-            return Err(ParseError::EmptyQueries.into());
-        }
-        if queries.is_null() {
-            return Err(Failure::null("queries"));
-        }
-        // SAFETY: the caller guarantees `count` readable pointers.
-        let queries = unsafe { std::slice::from_raw_parts(queries, count) };
-        let queries = queries
-            .iter()
-            .enumerate()
-            .map(|(index, &query)| {
-                // SAFETY: the caller passes NULL or live queries.
-                match unsafe { query.as_ref() } {
-                    Some(query) => Ok(&query.inner),
-                    None => Err(Failure::null(&format!("queries[{index}]"))),
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
+        // SAFETY: guaranteed by the caller.
+        let (out_store, queries) = unsafe { parse_arguments(queries, count, out_store) }?;
         // scah rejects HTML of 4 GiB or more; do so before copying it.
-        if html.len >= u32::MAX as usize {
-            return Err(ParseError::InputTooLarge.into());
-        }
+        check_input_size(html.len)?;
         // SAFETY: the caller passes a readable view.
         let html = unsafe { html.to_str("html") }?.to_owned();
-
-        let inner = Arc::new(OwnedStore::parse(html, &queries)?);
-        let store = Box::new(ScahStore { inner });
-        // SAFETY: checked non-NULL and writable above.
-        unsafe { out_store.write(Box::into_raw(store)) };
-        Ok(())
+        store_parse(html, &queries, out_store)
     })
+}
+
+/// Parse UTF-16 `html` of `len` code units against `queries`.
+///
+/// Encodes `html` as UTF-8 straight into the store's own copy, in one pass,
+/// which is faster than encoding it first and calling `scah_parse`. A lone
+/// surrogate fails with `SCAH_STATUS_INVALID_UTF16` when
+/// `reject_lone_surrogates` is true, and is otherwise replaced with U+FFFD.
+/// Otherwise like `scah_parse`.
+///
+/// # Safety
+///
+/// `html` must be NULL with `len` 0, or point to `len` readable units.
+/// `queries` must be NULL or point to `count` readable pointers, each NULL or
+/// a live query. `out_store` and `out_error` must be NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scah_parse_utf16(
+    html: *const u16,
+    len: usize,
+    reject_lone_surrogates: bool,
+    queries: *const *const ScahQuery,
+    count: usize,
+    out_store: *mut *mut ScahStore,
+    out_error: *mut *mut ScahError,
+) -> ScahStatus {
+    // SAFETY: the caller passes a NULL or writable `out_error`.
+    let out_error = unsafe { ErrorSlot::new(out_error) };
+    guard(out_error, || {
+        // SAFETY: guaranteed by the caller.
+        let (out_store, queries) = unsafe { parse_arguments(queries, count, out_store) }?;
+        // Every unit encodes to at least one byte.
+        check_input_size(len)?;
+        // SAFETY: the caller passes `len` readable units.
+        let units = unsafe { utf16_slice(html, len) }?;
+        let html = utf16_to_string(units, lone_surrogates(reject_lone_surrogates))?;
+        store_parse(html, &queries, out_store)
+    })
+}
+
+/// Parse the HTML in `html` against `queries`, freeing `html`.
+///
+/// `html` is freed whether or not parsing succeeds, and the store takes its
+/// UTF-8 without copying it. A high surrogate that ends the HTML is lone.
+/// Otherwise like `scah_parse`.
+///
+/// # Safety
+///
+/// `html` must be NULL or live HTML, which this call takes ownership of.
+/// `queries` must be NULL or point to `count` readable pointers, each NULL or
+/// a live query. `out_store` and `out_error` must be NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scah_parse_html(
+    html: *mut ScahHtml,
+    queries: *const *const ScahQuery,
+    count: usize,
+    out_store: *mut *mut ScahStore,
+    out_error: *mut *mut ScahError,
+) -> ScahStatus {
+    // Take ownership first, so `html` is freed on every path.
+    // SAFETY: the caller transfers ownership of NULL or live HTML.
+    let html = (!html.is_null()).then(|| unsafe { Box::from_raw(html) });
+    // SAFETY: the caller passes a NULL or writable `out_error`.
+    let out_error = unsafe { ErrorSlot::new(out_error) };
+    guard(out_error, || {
+        // SAFETY: guaranteed by the caller.
+        let (out_store, queries) = unsafe { parse_arguments(queries, count, out_store) }?;
+        let html = html
+            .ok_or_else(|| Failure::null("html"))?
+            .encoder
+            .finish()?;
+        store_parse(html, &queries, out_store)
+    })
+}
+
+/// Check the arguments every parse entry point shares, clearing `*out_store`.
+///
+/// # Safety
+///
+/// As for `scah_parse`.
+unsafe fn parse_arguments<'q>(
+    queries: *const *const ScahQuery,
+    count: usize,
+    out_store: *mut *mut ScahStore,
+) -> Result<(*mut *mut ScahStore, Vec<&'q OwnedQuery>)> {
+    // SAFETY: the caller passes a NULL or writable `out_store`.
+    let out_store = unsafe { out_handle(out_store, "out_store") }?;
+    if count == 0 {
+        return Err(ParseError::EmptyQueries.into());
+    }
+    if queries.is_null() {
+        return Err(Failure::null("queries"));
+    }
+    // SAFETY: the caller guarantees `count` readable pointers.
+    let queries = unsafe { std::slice::from_raw_parts(queries, count) };
+    let queries = queries
+        .iter()
+        .enumerate()
+        .map(|(index, &query)| {
+            // SAFETY: the caller passes NULL or live queries.
+            match unsafe { query.as_ref() } {
+                Some(query) => Ok(&query.inner),
+                None => Err(Failure::null(&format!("queries[{index}]"))),
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok((out_store, queries))
+}
+
+fn store_parse(
+    html: String,
+    queries: &[&OwnedQuery],
+    out_store: *mut *mut ScahStore,
+) -> Result<()> {
+    let inner = Arc::new(OwnedStore::parse(html, queries)?);
+    let store = Box::new(ScahStore { inner });
+    // SAFETY: `parse_arguments` checked it non-NULL and writable.
+    unsafe { out_store.write(Box::into_raw(store)) };
+    Ok(())
 }
 
 impl From<ParseError> for Failure {
@@ -677,6 +771,15 @@ pub(crate) mod tests {
         let status = unsafe { getter(store, element, &mut value, ptr::null_mut()) };
         assert_eq!(status, ScahStatus::Ok);
         optional(value)
+    }
+
+    /// The text of every element `selector` matched.
+    pub(crate) fn texts(store: *const ScahStore, selector: &str) -> Vec<String> {
+        get(store, selector)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|id| field(store, id, scah_element_text).unwrap_or_default())
+            .collect()
     }
 
     fn name(store: *const ScahStore, element: ScahElementId) -> String {

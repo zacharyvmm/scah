@@ -12,20 +12,22 @@
 //! never unwind into the JVM.
 
 use jni::errors::ThrowRuntimeExAndDefault;
+use jni::objects::ReleaseMode;
 use jni::objects::{
-    JByteArray, JClass, JLongArray, JObject, JObjectArray, JString, JThrowable, JValue,
+    JByteArray, JCharArray, JClass, JLongArray, JObject, JObjectArray, JString, JThrowable, JValue,
 };
 use jni::sys::{jboolean, jint, jlong};
 use jni::{Env, EnvUnowned, jni_sig, jni_str};
 use scah::lazy::{LazyQuery, LazyQueryBuilder};
 use scah::{ElementId, ElementRef, ParseError, QuerySectionId, Save};
+use scah_ffi::utf16::{LoneSurrogates, Utf16Encoder};
 use scah_ffi::{OwnedQuery, OwnedStore};
 use std::any::Any;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Bumped with every incompatible change to the native methods, so a jar and
 /// a library from different builds fail to load instead of misbehaving.
-const PROTOCOL_VERSION: jint = 1;
+const PROTOCOL_VERSION: jint = 2;
 
 // Status codes, as in scah.h.
 const INVALID_UTF8: jint = 2;
@@ -333,6 +335,89 @@ pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_parse0<'local>(
         let html = String::from_utf8(env.convert_byte_array(&html)?).map_err(|error| {
             Failure::Scah(INVALID_UTF8, format!("`html` is not valid UTF-8: {error}"))
         })?;
+        // SAFETY: the Java side keeps every query alive for the call.
+        let queries: Vec<&OwnedQuery> = handles
+            .iter()
+            .map(|&query| unsafe { borrow(query) })
+            .collect();
+        Ok(into_handle(OwnedStore::parse(html, &queries)?))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_htmlNew0<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    capacity: jlong,
+) -> jlong {
+    call(&mut env, |_| {
+        // The parser rejects 4 GiB or more, so reserving more is pointless.
+        let capacity = (capacity.max(0) as u64).min(u64::from(u32::MAX)) as usize;
+        Ok(into_handle(Utf16Encoder::with_capacity(
+            capacity,
+            LoneSurrogates::Replace,
+        )))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_htmlPush0<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    html: jlong,
+    units: JCharArray<'local>,
+    length: jint,
+) {
+    call(&mut env, |env| {
+        // SAFETY: the Java side owns the HTML and uses it from one thread.
+        let html = unsafe { borrow_mut::<Utf16Encoder>(html) };
+        let length = length.max(0) as usize;
+        if html.len().saturating_add(length) >= u32::MAX as usize {
+            return Err(Failure::Scah(
+                INPUT_TOO_LARGE,
+                "the HTML is 4 GiB or longer".into(),
+            ));
+        }
+        // Read the array in place. Encoding is bounded by `length`, which the
+        // Java side keeps to one block, so the pin is short.
+        // SAFETY: no JNI calls are made while the elements are held.
+        let elements = unsafe { units.get_elements_critical(env, ReleaseMode::NoCopyBack) }?;
+        let length = length.min(elements.len());
+        html.push(&elements[..length])
+            .expect("replacing lone surrogates cannot fail");
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_htmlFree0<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    html: jlong,
+) {
+    call(&mut env, |_| {
+        // SAFETY: the Java side frees unparsed HTML once.
+        unsafe { free::<Utf16Encoder>(html) };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_parseHtml0<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    html: jlong,
+    queries: JLongArray<'local>,
+) -> jlong {
+    // Take ownership first, so the HTML is freed on every path.
+    // SAFETY: the Java side hands over HTML it never uses again.
+    let html = unsafe { Box::from_raw(html as *mut Utf16Encoder) };
+    call(&mut env, |env| {
+        let mut handles = vec![0; queries.len(env)?];
+        queries.get_region(env, 0, &mut handles)?;
+        let html = html
+            .finish()
+            .expect("replacing lone surrogates cannot fail");
         // SAFETY: the Java side keeps every query alive for the call.
         let queries: Vec<&OwnedQuery> = handles
             .iter()

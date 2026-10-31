@@ -35,8 +35,21 @@ interface Backend {
     /** Free a query. */
     void queryFree(long query);
 
-    /** Parse {@code html} against {@code queries}. */
-    long parse(String html, long[] queries);
+    /** Start empty native HTML with room for {@code capacity} bytes of UTF-8. The caller parses or frees it. */
+    long htmlNew(long capacity);
+
+    /**
+     * Append {@code length} UTF-16 units of {@code units} to native HTML, replacing lone surrogates
+     * with U+FFFD. Backends may pin {@code units} for the call, so keep it to a block of a few
+     * thousand units.
+     */
+    void htmlPush(long html, char[] units, int length);
+
+    /** Free native HTML that was not parsed. */
+    void htmlFree(long html);
+
+    /** Parse native HTML against {@code queries}, freeing the HTML whether or not it succeeds. */
+    long parseHtml(long html, long[] queries);
 
     /** Parse UTF-8 {@code html} against {@code queries}. */
     long parse(byte[] html, long[] queries);
