@@ -259,17 +259,20 @@ def import_benchmarkdotnet(path: Path, size: int | None) -> list[Path]:
     """Read BenchmarkDotNet's full JSON report from crates/bindings/scah-csharp/Scah.Benchmarks.
 
     Each benchmark method is a scenario, named in PascalCase (`SimpleAll`),
-    and its `Library` parameter is the library.
+    and its `Library` parameter is the library. `Parameters` shortens long
+    values, so the library comes from `FullName`, which keeps them whole.
     """
     data = json.loads(path.read_text())
     by_scenario: dict[str, list[dict]] = {}
     for bench in data["Benchmarks"]:
-        parameters = dict(p.split("=", 1) for p in bench["Parameters"].split("&"))
+        library = re.search(r'Library: "((?:[^"\\]|\\.)*)"', bench["FullName"])
+        if library is None:
+            raise SystemExit(f"no Library parameter in {bench['FullName']}")
         scenario = _kebab(bench["Method"])
         stats = bench["Statistics"]
         by_scenario.setdefault(scenario, []).append(
             {
-                "library": parameters["Library"],
+                "library": library.group(1),
                 "size": None if scenario in REAL_DOCUMENTS else size,
                 "mean": stats["Mean"] / 1e6,
                 "stdev": stats["StandardDeviation"] / 1e6,

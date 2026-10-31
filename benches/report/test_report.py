@@ -104,7 +104,8 @@ class ReportTests(unittest.TestCase):
         def bench(method, library, mean_ns):
             return {
                 "Method": method,
-                "Parameters": f"Library={library}",
+                "Parameters": "Library=HtmlA(...)zzler [25]",
+                "FullName": f'Scah.Benchmarks.ScrapeBenchmark.{method}(Library: "{library}")',
                 "Statistics": {"Mean": mean_ns, "StandardDeviation": mean_ns / 10},
             }
 

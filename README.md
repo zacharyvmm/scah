@@ -374,11 +374,30 @@ Mean time per parse and query; lower is better. Multipliers are relative to scah
 ### Java
 
 <!-- benchmarks:java -->
+| Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
+| :--- | ---: | ---: | ---: | ---: |
+| **scah** | **71.0 ms** | **25.5 ms** | **6.74 ms** | **76.1 µs** |
+| scah (JNI) | 90.7 ms (1.28×) | 38.2 ms (1.50×) | 9.97 ms (1.48×) | 81.2 µs (1.07×) |
+| jsoup | 252 ms (3.54×) | 55.6 ms (2.18×) | 22.0 ms (3.26×) | 16.5 ms (216×) |
+| jsoup (StreamParser) | 308 ms (4.34×) | 58.2 ms (2.28×) | 28.7 ms (4.25×) | 5.24 µs (0.07×) |
+| Jericho | 383 ms (5.40×) | 75.6 ms (2.96×) | 22.7 ms (3.37×) | 2.91 µs (0.04×) |
+| HtmlCleaner | 1.36 s (19.1×) | 225 ms (8.80×) | 98.3 ms (14.6×) | 66.2 ms (870×) |
+| Jodd Jerry | 1.63 s (22.9×) | 70.2 ms (2.75×) | 45.8 ms (6.78×) | 44.9 ms (590×) |
+
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-31; raw data and run details in [`benches/results/java`](https://github.com/zacharyvmm/scah/tree/main/benches/results/java).
 <!-- /benchmarks:java -->
 
 ### C#
 
 <!-- benchmarks:csharp -->
+| Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
+| :--- | ---: | ---: | ---: | ---: |
+| **scah** | **63.4 ms** | **20.1 ms** | **5.16 ms** | **56.6 µs** |
+| AngleSharp | 935 ms (14.7×) | 176 ms (8.72×) | 75.0 ms (14.5×) | 62.1 ms (1,097×) |
+| HtmlAgilityPack | 1.62 s (25.5×) | 325 ms (16.1×) | 132 ms (25.5×) | 96.9 ms (1,710×) |
+| HtmlAgilityPack + Fizzler | 1.68 s (26.4×) | 263 ms (13.0×) | 135 ms (26.2×) | 97.2 ms (1,717×) |
+
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-31; raw data and run details in [`benches/results/csharp`](https://github.com/zacharyvmm/scah/tree/main/benches/results/csharp).
 <!-- /benchmarks:csharp -->
 
 See [`benches/`](https://github.com/zacharyvmm/scah/blob/main/benches/README.md) for what each scenario measures and how to

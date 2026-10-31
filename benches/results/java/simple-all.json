@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "suite": "java",
+  "scenario": "simple-all",
+  "title": "Every <a> in a flat list of <div><a> pairs",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-10-31",
+    "commit": "4c8310970f894c165f4bb24372fa6e6b6b5d5cb8",
+    "dirty": false,
+    "os": "Linux 7.0.0-38-generic",
+    "arch": "x86_64",
+    "cpu": "Intel(R) Core(TM) i7-1065G7 CPU @ 1.30GHz",
+    "runtime": "Java 25.0.5 (OpenJDK 64-Bit Server VM)"
+  },
+  "results": [
+    {
+      "library": "scah",
+      "size": 10000,
+      "mean": 6.743332490742314,
+      "stdev": 0.3177258875131553
+    },
+    {
+      "library": "scah (JNI)",
+      "size": 10000,
+      "mean": 9.965700200750485,
+      "stdev": 0.15343843964067275
+    },
+    {
+      "library": "jsoup",
+      "size": 10000,
+      "mean": 22.004764985820678,
+      "stdev": 0.5134466985572342
+    },
+    {
+      "library": "Jericho",
+      "size": 10000,
+      "mean": 22.71686723933266,
+      "stdev": 0.7416723986836686
+    },
+    {
+      "library": "jsoup (StreamParser)",
+      "size": 10000,
+      "mean": 28.68922399763889,
+      "stdev": 0.8695610342964049
+    },
+    {
+      "library": "Jodd Jerry",
+      "size": 10000,
+      "mean": 45.7500992193676,
+      "stdev": 0.4106891754660899
+    },
+    {
+      "library": "HtmlCleaner",
+      "size": 10000,
+      "mean": 98.28669963272729,
+      "stdev": 2.8204961148328986
+    }
+  ]
+}
