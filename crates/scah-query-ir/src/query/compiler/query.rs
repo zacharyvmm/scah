@@ -106,6 +106,11 @@ impl<'query> QuerySection<'query> {
     }
 }
 
+/// A built query: one or more selectors, each with what to save for its
+/// matches, ready to pass to `scah::parse`.
+///
+/// Build one with [`Query::all`] or [`Query::first`] and
+/// [`QueryBuilder::build`], or at compile time with `scah::query!`.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Query<'query> {
     pub states: Box<[Transition<'query>]>,
@@ -182,6 +187,26 @@ impl<'query, const N_STATES: usize, const N_SECTIONS: usize> QuerySpec<'query>
 }
 
 impl<'query> Query<'query> {
+    /// Start a query that keeps only the **first** element matching
+    /// `query`.
+    ///
+    /// The parse stops looking for this query once it has a match, so a
+    /// `first` query on its own can end the parse early.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SelectorParseError`] if `query` is not a valid selector or
+    /// uses syntax scah cannot evaluate in a single forward pass, such as
+    /// `:has()` or `:last-child`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use scah_query_ir::{Query, Save};
+    ///
+    /// let query = Query::first("head > title", Save::only_text())?.build();
+    /// # Ok::<(), scah_query_ir::SelectorParseError>(())
+    /// ```
     pub fn first(
         query: &'query str,
         save: Save,
@@ -225,6 +250,24 @@ impl<'query> Query<'query> {
         })
     }
 
+    /// Start a query that keeps **every** element matching `query`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SelectorParseError`] if `query` is not a valid selector or
+    /// uses syntax scah cannot evaluate in a single forward pass, such as
+    /// `:has()` or `:last-child`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use scah_query_ir::{Query, Save};
+    ///
+    /// let query = Query::all("a[href]", Save::none())?.build();
+    ///
+    /// assert!(Query::all("li:has(a)", Save::none()).is_err());
+    /// # Ok::<(), scah_query_ir::SelectorParseError>(())
+    /// ```
     pub fn all(query: &'query str, save: Save) -> Result<QueryBuilder<'query>, SelectorParseError> {
         Self::build_initial(query, save, SelectionKind::All, false)
     }

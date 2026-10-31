@@ -1,105 +1,107 @@
-//! # scah - Streaming CSS-selector-driven HTML extraction
+//! # scah: CSS selectors over streaming HTML
 //!
-//! **scah** (*scan HTML*) is a high-performance parsing library that bridges the gap
-//! between SAX/StAX streaming efficiency and DOM convenience. Instead of building a
-//! full DOM or manually tracking parser state, you declare what you want with
-//! **CSS selectors**; the library handles the streaming complexity and builds a
-//! targeted [`Store`] containing only your selections.
+//! **scah** (*scan HTML*) extracts the elements you select from an HTML
+//! document in a single forward pass, without building a DOM. You describe
+//! what you want with CSS selectors; scah matches them while the document
+//! streams through its parser and keeps only the matches.
 //!
-//! ## Highlights
+//! It sits between a SAX-style tokenizer, where you track parser state by
+//! hand, and a DOM, where you pay to build a whole tree before you can query
+//! it.
 //!
-//! | Feature | Detail |
-//! |---------|--------|
-//! | **Single pass, no DOM** | Selectors are evaluated as the document streams through the parser; only matches are stored |
-//! | **Familiar API** | CSS selectors including descendant, child, and sibling combinators |
-//! | **Composable queries** | Chain selections with [`QueryBuilder::then`] for hierarchical data extraction |
-//! | **Zero-copy** | Element names, attributes, and inner HTML are `&str` slices into the source |
-//! | **Multi-language** | Rust core with Python and TypeScript/JavaScript bindings |
+//! ## Quick start
 //!
-//! ## Quick Start
+//! ```rust
+//! use scah::{Query, Save, parse};
+//!
+//! let html = r#"<ul><li><a href="/one">One</a></li><li><a href="/two">Two</a></li></ul>"#;
+//!
+//! let queries = [Query::all("a[href]", Save::only_text())?.build()];
+//! let store = parse(html, &queries)?;
+//!
+//! let links: Vec<_> = store
+//!     .get("a[href]")
+//!     .unwrap()
+//!     .map(|a| (a.text().unwrap(), a.attribute("href").unwrap()))
+//!     .collect();
+//! assert_eq!(links, [("One", "/one"), ("Two", "/two")]);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ## Concepts
+//!
+//! - **[`Query`]**: a selector and what to save for its matches.
+//!   [`Query::all`] keeps every match; [`Query::first`] keeps the first and
+//!   lets the parse stop early. Selectors are validated when the query is
+//!   built, and anything scah cannot evaluate in one forward pass is a
+//!   [`SelectorParseError`], never a silently narrower match.
+//! - **[`Save`]**: which content to keep for each match: inner HTML,
+//!   source-preserving raw text, normalized text, attributes. Saving less is
+//!   faster, so ask only for what you read.
+//! - **[`parse`]**: runs every query in one pass and returns a [`Store`].
+//! - **[`Store`]** and **[`ElementRef`]**: the results. Look them up by
+//!   selector with [`Store::get`], or by position with [`Store::query`] when
+//!   two queries share a selector.
+//!
+//! ## Nested queries
+//!
+//! [`QueryBuilder::then`] scopes child queries to each match of their parent,
+//! so related data stays together and the child selectors only run inside
+//! the elements you care about:
 //!
 //! ```rust
 //! use scah::{Query, Save, parse};
 //!
 //! let html = r#"
-//!     <main>
-//!         <section>
-//!             <a href="link1">Link 1</a>
-//!             <a href="link2">Link 2</a>
-//!         </section>
-//!     </main>
+//!     <div class="product"><h2>Lamp</h2><span class="price">$20</span></div>
+//!     <div class="product"><h2>Desk</h2><span class="price">$150</span></div>
 //! "#;
 //!
-//! // Build a query: find all <a> tags with an href attribute
-//! // that are direct children of a <section> inside <main>.
-//! let queries = &[
-//!     Query::all("main > section > a[href]", Save::all())
-//!         .expect("valid selector")
-//!         .build()
-//! ];
-//!
-//! let store = parse(html, queries).expect("parse succeeds");
-//!
-//! // Iterate over matched elements
-//! for element in store.get("main > section > a[href]").unwrap() {
-//!     println!("{}: {}", element.name(), element.attribute("href").unwrap());
-//! }
-//! ```
-//!
-//! ## Structured Querying with `.then()`
-//!
-//! Instead of flat filtering, you can nest queries using closures.
-//! Child queries only run within the context of their parent match,
-//! making extraction of hierarchical relationships both efficient and ergonomic:
-//!
-//! ```rust
-//! use scah::{Query, Save, parse};
-//!
-//! # let html = "<main><section><a href='x'>Link</a></section></main>";
-//! let queries = &[Query::all("main > section", Save::all())
-//!     .expect("valid selector")
-//!     .then(|section| {
+//! let queries = [Query::all("div.product", Save::none())?
+//!     .then(|product| {
 //!         Ok([
-//!             section.all("> a[href]", Save::all())?,
-//!             section.all("div a", Save::all())?,
+//!             product.first("> h2", Save::only_text())?,
+//!             product.first(".price", Save::only_text())?,
 //!         ])
-//!     })
-//!     .expect("valid child selectors")
+//!     })?
 //!     .build()];
+//! let store = parse(html, &queries)?;
 //!
-//! let store = parse(html, queries).expect("parse succeeds");
+//! for product in store.get("div.product").unwrap() {
+//!     let name = product.get("> h2").unwrap().next().unwrap();
+//!     let price = product.get(".price").unwrap().next().unwrap();
+//!     println!("{}: {}", name.text().unwrap(), price.text().unwrap());
+//! }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! ## Architecture
+//! ## Compile-time queries
 //!
-//! Internally, scah is composed of the following layers:
+//! For selectors known at compile time, [`query!`] validates them while your
+//! crate compiles and builds the query without allocating.
 //!
-//! 1. **[`Reader`]**: A zero-copy byte-level cursor over the HTML source.
-//! 2. **CSS selector compiler**: Parses selector strings into [`Query`]
-//!    transitions, then compiles every query of a parse into one [`Program`]:
-//!    flat step and section tables with one bit per compound selector.
-//! 3. **[`XHtmlParser`]**: A streaming parser that emits open/close events and
-//!    runs the program as a bitset automaton, one frame per open element.
-//! 4. **[`Store`]**: A columnar result set: one row per saved element, one
-//!    column per saved field (name, attributes, inner HTML, raw or
-//!    normalized text), read through [`ElementRef`] handles.
+//! ## Parsing many documents
 //!
-//! ## Supported CSS Selector Syntax
+//! [`parse`] compiles its queries on every call. To run the same queries over
+//! many documents, compile them once with [`Program::compile`] and call
+//! [`parse_compiled`]. When no query saves text,
+//! [`parse_without_text_capture`] lets the linker drop the text-extraction
+//! code.
 //!
-//! | Syntax | Example | Status |
-//! |--------|---------|--------|
-//! | **Tag name** | `a`, `div` | Working |
-//! | **ID** | `#my-id` | Working |
-//! | **Class** | `.my-class` | Working |
-//! | **Descendant combinator** | `main section a` | Working |
-//! | **Child combinator** | `main > section` | Working |
-//! | **Attribute presence** | `a[href]` | Working |
-//! | **Attribute exact match** | `a[href="url"]` | Working |
-//! | **Attribute prefix** | `a[href^="https"]` | Working |
-//! | **Attribute suffix** | `a[href$=".com"]` | Working |
-//! | **Attribute substring** | `a[href*="example"]` | Working |
-//! | **Adjacent sibling** | `h1 + p` | Coming soon |
-//! | **General sibling** | `h1 ~ p` | Coming soon |
+//! ## What borrows from what
+//!
+//! Element names, ids, classes, attributes, and inner HTML are `&str` slices
+//! of the input HTML. Raw and normalized text are assembled while parsing and
+//! borrow from the [`Store`].
+//!
+//! ## Guides
+//!
+//! - [Selector support](https://github.com/zacharyvmm/scah/blob/main/docs/selectors.md):
+//!   every supported selector, and why some are rejected.
+//! - [Text extraction](https://github.com/zacharyvmm/scah/blob/main/docs/text-extraction.md):
+//!   what `inner_html`, `raw_text`, and `text` contain.
+//! - [Architecture](https://github.com/zacharyvmm/scah/blob/main/docs/architecture.md):
+//!   how a parse works, and which crate does what.
 
 use std::borrow::Cow;
 
@@ -115,7 +117,46 @@ mod otel;
 
 pub use parser::XHtmlParser;
 pub use scah_html::{Attribute, Reader, XHtmlElement};
+/// Build a query at compile time.
+///
+/// `query!` parses and validates its selectors while your crate compiles, so
+/// an unsupported selector is a compile error rather than a runtime
+/// [`SelectorParseError`](https://docs.rs/scah/latest/scah/struct.SelectorParseError.html).
+/// It expands to a `StaticQuery` backed by inline arrays, with no heap
+/// allocation.
+///
+/// Each node is `all(selector, save)` or `first(selector, save)`, optionally
+/// followed by `=> { child, child, ... }` for queries scoped to its matches,
+/// like `QueryBuilder::then`. Selectors must be string literals. `save` must
+/// be a `Save` constructor that takes no arguments, such as `Save::all()` or
+/// `Save::only_text()`, optionally followed by `.without_attributes()`.
+///
+/// ```rust
+/// use scah::{parse, query};
+///
+/// let html = "<article><h1>Title</h1><a href='/one'>One</a></article>";
+///
+/// let queries = [query! {
+///     all("article", Save::none()) => {
+///         first("> h1", Save::only_text()),
+///         all("a[href]", Save::none()),
+///     }
+/// }];
+///
+/// let store = parse(html, &queries).expect("parse succeeds");
+/// let article = store.get("article").unwrap().next().unwrap();
+/// assert_eq!(article.get("> h1").unwrap().next().unwrap().text(), Some("Title"));
+/// ```
+///
+/// Selectors that scah cannot evaluate fail to compile:
+///
+/// ```compile_fail
+/// use scah::query;
+///
+/// let query = query! { all("li:last-child", Save::none()) };
+/// ```
 pub use scah_macros::query;
+#[doc(hidden)]
 pub use scah_query_ir::lazy;
 pub use scah_query_ir::{
     AnPlusB, AttributeCaseSensitivity, AttributeSelection, AttributeSelectionKind,
@@ -128,6 +169,11 @@ pub use scah_query_ir::{
 pub use scah_store::{
     Attributes, CapacityOptions, ElementId, ElementRef, Elements, HeapUsage, Store,
 };
+
+// Runs the Rust examples in the README as doctests, so they stay correct.
+#[cfg(doctest)]
+#[doc = include_str!("../../../README.md")]
+struct ReadmeDoctests;
 
 /// Implementation details referenced by `query!` expansions.
 #[doc(hidden)]
@@ -263,8 +309,8 @@ impl From<scah_html::DepthExceeded> for ParseError {
 ///
 /// - `html`: The HTML source string. All returned string slices in the
 ///   resulting [`Store`] borrow directly from this string (zero-copy).
-/// - `queries`: A slice of compiled [`Query`] objects. Each query is
-///   executed concurrently against the same token stream in a single pass.
+/// - `queries`: The queries to run, built with [`Query`] or [`query!`]. All
+///   of them run together in a single pass over the document.
 ///
 /// # Example
 ///
