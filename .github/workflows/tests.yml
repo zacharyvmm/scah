@@ -68,7 +68,9 @@ jobs:
           python3 benches/report/report.py readme --check \
             README.md \
             crates/bindings/scah-python/README.md \
-            crates/bindings/scah-node/README.md
+            crates/bindings/scah-node/README.md \
+            crates/bindings/scah-java/README.md \
+            crates/bindings/scah-csharp/README.md
       - name: Verify third-party license notice
         run: |
           test -f crates/scah/THIRD_PARTY_LICENSES/WHATWG-HTML.txt
@@ -258,7 +260,8 @@ jobs:
             crates/bindings/scah-c/include crates/bindings/scah-csharp crates/bindings/scah-java \
             crates/bindings/scah-jni \
             .github/workflows/native-libraries.yml .github/workflows/tests.yml \
-            ':(exclude)*.md'; then
+            ':(exclude)*.md' ':(exclude)crates/bindings/scah-csharp/Scah.Benchmarks/**' \
+            ':(exclude)crates/bindings/scah-java/benchmark/**'; then
             echo "No native-library-relevant changes; skipping the native library build."
             echo "relevant=false" >> "$GITHUB_OUTPUT"
           else
@@ -449,6 +452,37 @@ jobs:
           # Java 11 to 21 reject the option that allows native access.
           if (( ${{ matrix.java }} < 22 )); then args+=(-Dscah.test.argLine=); fi
           "$mvnw" -B verify "${args[@]}"
+
+  benchmark-harnesses:
+    name: Java and C# Benchmark Harnesses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Build native libraries
+        run: cargo build --release -p scah-c -p scah-jni
+      # One short pass each: every benchmark first checks that its library
+      # finds what it should. The WHATWG scenario needs a download, so it is
+      # left out.
+      - name: Check Java benchmarks
+        working-directory: crates/bindings/scah-java
+        run: |
+          ./mvnw -B install -DskipTests -DskipITs
+          cd benchmark
+          ../mvnw -B package
+          java --enable-native-access=ALL-UNNAMED -Dscah.library.dir="$GITHUB_WORKSPACE/target/release" \
+            -jar target/benchmarks.jar -e whatwgAllLinks -foe true -f 1 -wi 0 -i 1 -r 100ms
+      - name: Check C# benchmarks
+        working-directory: crates/bindings/scah-csharp/Scah.Benchmarks
+        run: dotnet run -c Release -- --job dry --filter '*SimpleAll*' '*SimpleFirst*' '*NestedAll*'
 
   java-package:
     name: Java Package

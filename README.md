@@ -371,6 +371,16 @@ Mean time per parse and query; lower is better. Multipliers are relative to scah
 Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-03; raw data and run details in [`benches/results/node`](https://github.com/zacharyvmm/scah/tree/main/benches/results/node).
 <!-- /benchmarks:node -->
 
+### Java
+
+<!-- benchmarks:java -->
+<!-- /benchmarks:java -->
+
+### C#
+
+<!-- benchmarks:csharp -->
+<!-- /benchmarks:csharp -->
+
 See [`benches/`](https://github.com/zacharyvmm/scah/blob/main/benches/README.md) for what each scenario measures and how to
 reproduce these numbers.
 

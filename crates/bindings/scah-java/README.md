@@ -92,6 +92,15 @@ copies UTF-8 byte arrays once less when parsing.
 See the [main README](https://github.com/zacharyvmm/scah#selector-support) for
 supported selectors and text-extraction semantics.
 
+## Benchmarks
+
+Measured with JMH on Java 25. `scah` uses the Foreign Function and Memory
+API; `scah (JNI)` the JNI backend. jsoup's `StreamParser`, like Jericho in the
+first-match scenario, stops reading at the first match.
+
+<!-- benchmarks:java -->
+<!-- /benchmarks:java -->
+
 ## Development
 
 The public API and the JNI backend, whose native half is

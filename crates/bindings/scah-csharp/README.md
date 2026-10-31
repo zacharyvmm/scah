@@ -72,6 +72,14 @@ Failures throw `ScahException`, whose `Status` says why, such as
 See the [main README](https://github.com/zacharyvmm/scah#selector-support) for
 supported selectors and text-extraction semantics.
 
+## Benchmarks
+
+Measured with BenchmarkDotNet on .NET 10. `HtmlAgilityPack` queries with
+XPath, its own query language; `HtmlAgilityPack + Fizzler` with CSS selectors.
+
+<!-- benchmarks:csharp -->
+<!-- /benchmarks:csharp -->
+
 ## Development
 
 The binding calls the C ABI in [`crates/bindings/scah-c`](../scah-c) through

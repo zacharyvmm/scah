@@ -56,9 +56,9 @@ lint:
     cd crates/bindings/scah-node && bun run lint
 
 # Run every comparison benchmark into benches/results, then refresh README tables
-bench: bench-preflight bench-rust bench-node bench-python bench-readme
+bench: bench-preflight bench-rust bench-node bench-python bench-java bench-csharp bench-readme
 bench-readme:
-    python3 benches/report/report.py readme README.md crates/bindings/scah-python/README.md crates/bindings/scah-node/README.md
+    python3 benches/report/report.py readme README.md crates/bindings/scah-python/README.md crates/bindings/scah-node/README.md crates/bindings/scah-java/README.md crates/bindings/scah-csharp/README.md
 
 # Requires cargo-criterion: cargo install cargo-criterion
 # One bench per invocation: cargo-criterion forwards repeated --bench flags as `--bench a b c`, which cargo bench rejects
@@ -81,9 +81,13 @@ bench-rust-nested:
 bench-preflight:
     #!/usr/bin/env bash
     missing=0
-    for tool in cargo-criterion bun uv python3; do
+    for tool in cargo-criterion bun uv python3 dotnet; do
         command -v "$tool" > /dev/null || { echo "missing $tool on PATH" >&2; missing=1; }
     done
+    java="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+    if ! version=$("$java" -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java.specification.version = //p') || (( ${version:-0} < 22 )); then
+        echo "bench-java needs JDK 22 or newer on JAVA_HOME or PATH" >&2; missing=1
+    fi
     [ -f benches/bench_data/html.spec.whatwg.org.html ] || { echo "missing WHATWG spec; run: just download-html-spec-bench" >&2; missing=1; }
     exit $missing
 
@@ -100,6 +104,20 @@ bench-python-scenario test scenario size="":
     cd crates/bindings/scah-python && uv run --all-extras pytest benches/{{test}} --benchmark-columns=min,mean,max --benchmark-sort=mean --benchmark-warmup-iterations 5 --benchmark-json benches/{{scenario}}.json
     python3 benches/report/report.py import-pytest crates/bindings/scah-python/benches/{{scenario}}.json --suite python --scenario {{scenario}} {{ if size != "" { "--size " + size } else { "" } }}
     rm crates/bindings/scah-python/benches/{{scenario}}.json
+
+# Needs JDK 22+ (for the Panama backend) on JAVA_HOME or PATH
+bench-java:
+    cargo build --release -p scah-c -p scah-jni
+    cd crates/bindings/scah-java && ./mvnw -B -q install -DskipTests -DskipITs
+    cd crates/bindings/scah-java/benchmark && ../mvnw -B -q package
+    cd crates/bindings/scah-java/benchmark && "${JAVA_HOME:+$JAVA_HOME/bin/}java" --enable-native-access=ALL-UNNAMED \
+        -Dscah.library.dir="$PWD/../../../../target/release" -jar target/benchmarks.jar -rf json -rff target/jmh.json
+    python3 benches/report/report.py import-jmh crates/bindings/scah-java/benchmark/target/jmh.json --size 10000
+
+bench-csharp:
+    cargo build --release -p scah-c
+    cd crates/bindings/scah-csharp/Scah.Benchmarks && dotnet run -c Release -- --artifacts bin/BenchmarkDotNet.Artifacts
+    python3 benches/report/report.py import-benchmarkdotnet crates/bindings/scah-csharp/Scah.Benchmarks/bin/BenchmarkDotNet.Artifacts/results/Scah.Benchmarks.ScrapeBenchmark-report-full.json --size 10000
 
 # Performance gates: compare this checkout against a base revision (x86-64 only)
 gate-sibling base="origin/main":
