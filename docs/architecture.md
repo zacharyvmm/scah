@@ -18,26 +18,23 @@ yet. See [Selector support](selectors.md).
 
 ## A parse, step by step
 
-```text
-               ┌──────────────┐
- queries ────▶ │   compile    │  every selector of every query ▶ one Program
-               └──────┬───────┘
-                      ▼
-               ┌──────────────┐
- HTML ───────▶ │  find tags   │  SIMD search for the next tag; the tag name
-               │              │  becomes a one-byte id
-               ├──────────────┤
-               │ open element │  close what the tag implies; match it against
-               │              │  the program; read only the attributes needed
-               ├──────────────┤
-               │   capture    │  copy text for saved elements that want it
-               ├──────────────┤
-               │ close element│  finish saved content; drop its match state
-               └──────┬───────┘
-                      ▼
-               ┌──────────────┐
-               │    Store     │  one row per match, one column per saved field
-               └──────────────┘
+```mermaid
+flowchart TD
+    queries([Queries]) --> compile["<b>Compile</b><br/>every selector of every query into one Program"]
+    html([HTML]) --> findTags
+    compile --> findTags
+
+    subgraph onePass ["One forward pass over the document"]
+        findTags["<b>Find tags</b><br/>SIMD search for the next tag,<br/>the tag name becomes a one-byte id"]
+        openTag["<b>Open element</b><br/>close what the tag implies, match it against the program,<br/>read only the attributes needed"]
+        captureText["<b>Capture</b><br/>copy text for saved elements that want it"]
+        closeTag["<b>Close element</b><br/>finish saved content, drop its match state"]
+        findTags --> openTag --> captureText --> closeTag
+        closeTag -->|"next tag"| findTags
+    end
+
+    findTags -->|"end of input"| store[("<b>Store</b><br/>one row per match,<br/>one column per saved field")]
+    onePass -. "every query is a satisfied first()" .-> store
 ```
 
 1. **Compile.** `Program::compile` numbers every compound selector of every
