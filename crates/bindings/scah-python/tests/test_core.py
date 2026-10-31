@@ -438,3 +438,21 @@ def test_queries_with_the_same_selector_keep_separate_results():
     assert [a.inner_html for a in store.query(1)] == ["one"]
     assert len(store.get("a")) == 1
     assert store.query(2) is None
+
+
+def test_parse_from_many_threads():
+    """parse releases the GIL; parses on other threads must not see each
+    other's documents or queries."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    query = Query.all("a[href]", Save.only_text()).build()
+
+    def links(n):
+        html = "".join(f"<a href='/{n}/{i}'>{n}-{i}</a>" for i in range(200))
+        store = parse(html, [query])
+        return [(a.get_attribute("href"), a.text) for a in store.get("a[href]")]
+
+    with ThreadPoolExecutor(8) as pool:
+        results = list(pool.map(links, range(64)))
+    for n, result in enumerate(results):
+        assert result == [(f"/{n}/{i}", f"{n}-{i}") for i in range(200)]

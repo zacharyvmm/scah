@@ -17,9 +17,14 @@ use scah_ffi::{OwnedQuery, OwnedStore};
 
 #[gen_stub_pyfunction]
 #[pyfunction]
-fn parse(html: String, queries: Vec<PyRef<PyQuery>>) -> PyResult<PyStore> {
+fn parse(py: Python<'_>, html: String, queries: Vec<PyRef<PyQuery>>) -> PyResult<PyStore> {
     let queries: Vec<&OwnedQuery> = queries.iter().map(|q| &q.query).collect();
-    let store = OwnedStore::parse(html, &queries).map_err(parse_error)?;
+    // The parse touches no Python objects: it owns the HTML and only reads
+    // the compiled queries, which are immutable. Release the GIL so other
+    // Python threads, including other parses, run meanwhile.
+    let store = py
+        .detach(|| OwnedStore::parse(html, &queries))
+        .map_err(parse_error)?;
     Ok(PyStore {
         store: Arc::new(store),
     })
