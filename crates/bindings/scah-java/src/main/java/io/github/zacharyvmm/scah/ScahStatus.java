@@ -22,6 +22,8 @@ public enum ScahStatus {
     INVALID_ARGUMENT(9),
     /** A result was too large to export. */
     EXPORT_TOO_LARGE(10),
+    /** An input UTF-16 string had a lone surrogate, and the call rejects them. */
+    INVALID_UTF16(11),
     /** A status newer than this version of the binding. */
     UNKNOWN(-1);
 

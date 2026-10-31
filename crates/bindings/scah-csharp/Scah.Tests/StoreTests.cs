@@ -1,4 +1,3 @@
-using System.Text;
 
 namespace Scah.Tests;
 
@@ -115,6 +114,16 @@ public class StoreTests
     }
 
     [Fact]
+    public void LongNonAsciiStringsKeepTheirPairs()
+    {
+        string text = new string('x', 10_000) + "\U0001F600 café 日本 " + new string('y', 20_000);
+        using Query query = Query.All("p", Save.OnlyText).Build();
+        using Store store = Store.Parse("<p>" + text + "</p>", query);
+
+        Assert.Equal(text, Assert.Single(store.Get("p")).Text);
+    }
+
+    [Fact]
     public void InvalidUtf8IsRejected()
     {
         using Query query = Query.All("a", Save.All).Build();
@@ -126,7 +135,9 @@ public class StoreTests
     public void LoneSurrogatesAreRejected()
     {
         using Query query = Query.All("a", Save.All).Build();
-        Assert.Throws<EncoderFallbackException>(() => Store.Parse("<a>\ud800</a>", query));
+        var error = Assert.Throws<ScahException>(() => Store.Parse("<a>\ud800</a>", query));
+        Assert.Equal(ScahStatus.InvalidUtf16, error.Status);
+        Assert.Contains("U+D800 at UTF-16 offset 3", error.Message);
     }
 
     [Fact]

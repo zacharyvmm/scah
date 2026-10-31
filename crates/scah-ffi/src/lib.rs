@@ -15,8 +15,12 @@
 //! The [`arrow`] module exports query results as Apache Arrow columns through
 //! the Arrow C Data Interface, borrowing strings from the store instead of
 //! copying them.
+//!
+//! The [`utf16`] module encodes UTF-16 strings, such as Java's and .NET's, as
+//! the UTF-8 HTML an [`OwnedStore`] parses, in one pass.
 
 pub mod arrow;
+pub mod utf16;
 
 use scah::lazy::LazyQueryBuilder;
 use scah::{ParseError, Query, SelectorParseError, Store};

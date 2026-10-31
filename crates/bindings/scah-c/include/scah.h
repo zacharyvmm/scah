@@ -7,7 +7,9 @@
  * Workflow
  *   1. Describe a query with a ScahQueryBuilder, nesting child builders with
  *      scah_query_builder_then, and compile it with scah_query_build.
- *   2. Parse HTML against one or more queries with scah_parse.
+ *   2. Parse HTML against one or more queries with scah_parse. UTF-16
+ *      HTML, such as a Java or .NET string, goes to scah_parse_utf16, or
+ *      piece by piece through a ScahHtml to scah_parse_html.
  *   3. Look up matches with scah_store_get and scah_element_get, then read
  *      element fields with the scah_element_* getters, or export a whole
  *      result set as Arrow columns with scah_store_export_arrow.
@@ -151,6 +153,10 @@ typedef enum ScahStatus {
    * a buffer of 2 GiB or more, past Arrow's 32-bit offsets.
    */
   SCAH_STATUS_EXPORT_TOO_LARGE = 10,
+  /**
+   * An input UTF-16 string had a lone surrogate, and the call rejects them.
+   */
+  SCAH_STATUS_INVALID_UTF16 = 11,
 } ScahStatus;
 
 /**
@@ -168,6 +174,15 @@ typedef struct ScahElementList ScahElementList;
  * Read it with `scah_error_message` and release it with `scah_error_free`.
  */
 typedef struct ScahError ScahError;
+
+/**
+ * HTML being encoded as UTF-8 from UTF-16 pieces.
+ *
+ * Created by `scah_html_new`, extended with `scah_html_push_utf16`, and
+ * either parsed, and freed, by `scah_parse_html` or released with
+ * `scah_html_free`. A surrogate pair may be split between two pieces.
+ */
+typedef struct ScahHtml ScahHtml;
 
 /**
  * A compiled, immutable query.
@@ -285,6 +300,64 @@ struct ScahStringView scah_error_message(const struct ScahError *error);
  * been freed.
  */
 void scah_error_free(struct ScahError *error);
+
+/**
+ * Start empty HTML with room for `capacity` bytes of UTF-8, which is exact
+ * for that many ASCII units.
+ *
+ * A lone surrogate fails with `SCAH_STATUS_INVALID_UTF16` when
+ * `reject_lone_surrogates` is true, and is otherwise replaced with U+FFFD.
+ * On success `*out_html` receives HTML to pass to `scah_parse_html` or free
+ * with `scah_html_free`.
+ *
+ * # Safety
+ *
+ * `out_html` and `out_error` must be NULL or writable.
+ */
+enum ScahStatus scah_html_new(size_t capacity,
+                              bool reject_lone_surrogates,
+                              struct ScahHtml **out_html,
+                              struct ScahError **out_error);
+
+/**
+ * Append `len` UTF-16 code units to `html`.
+ *
+ * On failure `html` is left as it was before the call. Allocates only if
+ * `scah_html_reserve` was not called for these units.
+ *
+ * # Safety
+ *
+ * `html` must be NULL or live HTML. `units` must be NULL with `len` 0, or
+ * point to `len` readable units. `out_error` must be NULL or writable.
+ */
+enum ScahStatus scah_html_push_utf16(struct ScahHtml *html,
+                                     const uint16_t *units,
+                                     size_t len,
+                                     struct ScahError **out_error);
+
+/**
+ * Make room to push `len` more UTF-16 code units to `html` without
+ * allocating.
+ *
+ * For callers that push where allocating is unwelcome, such as in a Java
+ * critical region, where a reallocation would copy the whole document so far
+ * while other threads wait. Reserves 3 bytes a unit, the most UTF-8 a unit
+ * can need.
+ *
+ * # Safety
+ *
+ * `html` must be NULL or live HTML. `out_error` must be NULL or writable.
+ */
+enum ScahStatus scah_html_reserve(struct ScahHtml *html, size_t len, struct ScahError **out_error);
+
+/**
+ * Free HTML that was not parsed. NULL is ignored.
+ *
+ * # Safety
+ *
+ * `html` must be NULL or live HTML, which this call takes ownership of.
+ */
+void scah_html_free(struct ScahHtml *html);
 
 /**
  * Start a query whose first section matches every element selected by
@@ -431,6 +504,48 @@ enum ScahStatus scah_parse(struct ScahStringView html,
                            size_t count,
                            struct ScahStore **out_store,
                            struct ScahError **out_error);
+
+/**
+ * Parse UTF-16 `html` of `len` code units against `queries`.
+ *
+ * Encodes `html` as UTF-8 straight into the store's own copy, in one pass,
+ * which is faster than encoding it first and calling `scah_parse`. A lone
+ * surrogate fails with `SCAH_STATUS_INVALID_UTF16` when
+ * `reject_lone_surrogates` is true, and is otherwise replaced with U+FFFD.
+ * Otherwise like `scah_parse`.
+ *
+ * # Safety
+ *
+ * `html` must be NULL with `len` 0, or point to `len` readable units.
+ * `queries` must be NULL or point to `count` readable pointers, each NULL or
+ * a live query. `out_store` and `out_error` must be NULL or writable.
+ */
+enum ScahStatus scah_parse_utf16(const uint16_t *html,
+                                 size_t len,
+                                 bool reject_lone_surrogates,
+                                 const struct ScahQuery *const *queries,
+                                 size_t count,
+                                 struct ScahStore **out_store,
+                                 struct ScahError **out_error);
+
+/**
+ * Parse the HTML in `html` against `queries`, freeing `html`.
+ *
+ * `html` is freed whether or not parsing succeeds, and the store takes its
+ * UTF-8 without copying it. A high surrogate that ends the HTML is lone.
+ * Otherwise like `scah_parse`.
+ *
+ * # Safety
+ *
+ * `html` must be NULL or live HTML, which this call takes ownership of.
+ * `queries` must be NULL or point to `count` readable pointers, each NULL or
+ * a live query. `out_store` and `out_error` must be NULL or writable.
+ */
+enum ScahStatus scah_parse_html(struct ScahHtml *html,
+                                const struct ScahQuery *const *queries,
+                                size_t count,
+                                struct ScahStore **out_store,
+                                struct ScahError **out_error);
 
 /**
  * Free a store. NULL is ignored.

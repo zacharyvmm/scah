@@ -138,6 +138,52 @@ static void check_parse_errors(ScahQuery *query) {
         SCAH_STATUS_NULL_POINTER);
 }
 
+/* UTF-16 input, whole and in pieces, with a pair split between pieces. */
+static void check_utf16(void) {
+  /* <p>é😀</p> */
+  static const uint16_t units[] = {'<', 'p', '>', 0xE9, 0xD83D, 0xDE00,
+                                   '<', '/', 'p', '>'};
+  static const uint16_t lone[] = {'<', 'p', '>', 0xDC00, '<', '/', 'p', '>'};
+  const size_t count = sizeof units / sizeof units[0];
+  const ScahQuery *queries[1];
+  ScahStore *store = NULL;
+  ScahHtml *html = NULL;
+  ScahError *err = NULL;
+  ScahElementList *list = NULL;
+  ScahOptionalStringView text;
+  ScahQueryBuilder *builder = NULL;
+  ScahQuery *query = NULL;
+
+  OK(scah_query_builder_new_all(sv("p"), SAVE_TEXT, &builder, &err));
+  OK(scah_query_build(builder, &query, &err));
+  scah_query_builder_free(builder);
+  queries[0] = query;
+  OK(scah_parse_utf16(units, count, true, queries, 1, &store, &err));
+  OK(scah_store_get(store, sv("p"), &list, &err));
+  CHECK(scah_element_list_len(list) == 1);
+  OK(scah_element_text(store, scah_element_list_ids(list)[0], &text, &err));
+  CHECK(some_eq(text, "\xC3\xA9\xF0\x9F\x98\x80"));
+  scah_element_list_free(list);
+  scah_store_free(store);
+
+  OK(scah_html_new(count, true, &html, &err));
+  OK(scah_html_push_utf16(html, units, 5, &err));
+  OK(scah_html_push_utf16(html, units + 5, count - 5, &err));
+  OK(scah_parse_html(html, queries, 1, &store, &err));
+  CHECK(scah_store_len(store) == 1);
+  scah_store_free(store);
+
+  CHECK(scah_parse_utf16(lone, sizeof lone / sizeof lone[0], true, queries, 1,
+                         &store, &err) == SCAH_STATUS_INVALID_UTF16);
+  CHECK(store == NULL);
+  scah_error_free(err);
+  OK(scah_parse_utf16(lone, sizeof lone / sizeof lone[0], false, queries, 1,
+                      &store, &err));
+  scah_store_free(store);
+  scah_html_free(NULL);
+  scah_query_free(query);
+}
+
 static ScahElementList *get(const ScahStore *store, const char *selector) {
   ScahElementList *list = NULL;
   OK(scah_store_get(store, sv(selector), &list, &err));
@@ -478,6 +524,7 @@ int main(void) {
   check_invalid_selector();
   build_queries(&sections, &note);
   check_parse_errors(note);
+  check_utf16();
 
   /* The store copies the HTML and keeps the queries alive. */
   html = malloc(sizeof HTML);

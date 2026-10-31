@@ -124,6 +124,26 @@ class StoreTest {
     }
 
     @Test
+    void stringsSpanningSeveralBlocksKeepTheirPairs() {
+        // The backends hand the library 8,192 UTF-16 units at a time. Put a
+        // surrogate pair across that boundary, between long ASCII runs.
+        String text = "x".repeat(8_192 - 4) + "😀 café 日本 " + "y".repeat(20_000);
+        String html = "<p>" + text + "</p>";
+        assertEquals('\ud83d', html.charAt(8_191));
+        try (Query query = Query.all("p", Save.onlyText()).build(); Store store = Store.parse(html, query)) {
+            assertEquals(Optional.of(text), single(store.get("p")).text());
+        }
+    }
+
+    @Test
+    void loneSurrogatesBecomeReplacementCharacters() {
+        try (Query query = Query.all("a", Save.onlyText()).build();
+                Store store = Store.parse("<a>\ud800x\udc00</a><a>end\ud83d</a>", query)) {
+            assertEquals(List.of(Optional.of("\ufffdx\ufffd"), Optional.of("end\ufffd")), texts(store.get("a")));
+        }
+    }
+
+    @Test
     void invalidUtf8IsRejected() {
         try (Query query = Query.all("a", Save.all()).build()) {
             ScahException error = assertThrows(

@@ -2,7 +2,6 @@ package io.github.zacharyvmm.scah;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -14,7 +13,7 @@ import java.nio.file.Path;
  */
 final class JniBackend implements Backend {
     /** The version of the native methods this class declares; see PROTOCOL_VERSION in lib.rs. */
-    private static final int PROTOCOL_VERSION = 1;
+    private static final int PROTOCOL_VERSION = 2;
 
     // Save flags, as in lib.rs.
     private static final int INNER_HTML = 1;
@@ -94,8 +93,23 @@ final class JniBackend implements Backend {
     }
 
     @Override
-    public long parse(String html, long[] queries) {
-        return parse(html.getBytes(StandardCharsets.UTF_8), queries);
+    public long htmlNew(long capacity) {
+        return htmlNew0(capacity);
+    }
+
+    @Override
+    public void htmlPush(long html, char[] units, int length) {
+        htmlPush0(html, units, length);
+    }
+
+    @Override
+    public void htmlFree(long html) {
+        htmlFree0(html);
+    }
+
+    @Override
+    public long parseHtml(long html, long[] queries) {
+        return parseHtml0(html, queries);
     }
 
     @Override
@@ -163,6 +177,14 @@ final class JniBackend implements Backend {
     private static native void queryFree0(long query);
 
     private static native long parse0(byte[] html, long[] queries);
+
+    private static native long htmlNew0(long capacity);
+
+    private static native void htmlPush0(long html, char[] units, int length);
+
+    private static native void htmlFree0(long html);
+
+    private static native long parseHtml0(long html, long[] queries);
 
     private static native void storeFree0(long store);
 

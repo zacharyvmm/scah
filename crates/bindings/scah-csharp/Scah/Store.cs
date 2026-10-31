@@ -14,14 +14,34 @@ public sealed class Store : IDisposable
     internal StoreHandle Handle { get; }
 
     /// <summary>Parse <paramref name="html"/> against <paramref name="queries"/>.</summary>
+    /// <remarks>
+    /// The library encodes the string as UTF-8 straight into the store's copy, in one pass.
+    /// </remarks>
     /// <exception cref="ScahException">
-    /// No queries were given, or the HTML nests too deeply or is 4 GiB or longer.
+    /// The HTML has a lone surrogate, no queries were given, or the HTML nests too deeply or is
+    /// 4 GiB or longer.
     /// </exception>
-    public static Store Parse(string html, params Query[] queries)
+    public static unsafe Store Parse(string html, params Query[] queries)
     {
         ArgumentNullException.ThrowIfNull(html);
-        using Utf8.Buffer bytes = Utf8.Encode(html, stackalloc byte[Utf8.StackLimit]);
-        return Parse(bytes.Bytes, queries);
+        nint[] handles = AddRefs(queries);
+        try
+        {
+            fixed (char* data = html)
+            fixed (nint* list = handles)
+            {
+                nint store;
+                nint error;
+                int status = Native.scah_parse_utf16(
+                    data, (nuint)html.Length, rejectLoneSurrogates: 1, list, (nuint)handles.Length, &store, &error);
+                Native.Check(status, error);
+                return new Store(new StoreHandle(store));
+            }
+        }
+        finally
+        {
+            Release(queries, handles.Length);
+        }
     }
 
     /// <summary>Parse UTF-8 <paramref name="html"/> against <paramref name="queries"/>.</summary>
@@ -31,20 +51,9 @@ public sealed class Store : IDisposable
     /// </exception>
     public static unsafe Store Parse(ReadOnlySpan<byte> html, params Query[] queries)
     {
-        ArgumentNullException.ThrowIfNull(queries);
-        Native.EnsureLoaded();
-        var handles = new nint[queries.Length];
-        int referenced = 0;
+        nint[] handles = AddRefs(queries);
         try
         {
-            // Keep every query alive while the native call reads it.
-            for (; referenced < queries.Length; referenced++)
-            {
-                ArgumentNullException.ThrowIfNull(queries[referenced], nameof(queries));
-                bool added = false;
-                queries[referenced].Handle.DangerousAddRef(ref added);
-                handles[referenced] = queries[referenced].Handle.DangerousGetHandle();
-            }
             fixed (byte* data = html)
             fixed (nint* list = handles)
             {
@@ -58,10 +67,43 @@ public sealed class Store : IDisposable
         }
         finally
         {
-            for (int i = 0; i < referenced; i++)
+            Release(queries, handles.Length);
+        }
+    }
+
+    /// <summary>
+    /// The native handles of <paramref name="queries"/>, each kept alive until
+    /// <see cref="Release"/>, so the native call can read them.
+    /// </summary>
+    private static nint[] AddRefs(Query[] queries)
+    {
+        ArgumentNullException.ThrowIfNull(queries);
+        Native.EnsureLoaded();
+        var handles = new nint[queries.Length];
+        int referenced = 0;
+        try
+        {
+            for (; referenced < queries.Length; referenced++)
             {
-                queries[i].Handle.DangerousRelease();
+                ArgumentNullException.ThrowIfNull(queries[referenced], nameof(queries));
+                bool added = false;
+                queries[referenced].Handle.DangerousAddRef(ref added);
+                handles[referenced] = queries[referenced].Handle.DangerousGetHandle();
             }
+            return handles;
+        }
+        catch
+        {
+            Release(queries, referenced);
+            throw;
+        }
+    }
+
+    private static void Release(Query[] queries, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            queries[i].Handle.DangerousRelease();
         }
     }
 

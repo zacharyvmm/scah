@@ -33,6 +33,9 @@ public enum ScahStatus
 
     /// <summary>A result was too large to export.</summary>
     ExportTooLarge = 10,
+
+    /// <summary>An input string had a lone surrogate, and the call rejects them.</summary>
+    InvalidUtf16 = 11,
 }
 
 /// <summary>A call into scah failed.</summary>

@@ -37,6 +37,8 @@ pub enum ScahStatus {
     /// A result was too large to export, such as an Arrow string column over
     /// a buffer of 2 GiB or more, past Arrow's 32-bit offsets.
     ExportTooLarge = 10,
+    /// An input UTF-16 string had a lone surrogate, and the call rejects them.
+    InvalidUtf16 = 11,
 }
 
 /// An error message returned through `out_error`.
