@@ -234,6 +234,39 @@ jobs:
     with:
       binding: ${{ matrix.binding }}
 
+  native-changes:
+    name: Detect Native Library Build Changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.changes.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # Building every platform is slow, so pull requests do so only when the
+      # build itself or the C ABI changes.
+      - name: Detect native-library-relevant changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- Cargo.toml .cargo/config.toml \
+            crates/bindings/native crates/bindings/scah-c/Cargo.toml \
+            crates/bindings/scah-c/include .github/workflows/native-libraries.yml \
+            ':(exclude)*.md'; then
+            echo "No native-library-relevant changes; skipping the native library build."
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  native-libraries:
+    name: Native Libraries
+    needs: native-changes
+    if: needs.native-changes.outputs.relevant == 'true'
+    uses: ./.github/workflows/native-libraries.yml
+
   rust-aarch64:
     name: Rust AArch64 SIMD Checks
     runs-on: ubuntu-24.04-arm

@@ -15,6 +15,17 @@ This produces `target/release/libscah_c.a` and a shared library
 `crates/bindings/scah-c/include` and link with `-lscah_c`. On Linux, static
 linking also needs `-lpthread -ldl -lm`.
 
+To build the shared library as the packages ship it, for any of `linux-x64`,
+`linux-arm64`, `linux-musl-x64`, `linux-musl-arm64`, `osx-x64`, `osx-arm64`,
+`win-x64`, or `win-arm64`:
+
+```bash
+crates/bindings/native/build.sh linux-x64 target/native/out
+```
+
+Linux builds run in Docker, in a manylinux2014 container for glibc 2.17 and
+newer or in Alpine for musl.
+
 ## Example
 
 ```c

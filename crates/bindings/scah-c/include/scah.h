@@ -472,6 +472,24 @@ enum ScahStatus scah_store_get(const struct ScahStore *store,
                                struct ScahError **out_error);
 
 /**
+ * Look up the elements matched by the query at `index` in the array given to
+ * `scah_parse`.
+ *
+ * Unlike `scah_store_get`, this tells apart queries that share a selector.
+ * When the query matched nothing, or `index` is not below the number of
+ * queries, this succeeds and sets `*out_list` to NULL.
+ *
+ * # Safety
+ *
+ * `store` must be NULL or a live store. `out_list` and `out_error` must be
+ * NULL or writable.
+ */
+enum ScahStatus scah_store_query(const struct ScahStore *store,
+                                 size_t index,
+                                 struct ScahElementList **out_list,
+                                 struct ScahError **out_error);
+
+/**
  * Look up the elements matched by a child query nested under `element`
  * with `scah_query_builder_then`.
  *
