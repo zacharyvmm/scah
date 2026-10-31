@@ -6,6 +6,10 @@ Rust crates and the Python and npm packages together.
 
 ## [Unreleased]
 
+The Python and JavaScript APIs are unchanged apart from the new
+`Store.query`. Rust code that reads results needs the changes in
+[Migrating from 0.1](#migrating-from-01).
+
 ### Breaking
 
 - The cursor engine and `QueryMultiplexer` are removed. `XHtmlParser::new` and
@@ -49,10 +53,10 @@ Rust crates and the Python and npm packages together.
 
 ### Added
 
-- `Store::query(index)` and `Element::nested(&store, index)` select results by
+- `Store::query(index)` and `ElementRef::nested(index)` select results by
   query position, and `Store::results`, `query_results`, `child_results`, and
   `nested_results` return element ids. Python and Node gain `Store.query`.
-  ([#97])
+  ([#97], [#100])
 - `parse_compiled` and `parse_compiled_without_text_capture` run a `Program`
   compiled once with `Program::compile`, for parsing many documents with the
   same queries. ([#98])
@@ -83,6 +87,15 @@ Rust crates and the Python and npm packages together.
   Dense documents keep the rolling indexer. On a 409 KB prose page, finding
   every link is about 1.9× faster. ([#115])
 
+### Documentation
+
+- Guides for [selector support](docs/selectors.md),
+  [text extraction](docs/text-extraction.md), and
+  [architecture](docs/architecture.md), and runnable examples in
+  `crates/scah/examples`.
+- `Query`, `QueryBuilder`, `SelectorParseError`, and `query!` are documented,
+  and the crate overview no longer lists shipped selectors as unsupported.
+
 ### Fixed
 
 - End tags with attributes, such as `</div class=x>`, close their element.
@@ -93,6 +106,25 @@ Rust crates and the Python and npm packages together.
   followed by whitespace, keep their saved content. ([#93], [#96])
 - Queries with the same selector string keep separate results; `Store::get`
   returns the first query with that selector. ([#91], [#97])
+
+### Migrating from 0.1
+
+Results are now read through `ElementRef` handles that carry the store with
+them, so accessors are methods and no longer take `&store`:
+
+| 0.1 | 0.2 |
+| --- | --- |
+| `element.name`, `element.class`, `element.id`, `element.inner_html` | `element.name()`, `element.class()`, `element.id()`, `element.inner_html()` |
+| `element.text(&store)`, `element.raw_text(&store)` | `element.text()`, `element.raw_text()` |
+| `element.attribute(&store, "href")` | `element.attribute("href")` |
+| `element.attributes(&store)`, a slice | `element.attributes()`, an iterator |
+| `element.get(&store, "a")` | `element.get("a")` |
+| `store.get("a")`, an iterator of `&Element` | `store.get("a")`, an `Elements` iterator of `ElementRef` |
+| `store.elements`, `store.attributes` | `store.elements()`, `store.element(id)`, `store.len()` |
+| `store.trace` | `scah::debug::parse_traced(html, queries)`, in debug builds |
+
+`Elements` is an `ExactSizeIterator`, so `.len()` gives the number of matches
+without consuming it.
 
 ## [0.1.0] - 2026-10-01
 

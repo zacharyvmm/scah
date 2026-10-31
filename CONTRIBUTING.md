@@ -25,19 +25,27 @@ Run `just` to list every recipe.
 
 | Path | Contents |
 | ---- | -------- |
-| `crates/scah` | The public crate: parser, query engine, and content capture |
+| `crates/scah` | The public crate: parser, query engine, content capture, and [examples](crates/scah/examples) |
 | `crates/scah-html` | Finding tags, reading attributes, and the open-element tree |
 | `crates/scah-store` | The result store: saved elements, their content, and the result index |
 | `crates/scah-query-ir` | Selector parsing and the compiled query representation |
 | `crates/scah-macros` | The `query!` macro |
+| `crates/scah-differential` | Compares results with the last published release |
 | `crates/bindings/scah-python` | Python bindings (PyO3 and maturin) |
 | `crates/bindings/scah-node` | Node and Bun bindings (napi-rs) |
-| `benches` | Benchmarks, published results, and CI performance gates; see [`benches/README.md`](benches/README.md) |
+| `benches` | Benchmarks, published results, CI performance gates, and performance notes; see [`benches/README.md`](benches/README.md) |
+| `docs` | User guides: selectors, text extraction, and architecture |
+
+[`docs/architecture.md`](docs/architecture.md) explains how a parse works and
+is the best place to start reading the code.
 
 ## Pull requests
 
 - Add a test for behavior changes. Parser edge cases belong in
   `crates/scah/tests/html_soup/`.
+- Update the docs that describe the behavior you changed: the guides in
+  `docs/`, the READMEs, and the rustdoc. The Rust examples in `README.md` run
+  as doctests, so `cargo test -p scah --doc` checks them.
 - Add an entry under `## [Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md) for
   user-visible changes.
 - If you change a binding's public API, regenerate the Python stub with
@@ -67,14 +75,15 @@ see [`crates/scah/scripts/README.md`](crates/scah/scripts/README.md).
 ## Releases
 
 Maintainers release by bumping every package version, moving the
-`[Unreleased]` changelog entries under the new version, removing the
-"install from git" notes in `README.md` if the release now matches `main`,
-committing, and pushing a tag:
+`[Unreleased]` changelog entries under the new version (and updating the
+comparison links at the bottom of the changelog), refreshing the benchmark
+tables with `just bench` if performance changed, committing, and pushing a
+tag:
 
 ```bash
-just bump 0.1.1
-git commit -am "Release 0.1.1"
-just trigger-release 0.1.1
+just bump 0.2.0
+git commit -am "Release 0.2.0"
+just trigger-release 0.2.0
 ```
 
 The tag publishes the crates to crates.io, wheels to PyPI, and the
