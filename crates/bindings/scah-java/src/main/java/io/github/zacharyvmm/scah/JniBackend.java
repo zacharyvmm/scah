@@ -1,6 +1,10 @@
 package io.github.zacharyvmm.scah;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * Calls scah through JNI, for Java versions without the Foreign Function and Memory API.
@@ -19,12 +23,36 @@ final class JniBackend implements Backend {
     private static final int ATTRIBUTES = 8;
 
     JniBackend() {
-        String library = NativeLibrary.locate("scah_jni").toString();
-        System.load(library);
+        Path library = NativeLibrary.locate("scah_jni").toAbsolutePath();
+        try {
+            System.load(library.toString());
+        } catch (UnsatisfiedLinkError e) {
+            // The JVM binds a JNI library to one classloader. When another one, such as another
+            // application in the same container, loaded this jar first, load a private copy.
+            if (e.getMessage() == null || !e.getMessage().contains("another classloader")) {
+                throw e;
+            }
+            library = privateCopy(library);
+            System.load(library.toString());
+        }
         int version = protocolVersion0();
         if (version != PROTOCOL_VERSION) {
             throw new UnsatisfiedLinkError(library + " implements version " + version
                     + " of the native methods, but this binding needs version " + PROTOCOL_VERSION);
+        }
+    }
+
+    /** A copy of {@code library} in a new private directory, deleted when the JVM exits. */
+    private static Path privateCopy(Path library) {
+        try {
+            Path directory = Files.createTempDirectory("scah-jni-");
+            Path copy = Files.copy(library, directory.resolve(library.getFileName()));
+            // Files delete on exit in the reverse order they were registered.
+            directory.toFile().deleteOnExit();
+            copy.toFile().deleteOnExit();
+            return copy;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot copy " + library + " for this classloader", e);
         }
     }
 
