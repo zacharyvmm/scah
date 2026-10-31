@@ -52,10 +52,12 @@ public final class Store implements AutoCloseable {
         long encoded = backend.htmlNew(html.length());
         try {
             char[] block = new char[Math.min(html.length(), BLOCK)];
-            for (int start = 0; start < html.length(); start += BLOCK) {
-                int end = Math.min(html.length(), start + BLOCK);
-                html.getChars(start, end, block, 0);
-                backend.htmlPush(encoded, block, end - start);
+            // Counted from the remainder, so no index passes the length near Integer.MAX_VALUE.
+            for (int start = 0; start < html.length(); ) {
+                int count = Math.min(html.length() - start, BLOCK);
+                html.getChars(start, start + count, block, 0);
+                backend.htmlPush(encoded, block, count);
+                start += count;
             }
             return encoded;
         } catch (RuntimeException | Error e) {
