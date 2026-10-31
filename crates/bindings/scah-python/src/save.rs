@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use scah_core::Save;
 
-#[gen_stub_pyclass]
+#[gen_stub_pyclass(module = "scah._scah")]
 #[pyclass(module = "scah", name = "Save")]
 #[derive(Clone, Copy, Debug)]
 pub struct PySave {

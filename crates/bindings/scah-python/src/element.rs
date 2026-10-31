@@ -9,7 +9,7 @@ use scah_ffi::OwnedStore;
 use scah_ffi::arrow::ArrowTable;
 use std::sync::Arc;
 
-#[gen_stub_pyclass]
+#[gen_stub_pyclass(module = "scah._scah")]
 #[pyclass(module = "scah", name = "Element")]
 pub struct PyElement {
     pub(crate) store: Arc<OwnedStore>,
@@ -126,7 +126,7 @@ impl PyElement {
     }
 }
 
-#[gen_stub_pyclass]
+#[gen_stub_pyclass(module = "scah._scah")]
 #[pyclass(module = "scah", name = "Store")]
 pub(crate) struct PyStore {
     pub(crate) store: Arc<OwnedStore>,

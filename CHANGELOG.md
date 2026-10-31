@@ -77,6 +77,11 @@ Rust crates and the Python and npm packages together.
   parsed HTML and text buffers, ready for polars, pyarrow, DuckDB, and other
   Arrow consumers. In Rust, `Store::field_range` and `Store::buffer` read any
   string field as a byte range of the buffer it lives in.
+- `scah.polars.parse(expr, query)` runs a query on every HTML document in a
+  polars String column, as a polars expression plugin: in Rust, on polars'
+  threads, in eager, lazy, and streaming queries. Each document gives a
+  `list[struct]` of matches (`struct` for `Query.first`), with child sections
+  nested as fields named by their selector. Install with `scah[polars]`.
 
 ### Changed
 

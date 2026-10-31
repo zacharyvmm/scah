@@ -12,7 +12,7 @@ use std::sync::Arc;
 /// other Arrow libraries can import it without copying strings, e.g.
 /// `pyarrow.record_batch(table)` or `polars.DataFrame(table)`. Imported data
 /// stays valid after the store and this table are gone.
-#[gen_stub_pyclass]
+#[gen_stub_pyclass(module = "scah._scah")]
 #[pyclass(module = "scah", name = "ArrowTable", frozen)]
 pub struct PyArrowTable {
     table: Arc<ArrowTable>,
