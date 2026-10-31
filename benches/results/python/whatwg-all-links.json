@@ -5,10 +5,10 @@
   "title": "Every <a> in the WHATWG HTML specification",
   "unit": "ms",
   "environment": {
-    "date": "2026-10-03",
-    "commit": "29df6d08a64d91e196ce575bbd65ec9651a8e5cb",
+    "date": "2026-10-29",
+    "commit": "bb36054582f4fe72c8ec3851e33a52501d38bf59",
     "dirty": false,
-    "os": "Darwin 25.6.0",
+    "os": "Darwin 27.0.0",
     "arch": "arm64",
     "cpu": "Apple M5",
     "runtime": "CPython 3.12.13"
@@ -17,38 +17,38 @@
     {
       "library": "Scah",
       "size": null,
-      "mean": 45.05030094451791,
-      "stdev": 2.4237664661508664
+      "mean": 43.28982684245076,
+      "stdev": 2.577823694778608
     },
     {
       "library": "Selectolax",
       "size": null,
-      "mean": 139.9253835998934,
-      "stdev": 3.3791354735654555
+      "mean": 182.9403451431842,
+      "stdev": 100.142975576472
     },
     {
       "library": "lxml",
       "size": null,
-      "mean": 344.8868501999641,
-      "stdev": 5.011623119317297
+      "mean": 340.5812250013696,
+      "stdev": 4.44885341990166
     },
     {
       "library": "Parsel",
       "size": null,
-      "mean": 643.9717085999291,
-      "stdev": 4.510477158327161
+      "mean": 630.7013917976292,
+      "stdev": 4.7704905461078795
     },
     {
       "library": "Gazpacho",
       "size": null,
-      "mean": 1574.3276169999262,
-      "stdev": 2.0280108519775593
+      "mean": 1527.4129418001394,
+      "stdev": 2.200155192201025
     },
     {
       "library": "BS4 (lxml)",
       "size": null,
-      "mean": 2427.757749800003,
-      "stdev": 310.0409845659069
+      "mean": 2176.56241680088,
+      "stdev": 68.33731445249121
     }
   ]
 }
