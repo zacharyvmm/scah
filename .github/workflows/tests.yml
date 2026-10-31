@@ -413,6 +413,7 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
+          cache: maven
       - name: Build native library
         run: cargo build -p scah-c
       - name: Run Java tests
@@ -431,6 +432,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+          cache: maven
       - name: Download native libraries
         uses: actions/download-artifact@v8
         with:
@@ -485,6 +487,8 @@ jobs:
             os: windows-latest
           - rid: win-arm64
             os: windows-11-arm
+            # Temurin publishes no Windows arm64 JDK 25.
+            java-distribution: microsoft
     defaults:
       run:
         shell: bash
@@ -497,8 +501,9 @@ jobs:
       - uses: actions/setup-java@v5
         if: ${{ !matrix.alpine }}
         with:
-          distribution: temurin
+          distribution: ${{ matrix.java-distribution || 'temurin' }}
           java-version: 25
+          cache: maven
       # The tests run against the downloaded jar and the libraries packed in it.
       - name: Run Java tests against the package
         if: ${{ !matrix.alpine }}

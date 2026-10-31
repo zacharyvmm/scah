@@ -21,9 +21,10 @@ import java.nio.file.Path;
  * Calls the C ABI through the Foreign Function and Memory API.
  *
  * <p>Out-parameters and short input strings live in a per-thread scratch area, so most calls
- * allocate no native memory. Calls that only read a store are linked as {@linkplain
+ * allocate no native memory. Calls that read a single element are linked as {@linkplain
  * Linker.Option#critical critical}, which skips the thread-state transition; they run in
- * constant time or in time linear in an element's attributes.
+ * constant time or in time linear in the element's attributes. Calls that build a result list
+ * take time linear in its length, so they stay ordinary and let the JVM reach safepoints.
  */
 // Every restricted call is the point of this class: it links and reads the native library.
 @SuppressWarnings("restricted")
@@ -112,11 +113,11 @@ final class PanamaBackend implements Backend {
                 "scah_parse", FunctionDescriptor.of(JAVA_INT, STRING_VIEW, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS));
         storeFree = bind.function("scah_store_free", FunctionDescriptor.ofVoid(ADDRESS));
         storeLen = bind.reader("scah_store_len", FunctionDescriptor.of(JAVA_LONG, ADDRESS));
-        storeGet = bind.reader(
+        storeGet = bind.function(
                 "scah_store_get", FunctionDescriptor.of(JAVA_INT, ADDRESS, STRING_VIEW, ADDRESS, ADDRESS));
-        storeQuery = bind.reader(
+        storeQuery = bind.function(
                 "scah_store_query", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS));
-        elementGet = bind.reader(
+        elementGet = bind.function(
                 "scah_element_get",
                 FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, STRING_VIEW, ADDRESS, ADDRESS));
         listLen = bind.reader("scah_element_list_len", FunctionDescriptor.of(JAVA_LONG, ADDRESS));
@@ -440,7 +441,7 @@ final class PanamaBackend implements Backend {
             return linker.downcallHandle(find(name), descriptor);
         }
 
-        /** A short call that only reads, linked without a thread-state transition. */
+        /** A short, bounded call that only reads, linked without a thread-state transition. */
         MethodHandle reader(String name, FunctionDescriptor descriptor) {
             return linker.downcallHandle(find(name), descriptor, Linker.Option.critical(false));
         }
