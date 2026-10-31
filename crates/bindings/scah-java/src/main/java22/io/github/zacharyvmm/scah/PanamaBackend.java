@@ -257,12 +257,23 @@ final class PanamaBackend implements Backend {
 
     @Override
     public long parseHtml(long html, long[] queries) {
-        Scratch s = scratch.get();
+        // scah_parse_html frees the HTML whether or not it succeeds; free it here if the call is
+        // never made.
+        boolean handedOver = false;
         try (Arena arena = Arena.ofConfined()) {
+            Scratch s = scratch.get();
             MemorySegment list = arena.allocateFrom(JAVA_LONG, queries);
+            handedOver = true;
             check((int) parseHtml.invokeExact(MemorySegment.ofAddress(html), list, (long) queries.length, s.out, s.error));
             return s.out.get(ADDRESS, 0).address();
         } catch (Throwable e) {
+            if (!handedOver) {
+                try {
+                    htmlFree.invokeExact(MemorySegment.ofAddress(html));
+                } catch (Throwable suppressed) {
+                    e.addSuppressed(suppressed);
+                }
+            }
             throw rethrow(e);
         }
     }
