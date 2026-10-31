@@ -57,6 +57,7 @@ find_profdata() {
 }
 
 # build_python RUSTFLAG WHEEL_DIR MATURIN_ARGS...
+# $python_rustc goes to the binding crate alone, after maturin's `--`.
 build_python() {
   local flag="$1" wheels="$2"
   shift 2
@@ -64,7 +65,7 @@ build_python() {
   (
     cd "$bindings_dir/scah-python"
     env "$target_flags=${!target_flags:-} $flag" "${maturin[@]}" build --release --target "$host" \
-      --out "$wheels" "$@"
+      --out "$wheels" "$@" ${python_rustc:+-- $python_rustc}
   )
 }
 
@@ -94,9 +95,19 @@ profdata="$(find_profdata)"
 # every caller, so their counts never reach the profile. Keep dead code there,
 # in both builds: the flag also changes which functions are exported, and so
 # the names the profile knows them by.
+#
+# Python passes it to the binding crate alone. The flag also makes rustc
+# instantiate every function of each crate it compiles, and some of
+# polars-arrow's (a dependency of the polars plugin) fail to compile when
+# instantiated. The binding crate does the final link and, with fat LTO, all
+# the codegen, so that's the crate the flag has to reach.
 flags=""
+python_rustc=""
 if [[ "$host" == *-apple-darwin ]]; then
-  flags="-Clink-dead-code"
+  case "$binding" in
+    python) python_rustc="-Clink-dead-code" ;;
+    *) flags="-Clink-dead-code" ;;
+  esac
 fi
 generate="$flags -Cprofile-generate=$(native_path "$profiles")"
 mkdir -p "$work"

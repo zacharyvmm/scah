@@ -45,6 +45,50 @@ for section in store.get("main > section"):
 See the [main README](https://github.com/zacharyvmm/scah#selector-support) for supported selectors and
 text-extraction semantics.
 
+### polars
+
+`scah.polars.parse` runs a query on every document in a column of HTML,
+inside polars 1.25 or later (`pip install 'scah[polars]'`):
+
+```python
+import polars as pl
+import scah
+
+pages = pl.DataFrame({
+    "site": ["a", "b"],
+    "html": ["<a href='/1'>One</a><a href='/2'>Two</a>", "<p><a href='/3'>Three</a></p>"],
+})
+query = scah.Query.all("a[href]", scah.Save.only_text()).build()
+
+pages = pages.with_columns(
+    scah.polars.parse(pl.col("html"), query, attributes=["href"]).alias("links")
+)
+pages.select("site", "links").explode("links").unnest("links")
+# site  tag   text  href
+# a     a     One   /1
+# a     a     Two   /2
+# b     a     Three /3
+```
+
+Each document gives a `list[struct]` of matches (a `struct`, or null, for
+`Query.first`). A struct holds the match's `tag`, the content its `Save` keeps
+(`inner_html`, `raw_text`, `text`), and its attributes: one field per name in
+`attributes=[...]`, or by default an `attributes` list of `{name, value}`
+pairs. Child sections from `.then(...)` become fields named by their
+selector, shaped the same way.
+
+The query runs in Rust on polars' threads, without the GIL, and works in lazy
+and streaming queries, so a crawl stored as Parquet can be scraped without
+loading it into memory:
+
+```python
+(
+    pl.scan_parquet("pages/*.parquet")
+    .select("url", scah.polars.parse("html", query, attributes=["href"]).alias("links"))
+    .sink_parquet("links.parquet")
+)
+```
+
 ## Benchmarks
 
 <!-- benchmarks:python -->

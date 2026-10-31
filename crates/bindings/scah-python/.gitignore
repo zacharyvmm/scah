@@ -1,3 +1,6 @@
 .venv
 __pycache__
 *.json
+# The extension module `maturin develop` builds into python/scah.
+*.so
+*.pyd

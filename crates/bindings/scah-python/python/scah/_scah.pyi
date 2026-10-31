@@ -77,6 +77,11 @@ class Element:
 @typing.final
 class PyQuery:
     def __repr__(self) -> builtins.str: ...
+    def _sections(self) -> builtins.list[builtins.dict[builtins.str, typing.Any]]:
+        r"""
+        The query's sections, root first, as dicts: how `scah.polars`
+        passes the query to its plugin.
+        """
 
 @typing.final
 class PyQueryBuilder:

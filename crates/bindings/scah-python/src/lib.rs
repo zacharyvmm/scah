@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 mod arrow;
 mod element;
+mod polars;
 mod query;
 mod save;
 
@@ -42,7 +43,7 @@ fn parse_error(err: ParseError) -> PyErr {
 }
 
 #[pymodule]
-fn scah(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _scah(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parse, m)?)?;
     m.add_class::<PySave>()?;
     m.add_class::<PyQuery>()?;

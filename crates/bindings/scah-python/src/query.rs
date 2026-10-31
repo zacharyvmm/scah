@@ -1,3 +1,4 @@
+use crate::polars::SectionSpec;
 use crate::save::PySave;
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
@@ -80,6 +81,23 @@ pub struct PyQuery {
 impl PyQuery {
     fn __repr__(&self) -> String {
         format!("PyQuery(query={:?})", self.query)
+    }
+
+    /// The query's sections, root first, as dicts: how `scah.polars`
+    /// passes the query to its plugin.
+    #[gen_stub(override_return_type(
+        type_repr = "builtins.list[builtins.dict[builtins.str, typing.Any]]",
+        imports = ("builtins", "typing")
+    ))]
+    fn _sections(&self) -> Vec<SectionSpec> {
+        self.query
+            .query()
+            .queries
+            .iter()
+            .map(|section| {
+                SectionSpec::new(section.source, section.kind, section.parent, section.save)
+            })
+            .collect()
     }
 }
 
