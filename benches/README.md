@@ -11,6 +11,8 @@
 | `element_tape/`, `escape_scanner/`, `tag_classification/`, `tape_indexer/` | Microbenchmarks for internal design experiments; `tape_indexer` compares tag-indexing strategies |
 | `experiments/` | Same-process comparisons for design experiments; `experiments/arrow/` compares Arrow export with the Python handle API |
 | `gates/` | Scripts that compare a pull request against its base revision in CI; `gates/bindings/` holds the Python and Node workloads |
+| `profiling/` | `capacity_profile`, a harness for measuring allocation peaks under valgrind massif |
+| `notes/` | Write-ups of past performance experiments and proposals |
 | `layout/` | Scripts that separate code-layout effects from code changes (see below) |
 | `results/` | Published comparison results, one JSON file per suite and scenario |
 | `report/` | Converts raw benchmark output into `results/` and renders the README tables |

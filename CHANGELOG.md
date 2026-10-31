@@ -2,9 +2,13 @@
 
 All notable changes to scah are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions apply to the
-Rust crates and the Python and npm packages together.
+Rust crates and the Python, npm, .NET, and Java packages together.
 
 ## [Unreleased]
+
+Existing Python and JavaScript code keeps working; the bindings only gain
+features. Rust code that reads results needs the changes in
+[Migrating from 0.1](#migrating-from-01).
 
 ### Breaking
 
@@ -49,10 +53,10 @@ Rust crates and the Python and npm packages together.
 
 ### Added
 
-- `Store::query(index)` and `Element::nested(&store, index)` select results by
+- `Store::query(index)` and `ElementRef::nested(index)` select results by
   query position, and `Store::results`, `query_results`, `child_results`, and
   `nested_results` return element ids. Python and Node gain `Store.query`.
-  ([#97])
+  ([#97], [#100])
 - `parse_compiled` and `parse_compiled_without_text_capture` run a `Program`
   compiled once with `Program::compile`, for parsing many documents with the
   same queries. ([#98])
@@ -121,6 +125,15 @@ Rust crates and the Python and npm packages together.
   Python threads run in parallel. On 8 threads, parsing a batch of 64 KB pages
   is 4× faster than before; single-threaded parsing is unchanged.
 
+### Documentation
+
+- Guides for [selector support](docs/selectors.md),
+  [text extraction](docs/text-extraction.md), and
+  [architecture](docs/architecture.md), and runnable examples in
+  `crates/scah/examples`.
+- `Query`, `QueryBuilder`, `SelectorParseError`, and `query!` are documented,
+  and the crate overview no longer lists shipped selectors as unsupported.
+
 ### Fixed
 
 - End tags with attributes, such as `</div class=x>`, close their element.
@@ -134,6 +147,25 @@ Rust crates and the Python and npm packages together.
 - Python and Node elements could read freed memory after their `Store` was
   garbage collected. Elements now keep the parsed HTML and queries alive.
   ([#50], [#51])
+
+### Migrating from 0.1
+
+Results are now read through `ElementRef` handles that carry the store with
+them, so accessors are methods and no longer take `&store`:
+
+| 0.1 | 0.2 |
+| --- | --- |
+| `element.name`, `element.class`, `element.id`, `element.inner_html` | `element.name()`, `element.class()`, `element.id()`, `element.inner_html()` |
+| `element.text(&store)`, `element.raw_text(&store)` | `element.text()`, `element.raw_text()` |
+| `element.attribute(&store, "href")` | `element.attribute("href")` |
+| `element.attributes(&store)`, a slice | `element.attributes()`, an iterator |
+| `element.get(&store, "a")` | `element.get("a")` |
+| `store.get("a")`, an iterator of `&Element` | `store.get("a")`, an `Elements` iterator of `ElementRef` |
+| `store.elements`, `store.attributes` | `store.elements()`, `store.element(id)`, `store.len()` |
+| `store.trace` | `scah::debug::parse_traced(html, queries)`, in debug builds |
+
+`Elements` is an `ExactSizeIterator`, so `.len()` gives the number of matches
+without consuming it.
 
 ## [0.1.0] - 2026-10-01
 

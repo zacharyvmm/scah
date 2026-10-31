@@ -5,10 +5,10 @@
   "title": "Every product card, with nested title, rating, and description queries",
   "unit": "ms",
   "environment": {
-    "date": "2026-10-03",
-    "commit": "29df6d08a64d91e196ce575bbd65ec9651a8e5cb",
+    "date": "2026-10-29",
+    "commit": "bb36054582f4fe72c8ec3851e33a52501d38bf59",
     "dirty": false,
-    "os": "Darwin 25.6.0",
+    "os": "Darwin 27.0.0",
     "arch": "arm64",
     "cpu": "Apple M5",
     "runtime": "CPython 3.12.13"
@@ -17,32 +17,32 @@
     {
       "library": "Scah",
       "size": 10000,
-      "mean": 11.057117226682749,
-      "stdev": 0.4218843646954049
+      "mean": 10.512081313165078,
+      "stdev": 0.37423938985027777
     },
     {
       "library": "Selectolax",
       "size": 10000,
-      "mean": 73.39562500000544,
-      "stdev": 12.958023981214286
+      "mean": 70.52230573268996,
+      "stdev": 12.290354104438508
     },
     {
       "library": "Parsel",
       "size": 10000,
-      "mean": 275.9943833998477,
-      "stdev": 2.0279214389902114
+      "mean": 260.4215919986018,
+      "stdev": 1.7106850299537828
     },
     {
       "library": "lxml",
       "size": 10000,
-      "mean": 329.9437915999988,
-      "stdev": 1.4187426080361747
+      "mean": 311.5935168010765,
+      "stdev": 1.6539430764662402
     },
     {
       "library": "BS4 (lxml)",
       "size": 10000,
-      "mean": 817.1657415999107,
-      "stdev": 10.63025632625774
+      "mean": 817.6720165996812,
+      "stdev": 10.10225150221181
     }
   ]
 }

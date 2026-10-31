@@ -26,6 +26,11 @@ linux-memory-benches = ["dep:gungraun"]
 [target.'cfg(target_os = "linux")'.dependencies]
 gungraun = { version = "0.20", features = ["cachegrind"], optional = true }
 
+# Allocation-peak harness for valgrind massif; see the file header.
+[[example]]
+name = "capacity_profile"
+path = "profiling/capacity_profile.rs"
+
 [[bench]]
 name = "speed_bench_ordinary_gate"
 path = "ordinary_gate/speed_bench.rs"

@@ -1,10 +1,13 @@
 # scah for .NET
 
-> CSS selectors meet streaming HTML parsing. Extract exactly what you select, without building a DOM.
+**Fast HTML extraction with CSS selectors. One pass, no DOM.**
 
-.NET bindings for [scah](https://github.com/zacharyvmm/scah), a Rust HTML
-extraction library. scah matches CSS selectors in a single forward pass over
-the document and stores only the matches.
+.NET bindings for [scah](https://github.com/zacharyvmm/scah). scah pulls the
+elements you select out of an HTML document in a single forward pass: it
+streams the document through a native Rust parser once and keeps only the
+matches. There is no DOM to build, so it is fast on large pages: finding
+every link in the 15 MB WHATWG HTML specification is about 15× faster than
+AngleSharp and 25× faster than HtmlAgilityPack.
 
 ```bash
 dotnet add package Scah
@@ -69,8 +72,9 @@ prefix can be extended in several ways.
 Failures throw `ScahException`, whose `Status` says why, such as
 `ScahStatus.InvalidSelector` from `Build()`.
 
-See the [main README](https://github.com/zacharyvmm/scah#selector-support) for
-supported selectors and text-extraction semantics.
+See [Selector support](https://github.com/zacharyvmm/scah/blob/main/docs/selectors.md)
+and [Text extraction](https://github.com/zacharyvmm/scah/blob/main/docs/text-extraction.md)
+for the selectors scah supports and what each text field contains.
 
 ## Benchmarks
 

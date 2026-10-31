@@ -16,6 +16,7 @@ use element::{PyElement, PyStore};
 use scah_core::ParseError;
 use scah_ffi::{OwnedQuery, OwnedStore};
 
+/// Run `queries` over `html` in a single pass and return their matches.
 #[gen_stub_pyfunction]
 #[pyfunction]
 fn parse(py: Python<'_>, html: String, queries: Vec<PyRef<PyQuery>>) -> PyResult<PyStore> {

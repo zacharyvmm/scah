@@ -5,10 +5,10 @@
   "title": "Every <a> in a flat list of <div><a> pairs",
   "unit": "ms",
   "environment": {
-    "date": "2026-10-03",
-    "commit": "29df6d08a64d91e196ce575bbd65ec9651a8e5cb",
+    "date": "2026-10-29",
+    "commit": "bb36054582f4fe72c8ec3851e33a52501d38bf59",
     "dirty": false,
-    "os": "Darwin 25.6.0",
+    "os": "Darwin 27.0.0",
     "arch": "arm64",
     "cpu": "Apple M5",
     "runtime": "bun 1.3.14"
@@ -17,38 +17,38 @@
     {
       "library": "scah",
       "size": 10000,
-      "mean": 5.464291352941177,
-      "stdev": 0.9880919043373795
+      "mean": 5.2842266097560975,
+      "stdev": 1.0170035153488233
     },
     {
       "library": "cheerio",
       "size": 10000,
-      "mean": 32.45465733333333,
-      "stdev": 4.554590514465696
+      "mean": 31.887351833333334,
+      "stdev": 4.4492255227304724
     },
     {
       "library": "linkedom",
       "size": 10000,
-      "mean": 50.2942125,
-      "stdev": 2.2205596852666334
+      "mean": 36.9785472,
+      "stdev": 1.4126316503987961
     },
     {
       "library": "happy-dom",
       "size": 10000,
-      "mean": 123.99022216666668,
-      "stdev": 21.610883550776627
+      "mean": 131.80547558333333,
+      "stdev": 17.364216114424377
     },
     {
       "library": "node-html-parser",
       "size": 10000,
-      "mean": 159.3759445,
-      "stdev": 3.816764902918319
+      "mean": 157.44858683333334,
+      "stdev": 4.441186036347439
     },
     {
       "library": "jsdom",
       "size": 10000,
-      "mean": 179.227552,
-      "stdev": 46.209715129178086
+      "mean": 337.3328750833333,
+      "stdev": 213.3438577534174
     }
   ]
 }

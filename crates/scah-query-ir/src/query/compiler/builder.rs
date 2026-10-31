@@ -247,6 +247,15 @@ impl<'query> QueryBuilder<'query> {
         Ok(())
     }
 
+    /// Append a child selector that matches **all** occurrences.
+    ///
+    /// The new selector is scoped to elements that already matched
+    /// the previous selector in the chain.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SelectorParseError`] if `query` is not a selector scah can
+    /// evaluate.
     pub fn all(mut self, query: &'query str, save: Save) -> Result<Self, SelectorParseError> {
         assert!(!self.selection.is_empty());
 
@@ -276,11 +285,15 @@ impl<'query> QueryBuilder<'query> {
         Ok(self)
     }
 
-    /// Append a child selector that matches **all** occurrences.
+    /// Append a child selector that matches only the **first** occurrence.
     ///
     /// The new selector is scoped to elements that already matched
     /// the previous selector in the chain.
     ///
+    /// # Errors
+    ///
+    /// Returns [`SelectorParseError`] if `query` is not a selector scah can
+    /// evaluate.
     pub fn first(mut self, query: &'query str, save: Save) -> Result<Self, SelectorParseError> {
         assert!(!self.selection.is_empty());
 

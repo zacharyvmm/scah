@@ -1,5 +1,7 @@
 mod builder;
 mod error;
+/// Query builders over owned selector strings, for the Python and Node
+/// bindings. Rust code should use [`Query`](crate::Query) instead.
 pub mod lazy;
 mod query;
 mod transition;

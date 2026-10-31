@@ -2,7 +2,7 @@
 //! allocation peaks for different HTML workloads.
 //!
 //! Usage:
-//!   cargo build --release --example capacity_profile
+//!   cargo build --release -p scah-benches --example capacity_profile
 //!   valgrind --tool=massif --massif-out-file=massif.out \
 //!     ./target/release/examples/capacity_profile <mode>
 //!   ms_print massif.out

@@ -1,10 +1,13 @@
 # scah for Java
 
-> CSS selectors meet streaming HTML parsing. Extract exactly what you select, without building a DOM.
+**Fast HTML extraction with CSS selectors. One pass, no DOM.**
 
-Java bindings for [scah](https://github.com/zacharyvmm/scah), a Rust HTML
-extraction library. scah matches CSS selectors in a single forward pass over
-the document and stores only the matches.
+Java bindings for [scah](https://github.com/zacharyvmm/scah). scah pulls the
+elements you select out of an HTML document in a single forward pass: it
+streams the document through a native Rust parser once and keeps only the
+matches. There is no DOM to build, so it is fast on large pages: finding
+every link in the 15 MB WHATWG HTML specification is about 3.5× faster than
+jsoup.
 
 ```xml
 <dependency>
@@ -89,8 +92,9 @@ The jar extracts the library for the current platform into
 Function and Memory API reads element fields several times faster, while JNI
 copies UTF-8 byte arrays once less when parsing.
 
-See the [main README](https://github.com/zacharyvmm/scah#selector-support) for
-supported selectors and text-extraction semantics.
+See [Selector support](https://github.com/zacharyvmm/scah/blob/main/docs/selectors.md)
+and [Text extraction](https://github.com/zacharyvmm/scah/blob/main/docs/text-extraction.md)
+for the selectors scah supports and what each text field contains.
 
 ## Benchmarks
 
