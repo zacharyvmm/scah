@@ -371,3 +371,11 @@ def test_large_chunks_split_across_threads():
     result = run(pages, query, attributes=["href"])
     row = [{"tag": "a", "text": "x & y", "href": "/x"}] * 3000
     assert result.to_list() == [row if i % 7 else None for i in range(100)]
+
+
+def test_many_matches_keep_every_row():
+    """A large output keeps one value per document."""
+    pages = ["<a>x</a>" * 15_000] * 100
+    result = run(pages, Query.all("a", Save.name_only()).build())
+    assert len(result) == 100
+    assert result.list.len().to_list() == [15_000] * 100

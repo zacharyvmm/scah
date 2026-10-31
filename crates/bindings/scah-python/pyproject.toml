@@ -35,8 +35,9 @@ Issues = "https://github.com/zacharyvmm/scah/issues"
 Changelog = "https://github.com/zacharyvmm/scah/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-# `scah.polars`, the polars expression plugin.
-polars = ["polars>=1.0"]
+# `scah.polars`, the polars expression plugin. Older polars drops rows of
+# large plugin outputs and loses null documents; CI tests the minimum.
+polars = ["polars>=1.25"]
 # Benchmark dependencies; run the suite with `just bench-python`.
 bench = [
     "scah",

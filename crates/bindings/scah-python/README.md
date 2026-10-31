@@ -48,7 +48,7 @@ text-extraction semantics.
 ### polars
 
 `scah.polars.parse` runs a query on every document in a column of HTML,
-inside polars (`pip install 'scah[polars]'`):
+inside polars 1.25 or later (`pip install 'scah[polars]'`):
 
 ```python
 import polars as pl
@@ -56,7 +56,7 @@ import scah
 
 pages = pl.DataFrame({
     "site": ["a", "b"],
-    "html": ["<a href='/1'>One</a><a href='/2'>Two</a>", "<p>none</p>"],
+    "html": ["<a href='/1'>One</a><a href='/2'>Two</a>", "<p><a href='/3'>Three</a></p>"],
 })
 query = scah.Query.all("a[href]", scah.Save.only_text()).build()
 
@@ -67,7 +67,7 @@ pages.select("site", "links").explode("links").unnest("links")
 # site  tag   text  href
 # a     a     One   /1
 # a     a     Two   /2
-# b     null  null  null
+# b     a     Three /3
 ```
 
 Each document gives a `list[struct]` of matches (a `struct`, or null, for
