@@ -447,8 +447,9 @@ jobs:
           ./mvnw -B verify -Dscah.native.dir="$GITHUB_WORKSPACE/target/native/out" -Dscah.library.dir=
       - name: Check native libraries
         run: |
+          # Skip the folders' own entries.
           libraries="$(unzip -Z1 crates/bindings/scah-java/target/scah-*.jar \
-            'io/github/zacharyvmm/scah/native/*/*' | sort)"
+            'io/github/zacharyvmm/scah/native/*/*' | grep -v '/$' | sort)"
           echo "$libraries"
           test "$(wc -l <<< "$libraries")" -eq 8
       - name: Upload
