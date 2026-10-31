@@ -36,9 +36,9 @@ for link in store.get("a[href]"):
   HTML, source text, or normalized text. Nothing else is stored.
 - **Structured results.** Nest queries with `.then()` to extract records,
   such as each product with its own name and price, in the same single pass.
-- **Correct or an error.** A selector scah can't evaluate in one pass, such as
-  `:has()`, is rejected when the query is built. It is never run as a
-  narrower selector that silently returns less.
+- **Unsupported means an error.** A selector scah can't evaluate in one
+  pass, such as `:has()`, is rejected when the query is built. It is never
+  run as a narrower selector that silently returns less.
 - **Built for real-world HTML.** Implied end tags, misnested tags, unquoted
   attributes, and truncated documents are handled with HTML's own recovery
   rules.
@@ -211,9 +211,10 @@ attributes. Normalized text decodes character references, skips `script`,
 
 For bulk work, export matches as an [Apache Arrow](https://arrow.apache.org/)
 table instead of element objects. String columns point straight into the
-parsed HTML and text buffers, so nothing is copied and no per-element objects
-are created. Any library that reads the Arrow C Data Interface can import the
-table:
+parsed HTML and text buffers rather than copying them (values of 12 bytes or
+fewer are stored inline, as Arrow string views do), and no per-element
+objects are created. Any library that reads the Arrow C Data Interface can
+import the table:
 
 ```python
 import polars as pl

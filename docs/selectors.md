@@ -2,9 +2,15 @@
 
 scah evaluates CSS selectors in a single forward pass, deciding each element
 when its start tag is read. It supports the selectors that can be decided at
-that point, and it rejects the rest when the query is built. It never runs a
-narrowed version of a selector, so a query either matches what a browser would
-match or returns an error.
+that point, and it rejects the rest when the query is built. It never quietly
+runs a narrowed version of a selector it doesn't support: unsupported syntax
+is an error.
+
+> **Attribute values are compared as written.** Character references in
+> attribute values are not decoded, so `[title="&"]` doesn't match
+> `title="&amp;"`, but `[title="&amp;"]` does. Attribute values read back from
+> results are undecoded too. See
+> [#138](https://github.com/zacharyvmm/scah/issues/138).
 
 ## Supported syntax
 

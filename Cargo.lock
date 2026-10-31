@@ -2416,6 +2416,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "scah-doctests"
+version = "0.2.0-dev"
+dependencies = [
+ "scah",
+]
+
+[[package]]
 name = "scah-ffi"
 version = "0.2.0-dev"
 dependencies = [

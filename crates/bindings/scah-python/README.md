@@ -125,8 +125,9 @@ class, and attributes. Save only what you read: each extra field costs time.
 
 For bulk work, `store.to_arrow()` returns the matches as an
 [Apache Arrow](https://arrow.apache.org/) table instead of element objects.
-String columns point straight into the parsed HTML and text buffers, so
-nothing is copied, and any library that reads the Arrow C Data Interface can
+String columns point straight into the parsed HTML and text buffers rather
+than copying them (values of 12 bytes or fewer are stored inline, as Arrow
+string views do), and any library that reads the Arrow C Data Interface can
 import the table:
 
 ```python

@@ -1,0 +1,11 @@
+[package]
+name = "scah-doctests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Runs the Rust examples in scah's README and guides as doctests."
+
+[dependencies]
+scah.workspace = true

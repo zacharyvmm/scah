@@ -170,11 +170,6 @@ pub use scah_store::{
     Attributes, Buffer, CapacityOptions, ElementId, ElementRef, Elements, Field, HeapUsage, Store,
 };
 
-// Runs the Rust examples in the README as doctests, so they stay correct.
-#[cfg(doctest)]
-#[doc = include_str!("../../../README.md")]
-struct ReadmeDoctests;
-
 /// Implementation details referenced by `query!` expansions.
 #[doc(hidden)]
 pub mod __private {

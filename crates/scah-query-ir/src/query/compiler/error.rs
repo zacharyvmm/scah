@@ -16,8 +16,8 @@ enum SelectorParseErrorKind {
 /// A selector that scah rejected, either because it is not valid CSS or
 /// because scah cannot evaluate it in a single forward pass.
 ///
-/// scah never narrows a selector it does not fully support: a query either
-/// matches what a browser would match, or fails to build with this error.
+/// scah never quietly narrows a selector it does not fully support: such a
+/// query fails to build with this error instead.
 ///
 /// ```rust
 /// use scah_query_ir::{Query, Save};

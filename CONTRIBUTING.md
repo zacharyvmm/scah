@@ -32,6 +32,7 @@ Run `just` to list every recipe.
 | `crates/scah-macros` | The `query!` macro |
 | `crates/scah-ffi` | Owned query and store handles shared by the foreign-language bindings, and Arrow export |
 | `crates/scah-differential` | Compares results with the last published release |
+| `crates/scah-doctests` | Runs the Rust examples in `README.md` and `docs/` as doctests |
 | `crates/bindings/scah-python` | Python bindings (PyO3 and maturin), including the polars plugin |
 | `crates/bindings/scah-node` | Node and Bun bindings (napi-rs) |
 | `crates/bindings/scah-c` | C ABI, its generated `include/scah.h`, and C/C++ smoke tests |
@@ -51,8 +52,8 @@ is the best place to start reading the code.
 - Add a test for behavior changes. Parser edge cases belong in
   `crates/scah/tests/html_soup/`.
 - Update the docs that describe the behavior you changed: the guides in
-  `docs/`, the READMEs, and the rustdoc. The Rust examples in `README.md` run
-  as doctests, so `cargo test -p scah --doc` checks them.
+  `docs/`, the READMEs, and the rustdoc. The Rust examples in `README.md` and
+  `docs/` run as doctests, so `cargo test -p scah-doctests` checks them.
 - Add an entry under `## [Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md) for
   user-visible changes.
 - If you change a binding's public API, regenerate the Python stub with
