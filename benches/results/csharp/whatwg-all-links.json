@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "suite": "csharp",
+  "scenario": "whatwg-all-links",
+  "title": "Every <a> in the WHATWG HTML specification",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-10-31",
+    "commit": "4c8310970f894c165f4bb24372fa6e6b6b5d5cb8",
+    "dirty": false,
+    "os": "Linux 7.0.0-38-generic",
+    "arch": "x86_64",
+    "cpu": "Intel(R) Core(TM) i7-1065G7 CPU @ 1.30GHz",
+    "runtime": ".NET 10.0.14"
+  },
+  "results": [
+    {
+      "library": "scah",
+      "size": null,
+      "mean": 63.391964175,
+      "stdev": 0.34406593856850193
+    },
+    {
+      "library": "AngleSharp",
+      "size": null,
+      "mean": 934.9772433076923,
+      "stdev": 9.177678539597911
+    },
+    {
+      "library": "HtmlAgilityPack",
+      "size": null,
+      "mean": 1615.7181400285713,
+      "stdev": 52.21166007383819
+    },
+    {
+      "library": "HtmlAgilityPack + Fizzler",
+      "size": null,
+      "mean": 1675.4416534782608,
+      "stdev": 40.41309074691544
+    }
+  ]
+}

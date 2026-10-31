@@ -92,6 +92,27 @@ copies UTF-8 byte arrays once less when parsing.
 See the [main README](https://github.com/zacharyvmm/scah#selector-support) for
 supported selectors and text-extraction semantics.
 
+## Benchmarks
+
+Measured with JMH on Java 25. `scah` uses the Foreign Function and Memory
+API; `scah (JNI)` the JNI backend. In the first-match scenario, jsoup's
+`StreamParser` and Jericho stop reading at the match, while most of scah's time
+goes to encoding the whole `String` as UTF-8 before parsing.
+
+<!-- benchmarks:java -->
+| Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
+| :--- | ---: | ---: | ---: | ---: |
+| **scah** | **71.0 ms** | **25.5 ms** | **6.74 ms** | **76.1 µs** |
+| scah (JNI) | 90.7 ms (1.28×) | 38.2 ms (1.50×) | 9.97 ms (1.48×) | 81.2 µs (1.07×) |
+| jsoup | 252 ms (3.54×) | 55.6 ms (2.18×) | 22.0 ms (3.26×) | 16.5 ms (216×) |
+| jsoup (StreamParser) | 308 ms (4.34×) | 58.2 ms (2.28×) | 28.7 ms (4.25×) | 5.24 µs (0.07×) |
+| Jericho | 383 ms (5.40×) | 75.6 ms (2.96×) | 22.7 ms (3.37×) | 2.91 µs (0.04×) |
+| HtmlCleaner | 1.36 s (19.1×) | 225 ms (8.80×) | 98.3 ms (14.6×) | 66.2 ms (870×) |
+| Jodd Jerry | 1.63 s (22.9×) | 70.2 ms (2.75×) | 45.8 ms (6.78×) | 44.9 ms (590×) |
+
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-31; raw data and run details in [`benches/results/java`](https://github.com/zacharyvmm/scah/tree/main/benches/results/java).
+<!-- /benchmarks:java -->
+
 ## Development
 
 The public API and the JNI backend, whose native half is

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "suite": "java",
+  "scenario": "whatwg-all-links",
+  "title": "Every <a> in the WHATWG HTML specification",
+  "unit": "ms",
+  "environment": {
+    "date": "2026-10-31",
+    "commit": "4c8310970f894c165f4bb24372fa6e6b6b5d5cb8",
+    "dirty": false,
+    "os": "Linux 7.0.0-38-generic",
+    "arch": "x86_64",
+    "cpu": "Intel(R) Core(TM) i7-1065G7 CPU @ 1.30GHz",
+    "runtime": "Java 25.0.5 (OpenJDK 64-Bit Server VM)"
+  },
+  "results": [
+    {
+      "library": "scah",
+      "size": null,
+      "mean": 71.00258459904761,
+      "stdev": 0.3914533776799478
+    },
+    {
+      "library": "scah (JNI)",
+      "size": null,
+      "mean": 90.72872385189393,
+      "stdev": 0.355339133810317
+    },
+    {
+      "library": "jsoup",
+      "size": null,
+      "mean": 251.6770796075,
+      "stdev": 20.883389642472626
+    },
+    {
+      "library": "jsoup (StreamParser)",
+      "size": null,
+      "mean": 307.94714832916657,
+      "stdev": 12.858949674384384
+    },
+    {
+      "library": "Jericho",
+      "size": null,
+      "mean": 383.0604204833333,
+      "stdev": 27.052194879479018
+    },
+    {
+      "library": "HtmlCleaner",
+      "size": null,
+      "mean": 1359.3983657500003,
+      "stdev": 73.11510533574625
+    },
+    {
+      "library": "Jodd Jerry",
+      "size": null,
+      "mean": 1629.17922615,
+      "stdev": 27.102674284453926
+    }
+  ]
+}

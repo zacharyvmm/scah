@@ -72,6 +72,22 @@ Failures throw `ScahException`, whose `Status` says why, such as
 See the [main README](https://github.com/zacharyvmm/scah#selector-support) for
 supported selectors and text-extraction semantics.
 
+## Benchmarks
+
+Measured with BenchmarkDotNet on .NET 10. `HtmlAgilityPack` queries with
+XPath, its own query language; `HtmlAgilityPack + Fizzler` with CSS selectors.
+
+<!-- benchmarks:csharp -->
+| Library | WHATWG spec | Nested (all) | Flat (all) | Flat (first) |
+| :--- | ---: | ---: | ---: | ---: |
+| **scah** | **63.4 ms** | **20.1 ms** | **5.16 ms** | **56.6 µs** |
+| AngleSharp | 935 ms (14.7×) | 176 ms (8.72×) | 75.0 ms (14.5×) | 62.1 ms (1,097×) |
+| HtmlAgilityPack | 1.62 s (25.5×) | 325 ms (16.1×) | 132 ms (25.5×) | 96.9 ms (1,710×) |
+| HtmlAgilityPack + Fizzler | 1.68 s (26.4×) | 263 ms (13.0×) | 135 ms (26.2×) | 97.2 ms (1,717×) |
+
+Mean time per parse and query; lower is better. Multipliers are relative to scah. Synthetic inputs use 10,000 elements. Measured 2026-10-31; raw data and run details in [`benches/results/csharp`](https://github.com/zacharyvmm/scah/tree/main/benches/results/csharp).
+<!-- /benchmarks:csharp -->
+
 ## Development
 
 The binding calls the C ABI in [`crates/bindings/scah-c`](../scah-c) through

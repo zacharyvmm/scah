@@ -1,13 +1,15 @@
 """Normalize benchmark output into benches/results and render README tables.
 
-Every suite (rust, python, node) is stored in one format so the README and
-the project website read the same data:
+Every suite (rust, python, node, java, csharp) is stored in one format so the
+README and the project website read the same data:
 
     benches/results/<suite>/<scenario>.json
 
 Usage:
     report.py import-criterion criterion.json
     report.py import-pytest whatwg.json --suite python --scenario whatwg-all-links
+    report.py import-jmh jmh.json --size 10000
+    report.py import-benchmarkdotnet ScrapeBenchmark-report-full.json --size 10000
     report.py readme README.md crates/bindings/scah-python/README.md
 
 The pytest importer also accepts the pytest-benchmark-shaped JSON written by
@@ -28,7 +30,7 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_DIR = REPO_ROOT / "benches" / "results"
-SUITES = ("rust", "python", "node")
+SUITES = ("rust", "python", "node", "java", "csharp")
 
 # Display order of README columns.
 SCENARIOS = {
@@ -53,6 +55,9 @@ SCENARIOS = {
         "title": "The first <a> in a flat list of <div><a> pairs",
     },
 }
+
+# Scenarios that parse a real document rather than generated elements.
+REAL_DOCUMENTS = {"whatwg-all-links"}
 
 CRITERION_GROUPS = {
     "simple_all_selection_comparison": "simple-all",
@@ -99,6 +104,8 @@ BENCH_OUTPUTS = (
     "README.md",
     "crates/bindings/scah-python/README.md",
     "crates/bindings/scah-node/README.md",
+    "crates/bindings/scah-java/README.md",
+    "crates/bindings/scah-csharp/README.md",
 )
 
 
@@ -217,6 +224,74 @@ def import_pytest(
     return write_result(suite, scenario, capture_environment(runtime), results)
 
 
+def import_jmh(path: Path, size: int | None) -> list[Path]:
+    """Read JMH's `-rf json` output from crates/bindings/scah-java/benchmark.
+
+    Each benchmark method is a scenario, named in camelCase (`simpleAll`), and
+    its `library` parameter is the library.
+    """
+    runs = json.loads(path.read_text())
+    by_scenario: dict[str, list[dict]] = {}
+    for run in runs:
+        metric = run["primaryMetric"]
+        if metric["scoreUnit"] != "ms/op":
+            raise SystemExit(f"expected ms/op, got {metric['scoreUnit']} in {run['benchmark']}")
+        scenario = _kebab(run["benchmark"].rsplit(".", 1)[1])
+        iterations = [score for fork in metric["rawData"] for score in fork]
+        by_scenario.setdefault(scenario, []).append(
+            {
+                "library": run["params"]["library"],
+                "size": None if scenario in REAL_DOCUMENTS else size,
+                "mean": metric["score"],
+                "stdev": _stdev(iterations),
+            }
+        )
+
+    runtime = f"Java {runs[0]['jdkVersion']} ({runs[0]['vmName']})" if runs else None
+    environment = capture_environment(runtime)
+    return [
+        write_result("java", scenario, environment, results)
+        for scenario, results in by_scenario.items()
+    ]
+
+
+def import_benchmarkdotnet(path: Path, size: int | None) -> list[Path]:
+    """Read BenchmarkDotNet's full JSON report from crates/bindings/scah-csharp/Scah.Benchmarks.
+
+    Each benchmark method is a scenario, named in PascalCase (`SimpleAll`),
+    and its `Library` parameter is the library. `Parameters` shortens long
+    values, so the library comes from `FullName`, which keeps them whole.
+    """
+    data = json.loads(path.read_text())
+    by_scenario: dict[str, list[dict]] = {}
+    for bench in data["Benchmarks"]:
+        library = re.search(r'Library: "((?:[^"\\]|\\.)*)"', bench["FullName"])
+        if library is None:
+            raise SystemExit(f"no Library parameter in {bench['FullName']}")
+        scenario = _kebab(bench["Method"])
+        stats = bench["Statistics"]
+        by_scenario.setdefault(scenario, []).append(
+            {
+                "library": library.group(1),
+                "size": None if scenario in REAL_DOCUMENTS else size,
+                "mean": stats["Mean"] / 1e6,
+                "stdev": stats["StandardDeviation"] / 1e6,
+            }
+        )
+
+    runtime = data["HostEnvironmentInfo"]["RuntimeVersion"].split(" (")[0]
+    environment = capture_environment(runtime)
+    return [
+        write_result("csharp", scenario, environment, results)
+        for scenario, results in by_scenario.items()
+    ]
+
+
+def _kebab(name: str) -> str:
+    """`whatwgAllLinks` or `WhatwgAllLinks` to `whatwg-all-links`."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "-", name).lower()
+
+
 def _stdev(values: list[float]) -> float:
     if len(values) < 2:
         return 0.0
@@ -330,6 +405,14 @@ def main(argv: list[str] | None = None) -> int:
     pytest.add_argument("--size", type=int, help="input element count for synthetic scenarios")
     pytest.add_argument("--runtime", help='e.g. "bun 1.3.0"; defaults to the Python version in the input')
 
+    jmh = commands.add_parser("import-jmh", help="import JMH JSON (Java)")
+    jmh.add_argument("input", type=Path)
+    jmh.add_argument("--size", type=int, help="input element count for synthetic scenarios")
+
+    dotnet = commands.add_parser("import-benchmarkdotnet", help="import BenchmarkDotNet full JSON (C#)")
+    dotnet.add_argument("input", type=Path)
+    dotnet.add_argument("--size", type=int, help="input element count for synthetic scenarios")
+
     readme = commands.add_parser("readme", help="regenerate <!-- benchmarks:SUITE --> blocks")
     readme.add_argument("files", type=Path, nargs="+")
     readme.add_argument("--check", action="store_true", help="fail if any file is out of date")
@@ -339,6 +422,10 @@ def main(argv: list[str] | None = None) -> int:
         import_criterion(args.input)
     elif args.command == "import-pytest":
         import_pytest(args.input, args.suite, args.scenario, args.runtime, args.size)
+    elif args.command == "import-jmh":
+        import_jmh(args.input, args.size)
+    elif args.command == "import-benchmarkdotnet":
+        import_benchmarkdotnet(args.input, args.size)
     elif args.command == "readme":
         stale = []
         for file in args.files:
