@@ -253,7 +253,7 @@ jobs:
         run: |
           if git diff --quiet "$BASE_SHA" HEAD -- Cargo.toml .cargo/config.toml \
             crates/bindings/native crates/bindings/scah-c/Cargo.toml \
-            crates/bindings/scah-c/include crates/bindings/scah-csharp \
+            crates/bindings/scah-c/include crates/bindings/scah-csharp crates/bindings/scah-java \
             .github/workflows/native-libraries.yml .github/workflows/tests.yml \
             ':(exclude)*.md'; then
             echo "No native-library-relevant changes; skipping the native library build."
@@ -386,6 +386,140 @@ jobs:
             mcr.microsoft.com/dotnet/sdk:10.0-alpine \
             dotnet test Scah.Tests -f net10.0 -p:ScahUsePackage="$SCAH_VERSION" \
               -p:RestoreAdditionalProjectSources=/io/dist
+
+  java:
+    name: Java Binding Tests (${{ matrix.os }}, JDK ${{ matrix.java }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported JDK, and the newest LTS everywhere.
+          - os: ubuntu-latest
+            java: 22
+          - os: ubuntu-latest
+            java: 25
+          - os: macos-26
+            java: 25
+          - os: windows-latest
+            java: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - name: Build native library
+        run: cargo build -p scah-c
+      - name: Run Java tests
+        working-directory: crates/bindings/scah-java
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then mvnw=./mvnw.cmd; else mvnw=./mvnw; fi
+          "$mvnw" -B verify
+
+  java-package:
+    name: Java Package
+    needs: native-libraries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+      - name: Download native libraries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: target/native/out
+      # Testing with an empty scah.library.dir loads the jar's own libraries.
+      - name: Pack and test
+        working-directory: crates/bindings/scah-java
+        run: |
+          # Each artifact downloads to native-<rid>; the jar wants <rid>.
+          for dir in ../../../target/native/out/native-*; do
+            mv "$dir" "../../../target/native/out/${dir##*/native-}"
+          done
+          ./mvnw -B verify -Dscah.native.dir="$GITHUB_WORKSPACE/target/native/out" -Dscah.library.dir=
+      - name: Check native libraries
+        run: |
+          # Skip the folders' own entries.
+          libraries="$(unzip -Z1 crates/bindings/scah-java/target/scah-*.jar \
+            'io/github/zacharyvmm/scah/native/*/*' | grep -v '/$' | sort)"
+          echo "$libraries"
+          test "$(wc -l <<< "$libraries")" -eq 8
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: java-package
+          path: crates/bindings/scah-java/target/scah-*.jar
+          if-no-files-found: error
+
+  java-package-test:
+    name: Java Package Test (${{ matrix.rid }})
+    needs: java-package
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+          - rid: linux-musl-x64
+            os: ubuntu-latest
+            alpine: true
+          - rid: linux-musl-arm64
+            os: ubuntu-24.04-arm
+            alpine: true
+          - rid: osx-x64
+            os: macos-26-intel
+          - rid: osx-arm64
+            os: macos-26
+          - rid: win-x64
+            os: windows-latest
+          - rid: win-arm64
+            os: windows-11-arm
+            # Temurin publishes no Windows arm64 JDK 25.
+            java-distribution: microsoft
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: java-package
+          path: dist
+      - uses: actions/setup-java@v5
+        if: ${{ !matrix.alpine }}
+        with:
+          distribution: ${{ matrix.java-distribution || 'temurin' }}
+          java-version: 25
+          cache: maven
+      # The tests run against the downloaded jar and the libraries packed in it.
+      - name: Run Java tests against the package
+        if: ${{ !matrix.alpine }}
+        working-directory: crates/bindings/scah-java
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then mvnw=./mvnw.cmd; else mvnw=./mvnw; fi
+          jar="$(ls "$GITHUB_WORKSPACE"/dist/scah-*.jar)"
+          "$mvnw" -B verify -Dscah.library.dir= -Dscah.test.jar="$jar"
+      # JavaScript actions cannot run in Alpine containers, so run Docker directly.
+      - name: Run Java tests against the package on Alpine
+        if: matrix.alpine
+        run: |
+          jar="$(cd dist && ls scah-*.jar)"
+          docker run --rm -v "$PWD:/io" -w /io/crates/bindings/scah-java \
+            eclipse-temurin:25-jdk-alpine \
+            ./mvnw -B verify -Dscah.library.dir= -Dscah.test.jar="/io/dist/$jar"
 
   rust-aarch64:
     name: Rust AArch64 SIMD Checks
