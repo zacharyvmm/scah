@@ -143,5 +143,7 @@ character references, and `output.rs` what a parse writes.
   misnesting, truncated input, void and raw-text elements.
 - `crates/scah-differential` runs the same queries through this checkout and
   the last published release and compares the results.
+- `crates/scah-doctests` runs the Rust examples in the README and these
+  guides as doctests.
 - Performance gates in CI compare every pull request against its base. See
   [`benches/README.md`](../benches/README.md).
