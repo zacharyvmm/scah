@@ -6,8 +6,10 @@ import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ClassLoaderTest {
     @Test
@@ -21,6 +23,23 @@ class ClassLoaderTest {
         // And this test's own classloader still works.
         try (Query query = Query.all("a", Save.all()).build(); Store store = Store.parse("<a></a>", query)) {
             assertEquals(1, store.get("a").size());
+        }
+    }
+
+    @Test
+    void copiesForOtherClassLoadersGoInTheCache(@TempDir Path cache)
+            throws Exception {
+        String previous = System.getProperty("scah.library.cache");
+        System.setProperty("scah.library.cache", cache.toString());
+        try {
+            Path directory = NativeLibrary.privateDirectory("jni-");
+            assertEquals(NativeLibrary.cacheRoot(cache).root, directory.getParent());
+        } finally {
+            if (previous == null) {
+                System.clearProperty("scah.library.cache");
+            } else {
+                System.setProperty("scah.library.cache", previous);
+            }
         }
     }
 

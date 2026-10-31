@@ -42,10 +42,10 @@ final class JniBackend implements Backend {
         }
     }
 
-    /** A copy of {@code library} in a new private directory, deleted when the JVM exits. */
+    /** A copy of {@code library} in a new directory of the cache, deleted when the JVM exits. */
     private static Path privateCopy(Path library) {
         try {
-            Path directory = Files.createTempDirectory("scah-jni-");
+            Path directory = NativeLibrary.privateDirectory("jni-");
             Path copy = Files.copy(library, directory.resolve(library.getFileName()));
             // Files delete on exit in the reverse order they were registered.
             directory.toFile().deleteOnExit();
