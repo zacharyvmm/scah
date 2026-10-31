@@ -6,6 +6,9 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use scah_core::{Attribute, ElementId, Store};
 use std::sync::Arc;
 
+/// A matched element.
+///
+/// Content fields are `None` when the query did not save them.
 #[gen_stub_pyclass]
 #[pyclass(module = "scah", name = "Element")]
 pub struct PyElement {
@@ -17,25 +20,30 @@ pub struct PyElement {
 #[pymethods]
 impl PyElement {
     #[getter]
+    /// The tag name.
     pub fn name(&self) -> Option<&str> {
         self.store.element(self.id).map(|e| e.name())
     }
 
     #[getter]
+    /// The `class` attribute.
     pub fn class_name(&self) -> Option<&str> {
         self.store.element(self.id).and_then(|e| e.class())
     }
 
     #[getter]
+    /// The `id` attribute.
     pub fn id(&self) -> Option<&str> {
         self.store.element(self.id).and_then(|e| e.id())
     }
 
+    /// The value of the attribute named `key`, matched case-insensitively.
     pub fn get_attribute(&self, key: String) -> Option<&str> {
         self.store.element(self.id).and_then(|e| e.attribute(&key))
     }
 
     #[getter]
+    /// The attributes other than `id` and `class`.
     pub fn attributes<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyDict>> {
         let object = PyDict::new(py);
         let attributes = self.store.element(self.id).and_then(|e| e.attributes());
@@ -49,21 +57,25 @@ impl PyElement {
     }
 
     #[getter]
+    /// The markup inside the element.
     pub fn inner_html(&self) -> Option<&str> {
         self.store.element(self.id).and_then(|e| e.inner_html())
     }
 
     #[getter]
+    /// The source text of the element's descendants, with markup removed.
     pub fn raw_text(&self) -> Option<&str> {
         self.store.element(self.id).and_then(|e| e.raw_text())
     }
 
     #[getter]
+    /// Normalized, readable text.
     pub fn text(&self) -> Option<&str> {
         self.store.element(self.id).and_then(|e| e.text())
     }
 
     #[getter]
+    /// Deprecated: use `text`.
     pub fn text_content<'a>(&'a self, py: Python<'_>) -> PyResult<Option<&'a str>> {
         PyErr::warn(
             py,
@@ -74,6 +86,10 @@ impl PyElement {
         Ok(self.text())
     }
 
+    /// This element's matches for the child query `query`.
+    ///
+    /// Raises `ValueError` if this element has no matches for `query`, or
+    /// `query` is not one of its child queries.
     pub fn get(&self, query: String) -> PyResult<Vec<PyElement>> {
         match self.store.child_results(self.id, &query) {
             None => Err(PyValueError::new_err(format!(
@@ -117,6 +133,7 @@ impl PyElement {
     }
 }
 
+/// The results of `parse`.
 #[gen_stub_pyclass]
 #[pyclass(module = "scah", name = "Store")]
 pub(crate) struct PyStore {
@@ -140,6 +157,7 @@ impl PyStore {
             .map(|ids| self.elements(ids))
     }
 
+    /// The number of saved elements.
     fn __len__(&self) -> usize {
         self.store.len()
     }

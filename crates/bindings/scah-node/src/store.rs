@@ -5,6 +5,7 @@ use scah::{ElementId, Store};
 
 use std::sync::Arc;
 
+/// The results of `parse`.
 #[napi(js_name = "Store")]
 pub struct JSStore {
     pub(crate) store: Arc<Store<'static, 'static>>,
@@ -38,6 +39,7 @@ impl JSStore {
     }
 
     #[napi(getter)]
+    /// The number of saved elements.
     pub fn length(&self) -> i64 {
         self.store.len() as i64
     }

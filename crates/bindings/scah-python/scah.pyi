@@ -16,70 +16,186 @@ __all__ = [
 
 @typing.final
 class Element:
+    r"""
+    A matched element.
+    
+    Content fields are `None` when the query did not save them.
+    """
     @property
-    def name(self) -> typing.Optional[builtins.str]: ...
+    def name(self) -> typing.Optional[builtins.str]:
+        r"""
+        The tag name.
+        """
     @property
-    def class_name(self) -> typing.Optional[builtins.str]: ...
+    def class_name(self) -> typing.Optional[builtins.str]:
+        r"""
+        The `class` attribute.
+        """
     @property
-    def id(self) -> typing.Optional[builtins.str]: ...
+    def id(self) -> typing.Optional[builtins.str]:
+        r"""
+        The `id` attribute.
+        """
     @property
-    def attributes(self) -> dict: ...
+    def attributes(self) -> dict:
+        r"""
+        The attributes other than `id` and `class`.
+        """
     @property
-    def inner_html(self) -> typing.Optional[builtins.str]: ...
+    def inner_html(self) -> typing.Optional[builtins.str]:
+        r"""
+        The markup inside the element.
+        """
     @property
-    def raw_text(self) -> typing.Optional[builtins.str]: ...
+    def raw_text(self) -> typing.Optional[builtins.str]:
+        r"""
+        The source text of the element's descendants, with markup removed.
+        """
     @property
-    def text(self) -> typing.Optional[builtins.str]: ...
+    def text(self) -> typing.Optional[builtins.str]:
+        r"""
+        Normalized, readable text.
+        """
     @property
-    def text_content(self) -> typing.Optional[builtins.str]: ...
-    def get_attribute(self, key: builtins.str) -> typing.Optional[builtins.str]: ...
-    def get(self, query: builtins.str) -> builtins.list[Element]: ...
+    def text_content(self) -> typing.Optional[builtins.str]:
+        r"""
+        Deprecated: use `text`.
+        """
+    def get_attribute(self, key: builtins.str) -> typing.Optional[builtins.str]:
+        r"""
+        The value of the attribute named `key`, matched case-insensitively.
+        """
+    def get(self, query: builtins.str) -> builtins.list[Element]:
+        r"""
+        This element's matches for the child query `query`.
+        
+        Raises `ValueError` if this element has no matches for `query`, or
+        `query` is not one of its child queries.
+        """
     def keys(self) -> builtins.list[builtins.str]: ...
     def __getitem__(self, key: builtins.str) -> typing.Any: ...
 
 @typing.final
 class PyQuery:
+    r"""
+    A built query, ready to pass to `parse`. It can be reused across documents.
+    """
     def __repr__(self) -> builtins.str: ...
 
 @typing.final
 class PyQueryBuilder:
-    def all(self, selector: builtins.str, save: Save) -> PyQueryBuilder: ...
-    def first(self, selector: builtins.str, save: Save) -> PyQueryBuilder: ...
-    def then(self, callback: typing.Any) -> PyQueryBuilder: ...
-    def build(self) -> PyQuery: ...
+    r"""
+    A query being built. Add child queries with `all`, `first`, or `then`,
+    then call `build`.
+    """
+    def all(self, selector: builtins.str, save: Save) -> PyQueryBuilder:
+        r"""
+        Add a child query that keeps every match of `selector` inside each
+        match of the last selector.
+        """
+    def first(self, selector: builtins.str, save: Save) -> PyQueryBuilder:
+        r"""
+        Add a child query that keeps the first match of `selector` inside each
+        match of the last selector.
+        """
+    def then(self, callback: typing.Any) -> PyQueryBuilder:
+        r"""
+        Add the child queries that `callback(factory)` returns. They match inside
+        each match of the last selector; build them with `factory.all()` and
+        `factory.first()`.
+        """
+    def build(self) -> PyQuery:
+        r"""
+        Finish the query, ready to pass to `parse`.
+        
+        Raises `ValueError` if a selector is invalid or uses syntax scah cannot
+        evaluate in one pass, such as `:has()` or `:last-child`.
+        """
 
 @typing.final
 class PyQueryFactory:
-    def all(self, selector: builtins.str, save: Save) -> PyQueryBuilder: ...
-    def first(self, selector: builtins.str, save: Save) -> PyQueryBuilder: ...
+    r"""
+    Builds child queries inside a `then` callback.
+    """
+    def all(self, selector: builtins.str, save: Save) -> PyQueryBuilder:
+        r"""
+        A child query that keeps every match of `selector`.
+        """
+    def first(self, selector: builtins.str, save: Save) -> PyQueryBuilder:
+        r"""
+        A child query that keeps the first match of `selector`.
+        """
 
 @typing.final
 class Query:
+    r"""
+    Entry point for building queries.
+    """
     @staticmethod
-    def all(selector: builtins.str, save: Save) -> PyQueryBuilder: ...
+    def all(selector: builtins.str, save: Save) -> PyQueryBuilder:
+        r"""
+        Start a query that keeps every element matching `selector`.
+        """
     @staticmethod
-    def first(selector: builtins.str, save: Save) -> PyQueryBuilder: ...
+    def first(selector: builtins.str, save: Save) -> PyQueryBuilder:
+        r"""
+        Start a query that keeps the first element matching `selector`.
+        """
 
 @typing.final
 class Save:
+    r"""
+    What to keep for each match of a query.
+    
+    Every option except `name_only()` and `attributes=False` also keeps the
+    element's id, class, and attributes.
+    """
     @staticmethod
-    def only_inner_html() -> Save: ...
+    def only_inner_html() -> Save:
+        r"""
+        Keep the markup inside the element.
+        """
     @staticmethod
-    def only_raw_text() -> Save: ...
+    def only_raw_text() -> Save:
+        r"""
+        Keep the source text of the element's descendants, with markup removed.
+        """
     @staticmethod
-    def only_text() -> Save: ...
+    def only_text() -> Save:
+        r"""
+        Keep normalized, readable text: references decoded, hidden content
+        skipped, and line breaks between blocks.
+        """
     @staticmethod
-    def only_text_content() -> Save: ...
+    def only_text_content() -> Save:
+        r"""
+        Deprecated: use `only_text()`.
+        """
     @staticmethod
-    def all() -> Save: ...
+    def all() -> Save:
+        r"""
+        Keep inner HTML, raw text, and normalized text.
+        """
     @staticmethod
-    def none() -> Save: ...
+    def none() -> Save:
+        r"""
+        Keep no content, only the element's name and attributes.
+        """
     @staticmethod
-    def name_only() -> Save: ...
-    def __new__(cls, inner_html: builtins.bool = False, text: typing.Optional[builtins.bool] = None, attributes: builtins.bool = True, *, raw_text: builtins.bool = False, text_content: typing.Optional[builtins.bool] = None) -> Save: ...
+    def name_only() -> Save:
+        r"""
+        Keep only the element's name.
+        """
+    def __new__(cls, inner_html: builtins.bool = False, text: typing.Optional[builtins.bool] = None, attributes: builtins.bool = True, *, raw_text: builtins.bool = False, text_content: typing.Optional[builtins.bool] = None) -> Save:
+        r"""
+        Choose each field to keep. `text_content` is a deprecated alias for `text`.
+        """
 
 @typing.final
 class Store:
+    r"""
+    The results of `parse`.
+    """
     def get(self, query: builtins.str) -> typing.Optional[builtins.list[Element]]:
         r"""
         Results of the first query whose selector is `query`.
@@ -88,7 +204,13 @@ class Store:
         r"""
         Results of the query at `index` in the list given to `parse`.
         """
-    def __len__(self) -> builtins.int: ...
+    def __len__(self) -> builtins.int:
+        r"""
+        The number of saved elements.
+        """
 
-def parse(html: builtins.str, queries: typing.Sequence[PyQuery]) -> Store: ...
+def parse(html: builtins.str, queries: typing.Sequence[PyQuery]) -> Store:
+    r"""
+    Run `queries` over `html` in a single pass and return their matches.
+    """
 

@@ -15,6 +15,7 @@ mod elements;
 
 #[napi]
 #[allow(dead_code)]
+/// Run `queries` over `html` in a single pass and return their matches.
 fn parse(html: String, queries: Vec<Reference<JsQuery>>) -> Result<JSStore> {
     // SAFETY:
     // The returned JSStore stores `_html: Arc<String>` alongside the parsed

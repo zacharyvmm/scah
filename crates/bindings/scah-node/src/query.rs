@@ -5,14 +5,22 @@ use napi::Result;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
+/// What to keep for each match of a query. Every field is optional; by
+/// default only the element's name and attributes are kept.
 #[napi(object, js_name = "Save")]
 #[derive(Clone, Copy, Debug)]
 pub struct JsSave {
+    /// Keep the markup inside the element. Default `false`.
     pub inner_html: Option<bool>,
     /// Deprecated compatibility alias for `text`.
     pub text_content: Option<bool>,
+    /// Keep the element's id, class, and other attributes. Default `true`.
     pub attributes: Option<bool>,
+    /// Keep the source text of the element's descendants, with markup removed.
+    /// Default `false`.
     pub raw_text: Option<bool>,
+    /// Keep normalized, readable text: references decoded, hidden content
+    /// skipped, and line breaks between blocks. Default `false`.
     pub text: Option<bool>,
 }
 
@@ -37,6 +45,8 @@ impl JsSave {
     }
 }
 
+/// A query being built. Add child queries with `all`, `first`, or `then`,
+/// then call `build`.
 #[napi(js_name = "QueryBuilder")]
 pub struct JsQueryBuilder {
     builder: LazyQueryBuilder<String>,
@@ -45,6 +55,8 @@ pub struct JsQueryBuilder {
 #[napi]
 impl JsQueryBuilder {
     #[napi]
+    /// Add a child query that keeps every match of `selector` inside each
+    /// match of the last selector.
     pub fn all(&mut self, selector: String, save: Option<JsSave>) -> JsQueryBuilder {
         self.builder
             .all_mut(selector, save.unwrap_or_else(JsSave::none).to_save());
@@ -54,6 +66,8 @@ impl JsQueryBuilder {
         }
     }
     #[napi]
+    /// Add a child query that keeps the first match of `selector` inside each
+    /// match of the last selector.
     pub fn first(&mut self, selector: String, save: Option<JsSave>) -> JsQueryBuilder {
         self.builder
             .first_mut(selector, save.unwrap_or_else(JsSave::none).to_save());
@@ -64,6 +78,9 @@ impl JsQueryBuilder {
     }
 
     #[napi]
+    /// Add the child queries that `callback(factory)` returns. They match
+    /// inside each match of the last selector; build them with `factory.all()`
+    /// and `factory.first()`.
     pub fn then(
         &mut self,
         callback: Function<JsQueryFactory, Vec<Reference<JsQueryBuilder>>>,
@@ -83,6 +100,10 @@ impl JsQueryBuilder {
     }
 
     #[napi]
+    /// Finish the query, ready to pass to `parse`.
+    ///
+    /// Throws if a selector is invalid or uses syntax scah cannot evaluate in
+    /// one pass, such as `:has()` or `:last-child`.
     pub fn build(&self) -> Result<JsQuery> {
         let (_tape, query) = unsafe { self.builder.clone().try_to_query() }
             .map_err(|err| Error::from_reason(err.to_string()))?;
@@ -90,6 +111,7 @@ impl JsQueryBuilder {
     }
 }
 
+/// Builds child queries inside a `then` callback.
 #[napi(js_name = "QueryFactory")]
 pub struct JsQueryFactory {
     // if their isn't any data in the struct, no object is created, thus the `.then` doesn't work
@@ -99,6 +121,7 @@ pub struct JsQueryFactory {
 #[napi]
 impl JsQueryFactory {
     #[napi]
+    /// A child query that keeps every match of `selector`.
     pub fn all(&self, selector: String, save: Option<JsSave>) -> JsQueryBuilder {
         JsQueryBuilder {
             builder: LazyQuery::all(selector, save.unwrap_or_else(JsSave::none).to_save()),
@@ -106,6 +129,7 @@ impl JsQueryFactory {
     }
 
     #[napi]
+    /// A child query that keeps the first match of `selector`.
     pub fn first(&self, selector: String, save: Option<JsSave>) -> JsQueryBuilder {
         JsQueryBuilder {
             builder: LazyQuery::first(selector, save.unwrap_or_else(JsSave::none).to_save()),
@@ -115,17 +139,21 @@ impl JsQueryFactory {
 
 #[napi]
 #[derive(Clone)]
+/// A built query, ready to pass to `parse`. It can be reused across
+/// documents.
 pub struct JsQuery {
     pub(crate) _tape: std::sync::Arc<Vec<u8>>,
     pub(crate) query: Query<'static>,
 }
 
+/// Entry point for building queries.
 #[napi(js_name = "Query")]
 pub struct JsQueryStatic;
 
 #[napi]
 impl JsQueryStatic {
     #[napi]
+    /// Start a query that keeps every element matching `selector`.
     pub fn all(selector: String, save: Option<JsSave>) -> JsQueryBuilder {
         JsQueryBuilder {
             builder: LazyQuery::all(selector, save.unwrap_or_else(JsSave::none).to_save()),
@@ -133,6 +161,7 @@ impl JsQueryStatic {
     }
 
     #[napi]
+    /// Start a query that keeps the first element matching `selector`.
     pub fn first(selector: String, save: Option<JsSave>) -> JsQueryBuilder {
         JsQueryBuilder {
             builder: LazyQuery::first(selector, save.unwrap_or_else(JsSave::none).to_save()),

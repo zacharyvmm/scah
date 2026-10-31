@@ -11,6 +11,7 @@ use crate::query::{PyQuery, PyQueryBuilder, PyQueryFactory, PyQueryStatic};
 use crate::save::PySave;
 use element::{PyElement, PyStore};
 
+/// Run `queries` over `html` in a single pass and return their matches.
 #[gen_stub_pyfunction]
 #[pyfunction]
 fn parse(html: String, queries: Vec<PyRef<PyQuery>>) -> PyResult<PyStore> {

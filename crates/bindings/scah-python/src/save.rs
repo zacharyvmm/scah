@@ -4,6 +4,10 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use scah_core::Save;
 
+/// What to keep for each match of a query.
+///
+/// Every option except `name_only()` and `attributes=False` also keeps the
+/// element's id, class, and attributes.
 #[gen_stub_pyclass]
 #[pyclass(module = "scah", name = "Save")]
 #[derive(Clone, Copy, Debug)]
@@ -15,6 +19,7 @@ pub struct PySave {
 #[pymethods]
 impl PySave {
     #[staticmethod]
+    /// Keep the markup inside the element.
     pub fn only_inner_html() -> Self {
         Self {
             save: Save::only_inner_html(),
@@ -22,6 +27,7 @@ impl PySave {
     }
 
     #[staticmethod]
+    /// Keep the source text of the element's descendants, with markup removed.
     pub fn only_raw_text() -> Self {
         Self {
             save: Save::only_raw_text(),
@@ -29,6 +35,8 @@ impl PySave {
     }
 
     #[staticmethod]
+    /// Keep normalized, readable text: references decoded, hidden content
+    /// skipped, and line breaks between blocks.
     pub fn only_text() -> Self {
         Self {
             save: Save::only_text(),
@@ -36,6 +44,7 @@ impl PySave {
     }
 
     #[staticmethod]
+    /// Deprecated: use `only_text()`.
     pub fn only_text_content(py: Python<'_>) -> PyResult<Self> {
         PyErr::warn(
             py,
@@ -49,22 +58,26 @@ impl PySave {
     }
 
     #[staticmethod]
+    /// Keep inner HTML, raw text, and normalized text.
     pub fn all() -> Self {
         Self { save: Save::all() }
     }
 
     #[staticmethod]
+    /// Keep no content, only the element's name and attributes.
     pub fn none() -> Self {
         Self { save: Save::none() }
     }
 
     #[staticmethod]
+    /// Keep only the element's name.
     pub fn name_only() -> Self {
         Self {
             save: Save::name_only(),
         }
     }
 
+    /// Choose each field to keep. `text_content` is a deprecated alias for `text`.
     #[new]
     #[pyo3(signature = (inner_html=false, text=None, attributes=true, *, raw_text=false, text_content=None))]
     pub fn new(
