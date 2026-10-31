@@ -87,7 +87,7 @@ The jar extracts the library for the current platform into
 
 `-Dscah.backend=jni` selects JNI on Java 22 and newer too. The Foreign
 Function and Memory API reads element fields several times faster, while JNI
-copies the HTML once less when parsing.
+copies UTF-8 byte arrays once less when parsing.
 
 See the [main README](https://github.com/zacharyvmm/scah#selector-support) for
 supported selectors and text-extraction semantics.

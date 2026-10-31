@@ -57,7 +57,7 @@ jobs:
         run: |
           library="$(ls target/native/out/${{ matrix.rid }}/libscah_c.*)"
           # Every function the header declares, and nothing beyond scah's own.
-          declared="$(grep -o 'scah_[a-z_]*(' crates/bindings/scah-c/include/scah.h \
+          declared="$(grep -o 'scah_[a-z0-9_]*(' crates/bindings/scah-c/include/scah.h \
             | tr -d '(' | sort -u)"
           if [[ "$RUNNER_OS" == macOS ]]; then
             exported="$(nm -gU "$library" | awk '{print $3}' | sed 's/^_//' | sort -u)"

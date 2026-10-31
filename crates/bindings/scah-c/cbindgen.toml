@@ -22,7 +22,9 @@ header = """
  * Workflow
  *   1. Describe a query with a ScahQueryBuilder, nesting child builders with
  *      scah_query_builder_then, and compile it with scah_query_build.
- *   2. Parse HTML against one or more queries with scah_parse.
+ *   2. Parse HTML against one or more queries with scah_parse. UTF-16
+ *      HTML, such as a Java or .NET string, goes to scah_parse_utf16, or
+ *      piece by piece through a ScahHtml to scah_parse_html.
  *   3. Look up matches with scah_store_get and scah_element_get, then read
  *      element fields with the scah_element_* getters, or export a whole
  *      result set as Arrow columns with scah_store_export_arrow.

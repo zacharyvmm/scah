@@ -72,6 +72,11 @@ Rust crates and the Python and npm packages together.
   and newer, and extracts the native library for its platform from the jar.
   ([#124]) On Java 11 to 21 it uses JNI, through `crates/bindings/scah-jni`.
   ([#125])
+- `scah_parse_utf16`, and `ScahHtml` for UTF-16 that arrives in pieces, parse
+  UTF-16 HTML, encoding it as UTF-8 straight into the store's copy in one
+  pass. The .NET and Java bindings parse strings through them, which makes
+  the conversion two to three times faster; Java now replaces lone
+  surrogates with U+FFFD rather than `?`. ([#130])
 - Arrow export: `Store.to_arrow()` in Python and `scah_store_export_arrow` in C
   hand matches over as an Arrow table whose string columns point into the
   parsed HTML and text buffers, ready for polars, pyarrow, DuckDB, and other
@@ -261,3 +266,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#123]: https://github.com/zacharyvmm/scah/pull/123
 [#124]: https://github.com/zacharyvmm/scah/pull/124
 [#125]: https://github.com/zacharyvmm/scah/pull/125
+[#130]: https://github.com/zacharyvmm/scah/pull/130

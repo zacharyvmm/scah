@@ -13,19 +13,20 @@
 
 use jni::errors::ThrowRuntimeExAndDefault;
 use jni::objects::{
-    JByteArray, JClass, JLongArray, JObject, JObjectArray, JString, JThrowable, JValue,
+    JByteArray, JCharArray, JClass, JLongArray, JObject, JObjectArray, JString, JThrowable, JValue,
 };
 use jni::sys::{jboolean, jint, jlong};
 use jni::{Env, EnvUnowned, jni_sig, jni_str};
 use scah::lazy::{LazyQuery, LazyQueryBuilder};
 use scah::{ElementId, ElementRef, ParseError, QuerySectionId, Save};
+use scah_ffi::utf16::{LoneSurrogates, Utf16Encoder};
 use scah_ffi::{OwnedQuery, OwnedStore};
 use std::any::Any;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Bumped with every incompatible change to the native methods, so a jar and
 /// a library from different builds fail to load instead of misbehaving.
-const PROTOCOL_VERSION: jint = 1;
+const PROTOCOL_VERSION: jint = 2;
 
 // Status codes, as in scah.h.
 const INVALID_UTF8: jint = 2;
@@ -333,6 +334,146 @@ pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_parse0<'local>(
         let html = String::from_utf8(env.convert_byte_array(&html)?).map_err(|error| {
             Failure::Scah(INVALID_UTF8, format!("`html` is not valid UTF-8: {error}"))
         })?;
+        // SAFETY: the Java side keeps every query alive for the call.
+        let queries: Vec<&OwnedQuery> = handles
+            .iter()
+            .map(|&query| unsafe { borrow(query) })
+            .collect();
+        Ok(into_handle(OwnedStore::parse(html, &queries)?))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_htmlNew0<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    capacity: jlong,
+) -> jlong {
+    call(&mut env, |_| {
+        // The parser rejects 4 GiB or more, so reserving more is pointless.
+        let capacity = (capacity.max(0) as u64).min(u64::from(u32::MAX)) as usize;
+        Ok(into_handle(Utf16Encoder::with_capacity(
+            capacity,
+            LoneSurrogates::Replace,
+        )))
+    })
+}
+
+/// A `char[]` pinned with `GetPrimitiveArrayCritical`, released on drop.
+///
+/// The `jni` crate's own critical access checks for exceptions while the
+/// array is pinned, which JNI forbids, so this calls JNI directly. No JNI call
+/// may be made while one is alive.
+struct PinnedChars<'env> {
+    env: *mut jni::sys::JNIEnv,
+    array: jni::sys::jarray,
+    chars: *const u16,
+    len: usize,
+    _env: std::marker::PhantomData<&'env Env<'env>>,
+}
+
+impl<'env> PinnedChars<'env> {
+    fn new(env: &'env Env<'_>, array: &JCharArray<'_>) -> Result<Self> {
+        let len = array.len(env)?;
+        let raw = env.get_raw();
+        let array = array.as_raw();
+        // SAFETY: `raw` is this thread's JNIEnv, no exception is pending, and
+        // `array` is a live `char[]` reference.
+        let chars =
+            unsafe { ((**raw).v1_2.GetPrimitiveArrayCritical)(raw, array, std::ptr::null_mut()) };
+        if chars.is_null() {
+            // JNI has thrown an OutOfMemoryError.
+            return Err(Failure::Jni(jni::errors::Error::JavaException));
+        }
+        Ok(Self {
+            env: raw,
+            array,
+            chars: chars.cast(),
+            len,
+            _env: std::marker::PhantomData,
+        })
+    }
+
+    fn as_slice(&self) -> &[u16] {
+        // SAFETY: the array holds `len` chars and stays pinned while `self`
+        // lives.
+        unsafe { std::slice::from_raw_parts(self.chars, self.len) }
+    }
+}
+
+impl Drop for PinnedChars<'_> {
+    fn drop(&mut self) {
+        // SAFETY: releases the pin `new` took; the chars were only read.
+        unsafe {
+            ((**self.env).v1_2.ReleasePrimitiveArrayCritical)(
+                self.env,
+                self.array,
+                self.chars.cast_mut().cast(),
+                jni::sys::JNI_ABORT,
+            );
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_htmlPush0<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    html: jlong,
+    units: JCharArray<'local>,
+    length: jint,
+) {
+    call(&mut env, |env| {
+        // SAFETY: the Java side owns the HTML and uses it from one thread.
+        let html = unsafe { borrow_mut::<Utf16Encoder>(html) };
+        let length = length.max(0) as usize;
+        if html.len().saturating_add(length) >= u32::MAX as usize {
+            return Err(Failure::Scah(
+                INPUT_TOO_LARGE,
+                "the HTML is 4 GiB or longer".into(),
+            ));
+        }
+        // Grow the buffer before pinning: a reallocation copies the whole
+        // document so far. Encoding is then bounded by `length`, which the
+        // Java side keeps to one block, so the pin is short.
+        html.reserve(length);
+        let pinned = PinnedChars::new(env, &units)?;
+        let chars = pinned.as_slice();
+        html.push(&chars[..length.min(chars.len())])
+            .expect("replacing lone surrogates cannot fail");
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_htmlFree0<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    html: jlong,
+) {
+    call(&mut env, |_| {
+        // SAFETY: the Java side frees unparsed HTML once.
+        unsafe { free::<Utf16Encoder>(html) };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_parseHtml0<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    html: jlong,
+    queries: JLongArray<'local>,
+) -> jlong {
+    // Take ownership first, so the HTML is freed on every path.
+    // SAFETY: the Java side hands over HTML it never uses again.
+    let html = unsafe { Box::from_raw(html as *mut Utf16Encoder) };
+    call(&mut env, |env| {
+        let mut handles = vec![0; queries.len(env)?];
+        queries.get_region(env, 0, &mut handles)?;
+        let html = html
+            .finish()
+            .expect("replacing lone surrogates cannot fail");
         // SAFETY: the Java side keeps every query alive for the call.
         let queries: Vec<&OwnedQuery> = handles
             .iter()

@@ -76,6 +76,12 @@ int main(void) {
 }
 ```
 
+UTF-16 HTML, such as a Java or .NET string, goes to `scah_parse_utf16`, which
+encodes it as UTF-8 straight into the store's copy in one pass. Callers that
+can only hand it over in pieces push them into a `ScahHtml` with
+`scah_html_push_utf16` and parse it with `scah_parse_html`. Lone surrogates
+are replaced with U+FFFD, or rejected with `SCAH_STATUS_INVALID_UTF16`.
+
 Every handle is released with its `*_free` function, and every `*_free`
 function accepts NULL. A store copies the HTML and shares its queries' selector strings,
 so both may be freed right after `scah_parse`. String views borrow from the
