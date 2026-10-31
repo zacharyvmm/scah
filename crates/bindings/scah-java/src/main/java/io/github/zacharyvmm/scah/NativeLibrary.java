@@ -131,7 +131,7 @@ final class NativeLibrary {
     static Cache cacheRoot(Path base) throws IOException {
         base = base.toAbsolutePath();
         if (!FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
-            return new Cache(base.resolve("scah"), false);
+            return new Cache(Files.createDirectories(base.resolve("scah")), false);
         }
         Files.createDirectories(base);
         String user = System.getProperty("user.name", "").replaceAll("[^A-Za-z0-9._-]", "_");
