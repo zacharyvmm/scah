@@ -55,7 +55,7 @@ mod arrow;
 
 pub use arrow::scah_store_export_arrow;
 pub use error::{ScahError, ScahStatus, scah_error_free, scah_error_message};
-pub use html::{ScahHtml, scah_html_free, scah_html_new, scah_html_push_utf16};
+pub use html::{ScahHtml, scah_html_free, scah_html_new, scah_html_push_utf16, scah_html_reserve};
 pub use query::{
     ScahQuery, ScahQueryBuilder, ScahSave, scah_query_build, scah_query_builder_all,
     scah_query_builder_clone, scah_query_builder_first, scah_query_builder_free,

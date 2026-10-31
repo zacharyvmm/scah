@@ -322,7 +322,8 @@ enum ScahStatus scah_html_new(size_t capacity,
 /**
  * Append `len` UTF-16 code units to `html`.
  *
- * On failure `html` is left as it was before the call.
+ * On failure `html` is left as it was before the call. Allocates only if
+ * `scah_html_reserve` was not called for these units.
  *
  * # Safety
  *
@@ -333,6 +334,21 @@ enum ScahStatus scah_html_push_utf16(struct ScahHtml *html,
                                      const uint16_t *units,
                                      size_t len,
                                      struct ScahError **out_error);
+
+/**
+ * Make room to push `len` more UTF-16 code units to `html` without
+ * allocating.
+ *
+ * For callers that push where allocating is unwelcome, such as in a Java
+ * critical region, where a reallocation would copy the whole document so far
+ * while other threads wait. Reserves 3 bytes a unit, the most UTF-8 a unit
+ * can need.
+ *
+ * # Safety
+ *
+ * `html` must be NULL or live HTML. `out_error` must be NULL or writable.
+ */
+enum ScahStatus scah_html_reserve(struct ScahHtml *html, size_t len, struct ScahError **out_error);
 
 /**
  * Free HTML that was not parsed. NULL is ignored.

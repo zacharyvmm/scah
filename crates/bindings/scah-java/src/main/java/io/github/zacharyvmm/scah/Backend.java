@@ -40,8 +40,8 @@ interface Backend {
 
     /**
      * Append {@code length} UTF-16 units of {@code units} to native HTML, replacing lone surrogates
-     * with U+FFFD. Backends may pin {@code units} for the call, so keep it to a block of a few
-     * thousand units.
+     * with U+FFFD. Backends may pin {@code units} for the call, holding off safepoints, so keep
+     * it to a block of a few thousand units; they grow the buffer before pinning.
      */
     void htmlPush(long html, char[] units, int length);
 

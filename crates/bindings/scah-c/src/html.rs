@@ -51,7 +51,8 @@ pub unsafe extern "C" fn scah_html_new(
 
 /// Append `len` UTF-16 code units to `html`.
 ///
-/// On failure `html` is left as it was before the call.
+/// On failure `html` is left as it was before the call. Allocates only if
+/// `scah_html_reserve` was not called for these units.
 ///
 /// # Safety
 ///
@@ -74,6 +75,35 @@ pub unsafe extern "C" fn scah_html_push_utf16(
         // SAFETY: the caller passes `len` readable units.
         let units = unsafe { utf16_slice(units, len) }?;
         html.encoder.push(units)?;
+        Ok(())
+    })
+}
+
+/// Make room to push `len` more UTF-16 code units to `html` without
+/// allocating.
+///
+/// For callers that push where allocating is unwelcome, such as in a Java
+/// critical region, where a reallocation would copy the whole document so far
+/// while other threads wait. Reserves 3 bytes a unit, the most UTF-8 a unit
+/// can need.
+///
+/// # Safety
+///
+/// `html` must be NULL or live HTML. `out_error` must be NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scah_html_reserve(
+    html: *mut ScahHtml,
+    len: usize,
+    out_error: *mut *mut ScahError,
+) -> ScahStatus {
+    // SAFETY: the caller passes a NULL or writable `out_error`.
+    let out_error = unsafe { ErrorSlot::new(out_error) };
+    guard(out_error, || {
+        // SAFETY: the caller passes NULL or live HTML that no other call uses.
+        let html = unsafe { html.as_mut() }.ok_or_else(|| Failure::null("html"))?;
+        // Every unit encodes to at least one byte.
+        check_input_size(html.encoder.len().saturating_add(len))?;
+        html.encoder.reserve(len);
         Ok(())
     })
 }
@@ -212,6 +242,9 @@ mod tests {
         // Split inside the surrogate pair.
         let html = new_html(true);
         push(html, &units[..5]).unwrap();
+        // SAFETY: `html` is live.
+        let status = unsafe { scah_html_reserve(html, units.len() - 5, ptr::null_mut()) };
+        assert_eq!(status, ScahStatus::Ok);
         push(html, &units[5..]).unwrap();
         assert_eq!(parse_html(html).unwrap(), ["x😀", "é & 漢"]);
     }
@@ -274,6 +307,9 @@ mod tests {
                 "`html` must not be NULL".to_owned()
             )
         );
+        // SAFETY: NULL HTML is reported, not read.
+        let status = unsafe { scah_html_reserve(ptr::null_mut(), 1, ptr::null_mut()) };
+        assert_eq!(status, ScahStatus::NullPointer);
         let html = new_html(false);
         // SAFETY: a NULL pointer with a length is reported, not read.
         let status = unsafe { scah_html_push_utf16(html, ptr::null(), 1, ptr::null_mut()) };

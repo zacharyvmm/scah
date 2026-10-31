@@ -84,9 +84,23 @@ impl Utf16Encoder {
         self.bytes.is_empty() && self.pending.is_none()
     }
 
+    /// Make room to push `units` more UTF-16 units without allocating.
+    ///
+    /// For callers that push where allocating is unwelcome, such as in a Java
+    /// critical region, where a reallocation would copy the whole document so
+    /// far while every other thread waits.
+    pub fn reserve(&mut self, units: usize) {
+        // A unit encodes to at most 3 bytes: a pair's 4 bytes span 2 units,
+        // or 1 unit and a high surrogate pending from the last piece. A
+        // pending surrogate that turns out lone adds up to 3 more.
+        self.bytes
+            .reserve(units.saturating_mul(3).saturating_add(3));
+    }
+
     /// Encode the next piece of the input.
     ///
-    /// On failure the encoder is left as it was before the call.
+    /// On failure the encoder is left as it was before the call. Allocates
+    /// only if [`reserve`](Self::reserve) was not called for the piece.
     pub fn push(&mut self, units: &[u16]) -> Result<(), LoneSurrogateError> {
         let (len, pending) = (self.bytes.len(), self.pending);
         let result = self.encode(units);
@@ -371,6 +385,28 @@ mod tests {
                     lossy(&units),
                     "{units:04X?} at {split}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn reserved_pushes_do_not_allocate() {
+        let worst: [&[u16]; 4] = [
+            &[0xFFFF; 100],
+            &[0xD83D, 0xDE00, 0x800, 0xDC00, 0x7FF, 0xD800],
+            &[0xDE00, 0xD800, 0xD800],
+            &[0x41; 100],
+        ];
+        for lone_surrogates in [LoneSurrogates::Replace, LoneSurrogates::Reject] {
+            let mut encoder = Utf16Encoder::with_capacity(0, lone_surrogates);
+            // Start each piece with a high surrogate pending from the last.
+            encoder.push(&[0xD83D]).unwrap();
+            for piece in worst.iter().cycle().take(12) {
+                encoder.reserve(piece.len());
+                let capacity = encoder.bytes.capacity();
+                let _ = encoder.push(piece);
+                assert_eq!(encoder.bytes.capacity(), capacity, "{piece:04X?}");
+                let _ = encoder.push(&[0xD83D]);
             }
         }
     }

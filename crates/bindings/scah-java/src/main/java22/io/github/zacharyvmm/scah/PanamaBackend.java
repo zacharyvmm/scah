@@ -61,6 +61,7 @@ final class PanamaBackend implements Backend {
     private final MethodHandle queryFree;
     private final MethodHandle parse;
     private final MethodHandle htmlNew;
+    private final MethodHandle htmlReserve;
     private final MethodHandle htmlPushUtf16;
     private final MethodHandle htmlFree;
     private final MethodHandle parseHtml;
@@ -117,6 +118,8 @@ final class PanamaBackend implements Backend {
                 "scah_parse", FunctionDescriptor.of(JAVA_INT, STRING_VIEW, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS));
         htmlNew = bind.function(
                 "scah_html_new", FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_BOOLEAN, ADDRESS, ADDRESS));
+        htmlReserve = bind.function(
+                "scah_html_reserve", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, ADDRESS));
         htmlPushUtf16 = bind.arrayReader(
                 "scah_html_push_utf16", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, JAVA_LONG, ADDRESS));
         htmlFree = bind.function("scah_html_free", FunctionDescriptor.ofVoid(ADDRESS));
@@ -231,9 +234,13 @@ final class PanamaBackend implements Backend {
 
     @Override
     public void htmlPush(long html, char[] units, int length) {
+        MemorySegment encoded = MemorySegment.ofAddress(html);
+        MemorySegment error = scratch.get().error;
         try {
-            check((int) htmlPushUtf16.invokeExact(
-                    MemorySegment.ofAddress(html), MemorySegment.ofArray(units), (long) length, scratch.get().error));
+            // Grow the buffer in an ordinary call: a reallocation copies the whole document so far,
+            // and the push below holds off safepoints.
+            check((int) htmlReserve.invokeExact(encoded, (long) length, error));
+            check((int) htmlPushUtf16.invokeExact(encoded, MemorySegment.ofArray(units), (long) length, error));
         } catch (Throwable e) {
             throw rethrow(e);
         }

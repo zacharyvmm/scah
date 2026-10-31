@@ -378,8 +378,10 @@ pub extern "system" fn Java_io_github_zacharyvmm_scah_JniBackend_htmlPush0<'loca
                 "the HTML is 4 GiB or longer".into(),
             ));
         }
-        // Read the array in place. Encoding is bounded by `length`, which the
+        // Grow the buffer before pinning: a reallocation copies the whole
+        // document so far. Encoding is then bounded by `length`, which the
         // Java side keeps to one block, so the pin is short.
+        html.reserve(length);
         // SAFETY: no JNI calls are made while the elements are held.
         let elements = unsafe { units.get_elements_critical(env, ReleaseMode::NoCopyBack) }?;
         let length = length.min(elements.len());
