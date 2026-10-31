@@ -58,11 +58,17 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// The first `class` attribute with a value, like in selector matching.
     #[inline]
     pub fn class(&self) -> Option<&'html str> {
+        self.store.html_value(self.class_span())
+    }
+
+    /// Span of [`ElementRef::class`], [`Span::ABSENT`] when it has none.
+    #[inline]
+    pub(crate) fn class_span(&self) -> Span {
         let range = self.attribute_range();
         if !self.marked(&range, range.start, Span::CLASS_KEY) {
-            return None;
+            return Span::ABSENT;
         }
-        self.value_at(range.start)
+        self.value_span_at(range.start)
     }
 
     /// The `id` attribute value, if present and saved.
@@ -70,11 +76,17 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// The first `id` attribute with a value, like in selector matching.
     #[inline]
     pub fn id(&self) -> Option<&'html str> {
+        self.store.html_value(self.id_span())
+    }
+
+    /// Span of [`ElementRef::id`], [`Span::ABSENT`] when it has none.
+    #[inline]
+    pub(crate) fn id_span(&self) -> Span {
         let layout = self.layout();
         if !layout.id {
-            return None;
+            return Span::ABSENT;
         }
-        self.value_at(layout.range.start + usize::from(layout.class))
+        self.value_span_at(layout.range.start + usize::from(layout.class))
     }
 
     /// Indexes of this row's attributes in the attribute columns.
@@ -88,14 +100,13 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
         }
     }
 
-    /// Value of the attribute at `index`, which must be in
+    /// Span of the value of the attribute at `index`, which must be in
     /// [`ElementRef::attribute_range`].
     #[inline]
-    fn value_at(&self, index: usize) -> Option<&'html str> {
+    fn value_span_at(&self, index: usize) -> Span {
         debug_assert!(self.attribute_range().contains(&index));
         // SAFETY: the row's attribute indexes are in bounds.
-        let (_, value) = unsafe { self.store.columns.attribute_unchecked(index) };
-        self.store.html_value(value)
+        unsafe { self.store.columns.attribute_unchecked(index) }.1
     }
 
     /// Whether the saved attribute at `index` (in
@@ -178,11 +189,16 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// assert_eq!(a.attribute("href"), Some("https://example.com"));
     /// ```
     pub fn attribute(&self, key: &str) -> Option<&'html str> {
-        let index = self
-            .layout()
+        self.store.html_value(self.attribute_span(key))
+    }
+
+    /// Span of [`ElementRef::attribute`], [`Span::ABSENT`] when it has none.
+    #[inline]
+    pub(crate) fn attribute_span(&self, key: &str) -> Span {
+        self.layout()
             .others()
-            .find(|&index| self.key_is(index, key))?;
-        self.value_at(index)
+            .find(|&index| self.key_is(index, key))
+            .map_or(Span::ABSENT, |index| self.value_span_at(index))
     }
 
     /// The element's source-preserving descendant text.
