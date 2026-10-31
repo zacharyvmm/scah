@@ -10,6 +10,8 @@
 | `cursor_dominance/`, `sibling/`, `structural/`, `ordinary_gate/` | Parser engine workloads; `ordinary_gate` backs the sibling performance gate |
 | `element_tape/`, `escape_scanner/`, `tag_classification/`, `tape_indexer/` | Microbenchmarks for internal design experiments; `tape_indexer` compares tag-indexing strategies |
 | `gates/` | Scripts that compare a pull request against its base revision in CI |
+| `profiling/` | `capacity_profile`, a harness for measuring allocation peaks under valgrind massif |
+| `notes/` | Write-ups of past performance experiments and proposals |
 | `layout/` | Scripts that separate code-layout effects from code changes (see below) |
 | `results/` | Published comparison results, one JSON file per suite and scenario |
 | `report/` | Converts raw benchmark output into `results/` and renders the README tables |

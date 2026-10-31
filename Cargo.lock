@@ -1674,7 +1674,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "scah-nodejs"
+name = "scah-node"
 version = "0.2.0-dev"
 dependencies = [
  "napi",
