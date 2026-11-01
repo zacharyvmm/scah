@@ -54,6 +54,15 @@ jobs:
         run: cargo test --release --manifest-path crates/scah-differential/Cargo.toml
       - name: Test benchmark instrumentation
         run: cargo test -p scah --features bench-internals
+      # `parse_traced` must work in release builds too, not only debug ones.
+      - name: Test the trace feature
+        run: |
+          cargo test -p scah --features trace --test integration_test
+          cargo test --release -p scah --features trace --test integration_test
+      - name: Check the otel feature
+        run: |
+          cargo clippy -p scah --all-targets --features otel -- -D warnings
+          cargo test -p scah --features otel --test integration_test
       - name: Test optimized implied-close preflight
         run: cargo test -p scah --release implied_close_preflight_matches_reactivated_attribute_cursor
       - name: Verify generated entity table and provenance
@@ -143,10 +152,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # With the features docs.rs documents (`[package.metadata.docs.rs]`).
       - name: Build docs
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps -p scah -p scah-store -p scah-html -p scah-query-ir -p scah-macros -p scah-ffi -p scah-c
+        run: cargo doc --no-deps -p scah -p scah-store -p scah-html -p scah-query-ir -p scah-macros -p scah-ffi -p scah-c --features scah/trace
 
   msrv:
     name: Rust MSRV (1.88)

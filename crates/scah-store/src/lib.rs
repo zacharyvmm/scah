@@ -183,8 +183,8 @@ pub struct CapacityOptions {
     /// behaviour of reserving normalized-text storage.
     pub reserve_text: bool,
 
-    /// Maximum preallocation of scah's trace log, which debug and test
-    /// builds of scah record. The store itself does not read it.
+    /// Maximum preallocation of scah's trace log, which scah records with
+    /// its `trace` feature. The store itself does not read it.
     ///
     /// Default: 4096.
     pub trace_capacity_limit: usize,

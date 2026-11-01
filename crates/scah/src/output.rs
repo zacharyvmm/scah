@@ -1,7 +1,7 @@
-//! What a parse writes: the store it fills and, in debug and test builds,
+//! What a parse writes: the store it fills and, with the `trace` feature,
 //! the trace of how the parse went.
 
-#[cfg(any(debug_assertions, test))]
+#[cfg(any(feature = "trace", test))]
 use crate::debug::{TraceEvent, TraceStore};
 use scah_query_ir::{Program, SectionIndex};
 use scah_store::{Content, ElementId, Section, StoreBuilder};
@@ -13,7 +13,7 @@ use std::ops::Range;
 #[derive(Debug)]
 pub(crate) struct Output<'html, 'query> {
     pub(crate) store: StoreBuilder<'html, 'query>,
-    #[cfg(any(debug_assertions, test))]
+    #[cfg(any(feature = "trace", test))]
     pub(crate) trace: TraceStore<'html, 'query>,
 }
 
@@ -26,11 +26,11 @@ impl<'html, 'query: 'html> Output<'html, 'query> {
         trace_capacity: usize,
     ) -> Self {
         store.set_sections(&sections(program));
-        #[cfg(not(any(debug_assertions, test)))]
+        #[cfg(not(any(feature = "trace", test)))]
         let _ = trace_capacity;
         Self {
             store,
-            #[cfg(any(debug_assertions, test))]
+            #[cfg(any(feature = "trace", test))]
             trace: TraceStore::with_capacity(trace_capacity),
         }
     }
@@ -44,7 +44,7 @@ impl<'html, 'query: 'html> Output<'html, 'query> {
         raw_text: Option<Range<usize>>,
         text: Option<Range<usize>>,
     ) {
-        #[cfg(any(debug_assertions, test))]
+        #[cfg(any(feature = "trace", test))]
         let event = TraceEvent::ContentFinalized {
             element_id,
             tag: self.store.name(element_id),

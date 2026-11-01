@@ -50,6 +50,11 @@ features. Rust code that reads results needs the changes in
   queries. The `scah` API is unchanged except for the debug trace:
   `Store::trace` is removed, and `scah::debug::parse_traced` returns the store
   together with its `TraceStore`. ([#113])
+- Parse tracing needs the new `trace` cargo feature instead of a debug build.
+  With it, `scah::debug::parse_traced` is available in release builds too;
+  without it, debug builds no longer record a trace, so they parse faster.
+  The `otel` feature now implies `trace`, so it emits events in release
+  builds instead of silently doing nothing. ([#133], [#145])
 
 ### Added
 
@@ -195,7 +200,7 @@ them, so accessors are methods and no longer take `&store`:
 | `element.get(&store, "a")` | `element.get("a")` |
 | `store.get("a")`, an iterator of `&Element` | `store.get("a")`, an `Elements` iterator of `ElementRef` |
 | `store.elements`, `store.attributes` | `store.elements()`, `store.element(id)`, `store.len()` |
-| `store.trace` | `scah::debug::parse_traced(html, queries)`, in debug builds |
+| `store.trace` | `scah::debug::parse_traced(html, queries)`, with the `trace` feature |
 
 `Elements` is an `ExactSizeIterator`, so `.len()` gives the number of matches
 without consuming it.
@@ -337,3 +342,5 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#146]: https://github.com/zacharyvmm/scah/issues/146
 [#147]: https://github.com/zacharyvmm/scah/pull/147
 [#131]: https://github.com/zacharyvmm/scah/issues/131
+[#133]: https://github.com/zacharyvmm/scah/issues/133
+[#145]: https://github.com/zacharyvmm/scah/pull/145

@@ -1,4 +1,4 @@
-#[cfg(debug_assertions)]
+#[cfg(feature = "trace")]
 use scah::debug;
 use scah::{
     AnPlusB, Attribute, ClassSelections, ElementPredicate, LocalLogicalPredicate,
@@ -49,7 +49,7 @@ const HTML: &str = r#"
 "#;
 
 #[test]
-#[cfg(debug_assertions)]
+#[cfg(feature = "trace")]
 fn trace_records_open_and_save_events() {
     let html = "<main><section><a href='/x'>x</a></section></main>";
     let query = Query::all("main section a", Save::all()).unwrap().build();
@@ -73,7 +73,7 @@ fn trace_records_open_and_save_events() {
 }
 
 #[test]
-#[cfg(debug_assertions)]
+#[cfg(feature = "trace")]
 fn trace_records_implied_li_close() {
     let html = "<ul><li>One<li>Two</ul>";
     let query = Query::all("li", Save::all()).unwrap().build();
@@ -94,7 +94,7 @@ fn trace_records_implied_li_close() {
 }
 
 #[test]
-#[cfg(debug_assertions)]
+#[cfg(feature = "trace")]
 fn trace_finalizes_an_elements_rows_in_save_order() {
     let html = r#"<p class="x">hello</p>"#;
     let queries = [
@@ -125,7 +125,7 @@ fn trace_finalizes_an_elements_rows_in_save_order() {
 }
 
 #[test]
-#[cfg(debug_assertions)]
+#[cfg(feature = "trace")]
 fn trace_records_first_query_early_exit() {
     let html = "<div><a>one</a><a>two</a></div>";
     let query = Query::first("a", Save::all()).unwrap().build();
@@ -142,7 +142,7 @@ fn trace_records_first_query_early_exit() {
 }
 
 #[test]
-#[cfg(debug_assertions)]
+#[cfg(feature = "trace")]
 fn trace_records_raw_text_early_exit() {
     let html = "<style>a{}</style><style>b{}</style>";
     let query = Query::first("style", Save::only_inner_html())
@@ -161,7 +161,7 @@ fn trace_records_raw_text_early_exit() {
 }
 
 #[test]
-#[cfg(debug_assertions)]
+#[cfg(feature = "trace")]
 fn trace_records_step_rejections() {
     let html = "<main><a class='no'>no</a><a class='yes'>yes</a></main>";
     let query = Query::all("main > a.yes", Save::all()).unwrap().build();
