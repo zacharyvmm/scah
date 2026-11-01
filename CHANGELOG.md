@@ -6,8 +6,9 @@ Rust crates and the Python, npm, .NET, and Java packages together.
 
 ## [Unreleased]
 
-Existing Python and JavaScript code keeps working; the bindings only gain
-features. Rust code that reads results needs the changes in
+Python and JavaScript code keeps working, except that a query without matches
+now gives an empty list instead of `None`/`null` or an error (see the last
+breaking change). Rust code that reads results needs the changes in
 [Migrating from 0.1](#migrating-from-01).
 
 ### Breaking
@@ -55,6 +56,21 @@ features. Rust code that reads results needs the changes in
   without it, debug builds no longer record a trace, so they parse faster.
   The `otel` feature now implies `trace`, so it emits events in release
   builds instead of silently doing nothing. ([#133], [#145])
+- A query that matched nothing has empty results instead of none.
+  `Store::get`, `Store::query`, `ElementRef::get`, and `ElementRef::nested`
+  return an empty `Elements` (and `Store::results`, `query_results`,
+  `child_results`, and `nested_results` an empty slice), and return `None`
+  only for a selector or index that is not a query. In Python and
+  JavaScript, `store.get` and `store.query` return `[]` instead of
+  `None`/`null`, and `Element.get` returns `[]` instead of raising when its
+  child query matched nothing under that element; it still raises for a
+  selector that is not one of its child queries. The C, .NET, Java, and Arrow
+  lookups added in this release follow the same rule: `scah_store_get`,
+  `scah_store_query`, and `scah_element_get` give an empty list rather than
+  NULL for a query without matches, the .NET and Java lookups throw for a
+  selector or index that is not a query rather than returning an empty list,
+  and `Store.to_arrow` and `scah_store_export_arrow` reject such a selector
+  rather than exporting an empty table. ([#132])
 
 ### Added
 
@@ -213,7 +229,9 @@ them, so accessors are methods and no longer take `&store`:
 | `store.trace` | `scah::debug::parse_traced(html, queries)`, with the `trace` feature |
 
 `Elements` is an `ExactSizeIterator`, so `.len()` gives the number of matches
-without consuming it.
+without consuming it. A query that matched nothing gives `Some` of an empty
+`Elements` rather than `None`, so `store.get("a").unwrap()` no longer panics
+on a document without matches; `None` means no query has that selector.
 
 ## [0.1.0] - 2026-10-01
 
@@ -356,3 +374,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#145]: https://github.com/zacharyvmm/scah/pull/145
 [#143]: https://github.com/zacharyvmm/scah/issues/143
 [#150]: https://github.com/zacharyvmm/scah/pull/150
+[#132]: https://github.com/zacharyvmm/scah/issues/132
