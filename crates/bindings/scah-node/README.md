@@ -74,7 +74,7 @@ for (const product of store.get('article.product') ?? []) {
 | `Query.first(selector, save?)` | A builder for a query that keeps the first match |
 | `builder.then(fn)` | Adds the child queries `fn(factory)` returns; `factory.all()` and `factory.first()` build them |
 | `builder.all(selector, save?)`, `builder.first(selector, save?)` | Adds one child query under the last selector |
-| `builder.build()` | The finished query; throws for a selector scah can't evaluate |
+| `builder.build()` | The finished `CompiledQuery`; throws for a selector scah can't evaluate |
 | `parse(html, queries)` | A `Store` with the results of every query, from one pass |
 
 Build a query once and reuse it with `parse` for as many documents as you
@@ -82,7 +82,8 @@ like.
 
 ### What to save
 
-The optional second argument chooses what to keep for each match:
+The optional second argument chooses what to keep for each match. Leave it
+out to keep only the name and attributes:
 
 ```ts
 interface Save {

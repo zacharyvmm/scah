@@ -57,7 +57,7 @@ html = """
 """
 
 query = (
-    Query.all("article.product", Save.none())
+    Query.all("article.product")
     .then(lambda product: [
         product.first("> h2", Save.only_text()),
         product.first(".price", Save.only_text()),
@@ -80,11 +80,11 @@ for product in store.get("article.product"):
 
 | Call | Returns |
 | ---- | ------- |
-| `Query.all(selector, save)` | A builder for a query that keeps every match |
-| `Query.first(selector, save)` | A builder for a query that keeps the first match |
+| `Query.all(selector, save=None)` | A `QueryBuilder` for a query that keeps every match |
+| `Query.first(selector, save=None)` | A `QueryBuilder` for a query that keeps the first match |
 | `builder.then(fn)` | Adds the child queries `fn(factory)` returns; `factory.all()` and `factory.first()` build them |
-| `builder.all(selector, save)`, `builder.first(selector, save)` | Adds one child query under the last selector |
-| `builder.build()` | The finished query; raises `ValueError` for a selector scah can't evaluate |
+| `builder.all(selector, save=None)`, `builder.first(selector, save=None)` | Adds one child query under the last selector |
+| `builder.build()` | The finished `CompiledQuery`; raises `ValueError` for a selector scah can't evaluate |
 | `parse(html, queries)` | A `Store` with the results of every query, from one pass |
 
 Build a query once and reuse it with `parse` for as many documents as you
@@ -98,7 +98,7 @@ like.
 | `Save.only_text()` | Normalized, readable text |
 | `Save.only_raw_text()` | Source text with markup removed |
 | `Save.only_inner_html()` | The markup inside the element |
-| `Save.none()` | No content |
+| `Save.none()` | No content; the default when `save` is omitted |
 | `Save.name_only()` | No content and no attributes |
 | `Save(inner_html=False, text=False, attributes=True, *, raw_text=False)` | Any combination |
 
@@ -120,6 +120,7 @@ class, and attributes. Save only what you read: each extra field costs time.
 | `attributes`, `get_attribute(name)` | The other attributes, as a `dict` or one at a time |
 | `inner_html`, `raw_text`, `text` | Saved content, or `None` if the query didn't save it |
 | `get(selector)` | The element's matches for a child query; raises `ValueError` if there are none |
+| `keys()`, `element[key]` | The fields above as a mapping, with `class` for `class_name`, so `dict(element)` works |
 
 ## Arrow export
 

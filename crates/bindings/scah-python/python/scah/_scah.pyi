@@ -5,11 +5,11 @@ import builtins
 import typing
 __all__ = [
     "ArrowTable",
+    "CompiledQuery",
     "Element",
-    "PyQuery",
-    "PyQueryBuilder",
-    "PyQueryFactory",
     "Query",
+    "QueryBuilder",
+    "QueryFactory",
     "Save",
     "Store",
     "parse",
@@ -49,6 +49,22 @@ class ArrowTable:
         r"""
         Export the table as an `arrow_array_stream` PyCapsule yielding one
         record batch. `requested_schema` is ignored.
+        """
+
+@typing.final
+class CompiledQuery:
+    r"""
+    A built query, ready to pass to `parse`. It can be reused across documents.
+    """
+    def __repr__(self) -> builtins.str:
+        r"""
+        The root selector and the number of child queries, e.g.
+        `CompiledQuery('main > section', 2 child queries)`.
+        """
+    def _sections(self) -> builtins.list[builtins.dict[builtins.str, typing.Any]]:
+        r"""
+        The query's sections, root first, as dicts: how `scah.polars`
+        passes the query to its plugin.
         """
 
 @typing.final
@@ -113,40 +129,47 @@ class Element:
     def __getitem__(self, key: builtins.str) -> typing.Any: ...
 
 @typing.final
-class PyQuery:
+class Query:
     r"""
-    A built query, ready to pass to `parse`. It can be reused across documents.
+    Entry point for building queries.
+    
+    `save` says what to keep for each match. It defaults to `Save.none()`: the
+    element's name and attributes.
     """
-    def __repr__(self) -> builtins.str: ...
-    def _sections(self) -> builtins.list[builtins.dict[builtins.str, typing.Any]]:
+    @staticmethod
+    def all(selector: builtins.str, save: typing.Optional[Save] = None) -> QueryBuilder:
         r"""
-        The query's sections, root first, as dicts: how `scah.polars`
-        passes the query to its plugin.
+        Start a query that keeps every element matching `selector`.
+        """
+    @staticmethod
+    def first(selector: builtins.str, save: typing.Optional[Save] = None) -> QueryBuilder:
+        r"""
+        Start a query that keeps the first element matching `selector`.
         """
 
 @typing.final
-class PyQueryBuilder:
+class QueryBuilder:
     r"""
     A query being built. Add child queries with `all`, `first`, or `then`,
-    then call `build`.
+    then call `build`. `save` defaults to `Save.none()`.
     """
-    def all(self, selector: builtins.str, save: Save) -> PyQueryBuilder:
+    def all(self, selector: builtins.str, save: typing.Optional[Save] = None) -> QueryBuilder:
         r"""
         Add a child query that keeps every match of `selector` inside each
         match of the last selector.
         """
-    def first(self, selector: builtins.str, save: Save) -> PyQueryBuilder:
+    def first(self, selector: builtins.str, save: typing.Optional[Save] = None) -> QueryBuilder:
         r"""
         Add a child query that keeps the first match of `selector` inside each
         match of the last selector.
         """
-    def then(self, callback: typing.Any) -> PyQueryBuilder:
+    def then(self, callback: typing.Any) -> QueryBuilder:
         r"""
         Add the child queries that `callback(factory)` returns. They match inside
         each match of the last selector; build them with `factory.all()` and
         `factory.first()`.
         """
-    def build(self) -> PyQuery:
+    def build(self) -> CompiledQuery:
         r"""
         Finish the query, ready to pass to `parse`.
         
@@ -155,33 +178,17 @@ class PyQueryBuilder:
         """
 
 @typing.final
-class PyQueryFactory:
+class QueryFactory:
     r"""
     Builds child queries inside a `then` callback.
     """
-    def all(self, selector: builtins.str, save: Save) -> PyQueryBuilder:
+    def all(self, selector: builtins.str, save: typing.Optional[Save] = None) -> QueryBuilder:
         r"""
         A child query that keeps every match of `selector`.
         """
-    def first(self, selector: builtins.str, save: Save) -> PyQueryBuilder:
+    def first(self, selector: builtins.str, save: typing.Optional[Save] = None) -> QueryBuilder:
         r"""
         A child query that keeps the first match of `selector`.
-        """
-
-@typing.final
-class Query:
-    r"""
-    Entry point for building queries.
-    """
-    @staticmethod
-    def all(selector: builtins.str, save: Save) -> PyQueryBuilder:
-        r"""
-        Start a query that keeps every element matching `selector`.
-        """
-    @staticmethod
-    def first(selector: builtins.str, save: Save) -> PyQueryBuilder:
-        r"""
-        Start a query that keeps the first element matching `selector`.
         """
 
 @typing.final
@@ -266,7 +273,7 @@ class Store:
         copying it.
         """
 
-def parse(html: builtins.str, queries: typing.Sequence[PyQuery]) -> Store:
+def parse(html: builtins.str, queries: typing.Sequence[CompiledQuery]) -> Store:
     r"""
     Run `queries` over `html` in a single pass and return their matches.
     """

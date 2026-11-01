@@ -1,15 +1,16 @@
 use crate::polars::SectionSpec;
 use crate::save::PySave;
 use pyo3::prelude::*;
+use pyo3::types::PyString;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use scah_core::QuerySectionId;
 use scah_core::lazy::{LazyQuery, LazyQueryBuilder};
 use scah_ffi::OwnedQuery;
 
 /// A query being built. Add child queries with `all`, `first`, or `then`,
-/// then call `build`.
-#[gen_stub_pyclass]
-#[pyclass]
+/// then call `build`. `save` defaults to `Save.none()`.
+#[gen_stub_pyclass(module = "scah._scah")]
+#[pyclass(module = "scah", name = "QueryBuilder")]
 pub struct PyQueryBuilder {
     builder: LazyQueryBuilder<String>,
 }
@@ -19,14 +20,24 @@ pub struct PyQueryBuilder {
 impl PyQueryBuilder {
     /// Add a child query that keeps every match of `selector` inside each
     /// match of the last selector.
-    fn all(mut slf: PyRefMut<'_, Self>, selector: String, save: PySave) -> PyRefMut<'_, Self> {
-        slf.builder.all_mut(selector, save.save);
+    #[pyo3(signature = (selector, save=None))]
+    fn all(
+        mut slf: PyRefMut<'_, Self>,
+        selector: String,
+        save: Option<PySave>,
+    ) -> PyRefMut<'_, Self> {
+        slf.builder.all_mut(selector, PySave::or_none(save));
         slf
     }
     /// Add a child query that keeps the first match of `selector` inside each
     /// match of the last selector.
-    fn first(mut slf: PyRefMut<'_, Self>, selector: String, save: PySave) -> PyRefMut<'_, Self> {
-        slf.builder.first_mut(selector, save.save);
+    #[pyo3(signature = (selector, save=None))]
+    fn first(
+        mut slf: PyRefMut<'_, Self>,
+        selector: String,
+        save: Option<PySave>,
+    ) -> PyRefMut<'_, Self> {
+        slf.builder.first_mut(selector, PySave::or_none(save));
         slf
     }
 
@@ -62,8 +73,8 @@ impl PyQueryBuilder {
 }
 
 /// Builds child queries inside a `then` callback.
-#[gen_stub_pyclass]
-#[pyclass]
+#[gen_stub_pyclass(module = "scah._scah")]
+#[pyclass(module = "scah", name = "QueryFactory")]
 #[derive(Clone)]
 pub struct PyQueryFactory {}
 
@@ -71,23 +82,25 @@ pub struct PyQueryFactory {}
 #[pymethods]
 impl PyQueryFactory {
     /// A child query that keeps every match of `selector`.
-    fn all(&self, selector: String, save: PySave) -> PyQueryBuilder {
+    #[pyo3(signature = (selector, save=None))]
+    fn all(&self, selector: String, save: Option<PySave>) -> PyQueryBuilder {
         PyQueryBuilder {
-            builder: LazyQuery::all(selector, save.save),
+            builder: LazyQuery::all(selector, PySave::or_none(save)),
         }
     }
 
     /// A child query that keeps the first match of `selector`.
-    fn first(&self, selector: String, save: PySave) -> PyQueryBuilder {
+    #[pyo3(signature = (selector, save=None))]
+    fn first(&self, selector: String, save: Option<PySave>) -> PyQueryBuilder {
         PyQueryBuilder {
-            builder: LazyQuery::first(selector, save.save),
+            builder: LazyQuery::first(selector, PySave::or_none(save)),
         }
     }
 }
 
 /// A built query, ready to pass to `parse`. It can be reused across documents.
-#[gen_stub_pyclass]
-#[pyclass]
+#[gen_stub_pyclass(module = "scah._scah")]
+#[pyclass(module = "scah", name = "CompiledQuery")]
 #[derive(Clone)]
 pub struct PyQuery {
     pub(super) query: OwnedQuery,
@@ -96,8 +109,16 @@ pub struct PyQuery {
 #[gen_stub_pymethods]
 #[pymethods]
 impl PyQuery {
-    fn __repr__(&self) -> String {
-        format!("PyQuery(query={:?})", self.query)
+    /// The root selector and the number of child queries, e.g.
+    /// `CompiledQuery('main > section', 2 child queries)`.
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        let sections = &self.query.query().queries;
+        let selector = PyString::new(py, sections[0].source).repr()?;
+        Ok(match sections.len() - 1 {
+            0 => format!("CompiledQuery({selector})"),
+            1 => format!("CompiledQuery({selector}, 1 child query)"),
+            n => format!("CompiledQuery({selector}, {n} child queries)"),
+        })
     }
 
     /// The query's sections, root first, as dicts: how `scah.polars`
@@ -119,8 +140,11 @@ impl PyQuery {
 }
 
 /// Entry point for building queries.
-#[gen_stub_pyclass]
-#[pyclass(name = "Query")]
+///
+/// `save` says what to keep for each match. It defaults to `Save.none()`: the
+/// element's name and attributes.
+#[gen_stub_pyclass(module = "scah._scah")]
+#[pyclass(module = "scah", name = "Query")]
 pub struct PyQueryStatic;
 
 #[gen_stub_pymethods]
@@ -128,17 +152,19 @@ pub struct PyQueryStatic;
 impl PyQueryStatic {
     #[staticmethod]
     /// Start a query that keeps every element matching `selector`.
-    pub fn all(selector: String, save: PySave) -> PyQueryBuilder {
+    #[pyo3(signature = (selector, save=None))]
+    pub fn all(selector: String, save: Option<PySave>) -> PyQueryBuilder {
         PyQueryBuilder {
-            builder: LazyQuery::all(selector, save.save),
+            builder: LazyQuery::all(selector, PySave::or_none(save)),
         }
     }
 
     #[staticmethod]
     /// Start a query that keeps the first element matching `selector`.
-    pub fn first(selector: String, save: PySave) -> PyQueryBuilder {
+    #[pyo3(signature = (selector, save=None))]
+    pub fn first(selector: String, save: Option<PySave>) -> PyQueryBuilder {
         PyQueryBuilder {
-            builder: LazyQuery::first(selector, save.save),
+            builder: LazyQuery::first(selector, PySave::or_none(save)),
         }
     }
 }

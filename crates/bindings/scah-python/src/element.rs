@@ -117,7 +117,6 @@ impl PyElement {
             "inner_html",
             "raw_text",
             "text",
-            "text_content",
         ]
     }
 

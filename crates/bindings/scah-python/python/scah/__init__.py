@@ -7,11 +7,11 @@ first use, so `import scah` doesn't import polars.
 
 from scah._scah import (
     ArrowTable,
+    CompiledQuery,
     Element,
-    PyQuery,
-    PyQueryBuilder,
-    PyQueryFactory,
     Query,
+    QueryBuilder,
+    QueryFactory,
     Save,
     Store,
     parse,
@@ -19,15 +19,22 @@ from scah._scah import (
 
 __all__ = [
     "ArrowTable",
+    "CompiledQuery",
     "Element",
-    "PyQuery",
-    "PyQueryBuilder",
-    "PyQueryFactory",
     "Query",
+    "QueryBuilder",
+    "QueryFactory",
     "Save",
     "Store",
     "parse",
 ]
+
+# The names these classes had before 0.2.0.
+_DEPRECATED_NAMES = {
+    "PyQuery": "CompiledQuery",
+    "PyQueryBuilder": "QueryBuilder",
+    "PyQueryFactory": "QueryFactory",
+}
 
 
 def __getattr__(name: str):
@@ -35,4 +42,14 @@ def __getattr__(name: str):
         import importlib
 
         return importlib.import_module("scah.polars")
+    if name in _DEPRECATED_NAMES:
+        import warnings
+
+        new_name = _DEPRECATED_NAMES[name]
+        warnings.warn(
+            f"scah.{name} is deprecated; use scah.{new_name}",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return globals()[new_name]
     raise AttributeError(f"module 'scah' has no attribute {name!r}")

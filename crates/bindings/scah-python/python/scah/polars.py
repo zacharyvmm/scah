@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     import polars as pl
     from polars._typing import IntoExpr
 
-    from scah import PyQuery
+    from scah import CompiledQuery
 
 __all__ = ["parse"]
 
@@ -40,7 +40,7 @@ _PLUGIN = Path(_scah.__file__)
 
 def parse(
     html: IntoExpr,
-    query: PyQuery,
+    query: CompiledQuery,
     *,
     attributes: Sequence[str] | None = None,
 ) -> pl.Expr:

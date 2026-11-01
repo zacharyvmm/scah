@@ -1,4 +1,5 @@
 import gc
+import warnings
 
 import pytest
 
@@ -276,6 +277,97 @@ def test_query_builder_does_not_expose_try_build():
     assert not hasattr(builder, "try_build")
 
 
+# ── Public names ───────────────────────────────────────────────────────────
+
+
+def test_public_class_names():
+    import scah
+
+    captured = []
+    builder = Query.all("main").then(lambda f: captured.append(f) or [f.all("a")])
+    query = builder.build()
+    store = parse("<main><a>x</a></main>", [query])
+    element = store.get("main")[0]
+
+    for obj, name in [
+        (Query, "Query"),
+        (builder, "QueryBuilder"),
+        (captured[0], "QueryFactory"),
+        (query, "CompiledQuery"),
+        (Save.none(), "Save"),
+        (store, "Store"),
+        (element, "Element"),
+        (store.to_arrow("main"), "ArrowTable"),
+    ]:
+        cls = obj if isinstance(obj, type) else type(obj)
+        assert cls.__name__ == name
+        assert cls.__qualname__ == name
+        assert cls.__module__ == "scah"
+        assert getattr(scah, name) is cls
+        assert name in scah.__all__
+    assert not any(name.startswith("Py") for name in scah.__all__)
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("PyQuery", "CompiledQuery"),
+        ("PyQueryBuilder", "QueryBuilder"),
+        ("PyQueryFactory", "QueryFactory"),
+    ],
+)
+def test_old_class_names_are_deprecated_aliases(old, new):
+    import scah
+
+    message = rf"scah\.{old} is deprecated; use scah\.{new}"
+    with pytest.warns(DeprecationWarning, match=message):
+        assert getattr(scah, old) is getattr(scah, new)
+
+
+def test_compiled_query_repr():
+    assert repr(Query.all("a").build()) == "CompiledQuery('a')"
+    query = Query.first("a").all("b").build()
+    assert repr(query) == "CompiledQuery('a', 1 child query)"
+    query = Query.all("main > section").then(lambda f: [f.all("h2"), f.first("p")])
+    query = query.build()
+    assert repr(query) == "CompiledQuery('main > section', 2 child queries)"
+    # The selector is quoted like a Python string.
+    selector = """a[title="it's"]"""
+    assert repr(Query.all(selector).build()) == f"CompiledQuery({selector!r})"
+
+
+# ── Default save ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Query.all("a"),
+        lambda: Query.first("a"),
+        lambda: Query.all("a", save=None),
+        lambda: Query.all("main").all("a").first("a"),
+        lambda: Query.all("main").first("a", save=None),
+        lambda: Query.all("main").then(lambda f: [f.all("a")]),
+        lambda: Query.all("main").then(lambda f: [f.first("a", save=None)]),
+    ],
+)
+def test_save_defaults_to_none(build):
+    """An omitted save keeps the name and attributes, like Save.none() and
+    the Node binding's default."""
+    html = "<main><a href='x' id='i' class='c'>text</a></main>"
+    store = parse(html, [build().build()])
+    a = store.query(0)[0]
+    while a.name != "a":
+        a = a.get("a")[0]
+    assert (a.name, a.id, a.class_name, a.attributes) == ("a", "i", "c", {"href": "x"})
+    assert (a.inner_html, a.raw_text, a.text) == (None, None, None)
+
+
+def test_save_is_a_keyword_argument():
+    store = parse("<a>t</a>", [Query.all("a", save=Save.only_text()).build()])
+    assert store.get("a")[0].text == "t"
+
+
 # ── Attributes ─────────────────────────────────────────────────────────────
 
 
@@ -361,8 +453,26 @@ def test_raw_text_and_text_properties():
         "inner_html",
         "raw_text",
         "text",
-        "text_content",
     ]
+
+
+def test_dict_of_element_does_not_warn():
+    """keys() leaves out the deprecated text_content, so dict(el) reads no
+    deprecated field."""
+    store = parse("<a href=x id=i class=c>t</a>", [Query.all("a", Save.all()).build()])
+    el = store.get("a")[0]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        as_dict = dict(el)
+    assert as_dict == {
+        "name": "a",
+        "id": "i",
+        "class": "c",
+        "attributes": {"href": "x"},
+        "inner_html": "t",
+        "raw_text": "t",
+        "text": "t",
+    }
 
 
 def test_empty_versus_uncaptured_text():

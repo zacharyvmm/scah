@@ -15,6 +15,14 @@ pub struct PySave {
     pub save: Save,
 }
 
+impl PySave {
+    /// The `Save` for an optional `save` argument: `Save.none()` when it is
+    /// omitted, as in the Node binding.
+    pub fn or_none(save: Option<PySave>) -> Save {
+        save.map_or(Save::none(), |save| save.save)
+    }
+}
+
 #[gen_stub_pymethods]
 #[pymethods]
 impl PySave {
