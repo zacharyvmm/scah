@@ -27,11 +27,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }];
     let store = parse(HTML, &queries)?;
 
-    for article in store.get("article").into_iter().flatten() {
+    for article in store.get("article").unwrap() {
         if let Some(title) = article.get("> h1").and_then(|mut h1| h1.next()) {
             println!("# {}", title.text().unwrap_or_default());
         }
-        for link in article.get("a[href]").into_iter().flatten() {
+        for link in article.get("a[href]").unwrap() {
             println!(
                 "- {} ({})",
                 link.text().unwrap_or_default(),

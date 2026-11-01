@@ -681,7 +681,7 @@ fn scope_anchor_is_normalized_once_across_builder_forms() {
         let queries = [query];
         let store = parse("<main><a>unexpected</a></main>", &queries).unwrap();
         let main = store.get("main").unwrap().next().unwrap();
-        assert_eq!(main.get(selector).into_iter().flatten().count(), 0);
+        assert_eq!(main.get(selector).unwrap().count(), 0);
     }
 
     let static_query = query! {
@@ -695,7 +695,7 @@ fn scope_anchor_is_normalized_once_across_builder_forms() {
     )
     .unwrap();
     let main = store.get("main").unwrap().next().unwrap();
-    assert_eq!(main.get(selector).into_iter().flatten().count(), 0);
+    assert_eq!(main.get(selector).unwrap().count(), 0);
 }
 
 #[test]
@@ -721,7 +721,7 @@ fn explicit_child_scope_is_not_the_parent_anchor() {
         let queries = [query];
         let store = parse("<main><a>unexpected</a></main>", &queries).unwrap();
         let main = store.get("main").unwrap().next().unwrap();
-        assert_eq!(main.get(selector).into_iter().flatten().count(), 0);
+        assert_eq!(main.get(selector).unwrap().count(), 0);
     }
     let store = parse(
         "<main><a>unexpected</a></main>",
@@ -729,7 +729,7 @@ fn explicit_child_scope_is_not_the_parent_anchor() {
     )
     .unwrap();
     let main = store.get("main").unwrap().next().unwrap();
-    assert_eq!(main.get(selector).into_iter().flatten().count(), 0);
+    assert_eq!(main.get(selector).unwrap().count(), 0);
 }
 
 #[test]
@@ -1194,7 +1194,7 @@ fn filtered_ordinals_with_structural_filters_fail_closed() {
         )]));
         let queries = [query];
         let store = parse("<ul><li></li><li></li><li></li></ul>", &queries).unwrap();
-        store.get("li").map_or(0, |elements| elements.count())
+        store.get("li").unwrap().count()
     }
 
     // Counting every sibling would wrongly match the second <li>.
@@ -1477,7 +1477,7 @@ fn overlapping_parent_alternatives_reuse_the_saved_output_scope() {
     let parent = store.get("div, .hit").unwrap().next().unwrap();
 
     assert_eq!(parent.get("span").unwrap().count(), 1);
-    assert_eq!(store.get("span").map_or(0, Iterator::count), 0);
+    assert!(store.get("span").is_none(), "nested queries are not roots");
 }
 
 #[test]
@@ -1497,10 +1497,7 @@ fn uppercase_attribute_flags_have_runtime_and_macro_parity() {
 
     for store in [&runtime_store, &compiled_store] {
         assert_eq!(store.get(r#"[data-x="FOO" I]"#).unwrap().count(), 1);
-        assert_eq!(
-            store.get(r#"[data-x="FOO" S]"#).map_or(0, Iterator::count),
-            0
-        );
+        assert_eq!(store.get(r#"[data-x="FOO" S]"#).unwrap().count(), 0);
     }
 }
 
@@ -1814,7 +1811,7 @@ fn parse_root_alternatives(selector: &str, html: &str) -> Vec<(String, Vec<Strin
         .build();
     let queries = [query];
     let store = parse(html, &queries).unwrap();
-    assert_eq!(store.get("a").map_or(0, Iterator::count), 0);
+    assert!(store.get("a").is_none(), "nested queries are not roots");
     root_alternative_owners(&store, selector, "a")
 }
 

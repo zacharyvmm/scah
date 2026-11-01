@@ -101,7 +101,10 @@ fn positional_lookups_match_selector_lookups() {
     assert_eq!(store.nested_selector(full, 1), Some("a"));
     assert_eq!(store.nested_results(full, 2), None);
     assert_eq!(store.nested_selector(full, 2), None);
-    assert_eq!(store.nested_results(empty, 0), None);
+    // A nested query that matched nothing under a row has empty results.
+    assert_eq!(store.nested_results(empty, 0), Some(&[][..]));
+    assert_eq!(store.child_results(empty, "a"), Some(&[][..]));
+    assert_eq!(store.nested_results(empty, 2), None);
 
     // Leaf rows have no nested sections.
     let item = store.nested_results(full, 0).unwrap()[0];
@@ -238,4 +241,60 @@ fn queries_with_the_same_selector_keep_separate_results() {
     // `get` resolves a shared selector to the first query.
     assert!(store.get("a").unwrap().all(|a| a.inner_html().is_none()));
     assert!(store.query(2).is_none());
+}
+
+#[test]
+fn a_query_that_matched_nothing_has_empty_results() {
+    let queries = [
+        Query::all("a[href]", Save::none()).unwrap().build(),
+        Query::first("p", Save::none()).unwrap().build(),
+    ];
+    let store = parse("<div>no links</div>", &queries).unwrap();
+
+    assert_eq!(store.get("a[href]").unwrap().len(), 0);
+    assert_eq!(store.get("p").unwrap().len(), 0);
+    assert_eq!(store.query(0).unwrap().len(), 0);
+    assert_eq!(store.query(1).unwrap().len(), 0);
+    assert_eq!(store.results("a[href]"), Some(&[][..]));
+    assert_eq!(store.query_results(1), Some(&[][..]));
+    // Only a selector or index that isn't a query has no results at all.
+    assert!(store.get("a").is_none());
+    assert!(store.query(2).is_none());
+}
+
+#[test]
+fn a_nested_query_that_matched_nothing_under_a_row_has_empty_results() {
+    let queries = [Query::all("article", Save::none())
+        .unwrap()
+        .then(|article| Ok([article.all("h2", Save::only_text())?]))
+        .unwrap()
+        .build()];
+    let store = parse(
+        "<article><h2>A</h2></article><article>no heading</article>",
+        &queries,
+    )
+    .unwrap();
+
+    let headings: Vec<Vec<_>> = store
+        .get("article")
+        .unwrap()
+        .map(|article| {
+            article
+                .get("h2")
+                .unwrap()
+                .map(|h2| h2.text().unwrap())
+                .collect()
+        })
+        .collect();
+    assert_eq!(headings, [vec!["A"], vec![]]);
+
+    let second = store.get("article").unwrap().nth(1).unwrap();
+    assert_eq!(second.nested(0).unwrap().len(), 0);
+    assert!(second.get("p").is_none());
+    assert!(second.nested(1).is_none());
+    // `h2` rows have no nested queries.
+    let h2 = store.get("article").unwrap().next().unwrap();
+    let h2 = h2.get("h2").unwrap().next().unwrap();
+    assert!(h2.get("h2").is_none());
+    assert!(h2.nested(0).is_none());
 }

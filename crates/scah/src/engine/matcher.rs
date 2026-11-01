@@ -864,7 +864,10 @@ mod tests {
                         let mut children = Vec::new();
                         let mut index = 0;
                         while let Some(selector) = store.nested_selector(id, index) {
-                            if let Some(nested) = store.nested_results(id, index) {
+                            if let Some(nested) = store
+                                .nested_results(id, index)
+                                .filter(|ids| !ids.is_empty())
+                            {
                                 let mut list = String::new();
                                 rows(store, nested, &mut list);
                                 children.push(format!("{selector}[{list}]"));
@@ -883,7 +886,7 @@ mod tests {
             let mut out = Vec::new();
             let mut index = 0;
             while let Some(selector) = store.query_selector(index) {
-                if let Some(ids) = store.query_results(index) {
+                if let Some(ids) = store.query_results(index).filter(|ids| !ids.is_empty()) {
                     let mut list = String::new();
                     rows(&store, ids, &mut list);
                     out.push(format!("{selector}[{list}]"));

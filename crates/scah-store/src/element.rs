@@ -258,8 +258,9 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// whose
     /// selector is `selector`.
     ///
-    /// Returns `None` if there is no such nested query, or it matched
-    /// nothing under this element.
+    /// Returns an empty [`Elements`] when the nested query matched nothing
+    /// under this element, and `None` only when this element's query has no
+    /// nested query with that selector.
     #[inline]
     pub fn get(&self, selector: &str) -> Option<Elements<'store, 'html, 'query>> {
         let ids = self.store.child_results(self.row, selector)?;
@@ -268,6 +269,10 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
 
     /// Elements matched under this one by its nested query at `index`, in
     /// the order the nested queries were declared.
+    ///
+    /// Returns an empty [`Elements`] when the nested query matched nothing
+    /// under this element, and `None` only when this element's query has
+    /// fewer than `index + 1` nested queries.
     #[inline]
     pub fn nested(&self, index: usize) -> Option<Elements<'store, 'html, 'query>> {
         let ids = self.store.nested_results(self.row, index)?;

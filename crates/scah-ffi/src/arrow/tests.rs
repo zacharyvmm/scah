@@ -285,21 +285,70 @@ fn exports_child_sections_with_their_parents() {
     assert_eq!(ratings.len(), 2);
 
     // Child sections are not top-level, and vice versa.
-    assert_eq!(check(&store, "h1", None, &[]).len(), 0);
-    assert_eq!(check(&store, "div.product", Some("h1"), &[]).len(), 0);
+    let build = |selector, parent| ArrowTable::build(store.clone(), selector, parent, &[]).err();
+    assert_eq!(
+        build("h1", None),
+        Some(ArrowError::UnknownQuery("h1".to_owned()))
+    );
+    assert_eq!(
+        build("div.product", Some("h1")),
+        Some(ArrowError::UnknownQuery("h1".to_owned()))
+    );
 }
 
 #[test]
-fn unmatched_selectors_yield_empty_tables() {
+fn queries_without_matches_yield_empty_tables() {
     let store = parse(
         "<p>text</p>",
-        vec![LazyQuery::all("a".to_owned(), Save::all())],
+        vec![
+            LazyQuery::all("a".to_owned(), Save::all()),
+            LazyQuery::all("p".to_owned(), Save::all())
+                .then(|p| [p.all("b".to_owned(), Save::all())]),
+            LazyQuery::all("div".to_owned(), Save::all())
+                .then(|div| [div.all("b".to_owned(), Save::all())]),
+        ],
     );
-    for (selector, parent) in [("a", None), ("never", None), ("a", Some("never"))] {
+    // A query with no matches, a child query with no matches under a
+    // matched parent, and a child query of a parent with no matches.
+    for (selector, parent) in [("a", None), ("b", Some("p")), ("b", Some("div"))] {
         let batch = check(&store, selector, parent, &["href"]);
         assert_eq!(batch.len(), 0);
         assert_eq!(batch.num_columns(), 6 + usize::from(parent.is_some()));
     }
+}
+
+#[test]
+fn rejects_selectors_that_are_not_queries() {
+    let store = parse(
+        "<p>text</p>",
+        vec![
+            LazyQuery::all("a".to_owned(), Save::all()),
+            LazyQuery::all("div".to_owned(), Save::all())
+                .then(|div| [div.all("b".to_owned(), Save::all())]),
+        ],
+    );
+    let build = |selector, parent| ArrowTable::build(store.clone(), selector, parent, &[]).err();
+    assert_eq!(
+        build("never", None),
+        Some(ArrowError::UnknownQuery("never".to_owned()))
+    );
+    assert_eq!(
+        build("a", Some("never")),
+        Some(ArrowError::UnknownQuery("never".to_owned()))
+    );
+    // Checked even though `div` matched nothing.
+    let unknown_child = build("i", Some("div")).unwrap();
+    assert_eq!(
+        unknown_child,
+        ArrowError::UnknownChildQuery {
+            parent: "div".to_owned(),
+            selector: "i".to_owned(),
+        }
+    );
+    assert_eq!(
+        unknown_child.to_string(),
+        "`i` is not a child query of `div`"
+    );
 }
 
 #[test]
