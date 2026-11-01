@@ -253,6 +253,51 @@ def test_build_invalid_selector_raises_value_error():
         Query.all("!", Save.none()).build()
 
 
+NESTED_SIBLING_ERROR = "nested queries only match inside their parent match"
+
+
+@pytest.mark.parametrize(
+    "selector", [":scope + p", ":scope ~ p", "+ p", "~ p", ":scope + p, h2"]
+)
+def test_nested_sibling_of_scope_raises_value_error(selector):
+    """A nested query only matches inside its parent match, so a sibling
+    combinator on the scope could never match and is rejected at build."""
+    with pytest.raises(ValueError, match=NESTED_SIBLING_ERROR):
+        Query.all("h1", Save.none()).all(selector, Save.none()).build()
+    with pytest.raises(ValueError, match=NESTED_SIBLING_ERROR):
+        Query.all("h1", Save.none()).then(
+            lambda h1: [h1.all(selector, Save.none())]
+        ).build()
+
+
+def test_top_level_leading_sibling_combinator_needs_a_preceding_selector():
+    with pytest.raises(ValueError, match="requires a preceding selector"):
+        Query.all("+ p", Save.none()).build()
+
+
+@pytest.mark.parametrize(
+    ("selector", "expected"),
+    [
+        (":scope > h2 + p", ["one"]),
+        ("> h2 ~ p", ["one", "three"]),
+        (":scope h2 ~ p", ["one", "two", "three"]),
+    ],
+)
+def test_nested_sibling_combinators_after_the_scope_match(selector, expected):
+    q = (
+        Query.all("section", Save.none())
+        .then(lambda section: [section.all(selector, Save.only_text())])
+        .build()
+    )
+    html = (
+        "<section><h2>a</h2><p>one</p>"
+        "<div><h2>b</h2><p>two</p></div><p>three</p></section>"
+    )
+    store = parse(html, [q])
+    section = store.get("section")[0]
+    assert [p.text for p in section.get(selector)] == expected
+
+
 def test_parse_empty_queries_raises_value_error():
     with pytest.raises(ValueError, match="at least one query"):
         parse("<a></a>", [])

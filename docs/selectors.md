@@ -108,8 +108,11 @@ parent:
 - A leading `>` is relative to the parent match, so `> a` selects the
   parent's child links; `:scope > a` is the same. Without it, the selector
   matches any descendant of the parent.
-- A leading `+` or `~` is an error: nested queries only see what is inside
-  their parent.
+- A `+` or `~` right after the parent match, as in `+ p` or `:scope ~ p`, is
+  an error: it would select the parent's siblings, and nested queries only
+  match inside their parent. This applies to every alternative of a selector
+  list, so `:scope + p, h2` is rejected too. Later sibling combinators stay
+  inside the parent and work, as in `:scope > h2 + p` or `h2 ~ p`.
 - `first()` keeps the first match within each parent match.
 - An element matched under several parent matches is listed under each of
   them.

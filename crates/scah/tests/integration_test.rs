@@ -307,6 +307,123 @@ fn nested_scope_requires_a_following_relative_selector() {
     }
 }
 
+const NESTED_NEXT_SIBLING: &str = "combinator '+' would select a sibling of the parent match, \
+    but nested queries only match inside their parent match";
+const NESTED_SUBSEQUENT_SIBLING: &str = "combinator '~' would select a sibling of the parent \
+    match, but nested queries only match inside their parent match";
+
+#[test]
+fn nested_queries_reject_sibling_combinators_on_the_scope() {
+    // A nested query only matches descendants of its parent match, so these
+    // could never match anything.
+    for (selector, message, position) in [
+        (":scope + p", NESTED_NEXT_SIBLING, 7),
+        (":scope ~ p", NESTED_SUBSEQUENT_SIBLING, 7),
+        (":scope+p", NESTED_NEXT_SIBLING, 6),
+        (":scope + p span", NESTED_NEXT_SIBLING, 7),
+        (":SCOPE ~ p > span", NESTED_SUBSEQUENT_SIBLING, 7),
+        ("+ p", NESTED_NEXT_SIBLING, 0),
+        ("~ p", NESTED_SUBSEQUENT_SIBLING, 0),
+        (" \t+ p", NESTED_NEXT_SIBLING, 0),
+        // One dead alternative rejects the whole list, rather than quietly
+        // matching only the others.
+        (":scope + p, h2", NESTED_NEXT_SIBLING, 7),
+        ("h2, :scope ~ p", NESTED_SUBSEQUENT_SIBLING, 7),
+        ("h2, + p", NESTED_NEXT_SIBLING, 0),
+    ] {
+        let chained = Query::all("h1", Save::none())
+            .unwrap()
+            .all(selector, Save::none())
+            .unwrap_err();
+        let factory = Query::all("h1", Save::none())
+            .unwrap()
+            .then(|h1| Ok([h1.all(selector, Save::none())?]))
+            .unwrap_err();
+        let lazy = scah::lazy::LazyQuery::all("h1", Save::none()).all(selector, Save::none());
+        // SAFETY: the query is dropped without being used.
+        let lazy = unsafe { lazy.try_to_query() }.err().unwrap();
+        for error in [chained, factory, lazy] {
+            assert_eq!(error.message(), message, "{selector:?}");
+            assert_eq!(error.position(), position, "{selector:?}");
+        }
+    }
+
+    // A top-level `:scope + p` appended under `.then()` is rejected too.
+    for (selector, message) in [
+        (":scope + p", NESTED_NEXT_SIBLING),
+        (":scope ~ p", NESTED_SUBSEQUENT_SIBLING),
+        ("h2, :scope + p", NESTED_NEXT_SIBLING),
+    ] {
+        let error = Query::all("h1", Save::none())
+            .unwrap()
+            .then(|_| Ok([Query::all(selector, Save::none())?]))
+            .unwrap_err();
+        assert_eq!(error.message(), message, "{selector:?}");
+    }
+
+    // At the top level there is no parent match to explain.
+    for (selector, message) in [
+        ("+ p", "combinator '+' requires a preceding selector"),
+        ("~ p", "combinator '~' requires a preceding selector"),
+    ] {
+        let error = Query::all(selector, Save::none()).unwrap_err();
+        assert_eq!(error.message(), message, "{selector:?}");
+    }
+}
+
+#[test]
+fn nested_sibling_combinators_after_the_scope_still_match() {
+    let html = "<section><h2>a</h2><p>one</p>\
+        <div><h2>b</h2><p>two</p><p>three</p></div><p>four</p></section>";
+    for (selector, expected) in [
+        (":scope > h2 + p", &["one"][..]),
+        ("> h2 ~ p", &["one", "four"][..]),
+        (":scope h2 ~ p", &["one", "two", "three", "four"][..]),
+        ("h2 + p", &["one", "two"][..]),
+        (":scope > div ~ p", &["four"][..]),
+    ] {
+        let chained = Query::all("section", Save::none())
+            .unwrap()
+            .all(selector, Save::only_text())
+            .unwrap()
+            .build();
+        let factory = Query::all("section", Save::none())
+            .unwrap()
+            .then(|section| Ok([section.all(selector, Save::only_text())?]))
+            .unwrap()
+            .build();
+        for query in [chained, factory] {
+            let queries = [query];
+            let store = parse(html, &queries).unwrap();
+            let section = store.get("section").unwrap().next().unwrap();
+            let texts = section
+                .get(selector)
+                .into_iter()
+                .flatten()
+                .map(|p| p.text().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(texts, expected, "{selector:?}");
+        }
+    }
+
+    let static_query = query! {
+        all("section", Save::none()) => {
+            all(":scope > h2 + p", Save::only_text()),
+            all("> h2 ~ p", Save::only_text()),
+            all(":scope h2 ~ p", Save::only_text()),
+        }
+    };
+    let store = parse(
+        "<section><h2>a</h2><p>one</p><p>two</p></section>",
+        std::slice::from_ref(&static_query),
+    )
+    .unwrap();
+    let section = store.get("section").unwrap().next().unwrap();
+    assert_eq!(section.get(":scope > h2 + p").unwrap().count(), 1);
+    assert_eq!(section.get("> h2 ~ p").unwrap().count(), 2);
+    assert_eq!(section.get(":scope h2 ~ p").unwrap().count(), 2);
+}
+
 #[test]
 fn scope_anchor_is_normalized_once_across_builder_forms() {
     let selector = ":scope > :scope > a";

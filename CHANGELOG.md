@@ -171,6 +171,10 @@ features. Rust code that reads results needs the changes in
   still works, with its warning. ([#141])
 - The `otel` feature no longer prints every trace event to stdout; events only
   go to `tracing`, at `debug` level on the `scah::trace` target. ([#146], [#147])
+- Nested queries reject `:scope + p` and `:scope ~ p` when built instead of
+  accepting selectors that can never match, and `query!` rejects them at
+  compile time. A leading `+ p` or `~ p` in a nested query now explains that
+  nested queries only match inside their parent match. ([#131])
 
 ### Migrating from 0.1
 
@@ -326,3 +330,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#141]: https://github.com/zacharyvmm/scah/pull/141
 [#146]: https://github.com/zacharyvmm/scah/issues/146
 [#147]: https://github.com/zacharyvmm/scah/pull/147
+[#131]: https://github.com/zacharyvmm/scah/issues/131

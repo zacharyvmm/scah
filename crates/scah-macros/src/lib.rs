@@ -612,6 +612,31 @@ mod tests {
         }
     }
 
+    fn nested_query_node(selector: &str) -> QueryNode {
+        syn::parse_str::<QueryNode>(&format!(
+            "all(\"h1\", Save::none()) => {{ all({selector:?}, Save::none()) }}"
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn macro_rejects_nested_sibling_combinators_on_the_scope() {
+        for selector in [":scope + p", ":scope ~ p", "+ p", "~ p", ":scope + p, h2"] {
+            let error = expand_query(&nested_query_node(selector)).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("nested queries only match inside their parent match"),
+                "{selector}: {error}"
+            );
+        }
+
+        for selector in [":scope > h2 + p", "> h2 ~ p", ":scope h2 ~ p", "h2 + p"] {
+            expand_query(&nested_query_node(selector))
+                .unwrap_or_else(|error| panic!("{selector}: {error}"));
+        }
+    }
+
     #[test]
     fn macro_rejects_namespaces_inside_functional_pseudo_class_arguments() {
         for inner in [
