@@ -60,3 +60,35 @@ fn implied_option_close_splits_options() {
     );
     assert_eq!(elements(&store, "select > option").len(), 3);
 }
+
+#[test]
+fn implied_closes_stay_correct_under_deep_nesting() {
+    let depth = 3_000;
+    let html = format!(
+        "<ul><li>a<p>x{}<p>y</p>{}<li>b</ul><p>z<div>w</div>",
+        "<section>".repeat(depth),
+        "</section>".repeat(depth)
+    );
+    let store = parse_all(&html, &["p", "ul > li", "li > p", "section > p", "p div"]);
+
+    assert_eq!(texts(&store, "p"), vec![Some("x"), Some("y"), Some("z")]);
+    assert_eq!(elements(&store, "ul > li").len(), 2);
+    assert_eq!(elements(&store, "li > p").len(), 1);
+    assert_eq!(elements(&store, "section > p").len(), 1);
+    assert!(elements(&store, "p div").is_empty());
+}
+
+#[test]
+fn deep_nesting_above_a_barrier_keeps_the_p_open() {
+    let depth = 3_000;
+    let html = format!(
+        "<p>x<object>{}{}</object><div>y</div>",
+        "<div>".repeat(depth),
+        "</div>".repeat(depth)
+    );
+    let store = parse_all(&html, &["p", "p > object > div", "p div"]);
+
+    assert_eq!(texts(&store, "p"), vec![Some("x")]);
+    assert_eq!(elements(&store, "p > object > div").len(), 1);
+    assert_eq!(elements(&store, "p div").len(), depth);
+}

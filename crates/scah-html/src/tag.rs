@@ -41,6 +41,23 @@ pub enum ScopeKind {
     Select,
 }
 
+impl ScopeKind {
+    /// The flags that make an element a barrier for this scope, or `None`
+    /// for select scope, where every element but `option` and `optgroup` is
+    /// a barrier.
+    #[inline]
+    pub const fn barriers(self) -> Option<TagFlags> {
+        let barriers = match self {
+            ScopeKind::Default => TagFlags::DEFAULT_BARRIER,
+            ScopeKind::ListItem => TagFlags::DEFAULT_BARRIER | TagFlags::LIST_BARRIER,
+            ScopeKind::Button => TagFlags::DEFAULT_BARRIER | TagFlags::BUTTON,
+            ScopeKind::Table => TagFlags::TABLE_BARRIER,
+            ScopeKind::Select => return None,
+        };
+        Some(TagFlags(TagFlags::HTML_TEMPLATE | barriers))
+    }
+}
+
 impl TagFlags {
     const VOID: u32 = 1 << 0;
     const CLOSES_P: u32 = 1 << 1;
@@ -80,6 +97,24 @@ impl TagFlags {
     pub const OPTGROUP_MASK: Self = Self(Self::OPTGROUP);
     pub const TR_MASK: Self = Self(Self::TR);
     pub const CELL_MASK: Self = Self(Self::CELL);
+
+    /// The flags the open-element stack keeps an index of: every element an
+    /// open tag can implicitly close, and every barrier of the scopes those
+    /// closes search, so that `OpenElementStack` finds both without walking.
+    pub const INDEXED: Self = Self(
+        Self::P
+            | Self::BUTTON
+            | Self::LI
+            | Self::DT_DD
+            | Self::OPTION
+            | Self::OPTGROUP
+            | Self::TR
+            | Self::CELL
+            | Self::DEFAULT_BARRIER
+            | Self::LIST_BARRIER
+            | Self::TABLE_BARRIER
+            | Self::HTML_TEMPLATE,
+    );
 
     /// Parser properties of `name`.
     #[inline]
@@ -199,16 +234,11 @@ impl TagFlags {
 
     #[inline]
     pub const fn is_scope_barrier(self, scope: ScopeKind) -> bool {
-        if self.0 & Self::HTML_TEMPLATE != 0 {
-            return true;
-        }
-
-        match scope {
-            ScopeKind::Default => self.0 & Self::DEFAULT_BARRIER != 0,
-            ScopeKind::ListItem => self.0 & (Self::DEFAULT_BARRIER | Self::LIST_BARRIER) != 0,
-            ScopeKind::Button => self.0 & (Self::DEFAULT_BARRIER | Self::BUTTON) != 0,
-            ScopeKind::Table => self.0 & Self::TABLE_BARRIER != 0,
-            ScopeKind::Select => self.0 & (Self::OPTION | Self::OPTGROUP) == 0,
+        match scope.barriers() {
+            Some(barriers) => self.intersects(barriers),
+            None => {
+                self.0 & Self::HTML_TEMPLATE != 0 || self.0 & (Self::OPTION | Self::OPTGROUP) == 0
+            }
         }
     }
 
