@@ -94,21 +94,17 @@ export type JsQueryFactory = QueryFactory
 
 /** The results of `parse`. */
 export declare class Store {
-  /** Results of the first query whose selector is `query`. */
-  get(query: string): Array<Element> | null
-  /** Results of the query at `index` in the list given to `parse`. */
-  query(index: number): Array<Element> | null
   /**
    * Results of the first query whose selector is `query`: an empty array
    * when it matched nothing, `null` when no query has that selector.
    */
-  get(query: string): Array<JsElement> | null
+  get(query: string): Array<Element> | null
   /**
    * Results of the query at `index` in the list given to `parse`: an
    * empty array when it matched nothing, `null` when there is no such
    * query.
    */
-  query(index: number): Array<JsElement> | null
+  query(index: number): Array<Element> | null
   /** The number of saved elements. */
   get length(): number
 }
