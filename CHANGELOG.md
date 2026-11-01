@@ -54,7 +54,7 @@ features. Rust code that reads results needs the changes in
   With it, `scah::debug::parse_traced` is available in release builds too;
   without it, debug builds no longer record a trace, so they parse faster.
   The `otel` feature now implies `trace`, so it emits events in release
-  builds instead of silently doing nothing. ([#133])
+  builds instead of silently doing nothing. ([#145])
 
 ### Added
 
@@ -343,3 +343,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#147]: https://github.com/zacharyvmm/scah/pull/147
 [#131]: https://github.com/zacharyvmm/scah/issues/131
 [#133]: https://github.com/zacharyvmm/scah/issues/133
+[#145]: https://github.com/zacharyvmm/scah/pull/145
