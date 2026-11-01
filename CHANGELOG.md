@@ -141,7 +141,7 @@ features. Rust code that reads results needs the changes in
   closes, and the scope barriers that stop it, from an index kept by the
   open-element stack instead of walking the stack. Nesting `div`s or
   `section`s, which close an open `p`, no longer costs time quadratic in the
-  depth: 4,096 nested `section`s parse about 25× faster. ([#121])
+  depth: 4,096 nested `section`s parse about 26× faster. ([#121])
 
 ### Deprecated
 

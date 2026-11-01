@@ -55,47 +55,73 @@ impl<'html> OpenElement<'html> {
     }
 }
 
-/// First [`TagFlags::INDEXED`] bit; slot `i` of a [`FlagIndex`] holds bit
+/// First [`TagFlags::INDEXED`] bit; slot `i` of a [`Snapshot`] holds bit
 /// `FIRST_INDEXED_BIT + i`.
 const FIRST_INDEXED_BIT: u32 = TagFlags::INDEXED.bits().trailing_zeros();
 const INDEXED_SLOTS: usize =
     (u32::BITS - TagFlags::INDEXED.bits().leading_zeros() - FIRST_INDEXED_BIT) as usize;
 
-/// For each [`TagFlags::INDEXED`] flag, the stack positions of the open
-/// elements that carry it, innermost last.
+/// The innermost open element with each [`TagFlags::INDEXED`] flag, as seen
+/// from one element down.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Snapshot {
+    /// The indexed flags some element at or below this one carries.
+    occupied: u32,
+    /// For each occupied flag, the stack position of the innermost element
+    /// that carries it.
+    innermost: [DepthSize; INDEXED_SLOTS],
+}
+
+/// A [`Snapshot`] for each open element with an indexed flag, innermost
+/// last, so the last one answers for the whole stack.
 ///
-/// Elements leave the stack top first, so a popped element is always the
-/// last position of every slot it was pushed to.
+/// Elements leave the stack top first, so popping an indexed element pops
+/// its snapshot and leaves the one that was current before it opened.
 #[derive(Debug, Default, PartialEq)]
 struct FlagIndex {
-    slots: [Vec<DepthSize>; INDEXED_SLOTS],
+    /// The last snapshot's `occupied`, or 0 when there is none.
+    occupied: u32,
+    snapshots: Vec<Snapshot>,
 }
 
 impl FlagIndex {
     #[inline]
     fn push(&mut self, tag: TagFlags, position: usize) {
+        let mut snapshot = self.snapshots.last().copied().unwrap_or_default();
         let mut bits = tag.bits() & TagFlags::INDEXED.bits();
+        snapshot.occupied |= bits;
         while bits != 0 {
             let slot = (bits.trailing_zeros() - FIRST_INDEXED_BIT) as usize;
             // Positions stay below `MAX_ELEMENT_DEPTH`, so they fit.
-            self.slots[slot].push(position as DepthSize);
+            snapshot.innermost[slot] = position as DepthSize;
             bits &= bits - 1;
         }
+        self.occupied = snapshot.occupied;
+        self.snapshots.push(snapshot);
     }
 
     #[inline]
     fn pop(&mut self, tag: TagFlags, position: usize) {
-        let mut bits = tag.bits() & TagFlags::INDEXED.bits();
-        while bits != 0 {
-            let slot = (bits.trailing_zeros() - FIRST_INDEXED_BIT) as usize;
-            let last = self.slots[slot].pop();
-            debug_assert_eq!(last, Some(position as DepthSize));
-            bits &= bits - 1;
-        }
+        let popped = self.snapshots.pop();
+        debug_assert!(popped.is_some_and(|snapshot| {
+            let slot = (tag.bits() & TagFlags::INDEXED.bits()).trailing_zeros() - FIRST_INDEXED_BIT;
+            usize::from(snapshot.innermost[slot as usize]) == position
+        }));
+        self.occupied = self
+            .snapshots
+            .last()
+            .map_or(0, |snapshot| snapshot.occupied);
     }
 
     fn clear(&mut self) {
-        self.slots.iter_mut().for_each(Vec::clear);
+        self.occupied = 0;
+        self.snapshots.clear();
+    }
+
+    /// Whether an open element has any flag in `mask`.
+    #[inline(always)]
+    fn any(&self, mask: TagFlags) -> bool {
+        self.occupied & mask.bits() != 0
     }
 
     /// Position of the innermost open element with any flag in `mask`, which
@@ -103,14 +129,15 @@ impl FlagIndex {
     #[inline]
     fn innermost(&self, mask: TagFlags) -> Option<usize> {
         debug_assert_eq!(mask.bits() & !TagFlags::INDEXED.bits(), 0);
-        let mut bits = mask.bits();
-        let mut innermost = None;
+        let mut bits = mask.bits() & self.occupied;
+        let snapshot = self.snapshots.last().filter(|_| bits != 0)?;
+        let mut innermost = 0;
         while bits != 0 {
             let slot = (bits.trailing_zeros() - FIRST_INDEXED_BIT) as usize;
-            innermost = innermost.max(self.slots[slot].last().map(|&p| usize::from(p)));
+            innermost = innermost.max(usize::from(snapshot.innermost[slot]));
             bits &= bits - 1;
         }
-        innermost
+        Some(innermost)
     }
 }
 
@@ -198,7 +225,9 @@ impl<'html> OpenElementStack<'html> {
         if cfg!(test) || self.entries.len() <= 64 {
             let mut rebuilt = FlagIndex::default();
             for (position, entry) in self.entries.iter().enumerate() {
-                rebuilt.push(entry.tag(), position);
+                if entry.tag().intersects(TagFlags::INDEXED) {
+                    rebuilt.push(entry.tag(), position);
+                }
             }
             assert_eq!(self.index, rebuilt, "open-element flag index drifted");
         }
@@ -220,7 +249,16 @@ impl<'html> OpenElementStack<'html> {
     #[inline]
     pub fn prepare_for_open_into(&mut self, tag: TagFlags, popped: &mut Vec<OpenElement<'html>>) {
         popped.clear();
+        // Usually nothing the tag could close is open.
+        if self.index.any(tag.implied_close_targets()) {
+            self.close_implied_by_into(tag, popped);
+        }
+    }
 
+    /// Pop what opening `tag` implicitly closes, once something it could
+    /// close is known to be open. Kept out of line, off the common path.
+    #[inline(never)]
+    fn close_implied_by_into(&mut self, tag: TagFlags, popped: &mut Vec<OpenElement<'html>>) {
         if tag.closes_open_p() {
             self.pop_matching_in_scope_into(TagFlags::P_MASK, ScopeKind::Default, popped);
         }
@@ -340,6 +378,12 @@ impl<'html> OpenElementStack<'html> {
     /// innermost match and barrier off the flag index instead.
     #[inline]
     fn find_first_of(&self, tags: TagFlags, scope: ScopeKind) -> Option<usize> {
+        // The walk's first step, and the usual answer when `tags` is open:
+        // a matching top element wins even if it is also a barrier.
+        let top = self.entries.len().checked_sub(1)?;
+        if self.entries[top].tag().intersects(tags) {
+            return Some(top);
+        }
         let index = self.index.innermost(tags)?;
         let blocked = match scope.barriers() {
             Some(barriers) => self

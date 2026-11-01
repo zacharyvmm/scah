@@ -217,6 +217,28 @@ impl TagFlags {
             != 0
     }
 
+    /// The flags of the open elements that opening a tag with these flags
+    /// can implicitly close: an open `p` for tags that close one, the tag's
+    /// own kind for `button`, `li`, `dt`, `dd`, `option`, `tr` and cells, and
+    /// both `option` and `optgroup` for `optgroup`.
+    #[inline]
+    pub const fn implied_close_targets(self) -> Self {
+        const _: () = assert!(TagFlags::CLOSES_P << 1 == TagFlags::P);
+        const _: () = assert!(TagFlags::OPTGROUP >> 1 == TagFlags::OPTION);
+        Self(
+            (self.0 & Self::CLOSES_P) << 1
+                | (self.0 & Self::OPTGROUP) >> 1
+                | self.0
+                    & (Self::BUTTON
+                        | Self::LI
+                        | Self::DT_DD
+                        | Self::OPTION
+                        | Self::OPTGROUP
+                        | Self::TR
+                        | Self::CELL),
+        )
+    }
+
     #[inline]
     pub const fn close_scope(self) -> ScopeKind {
         if self.0 & (Self::LI | Self::DT_DD) != 0 {
