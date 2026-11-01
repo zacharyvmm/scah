@@ -173,7 +173,7 @@ breaking change). Rust code that reads results needs the changes in
   closes from per-name chains of open elements instead of walking the stack.
   End tags that match nothing open, or only elements behind a scope barrier,
   no longer cost time quadratic in the depth: 16,384 nested `div`s followed by
-  as many stray `</span>`s parse about 200× faster. ([#149])
+  as many stray `</span>`s parse about 170× faster. ([#149])
 
 ### Deprecated
 
