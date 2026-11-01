@@ -16,6 +16,7 @@ mod elements;
 
 #[napi]
 #[allow(dead_code)]
+/// Run `queries` over `html` in a single pass and return their matches.
 fn parse(html: String, queries: Vec<Reference<JsQuery>>) -> Result<JSStore> {
     let queries: Vec<&OwnedQuery> = queries.iter().map(|q| &q.query).collect();
     let store = OwnedStore::parse(html, &queries).map_err(parse_error)?;

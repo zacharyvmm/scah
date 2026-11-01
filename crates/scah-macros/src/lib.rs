@@ -1,3 +1,11 @@
+//! Procedural macros for [scah](https://docs.rs/scah).
+//!
+//! The only macro is [`query!`], re-exported as `scah::query!`; see its
+//! documentation there.
+//!
+//! This crate is an implementation detail of scah and has no stability
+//! guarantees of its own; use scah instead.
+
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
@@ -9,6 +17,7 @@ use scah_query_ir::{
 use syn::parse::{Parse, ParseStream};
 use syn::{Expr, LitStr, Result, Token, braced, parenthesized};
 
+// Documented on its re-export, `scah::query!`, where the examples can run.
 #[proc_macro]
 pub fn query(input: TokenStream) -> TokenStream {
     let parsed = syn::parse_macro_input!(input as QueryDsl);

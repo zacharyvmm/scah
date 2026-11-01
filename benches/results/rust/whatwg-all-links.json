@@ -5,10 +5,10 @@
   "title": "Every <a> in the WHATWG HTML specification",
   "unit": "ms",
   "environment": {
-    "date": "2026-10-03",
-    "commit": "29df6d08a64d91e196ce575bbd65ec9651a8e5cb",
+    "date": "2026-10-29",
+    "commit": "bb36054582f4fe72c8ec3851e33a52501d38bf59",
     "dirty": false,
-    "os": "Darwin 25.6.0",
+    "os": "Darwin 27.0.0",
     "arch": "arm64",
     "cpu": "Apple M5",
     "runtime": "rustc 1.95.0 (59807616e 2026-04-14) (Homebrew)"
@@ -17,38 +17,38 @@
     {
       "library": "scah",
       "size": null,
-      "mean": 20.83996068666667,
-      "stdev": 0.10405788597450624
+      "mean": 19.47093556333334,
+      "stdev": 0.07371284608502365
     },
     {
       "library": "lol_html",
       "size": null,
-      "mean": 26.92817416,
-      "stdev": 0.13458310683101085
+      "mean": 25.553893350000003,
+      "stdev": 0.17835277581575326
     },
     {
       "library": "tl",
       "size": null,
-      "mean": 33.56663958,
-      "stdev": 0.5565293072778651
+      "mean": 33.51723185,
+      "stdev": 0.617472741018338
     },
     {
       "library": "lexbor",
       "size": null,
-      "mean": 60.56896289,
-      "stdev": 0.34133408727828357
+      "mean": 60.560827530000005,
+      "stdev": 0.3525675862212634
     },
     {
       "library": "scraper",
       "size": null,
-      "mean": 137.45967713,
-      "stdev": 1.5284491523272707
+      "mean": 136.24404002,
+      "stdev": 0.7025475157043278
     },
     {
       "library": "lxml",
       "size": null,
-      "mean": 327.6167587,
-      "stdev": 1.0012437541319155
+      "mean": 318.91270249,
+      "stdev": 2.388119461474421
     }
   ]
 }

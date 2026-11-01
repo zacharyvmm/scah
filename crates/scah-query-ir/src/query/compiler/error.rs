@@ -13,6 +13,18 @@ enum SelectorParseErrorKind {
     NestingLimit,
 }
 
+/// A selector that scah rejected, either because it is not valid CSS or
+/// because scah cannot evaluate it in a single forward pass.
+///
+/// scah never quietly narrows a selector it does not fully support: such a
+/// query fails to build with this error instead.
+///
+/// ```rust
+/// use scah_query_ir::{Query, Save};
+///
+/// let err = Query::all("a:has(img)", Save::none()).unwrap_err();
+/// println!("{err}"); // the message, then "at byte <position>"
+/// ```
 #[derive(Debug, Clone)]
 pub struct SelectorParseError {
     message: &'static str,
@@ -61,10 +73,12 @@ impl SelectorParseError {
         self.kind != SelectorParseErrorKind::Invalid
     }
 
+    /// Why the selector was rejected.
     pub fn message(&self) -> &'static str {
         self.message
     }
 
+    /// The byte offset in the selector string where the problem was found.
     pub fn position(&self) -> usize {
         self.position
     }
