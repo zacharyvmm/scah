@@ -403,10 +403,10 @@ final class PanamaBackend implements Backend {
         }
     }
 
-    /** Copy a native element list's ids and free it. NULL is an empty list. */
+    /** Copy a native element list's ids and free it. NULL, for a selector that is not a query, is null. */
     private long[] takeList(MemorySegment list) throws Throwable {
         if (list.address() == 0) {
-            return new long[0];
+            return null;
         }
         try {
             long length = (long) listLen.invokeExact(list);

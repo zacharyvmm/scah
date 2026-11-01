@@ -160,7 +160,7 @@ def test_builder_extends_after_build():
     deep = builder.all("a", Save.all()).build()
 
     html = "<div><a href='x'>x</a></div>"
-    with pytest.raises(ValueError, match="does not have children selected"):
+    with pytest.raises(ValueError, match="`a` is not a child query"):
         parse(html, [shallow]).get("div")[0].get("a")
     assert parse(html, [deep]).get("div")[0].get("a")[0].get_attribute("href") == "x"
 
@@ -320,7 +320,7 @@ def test_element_get_missing_child_raises_value_error():
     q = Query.all("div", Save.all()).build()
     store = parse("<div></div>", [q])
     div = store.get("div")[0]
-    with pytest.raises(ValueError, match="does not have children selected"):
+    with pytest.raises(ValueError, match="`a` is not a child query"):
         div.get("a")
 
 
@@ -328,6 +328,29 @@ def test_store_get_missing_returns_none():
     q = Query.all("a", Save.all()).build()
     store = parse("<div></div>", [q])
     assert store.get("missing") is None
+    assert store.query(1) is None
+
+
+def test_query_without_matches_returns_empty_list():
+    q = Query.all("a[href]", Save.none()).build()
+    store = parse("<div>no links</div>", [q])
+    assert store.get("a[href]") == []
+    assert store.query(0) == []
+    for _link in store.get("a[href]"):
+        pytest.fail("no links to loop over")
+
+
+def test_child_query_without_matches_returns_empty_list():
+    q = (
+        Query.all("article", Save.none())
+        .then(lambda a: [a.all("h2", Save.only_text())])
+        .build()
+    )
+    store = parse("<article><h2>A</h2></article><article>no heading</article>", [q])
+    headings = [[h.text for h in article.get("h2")] for article in store.get("article")]
+    assert headings == [["A"], []]
+    with pytest.raises(ValueError, match="`p` is not a child query"):
+        store.get("article")[1].get("p")
 
 
 def test_query_builder_does_not_expose_try_build():

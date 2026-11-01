@@ -24,7 +24,7 @@ public class QueryTests
         Element main = Assert.Single(store.Get("main"));
         Element link = Assert.Single(main.Get("a"));
         Assert.Equal("x", link.GetAttribute("href"));
-        Assert.Empty(store.Get("a"));
+        Assert.Throws<ArgumentException>(() => store.Get("a"));
     }
 
     [Fact]
@@ -69,17 +69,18 @@ public class QueryTests
         {
             Element section = Assert.Single(store.Get("section"));
             Assert.Single(section.Get("h2"));
-            Assert.Empty(section.Get("a"));
+            Assert.Throws<ArgumentException>(() => section.Get("a"));
         }
         using (Store store = Store.Parse(Html, links))
         {
             Element section = Assert.Single(store.Get("section"));
-            Assert.Empty(section.Get("h2"));
+            Assert.Throws<ArgumentException>(() => section.Get("h2"));
             Assert.Single(section.Get("a"));
         }
         using (Store store = Store.Parse(Html, bare))
         {
-            Assert.Empty(Assert.Single(store.Get("section")).Get("h2"));
+            Element section = Assert.Single(store.Get("section"));
+            Assert.Throws<ArgumentException>(() => section.Get("h2"));
         }
     }
 

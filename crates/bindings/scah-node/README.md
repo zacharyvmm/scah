@@ -100,8 +100,8 @@ Save only what you read: each extra field costs time.
 
 | `Store` | |
 | ------- | - |
-| `store.get(selector)` | The matches of the first query with that selector, or `null` if it matched nothing or no query has it |
-| `store.query(index)` | The matches of the query at `index` in the array passed to `parse`, or `null` as for `get` |
+| `store.get(selector)` | The matches of the first query with that selector (`[]` if it matched nothing), or `null` if no query has it |
+| `store.query(index)` | The matches of the query at `index` in the array passed to `parse` (`[]` if it matched nothing), or `null` if there is no such query |
 | `store.length` | The number of saved elements |
 
 | `Element` | |
@@ -109,7 +109,7 @@ Save only what you read: each extra field costs time.
 | `name`, `id`, `className` | The tag name, `id`, and `class` attribute |
 | `attributes`, `getAttribute(name)` | The other attributes, as an object or one at a time |
 | `innerHtml`, `rawText`, `text` | Saved content, or `null` if the query didn't save it |
-| `get(selector)` | The element's matches for a child query; throws if there are none |
+| `get(selector)` | The element's matches for a child query (`[]` if it matched nothing under this element); throws if `selector` is not a child query of this element's query |
 | `toJson()` | A plain object with all of the above |
 
 ## Selectors and text

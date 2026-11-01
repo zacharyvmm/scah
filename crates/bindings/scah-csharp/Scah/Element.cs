@@ -116,9 +116,10 @@ public readonly struct Element : IEquatable<Element>
     /// with <see cref="QueryBuilder.All"/> or <see cref="QueryBuilder.First"/>,
     /// or a child query nested with <see cref="QueryBuilder.Then(QueryBuilder[])"/>.
     /// </summary>
-    /// <remarks>
-    /// The list is empty when nothing matched or no such section has that selector.
-    /// </remarks>
+    /// <remarks>The list is empty when that section matched nothing under this element.</remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="selector"/> is not the selector of a section nested under this element's.
+    /// </exception>
     public unsafe ElementList Get(string selector)
     {
         using Utf8.Buffer bytes = Utf8.Encode(selector, stackalloc byte[Utf8.StackLimit]);
@@ -130,7 +131,8 @@ public readonly struct Element : IEquatable<Element>
             int status = Native.scah_element_get(
                 lease.Pointer, id, new StringView(data, (nuint)bytes.Bytes.Length), &list, &error);
             Native.Check(status, error);
-            return ElementList.Take(store, list);
+            return ElementList.Take(store, list) ?? throw new ArgumentException(
+                $"`{selector}` is not a child query of this element's query", nameof(selector));
         }
     }
 

@@ -82,6 +82,11 @@ can only hand it over in pieces push them into a `ScahHtml` with
 `scah_html_push_utf16` and parse it with `scah_parse_html`. Lone surrogates
 are replaced with U+FFFD, or rejected with `SCAH_STATUS_INVALID_UTF16`.
 
+`scah_store_get`, `scah_store_query`, and `scah_element_get` give an empty
+list when the query matched nothing, and NULL when the selector or index is
+not a query; `scah_element_list_len` and `scah_element_list_free` accept
+either.
+
 Every handle is released with its `*_free` function, and every `*_free`
 function accepts NULL. A store copies the HTML and shares its queries' selector strings,
 so both may be freed right after `scah_parse`. String views borrow from the

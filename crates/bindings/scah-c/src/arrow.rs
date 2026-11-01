@@ -9,9 +9,10 @@ use std::sync::Arc;
 impl From<ArrowError> for Failure {
     fn from(err: ArrowError) -> Self {
         let status = match err {
-            ArrowError::DuplicateColumn(_) | ArrowError::InvalidColumnName(_) => {
-                ScahStatus::InvalidArgument
-            }
+            ArrowError::DuplicateColumn(_)
+            | ArrowError::InvalidColumnName(_)
+            | ArrowError::UnknownQuery(_)
+            | ArrowError::UnknownChildQuery { .. } => ScahStatus::InvalidArgument,
             ArrowError::TooLarge(_) => ScahStatus::ExportTooLarge,
         };
         Failure::new(status, err.to_string())
@@ -41,13 +42,14 @@ impl From<ArrowError> for Failure {
 /// into the store's HTML and text buffers, which are exported as data
 /// buffers without copying. The schema and the array each keep that data
 /// alive until released through their `release` callbacks, even after
-/// `scah_store_free`. A selector without matches yields an empty array.
+/// `scah_store_free`. A query without matches yields an empty array.
 ///
 /// On entry `*out_schema` and `*out_array` are marked released (`release`
 /// set to NULL); on success both must be released by the caller.
-/// `SCAH_STATUS_INVALID_ARGUMENT` reports an attribute that repeats a column
-/// name or contains a NUL byte, and `SCAH_STATUS_EXPORT_TOO_LARGE` a buffer beyond
-/// Arrow's 32-bit offsets.
+/// `SCAH_STATUS_INVALID_ARGUMENT` reports a `selector` or `parent` that is
+/// not a query, or an attribute that repeats a column name or contains a NUL
+/// byte, and `SCAH_STATUS_EXPORT_TOO_LARGE` a buffer beyond Arrow's 32-bit
+/// offsets.
 ///
 /// # Safety
 ///

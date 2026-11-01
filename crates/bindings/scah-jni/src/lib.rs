@@ -26,7 +26,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Bumped with every incompatible change to the native methods, so a jar and
 /// a library from different builds fail to load instead of misbehaving.
-const PROTOCOL_VERSION: jint = 2;
+const PROTOCOL_VERSION: jint = 3;
 
 // Status codes, as in scah.h.
 const INVALID_UTF8: jint = 2;
@@ -191,12 +191,13 @@ unsafe fn element<'a>(store: jlong, element: jlong) -> Result<ElementRef<'a, 'a,
         })
 }
 
+/// `ids` as a Java array, or null when the selector or index that looked
+/// them up is not a query.
 fn ids<'local>(env: &mut Env<'local>, ids: Option<&[ElementId]>) -> Result<JLongArray<'local>> {
-    let ids: Vec<jlong> = ids
-        .unwrap_or_default()
-        .iter()
-        .map(|id| id.index() as jlong)
-        .collect();
+    let Some(ids) = ids else {
+        return Ok(JLongArray::default());
+    };
+    let ids: Vec<jlong> = ids.iter().map(|id| id.index() as jlong).collect();
     let array = env.new_long_array(ids.len())?;
     array.set_region(env, 0, &ids)?;
     Ok(array)

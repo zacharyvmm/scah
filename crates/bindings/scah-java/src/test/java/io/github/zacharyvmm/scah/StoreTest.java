@@ -78,20 +78,41 @@ class StoreTest {
             assertEquals(List.of(Optional.empty(), Optional.empty()), texts(store.queryResults(1)));
             assertEquals(store.queryResults(0), store.get("a"));
             assertTrue(store.queryResults(2).isEmpty());
-            assertTrue(store.queryResults(3).isEmpty());
+            assertThrows(IndexOutOfBoundsException.class, () -> store.queryResults(3));
             assertThrows(IndexOutOfBoundsException.class, () -> store.queryResults(-1));
             assertEquals(4, store.elementCount());
         }
     }
 
     @Test
-    void missingSelectorsYieldEmptyLists() {
+    void queriesWithoutMatchesYieldEmptyLists() {
+        try (Query articles = Query.all("article", Save.none())
+                        .then(Query.all("h2", Save.onlyText()))
+                        .build();
+                Query links = Query.all("a[href]", Save.none()).build();
+                Store store = Store.parse(
+                        "<article><h2>A</h2></article><article>no heading</article>", articles, links)) {
+            assertTrue(store.get("a[href]").isEmpty());
+            assertTrue(store.queryResults(1).isEmpty());
+            List<List<Optional<String>>> headings = store.get("article").stream()
+                    .map(article -> texts(article.get("h2")))
+                    .collect(Collectors.toList());
+            assertEquals(List.of(List.of(Optional.of("A")), List.of()), headings);
+        }
+    }
+
+    @Test
+    void selectorsThatAreNotQueriesThrow() {
         try (Query query = Query.all("ul", Save.none()).then(Query.all("li", Save.none())).build();
                 Store store = Store.parse("<ul></ul>", query)) {
-            assertTrue(store.get("never-queried").isEmpty());
+            IllegalArgumentException error =
+                    assertThrows(IllegalArgumentException.class, () -> store.get("never-queried"));
+            assertEquals("`never-queried` is not the selector of a top-level query", error.getMessage());
+            assertThrows(IllegalArgumentException.class, () -> store.get("li"));
             Element ul = single(store.get("ul"));
             assertTrue(ul.get("li").isEmpty());
-            assertTrue(ul.get("span").isEmpty());
+            error = assertThrows(IllegalArgumentException.class, () -> ul.get("span"));
+            assertEquals("`span` is not a child query of this element's query", error.getMessage());
         }
     }
 

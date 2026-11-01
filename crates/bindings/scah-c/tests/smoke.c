@@ -243,8 +243,13 @@ static void check_sections(const ScahStore *store) {
           SCAH_STATUS_NULL_POINTER);
   }
 
-  /* The second section has no heading: success with a NULL list. */
-  CHECK(get_nested(store, ids[1], "> h2") == NULL);
+  /* The second section has no heading: success with an empty list. */
+  headings = get_nested(store, ids[1], "> h2");
+  CHECK(headings != NULL);
+  CHECK(scah_element_list_len(headings) == 0);
+  scah_element_list_free(headings);
+  /* A selector that is not a child query: success with a NULL list. */
+  CHECK(get_nested(store, ids[1], "p") == NULL);
   CHECK(scah_element_list_len(NULL) == 0);
   CHECK(scah_element_list_ids(NULL) == NULL);
 
@@ -390,6 +395,19 @@ static void export_links(const ScahStore *store, struct ArrowSchema *schema,
                                   &err) == SCAH_STATUS_INVALID_ARGUMENT);
     CHECK(bad_schema.release == NULL && bad_array.release == NULL);
     CHECK(view_eq(scah_error_message(err), "duplicate column name `text`"));
+    scah_error_free(err);
+  }
+
+  /* So does a selector that is not a query. */
+  {
+    struct ArrowSchema bad_schema;
+    struct ArrowArray bad_array;
+    CHECK(scah_store_export_arrow(store, sv("never"), no_parent, NULL, 0,
+                                  &bad_schema, &bad_array,
+                                  &err) == SCAH_STATUS_INVALID_ARGUMENT);
+    CHECK(bad_schema.release == NULL && bad_array.release == NULL);
+    CHECK(view_eq(scah_error_message(err),
+                  "`never` is not the selector of a top-level query"));
     scah_error_free(err);
   }
 }

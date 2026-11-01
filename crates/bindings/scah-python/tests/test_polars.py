@@ -88,7 +88,7 @@ def handle_row(element, save, attributes=None):
 def matches(html, query, selector):
     if html is None:
         return None
-    return scah.parse(html, [query]).get(selector) or []
+    return scah.parse(html, [query]).get(selector)
 
 
 # ── Shape and values ───────────────────────────────────────────────────────
@@ -216,8 +216,8 @@ def test_child_sections_nest_by_selector():
             continue
         rows = []
         for product in products:
-            h1 = children(product, "h1")
-            spans = children(product, "span.rating")
+            h1 = product.get("h1")
+            spans = product.get("span.rating")
             rows.append(
                 {
                     "tag": product.name,
@@ -230,13 +230,6 @@ def test_child_sections_nest_by_selector():
         expected.append(rows)
     assert result.to_list() == expected
     assert result.to_list()[0][2] == {"tag": "div", "h1": None, "span.rating": []}
-
-
-def children(element, selector):
-    try:
-        return element.get(selector)
-    except ValueError:
-        return []
 
 
 def test_chained_selectors_nest_like_then():
