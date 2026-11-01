@@ -94,7 +94,7 @@ features. Rust code that reads results needs the changes in
 - Python's `save` argument is optional, as in JavaScript: `Query.all`,
   `Query.first`, and the `all` and `first` of `QueryBuilder` and
   `QueryFactory` default to `Save.none()`, which keeps the name and
-  attributes, so `Query.all("a[href]").build()` works.
+  attributes, so `Query.all("a[href]").build()` works. ([#141])
 
 ### Changed
 
@@ -132,16 +132,16 @@ features. Rust code that reads results needs the changes in
   and `CompiledQuery` (what `build()` returns) instead of `PyQueryBuilder`,
   `PyQueryFactory`, and `PyQuery`, all in module `scah`. A `CompiledQuery`
   prints as `CompiledQuery('main > section', 2 child queries)` instead of
-  the compiled IR.
+  the compiled IR. ([#141])
 - TypeScript: `build()` returns, and `parse` takes, a `CompiledQuery`
   instead of `JsQuery`; `then`'s callback takes a `QueryFactory`, and
   `Store.get` and `Store.query` return `Element` arrays. `JsQuery` and the
-  other `Js` type aliases remain.
+  other `Js` type aliases remain. ([#141])
 
 ### Deprecated
 
 - `scah.PyQuery`, `scah.PyQueryBuilder`, and `scah.PyQueryFactory` are
-  aliases of the renamed classes that warn when used.
+  aliases of the renamed classes that warn when used. ([#141])
 
 ### Documentation
 
@@ -168,7 +168,7 @@ features. Rust code that reads results needs the changes in
 - In Python, `dict(element)` emitted a `DeprecationWarning` and copied the
   text into a `text_content` key, because `Element.keys()` listed the
   deprecated field. `keys()` no longer lists it; `element["text_content"]`
-  still works, with its warning.
+  still works, with its warning. ([#141])
 
 ### Migrating from 0.1
 
@@ -321,3 +321,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#124]: https://github.com/zacharyvmm/scah/pull/124
 [#125]: https://github.com/zacharyvmm/scah/pull/125
 [#130]: https://github.com/zacharyvmm/scah/pull/130
+[#141]: https://github.com/zacharyvmm/scah/pull/141
