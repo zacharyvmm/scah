@@ -1,6 +1,6 @@
 use super::SelectorParseError;
 use super::query::{Query, QuerySection, QuerySectionId, TransitionId};
-use super::transition::Transition;
+use super::transition::{NESTED_NEXT_SIBLING, NESTED_SUBSEQUENT_SIBLING, Transition};
 
 /// Controls which pieces of content to capture for matched elements.
 ///
@@ -214,6 +214,21 @@ impl<'query> QueryBuilder<'query> {
                         "terminal :scope selectors are not supported",
                         0,
                     ));
+                }
+                // A top-level `:scope + p` appended under `.then()` would
+                // select siblings of the parent match, which a nested query
+                // never reaches.
+                match self.states[range.start.index() + 1].guard {
+                    crate::Combinator::NextSibling => {
+                        return Err(SelectorParseError::unsupported(NESTED_NEXT_SIBLING, 0));
+                    }
+                    crate::Combinator::SubsequentSibling => {
+                        return Err(SelectorParseError::unsupported(
+                            NESTED_SUBSEQUENT_SIBLING,
+                            0,
+                        ));
+                    }
+                    _ => {}
                 }
                 Ok(Some(range.start.index()))
             })
@@ -636,10 +651,7 @@ mod tests {
             })
             .unwrap_err();
 
-        assert_eq!(
-            error.message(),
-            "combinator '+' requires a preceding selector"
-        );
+        assert_eq!(error.message(), super::NESTED_NEXT_SIBLING);
     }
 
     #[test]
@@ -707,10 +719,7 @@ mod tests {
 
         assert!(builder.is_err());
         let error = builder.unwrap_err();
-        assert_eq!(
-            error.message(),
-            "combinator '+' requires a preceding selector"
-        );
+        assert_eq!(error.message(), super::NESTED_NEXT_SIBLING);
     }
 
     const NESTING_ERROR: &str = "selector nesting exceeds the maximum depth";

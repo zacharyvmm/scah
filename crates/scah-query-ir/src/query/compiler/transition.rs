@@ -552,11 +552,18 @@ impl<'query> Transition<'query> {
         if query.bytes().any(|byte| byte == 0x0b) {
             return Err(SelectorParseError::new("illegal selector token", 0));
         }
+        if scoped {
+            reject_sibling_of_scope(query, 0)?;
+        }
         let reader = &mut Reader::new(query);
         let mut states = Vec::new();
+        let mut first_end = 0;
         let mut seen_selector = false;
         while let Some((combinator, element)) = Lexer::try_next(reader, seen_selector)? {
             states.push(Self::new(combinator, element));
+            if !seen_selector {
+                first_end = reader.get_position();
+            }
             seen_selector = true;
         }
 
@@ -603,6 +610,7 @@ impl<'query> Transition<'query> {
                     0,
                 ));
             }
+            reject_sibling_of_scope(query, first_end)?;
             states.remove(0);
         } else if (scoped || states.len() > 1) && has_scope && !pure_scope_anchor {
             return Err(SelectorParseError::new(
@@ -613,6 +621,24 @@ impl<'query> Transition<'query> {
 
         Ok(states)
     }
+}
+
+pub(crate) const NESTED_NEXT_SIBLING: &str = "combinator '+' would select a sibling of the parent match, but nested queries only match inside their parent match";
+pub(crate) const NESTED_SUBSEQUENT_SIBLING: &str = "combinator '~' would select a sibling of the parent match, but nested queries only match inside their parent match";
+
+/// Rejects a sibling combinator at `position` (after optional whitespace),
+/// where it would apply to the scope: `+ p` and `:scope ~ p` in a nested
+/// query. A nested query only matches descendants of its parent match, so
+/// these could never match anything.
+fn reject_sibling_of_scope(query: &str, position: usize) -> Result<(), SelectorParseError> {
+    let rest = &query[position..];
+    let position = position + rest.len() - rest.trim_start_matches(is_css_whitespace_char).len();
+    let message = match query.as_bytes().get(position) {
+        Some(b'+') => NESTED_NEXT_SIBLING,
+        Some(b'~') => NESTED_SUBSEQUENT_SIBLING,
+        _ => return Ok(()),
+    };
+    Err(SelectorParseError::unsupported(message, position))
 }
 
 fn split_selector_list(source: &str) -> Result<Vec<&str>, SelectorParseError> {

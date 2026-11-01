@@ -406,6 +406,35 @@ test('invalid selector fails at build', () => {
   expect(() => Query.all('a[').build()).toThrow()
 })
 
+test('nested sibling combinators on the scope fail at build', () => {
+  const nestedError = /nested queries only match inside their parent match/
+  for (const selector of [':scope + p', ':scope ~ p', '+ p', '~ p', ':scope + p, h2']) {
+    expect(() => Query.all('h1').all(selector).build()).toThrow(nestedError)
+    expect(() =>
+      Query.all('h1')
+        .then((h1) => [h1.all(selector)])
+        .build(),
+    ).toThrow(nestedError)
+  }
+  expect(() => Query.all('+ p').build()).toThrow(/requires a preceding selector/)
+})
+
+test('nested sibling combinators after the scope still match', () => {
+  const html = '<section><h2>a</h2><p>one</p><div><h2>b</h2><p>two</p></div><p>three</p></section>'
+  const cases: [string, string[]][] = [
+    [':scope > h2 + p', ['one']],
+    ['> h2 ~ p', ['one', 'three']],
+    [':scope h2 ~ p', ['one', 'two', 'three']],
+  ]
+  for (const [selector, expected] of cases) {
+    const query = Query.all('section')
+      .then((section) => [section.all(selector, { text: true })])
+      .build()
+    const section = parse(html, [query]).get('section')![0]
+    expect(section.get(selector).map((p) => p.text)).toEqual(expected)
+  }
+})
+
 test('attributes preserve missing versus empty values', () => {
   const q = Query.all('input', { innerHtml: true, text: true }).build()
   const store = parse('<input disabled value="">', [q])

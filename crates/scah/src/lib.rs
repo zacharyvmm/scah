@@ -155,6 +155,19 @@ pub use scah_html::{Attribute, Reader, XHtmlElement};
 ///
 /// let query = query! { all("li:last-child", Save::none()) };
 /// ```
+///
+/// So do nested selectors that could never match, such as a sibling of the
+/// parent match:
+///
+/// ```compile_fail
+/// use scah::query;
+///
+/// let query = query! {
+///     all("h1", Save::none()) => {
+///         all(":scope + p", Save::only_text()),
+///     }
+/// };
+/// ```
 pub use scah_macros::query;
 #[doc(hidden)]
 pub use scah_query_ir::lazy;
