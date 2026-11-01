@@ -287,7 +287,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -304,7 +304,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
       - name: Download native libraries
@@ -372,7 +372,7 @@ jobs:
           version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' \
             crates/bindings/scah-csharp/Scah/Scah.csproj)"
           echo "SCAH_VERSION=$version" >> "$GITHUB_ENV"
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         if: ${{ !matrix.alpine }}
         with:
           dotnet-version: |
@@ -430,7 +430,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       # Building needs Java 22+; the tests run on matrix.java.
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: |
@@ -459,12 +459,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 25
           cache: maven
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
       - name: Build native libraries
@@ -490,7 +490,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 25
@@ -562,7 +562,7 @@ jobs:
         with:
           name: java-package
           path: dist
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         if: ${{ !matrix.alpine }}
         with:
           distribution: ${{ matrix.java-distribution || 'temurin' }}
