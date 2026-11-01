@@ -15,7 +15,7 @@ pub struct JSStore {
 #[napi]
 impl JSStore {
     /// Results of the first query whose selector is `query`.
-    #[napi]
+    #[napi(ts_return_type = "Array<Element> | null")]
     pub fn get(&self, query: String) -> Option<Vec<JsElement>> {
         self.store
             .store()
@@ -24,7 +24,7 @@ impl JSStore {
     }
 
     /// Results of the query at `index` in the list given to `parse`.
-    #[napi]
+    #[napi(ts_return_type = "Array<Element> | null")]
     pub fn query(&self, index: u32) -> Option<Vec<JsElement>> {
         self.store
             .store()

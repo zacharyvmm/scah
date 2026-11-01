@@ -78,7 +78,7 @@ impl JsQueryBuilder {
         }
     }
 
-    #[napi]
+    #[napi(ts_args_type = "callback: (factory: QueryFactory) => Array<QueryBuilder>")]
     /// Add the child queries that `callback(factory)` returns. They match
     /// inside each match of the last selector; build them with `factory.all()`
     /// and `factory.first()`.
@@ -100,7 +100,7 @@ impl JsQueryBuilder {
         })
     }
 
-    #[napi]
+    #[napi(ts_return_type = "CompiledQuery")]
     /// Finish the query, ready to pass to `parse`.
     ///
     /// Throws if a selector is invalid or uses syntax scah cannot evaluate in
@@ -138,7 +138,7 @@ impl JsQueryFactory {
     }
 }
 
-#[napi]
+#[napi(js_name = "CompiledQuery")]
 #[derive(Clone)]
 /// A built query, ready to pass to `parse`. It can be reused across
 /// documents.

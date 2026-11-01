@@ -91,6 +91,10 @@ features. Rust code that reads results needs the changes in
   threads, in eager, lazy, and streaming queries. Each document gives a
   `list[struct]` of matches (`struct` for `Query.first`), with child sections
   nested as fields named by their selector. Install with `scah[polars]`.
+- Python's `save` argument is optional, as in JavaScript: `Query.all`,
+  `Query.first`, and the `all` and `first` of `QueryBuilder` and
+  `QueryFactory` default to `Save.none()`, which keeps the name and
+  attributes, so `Query.all("a[href]").build()` works.
 
 ### Changed
 
@@ -124,6 +128,20 @@ features. Rust code that reads results needs the changes in
 - Python's `parse` releases the GIL while it parses, so parses from several
   Python threads run in parallel. On 8 threads, parsing a batch of 64 KB pages
   is 4× faster than before; single-threaded parsing is unchanged.
+- Python's query classes have public names: `QueryBuilder`, `QueryFactory`,
+  and `CompiledQuery` (what `build()` returns) instead of `PyQueryBuilder`,
+  `PyQueryFactory`, and `PyQuery`, all in module `scah`. A `CompiledQuery`
+  prints as `CompiledQuery('main > section', 2 child queries)` instead of
+  the compiled IR.
+- TypeScript: `build()` returns, and `parse` takes, a `CompiledQuery`
+  instead of `JsQuery`; `then`'s callback takes a `QueryFactory`, and
+  `Store.get` and `Store.query` return `Element` arrays. `JsQuery` and the
+  other `Js` type aliases remain.
+
+### Deprecated
+
+- `scah.PyQuery`, `scah.PyQueryBuilder`, and `scah.PyQueryFactory` are
+  aliases of the renamed classes that warn when used.
 
 ### Documentation
 
@@ -147,6 +165,10 @@ features. Rust code that reads results needs the changes in
 - Python and Node elements could read freed memory after their `Store` was
   garbage collected. Elements now keep the parsed HTML and queries alive.
   ([#50], [#51])
+- In Python, `dict(element)` emitted a `DeprecationWarning` and copied the
+  text into a `text_content` key, because `Element.keys()` listed the
+  deprecated field. `keys()` no longer lists it; `element["text_content"]`
+  still works, with its warning.
 
 ### Migrating from 0.1
 

@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test'
 
-import { parse, Query } from '../index'
+import { CompiledQuery, Element, parse, Query, QueryBuilder, QueryFactory, Store } from '../index'
 
 test('Basic selection', () => {
   const html = `
@@ -257,6 +257,45 @@ test('legacy textContent still requests normalized text', () => {
   expect(p?.rawText).toBeNull()
   expect(p?.text).toBe('A\u00a0& B')
   expect(p?.textContent).toBe('A\u00a0& B')
+})
+
+test('classes have their public names', () => {
+  let factory: QueryFactory | undefined
+  const builder: QueryBuilder = Query.all('main').then((f: QueryFactory) => {
+    factory = f
+    return [f.all('a')]
+  })
+  const query: CompiledQuery = builder.build()
+  const store: Store = parse('<main><a>x</a></main>', [query])
+  const elements: Element[] = store.get('main')!
+
+  expect(query).toBeInstanceOf(CompiledQuery)
+  expect(query.constructor.name).toBe('CompiledQuery')
+  expect(builder).toBeInstanceOf(QueryBuilder)
+  expect(factory).toBeInstanceOf(QueryFactory)
+  expect(store).toBeInstanceOf(Store)
+  expect(elements[0]).toBeInstanceOf(Element)
+
+  const scah = require('../index')
+  expect(Object.keys(scah).filter((name) => /^J[sS]/.test(name) && scah[name] !== undefined)).toEqual([])
+})
+
+test('save defaults to Save none: name and attributes only', () => {
+  const html = '<main><a href="x" id="i" class="c">text</a></main>'
+  for (const query of [
+    Query.all('a'),
+    Query.first('a'),
+    Query.all('main').all('a'),
+    Query.all('main').first('a'),
+    Query.all('main').then((f) => [f.all('a')]),
+    Query.all('main').then((f) => [f.first('a')]),
+  ]) {
+    const store = parse(html, [query.build()])
+    let a = store.query(0)![0]
+    if (a.name !== 'a') a = a.get('a')[0]
+    expect([a.name, a.id, a.className, a.attributes]).toEqual(['a', 'i', 'c', { href: 'x' }])
+    expect([a.innerHtml, a.rawText, a.text]).toEqual([null, null, null])
+  }
 })
 
 test('Save is an options interface, not a runtime helper export', () => {

@@ -158,7 +158,7 @@ The same query in Python and JavaScript:
 
 ```python
 query = (
-    Query.all("article.product", Save.none())
+    Query.all("article.product")
     .then(lambda product: [
         product.first("> h2", Save.only_text()),
         product.first(".price", Save.only_text()),
