@@ -170,7 +170,7 @@ features. Rust code that reads results needs the changes in
   deprecated field. `keys()` no longer lists it; `element["text_content"]`
   still works, with its warning. ([#141])
 - The `otel` feature no longer prints every trace event to stdout; events only
-  go to `tracing`, at `debug` level on the `scah::trace` target. ([#146])
+  go to `tracing`, at `debug` level on the `scah::trace` target. ([#146], [#147])
 
 ### Migrating from 0.1
 
@@ -325,3 +325,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#130]: https://github.com/zacharyvmm/scah/pull/130
 [#141]: https://github.com/zacharyvmm/scah/pull/141
 [#146]: https://github.com/zacharyvmm/scah/issues/146
+[#147]: https://github.com/zacharyvmm/scah/pull/147
