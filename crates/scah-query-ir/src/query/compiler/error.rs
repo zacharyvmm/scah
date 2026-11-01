@@ -67,6 +67,14 @@ impl SelectorParseError {
         }
     }
 
+    /// Converts the position of an error found while parsing a substring that
+    /// starts at byte `offset` of a larger selector into a position in that
+    /// selector.
+    pub(crate) fn offset_by(mut self, offset: usize) -> Self {
+        self.position += offset;
+        self
+    }
+
     /// Returns true when a forgiving selector list must propagate the error
     /// instead of discarding the alternative that produced it.
     pub(crate) fn is_fatal(&self) -> bool {
@@ -79,6 +87,11 @@ impl SelectorParseError {
     }
 
     /// The byte offset in the selector string where the problem was found.
+    ///
+    /// The offset counts from the start of the whole selector as it was
+    /// passed in, including any leading whitespace, also when the problem is
+    /// in a later alternative of a selector list or inside a pseudo-class
+    /// argument.
     pub fn position(&self) -> usize {
         self.position
     }

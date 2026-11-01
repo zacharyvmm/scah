@@ -1,6 +1,6 @@
 use super::scan::{require_modeled_syntax, scan, split_selector_list};
 use super::string_search::{AttributeCaseSensitivity, AttributeSelectionKind};
-use super::{is_css_whitespace, is_css_whitespace_char};
+use super::{is_css_whitespace, is_css_whitespace_char, trim_css_whitespace};
 use crate::query::compiler::SelectorParseError;
 use scah_html::{Attribute, Reader, XHtmlElement};
 
@@ -889,24 +889,28 @@ impl<'a> ElementPredicate<'a> {
                     let is_nth_child = name.eq_ignore_ascii_case("nth-child");
                     let is_nth_of_type = name.eq_ignore_ascii_case("nth-of-type");
                     if is_nth_child || is_nth_of_type {
-                        let argument = read_balanced_function_argument(reader)?;
-                        let (formula_source, filter_source) = split_nth_filter(argument)?;
-                        let formula = parse_an_plus_b(formula_source)?;
+                        let (argument_start, argument) = read_balanced_function_argument(reader)?;
+                        // The argument is parsed on its own, so its errors are
+                        // offset back into the reader's source.
+                        let at_argument =
+                            |error: SelectorParseError| error.offset_by(argument_start);
+                        let ((formula_start, formula_source), filter) =
+                            split_nth_filter(argument).map_err(at_argument)?;
+                        let formula = parse_an_plus_b(formula_source)
+                            .map_err(|error| at_argument(error.offset_by(formula_start)))?;
                         structural.push(if is_nth_child {
-                            if let Some(filter_source) = filter_source {
+                            if let Some((filter_start, filter_source)) = filter {
                                 StructuralPredicate::NthChildOf(
                                     formula,
-                                    parse_local_selector_list(
-                                        filter_source,
-                                        nesting + 1,
-                                        reader.get_position(),
+                                    parse_local_selector_list(filter_source, nesting + 1).map_err(
+                                        |error| at_argument(error.offset_by(filter_start)),
                                     )?,
                                 )
                             } else {
                                 StructuralPredicate::NthChild(formula)
                             }
                         } else {
-                            if filter_source.is_some() {
+                            if filter.is_some() {
                                 return Err(SelectorParseError::new(
                                     "filtered nth-of-type is not supported",
                                     reader.get_position(),
@@ -915,21 +919,21 @@ impl<'a> ElementPredicate<'a> {
                             StructuralPredicate::NthOfType(formula)
                         });
                     } else {
-                        let argument = read_balanced_function_argument(reader)?;
+                        let (argument_start, argument) = read_balanced_function_argument(reader)?;
+                        let at_argument =
+                            |error: SelectorParseError| error.offset_by(argument_start);
                         let predicate = if name.eq_ignore_ascii_case("not") {
-                            LocalLogicalPredicate::Not(parse_local_selector_list(
-                                argument,
-                                nesting + 1,
-                                reader.get_position(),
-                            )?)
+                            LocalLogicalPredicate::Not(
+                                parse_local_selector_list(argument, nesting + 1)
+                                    .map_err(at_argument)?,
+                            )
                         } else if name.eq_ignore_ascii_case("is")
                             || name.eq_ignore_ascii_case("where")
                         {
-                            LocalLogicalPredicate::Any(parse_forgiving_local_selector_list(
-                                argument,
-                                nesting + 1,
-                                reader.get_position(),
-                            )?)
+                            LocalLogicalPredicate::Any(
+                                parse_forgiving_local_selector_list(argument, nesting + 1)
+                                    .map_err(at_argument)?,
+                            )
                         } else {
                             return Err(SelectorParseError::unsupported(
                                 "unsupported pseudo-class",
@@ -1010,17 +1014,18 @@ impl<'a> ElementPredicate<'a> {
 }
 
 /// Reads the argument of a functional pseudo-class whose `(` was consumed,
-/// leaving the reader after the matching `)`.
+/// leaving the reader after the matching `)`. Returns the argument with its
+/// position in the reader's source.
 fn read_balanced_function_argument<'query>(
     reader: &mut Reader<'query>,
-) -> Result<&'query str, SelectorParseError> {
+) -> Result<(usize, &'query str), SelectorParseError> {
     let start = reader.get_position();
     let rest = reader.slice(start..reader.source().len());
     let (end, summary) = scan(rest, |_, byte| byte == b')');
     match end {
         Some(end) => {
             reader.advance_to(start + end + 1);
-            Ok(&rest[..end])
+            Ok((start, &rest[..end]))
         }
         None if summary.unclosed_quote => Err(SelectorParseError::new(
             "pseudo-class has an unclosed quoted value",
@@ -1033,12 +1038,14 @@ fn read_balanced_function_argument<'query>(
     }
 }
 
+/// Parses the selector list argument of a pseudo-class. Error positions are
+/// relative to `source`, like every parse of a substring; the caller offsets
+/// them into the selector.
 fn parse_local_selector_list<'query>(
     source: &'query str,
     nesting: usize,
-    position: usize,
 ) -> Result<LocalSelectorList<'query>, SelectorParseError> {
-    parse_local_selector_list_parts(source, false, nesting, position)
+    parse_local_selector_list_parts(source, false, nesting)
 }
 
 /// Parses an `:is()` / `:where()` list, discarding alternatives that are
@@ -1052,24 +1059,24 @@ fn parse_local_selector_list<'query>(
 fn parse_forgiving_local_selector_list<'query>(
     source: &'query str,
     nesting: usize,
-    position: usize,
 ) -> Result<LocalSelectorList<'query>, SelectorParseError> {
-    parse_local_selector_list_parts(source, true, nesting, position)
+    parse_local_selector_list_parts(source, true, nesting)
 }
 
 fn parse_local_selector_list_parts<'query>(
     source: &'query str,
     forgiving: bool,
     nesting: usize,
-    position: usize,
 ) -> Result<LocalSelectorList<'query>, SelectorParseError> {
     if nesting > MAX_SELECTOR_NESTING_DEPTH {
-        return Err(SelectorParseError::nesting_limit(position));
+        return Err(SelectorParseError::nesting_limit(0));
     }
     let parts = split_selector_list(source);
     let mut selectors = Vec::with_capacity(parts.len());
-    for part in parts {
-        match require_modeled_syntax(part, parse_local_selector(part, nesting)) {
+    for (offset, part) in parts {
+        let result = require_modeled_syntax(part, parse_local_selector(part, nesting))
+            .map_err(|error| error.offset_by(offset));
+        match result {
             Ok(selector) => selectors.push(selector),
             Err(error) if forgiving && !error.is_fatal() => {}
             Err(error) => return Err(error),
@@ -1078,11 +1085,12 @@ fn parse_local_selector_list_parts<'query>(
     Ok(LocalSelectorList::Owned(selectors.into_boxed_slice()))
 }
 
+/// Parses one alternative of a pseudo-class selector list, already trimmed of
+/// CSS whitespace.
 fn parse_local_selector(
     source: &str,
     nesting: usize,
 ) -> Result<ElementPredicate<'_>, SelectorParseError> {
-    let source = source.trim_matches(is_css_whitespace_char);
     if source.is_empty() {
         return Err(SelectorParseError::new(
             "pseudo-class selector list has an empty alternative",
@@ -1107,9 +1115,8 @@ fn parse_local_selector(
     Ok(selector)
 }
 
+/// Parses an `An+B` formula, already trimmed of CSS whitespace.
 fn parse_an_plus_b(source: &str) -> Result<AnPlusB, SelectorParseError> {
-    let source = source.trim_matches(is_css_whitespace_char);
-
     if source.eq_ignore_ascii_case("odd") {
         return Ok(AnPlusB { a: 2, b: 1 });
     }
@@ -1166,7 +1173,14 @@ fn parse_an_plus_b_integer(source: &str) -> Result<Option<i32>, SelectorParseErr
     })
 }
 
-fn split_nth_filter(source: &str) -> Result<(&str, Option<&str>), SelectorParseError> {
+/// The `An+B` formula of an `:nth-child()` argument and its optional `of S`
+/// filter, each trimmed of CSS whitespace and paired with its position in the
+/// argument.
+type NthArgument<'a> = ((usize, &'a str), Option<(usize, &'a str)>);
+
+/// Splits an `:nth-child()` argument into its formula and its optional
+/// `of S` filter.
+fn split_nth_filter(source: &str) -> Result<NthArgument<'_>, SelectorParseError> {
     let starts_filter = |index: usize, byte: u8| {
         if !is_css_whitespace(byte) {
             return false;
@@ -1179,18 +1193,21 @@ fn split_nth_filter(source: &str) -> Result<(&str, Option<&str>), SelectorParseE
             && ends_identifier(rest_bytes.get(2).copied())
     };
     let (Some(index), _) = scan(source, starts_filter) else {
-        return Ok((source.trim_matches(is_css_whitespace_char), None));
+        return Ok((trim_css_whitespace(source), None));
     };
-    let rest = source[index..].trim_start_matches(is_css_whitespace_char);
-    let formula = source[..index].trim_matches(is_css_whitespace_char);
-    let filter = rest[2..].trim_matches(is_css_whitespace_char);
-    if formula.is_empty() || filter.is_empty() {
+    let of_start = source.len()
+        - source[index..]
+            .trim_start_matches(is_css_whitespace_char)
+            .len();
+    let formula = trim_css_whitespace(&source[..index]);
+    let (filter_offset, filter) = trim_css_whitespace(&source[of_start + 2..]);
+    if formula.1.is_empty() || filter.is_empty() {
         return Err(SelectorParseError::new(
             "invalid filtered An+B formula",
             index,
         ));
     }
-    Ok((formula, Some(filter)))
+    Ok((formula, Some((of_start + 2 + filter_offset, filter))))
 }
 
 /// Whether an identifier token ends before `next`, as the CSS tokenizer

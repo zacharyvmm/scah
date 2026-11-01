@@ -232,7 +232,8 @@ impl<'query> QueryBuilder<'query> {
                 }
                 Ok(Some(range.start.index()))
             })
-            .collect::<Result<Vec<_>, _>>()?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| self.locate_scope_error(error))?
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
@@ -260,6 +261,20 @@ impl<'query> QueryBuilder<'query> {
                 TransitionId(section.range.end.index() - shift(section.range.end.index()));
         }
         Ok(())
+    }
+
+    /// Positions an error from [`Self::scope_root`], whose checks run on
+    /// compiled transitions that no longer know where they came from in the
+    /// selector. Parsing the root selector as a nested selector applies the
+    /// same checks to the source text, so its error carries the position.
+    fn locate_scope_error(&self, error: SelectorParseError) -> SelectorParseError {
+        let Some(root) = self.selection.first() else {
+            return error;
+        };
+        match Transition::generate_scoped_transition_paths_from_string(root.source) {
+            Err(located) if located.message() == error.message() => located,
+            _ => error,
+        }
     }
 
     /// Append a child selector that matches **all** occurrences.

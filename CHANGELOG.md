@@ -185,6 +185,16 @@ features. Rust code that reads results needs the changes in
   accepting selectors that can never match, and `query!` rejects them at
   compile time. A leading `+ p` or `~ p` in a nested query now explains that
   nested queries only match inside their parent match. ([#131])
+- Selector error positions are byte offsets into the whole selector. An error
+  in a later alternative of a selector list, or inside a pseudo-class argument
+  such as `:not(...)` or `:nth-child(... of S)`, counted from the start of that
+  alternative or argument, and leading whitespace was not counted, so
+  `Query::all("h2, + p", ...)` reported byte 0 for the `+` at byte 4. An empty
+  alternative, as in `a,,b`, now points at its comma instead of byte 0. The
+  Python and JavaScript error messages carry the same corrected position.
+  `query!` reports an error in a nested selector on that selector's literal
+  instead of the outermost one, so the byte in the message refers to the
+  string the error is shown on. ([#143], [#150])
 
 ### Migrating from 0.1
 
@@ -344,3 +354,5 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#131]: https://github.com/zacharyvmm/scah/issues/131
 [#133]: https://github.com/zacharyvmm/scah/issues/133
 [#145]: https://github.com/zacharyvmm/scah/pull/145
+[#143]: https://github.com/zacharyvmm/scah/issues/143
+[#150]: https://github.com/zacharyvmm/scah/pull/150
