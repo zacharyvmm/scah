@@ -1,8 +1,11 @@
 use super::builder::{AttributeSelection, ElementPredicate, IElement};
 use super::string_search::{AttributeSelectionKind, css_words};
 use scah_html::Attribute;
+use scah_html::entities::{decode_attribute_value, value_contains_ampersand};
 
 impl<'a> AttributeSelection<'a> {
+    /// Whether `other`, as written in the HTML, satisfies this selector.
+    /// Its value is compared with its character references decoded.
     pub fn matches_attribute(&self, other: &Attribute<'_>) -> bool {
         // Attribute names are case-insensitive in HTML.
         if !self.name.eq_ignore_ascii_case(other.key) {
@@ -13,16 +16,10 @@ impl<'a> AttributeSelection<'a> {
             return true;
         }
 
-        if other.value.is_none() {
+        let Some(value) = other.value else {
             return false;
-        }
-
-        match self.case_sensitivity {
-            super::string_search::AttributeCaseSensitivity::AsciiInsensitive => self
-                .kind
-                .find_ascii_insensitive(self.value.unwrap(), other.value.unwrap()),
-            _ => self.kind.find(self.value.unwrap(), other.value.unwrap()),
-        }
+        };
+        self.matches_value(value)
     }
 
     /// Match this selector against a value routed through one of the
@@ -37,11 +34,35 @@ impl<'a> AttributeSelection<'a> {
             return true;
         }
 
+        self.matches_value(value)
+    }
+
+    /// Compare the selector's value, by its operator, with `value` as
+    /// written in the HTML, once decoded.
+    #[inline]
+    fn matches_value(&self, value: &str) -> bool {
+        if value_contains_ampersand(value) {
+            return self.matches_decoded_value(value);
+        }
+        self.compare_value(value)
+    }
+
+    /// [`Self::matches_value`] for a value with `&`, which may need decoding.
+    #[cold]
+    #[inline(never)]
+    fn matches_decoded_value(&self, value: &str) -> bool {
+        self.compare_value(&decode_attribute_value(value))
+    }
+
+    /// Compare the selector's value, by its operator, with `value`.
+    #[inline]
+    fn compare_value(&self, value: &str) -> bool {
+        let query = self.value.unwrap_or_default();
         match self.case_sensitivity {
             super::string_search::AttributeCaseSensitivity::AsciiInsensitive => {
-                self.kind.find_ascii_insensitive(self.value.unwrap(), value)
+                self.kind.find_ascii_insensitive(query, value)
             }
-            _ => self.kind.find(self.value.unwrap(), value),
+            _ => self.kind.find(query, value),
         }
     }
 }
@@ -184,11 +205,28 @@ impl<'a> ElementPredicate<'a> {
         self.matches_name(other.name()) && self.matches_local_after_name(other)
     }
 
+    /// [`Self::matches_classes`] for a class value as written, once
+    /// decoded. Selector classes have no `&`, and a word without one decodes
+    /// to itself, so this only finds more when the value has `&`.
+    #[cold]
+    #[inline(never)]
+    fn matches_decoded_classes(&self, element_classes: &str) -> bool {
+        value_contains_ampersand(element_classes)
+            && self.matches_classes(&decode_attribute_value(element_classes))
+    }
+
     /// Id, class, and attribute checks. Never recurses.
+    ///
+    /// Values are compared with their character references decoded. Ids and
+    /// classes are compared as written first, which is enough unless they
+    /// have `&`, since selector ids and classes cannot.
     #[inline(always)]
     fn matches_local_after_name<'b, E: IElement<'b>>(&self, other: &E) -> bool {
-        if self.id.is_some() && self.id != other.id() {
-            return false;
+        if let Some(id) = self.id {
+            match other.id() {
+                Some(element_id) if element_id == id || decoded_id_matches(element_id, id) => {}
+                _ => return false,
+            }
         }
 
         if !self.classes.as_slice().is_empty() {
@@ -196,7 +234,9 @@ impl<'a> ElementPredicate<'a> {
                 return false;
             };
 
-            if !self.matches_classes(element_classes) {
+            if !self.matches_classes(element_classes)
+                && !self.matches_decoded_classes(element_classes)
+            {
                 return false;
             }
         }
@@ -294,6 +334,13 @@ impl<'a> ElementPredicate<'a> {
     }
 }
 
+/// Whether `element_id`, as written, decodes to `id`.
+#[cold]
+#[inline(never)]
+fn decoded_id_matches(element_id: &str, id: &str) -> bool {
+    value_contains_ampersand(element_id) && *decode_attribute_value(element_id) == *id
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,6 +386,49 @@ mod tests {
                 value: Some("World")
             })
         );
+    }
+
+    #[test]
+    fn attribute_selections_compare_decoded_values() {
+        let selection = |value| AttributeSelection {
+            name: "title",
+            value: Some(value),
+            kind: AttributeSelectionKind::Exact,
+            case_sensitivity: crate::AttributeCaseSensitivity::Default,
+        };
+        let attribute = Attribute {
+            key: "title",
+            value: Some("a&amp;b"),
+        };
+        assert!(selection("a&b").matches_attribute(&attribute));
+        assert!(!selection("a&amp;b").matches_attribute(&attribute));
+    }
+
+    #[test]
+    fn element_values_are_decoded() {
+        let predicate = ElementPredicate {
+            name: Some("p"),
+            id: Some("a"),
+            classes: ClassSelections::from_static(&["x", "y"]),
+            attributes: AttributeSelections::from(vec![AttributeSelection {
+                name: "lang",
+                value: Some("ab"),
+                kind: AttributeSelectionKind::Exact,
+                case_sensitivity: crate::AttributeCaseSensitivity::Default,
+            }]),
+            logical: crate::LogicalPredicates::from_static(&[]),
+            structural: crate::StructuralPredicates::from_static(&[]),
+        };
+        let element = FakeElement {
+            name: "p",
+            id: Some("&#x61;"),
+            class: Some("x&#32;y"),
+            attributes: &[Attribute {
+                key: "lang",
+                value: Some("a&#x62;"),
+            }],
+        };
+        assert!(predicate.matches_element(&element));
     }
 
     #[test]

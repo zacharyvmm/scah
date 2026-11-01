@@ -42,12 +42,14 @@ public final class Element {
         }
     }
 
-    /** The {@code id} attribute, if attributes were saved. */
+    /** The {@code id} attribute with character references decoded, if attributes were saved. */
     public Optional<String> id() {
         return field(Backend.Field.ID);
     }
 
-    /** The {@code class} attribute, if attributes were saved. */
+    /**
+     * The {@code class} attribute with character references decoded, if attributes were saved.
+     */
     public Optional<String> className() {
         return field(Backend.Field.CLASS);
     }
@@ -68,7 +70,8 @@ public final class Element {
     }
 
     /**
-     * The value of the attribute named {@code name}, compared ASCII case-insensitively.
+     * The value of the attribute named {@code name}, compared ASCII case-insensitively, with
+     * character references decoded ({@code &amp;amp;} reads as {@code &amp;}).
      *
      * <p>Empty when the attribute is absent, has no value (as in {@code <input disabled>}), or
      * attributes were not saved.
@@ -84,8 +87,8 @@ public final class Element {
     }
 
     /**
-     * The attributes other than {@code id} and {@code class}, in source order, or an empty list
-     * when attributes were not saved.
+     * The attributes other than {@code id} and {@code class}, in source order, with character
+     * references decoded, or an empty list when attributes were not saved.
      */
     public List<Attribute> attributes() {
         String[] pairs;

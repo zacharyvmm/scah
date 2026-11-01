@@ -270,6 +270,30 @@ def test_pyarrow_imports_without_copying():
         assert a[2].address == b[2].address
 
 
+def test_decoded_attribute_values_point_into_the_store():
+    """A column of attribute values reads decoded ones from the store's own
+    buffer, and the others from the HTML."""
+    html = (
+        "<a id='a&amp;b' class='x&#32;y' href='/search?q=fish&amp;chips&amp;page=2'>1</a>"
+        "<a href='/a/long/path/without/references' title='&lt;b&gt;'>2</a>"
+    )
+    store = parse(html, [Query.all("a", Save.all()).build()])
+    names = ["id", "class", "href", "title"]
+    expected = handle_rows(store.get("a"), names)
+    assert expected[0]["id"] == "a&b"
+    assert expected[0]["class"] == "x y"
+    assert expected[0]["href"] == "/search?q=fish&chips&page=2"
+    assert expected[1]["title"] == "<b>"
+
+    batch = pa.record_batch(store.to_arrow("a", attributes=names))
+    assert string_columns(batch.to_pylist()) == expected
+    # [validity, views, the decoded values, the HTML]
+    buffers = batch.column("href").buffers()
+    assert len(buffers) == 4
+    assert buffers[3].to_pybytes() == html.encode()
+    assert b"/search?q=fish&chips&page=2" in buffers[2].to_pybytes()
+
+
 # ── polars ─────────────────────────────────────────────────────────────────
 
 

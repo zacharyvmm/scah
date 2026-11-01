@@ -13,7 +13,6 @@
 //! Every method takes the parser's `CAPTURE` flag. When it is `false` the parse
 //! captures no text, and the text paths compile away.
 
-mod entities;
 mod text;
 
 #[cfg(feature = "bench-internals")]

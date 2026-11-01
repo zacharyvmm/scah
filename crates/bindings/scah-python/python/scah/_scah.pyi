@@ -82,17 +82,18 @@ class Element:
     @property
     def class_name(self) -> typing.Optional[builtins.str]:
         r"""
-        The `class` attribute.
+        The `class` attribute, with character references decoded.
         """
     @property
     def id(self) -> typing.Optional[builtins.str]:
         r"""
-        The `id` attribute.
+        The `id` attribute, with character references decoded.
         """
     @property
     def attributes(self) -> dict:
         r"""
-        The attributes other than `id` and `class`.
+        The attributes other than `id` and `class`, with character references
+        decoded.
         """
     @property
     def inner_html(self) -> typing.Optional[builtins.str]:
@@ -116,7 +117,8 @@ class Element:
         """
     def get_attribute(self, key: builtins.str) -> typing.Optional[builtins.str]:
         r"""
-        The value of the attribute named `key`, matched case-insensitively.
+        The value of the attribute named `key`, matched case-insensitively,
+        with character references decoded (`&amp;` reads as `&`).
         """
     def get(self, query: builtins.str) -> builtins.list[Element]:
         r"""

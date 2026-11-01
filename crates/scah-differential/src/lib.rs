@@ -160,6 +160,8 @@ fn generate_node(rng: &mut Rng, html: &mut String, depth: usize) {
     }
 }
 
+/// Attribute values never contain `&`: 0.1.0 doesn't decode character
+/// references in them, and this checkout does on purpose (#138).
 fn generate_attributes(rng: &mut Rng, html: &mut String) {
     if rng.chance(30) {
         let _ = write!(html, " id=\"{}\"", rng.pick(IDS));

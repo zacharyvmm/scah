@@ -298,6 +298,9 @@ impl<'query> PartialEq for ClassSelections<'query> {
 }
 
 /// Element Interface
+///
+/// The `id`, `class` and attribute values are as written in the HTML:
+/// matching decodes their character references.
 pub trait IElement<'html> {
     fn name(&self) -> &'html str;
     fn id(&self) -> Option<&'html str>;

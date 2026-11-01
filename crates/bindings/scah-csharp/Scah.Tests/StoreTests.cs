@@ -37,6 +37,24 @@ public class StoreTests
     }
 
     [Fact]
+    public void AttributeValuesAreDecoded()
+    {
+        const string Selector = "p[title=\"&\"]";
+        using Query query = Query.All(Selector, Save.All).Build();
+        using Store store = Store.Parse(
+            "<p id='&#x61;' class='x&#32;y' title='&amp;' lang='a&#x62;' data-q='?a=1&copy=2'>x</p>",
+            query);
+
+        Element p = Assert.Single(store.Get(Selector));
+        Assert.Equal("a", p.Id);
+        Assert.Equal("x y", p.ClassName);
+        Assert.Equal("&", p.GetAttribute("title"));
+        Assert.Equal(
+            [new Attribute("title", "&"), new Attribute("lang", "ab"), new Attribute("data-q", "?a=1&copy=2")],
+            p.Attributes);
+    }
+
+    [Fact]
     public void UnsavedFieldsAreNull()
     {
         using Query query = Query.All("a", Save.NameOnly).Build();

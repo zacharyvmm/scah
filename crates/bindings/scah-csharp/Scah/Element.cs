@@ -39,10 +39,14 @@ public readonly struct Element : IEquatable<Element>
         }
     }
 
-    /// <summary>The <c>id</c> attribute, if attributes were saved.</summary>
+    /// <summary>
+    /// The <c>id</c> attribute with character references decoded, if attributes were saved.
+    /// </summary>
     public unsafe string? Id => Read(&Native.scah_element_id);
 
-    /// <summary>The <c>class</c> attribute, if attributes were saved.</summary>
+    /// <summary>
+    /// The <c>class</c> attribute with character references decoded, if attributes were saved.
+    /// </summary>
     public unsafe string? ClassName => Read(&Native.scah_element_class_name);
 
     /// <summary>The HTML between the element's tags, if saved.</summary>
@@ -58,7 +62,8 @@ public readonly struct Element : IEquatable<Element>
 
     /// <summary>
     /// The attributes other than <c>id</c> and <c>class</c>, in source order,
-    /// or an empty list when attributes were not saved.
+    /// with character references decoded, or an empty list when attributes
+    /// were not saved.
     /// </summary>
     public unsafe IReadOnlyList<Attribute> Attributes
     {
@@ -89,7 +94,8 @@ public readonly struct Element : IEquatable<Element>
 
     /// <summary>
     /// The value of the attribute named <paramref name="name"/>, compared ASCII
-    /// case-insensitively.
+    /// case-insensitively, with character references decoded (<c>&amp;amp;</c>
+    /// reads as <c>&amp;</c>).
     /// </summary>
     /// <returns>
     /// The value, or <see langword="null"/> when the attribute is absent, has no

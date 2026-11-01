@@ -464,8 +464,8 @@ pub unsafe extern "C" fn scah_element_name(
     }
 }
 
-/// The element's `id` attribute. Missing when absent or when the query did
-/// not save attributes.
+/// The element's `id` attribute, with character references decoded. Missing
+/// when absent or when the query did not save attributes.
 ///
 /// # Safety
 ///
@@ -485,8 +485,8 @@ pub unsafe extern "C" fn scah_element_id(
     }
 }
 
-/// The element's `class` attribute. Missing when absent or when the query
-/// did not save attributes.
+/// The element's `class` attribute, with character references decoded.
+/// Missing when absent or when the query did not save attributes.
 ///
 /// # Safety
 ///
@@ -570,7 +570,8 @@ pub unsafe extern "C" fn scah_element_text(
 }
 
 /// The value of the attribute named `key`, compared ASCII
-/// case-insensitively.
+/// case-insensitively, with character references decoded (`&amp;` reads as
+/// `&`).
 ///
 /// Missing when the attribute is absent, has no value (as in `<input
 /// disabled>`), or the query did not save attributes. Present but empty for
@@ -631,8 +632,9 @@ pub unsafe extern "C" fn scah_element_attribute_count(
 /// The attribute at `index`, in source order, where `index` is below
 /// `scah_element_attribute_count`.
 ///
-/// `*out_key` receives the name as written in the source. `*out_value` is
-/// missing for an attribute without a value (as in `<input disabled>`).
+/// `*out_key` receives the name as written in the source, and `*out_value`
+/// the value with character references decoded. `*out_value` is missing for
+/// an attribute without a value (as in `<input disabled>`).
 ///
 /// # Safety
 ///

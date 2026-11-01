@@ -11,7 +11,14 @@ use scah_html::Attribute;
 ///
 /// Each row is one HTML tag that a query section saved. Its fields live in
 /// the store's columns and are read through methods. Strings borrow from the
-/// parsed HTML (`'html`) or from the store's text buffers (`'store`).
+/// parsed HTML (`'html`) or from the store's buffers (`'store`).
+///
+/// Attribute values, `class` and `id` included, are returned with their
+/// character references decoded, as a DOM's `getAttribute` returns them:
+/// `title="&amp;"` reads as `&`. A value without `&` is a slice of the HTML.
+/// The first read of a value with `&` decodes every such value of the store
+/// at once, and the store keeps them, so these methods borrow from the store
+/// (`'store`).
 ///
 /// | Data | How to access |
 /// |------|---------------|
@@ -53,40 +60,39 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
         self.store.html_value(head.name).unwrap_or_default()
     }
 
-    /// The `class` attribute value, if present and saved.
+    /// The `class` attribute value, if present and saved, with its
+    /// character references decoded.
     ///
     /// The first `class` attribute with a value, like in selector matching.
     #[inline]
-    pub fn class(&self) -> Option<&'html str> {
-        self.store.html_value(self.class_span())
+    pub fn class(&self) -> Option<&'store str> {
+        self.store.attribute_value(self.class_index()?)
     }
 
-    /// Span of [`ElementRef::class`], [`Span::ABSENT`] when it has none.
+    /// Index of [`ElementRef::class`] in the attribute columns, if saved.
     #[inline]
-    pub(crate) fn class_span(&self) -> Span {
+    pub(crate) fn class_index(&self) -> Option<usize> {
         let range = self.attribute_range();
-        if !self.marked(&range, range.start, Span::CLASS_KEY) {
-            return Span::ABSENT;
-        }
-        self.value_span_at(range.start)
+        self.marked(&range, range.start, Span::CLASS_KEY)
+            .then_some(range.start)
     }
 
-    /// The `id` attribute value, if present and saved.
+    /// The `id` attribute value, if present and saved, with its character
+    /// references decoded.
     ///
     /// The first `id` attribute with a value, like in selector matching.
     #[inline]
-    pub fn id(&self) -> Option<&'html str> {
-        self.store.html_value(self.id_span())
+    pub fn id(&self) -> Option<&'store str> {
+        self.store.attribute_value(self.id_index()?)
     }
 
-    /// Span of [`ElementRef::id`], [`Span::ABSENT`] when it has none.
+    /// Index of [`ElementRef::id`] in the attribute columns, if saved.
     #[inline]
-    pub(crate) fn id_span(&self) -> Span {
+    pub(crate) fn id_index(&self) -> Option<usize> {
         let layout = self.layout();
-        if !layout.id {
-            return Span::ABSENT;
-        }
-        self.value_span_at(layout.range.start + usize::from(layout.class))
+        layout
+            .id
+            .then(|| layout.range.start + usize::from(layout.class))
     }
 
     /// Indexes of this row's attributes in the attribute columns.
@@ -98,15 +104,6 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
                 .columns
                 .attribute_range_unchecked(self.row.index())
         }
-    }
-
-    /// Span of the value of the attribute at `index`, which must be in
-    /// [`ElementRef::attribute_range`].
-    #[inline]
-    fn value_span_at(&self, index: usize) -> Span {
-        debug_assert!(self.attribute_range().contains(&index));
-        // SAFETY: the row's attribute indexes are in bounds.
-        unsafe { self.store.columns.attribute_unchecked(index) }.1
     }
 
     /// Whether the saved attribute at `index` (in
@@ -156,7 +153,7 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     }
 
     /// Attributes other than `class` and `id`, which have their own
-    /// methods.
+    /// methods, with their values decoded like [`ElementRef::attribute`]'s.
     ///
     /// Returns `None` if the element had no other attributes, or they were
     /// not saved.
@@ -169,7 +166,8 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
         })
     }
 
-    /// Look up a single attribute value by name (ASCII case-insensitive).
+    /// Look up a single attribute value by name (ASCII case-insensitive),
+    /// with its character references decoded.
     ///
     /// Returns `None` if the attribute is not present, has no value, or was
     /// not saved.
@@ -179,26 +177,26 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     /// ```rust,ignore
     /// use scah::{Query, Save, parse};
     ///
-    /// let html = r#"<a href="https://example.com">Link</a>"#;
+    /// let html = r#"<a href="https://example.com/?a=1&amp;b=2">Link</a>"#;
     /// let queries = &[Query::all("a", Save::all())
     ///     .expect("valid selector")
     ///     .build()];
     /// let store = parse(html, queries).expect("parse succeeds");
     ///
     /// let a = store.get("a").unwrap().next().unwrap();
-    /// assert_eq!(a.attribute("href"), Some("https://example.com"));
+    /// assert_eq!(a.attribute("href"), Some("https://example.com/?a=1&b=2"));
     /// ```
-    pub fn attribute(&self, key: &str) -> Option<&'html str> {
-        self.store.html_value(self.attribute_span(key))
+    pub fn attribute(&self, key: &str) -> Option<&'store str> {
+        self.store.attribute_value(self.attribute_index(key)?)
     }
 
-    /// Span of [`ElementRef::attribute`], [`Span::ABSENT`] when it has none.
+    /// Index of [`ElementRef::attribute`] in the attribute columns, if
+    /// saved.
     #[inline]
-    pub(crate) fn attribute_span(&self, key: &str) -> Span {
+    pub(crate) fn attribute_index(&self, key: &str) -> Option<usize> {
         self.layout()
             .others()
             .find(|&index| self.key_is(index, key))
-            .map_or(Span::ABSENT, |index| self.value_span_at(index))
     }
 
     /// The element's source-preserving descendant text.
@@ -380,21 +378,21 @@ pub struct Attributes<'store, 'html, 'query> {
     range: Range<usize>,
 }
 
-impl<'html, 'query: 'html> Attributes<'_, 'html, 'query> {
+impl<'store, 'html, 'query: 'html> Attributes<'store, 'html, 'query> {
     /// The attribute at `index`, taken from `range`.
     #[inline]
-    fn attribute(&self, index: usize) -> Attribute<'html> {
+    fn attribute(&self, index: usize) -> Attribute<'store> {
         // SAFETY: `index` comes from `range`, whose indexes are in bounds.
-        let (key, value) = unsafe { self.store.columns.attribute_unchecked(index) };
+        let (key, _) = unsafe { self.store.columns.attribute_unchecked(index) };
         Attribute {
             key: self.store.html_value(key).unwrap_or_default(),
-            value: self.store.html_value(value),
+            value: self.store.attribute_value(index),
         }
     }
 }
 
-impl<'html, 'query: 'html> Iterator for Attributes<'_, 'html, 'query> {
-    type Item = Attribute<'html>;
+impl<'store, 'html, 'query: 'html> Iterator for Attributes<'store, 'html, 'query> {
+    type Item = Attribute<'store>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {

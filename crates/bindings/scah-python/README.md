@@ -103,7 +103,8 @@ like.
 | `Save(inner_html=False, text=False, attributes=True, *, raw_text=False)` | Any combination |
 
 Every option except `name_only` and `attributes=False` keeps the element's id,
-class, and attributes. Save only what you read: each extra field costs time.
+class, and attributes, with their character references decoded (`&amp;`
+reads as `&`). Save only what you read: each extra field costs time.
 
 ### Reading results
 
@@ -126,9 +127,9 @@ class, and attributes. Save only what you read: each extra field costs time.
 
 For bulk work, `store.to_arrow()` returns the matches as an
 [Apache Arrow](https://arrow.apache.org/) table instead of element objects.
-String columns point straight into the parsed HTML and text buffers rather
-than copying them (values of 12 bytes or fewer are stored inline, as Arrow
-string views do), and any library that reads the Arrow C Data Interface can
+String columns point straight into the parsed HTML and the store's buffers
+rather than copying them (values of 12 bytes or fewer are stored inline, as
+Arrow string views do), and any library that reads the Arrow C Data Interface can
 import the table:
 
 ```python

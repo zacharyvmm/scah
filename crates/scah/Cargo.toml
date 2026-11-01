@@ -12,9 +12,6 @@ documentation = "https://docs.rs/scah"
 readme = "../../README.md"
 keywords = ["css", "selector", "parser", "html", "sax"]
 categories = ["parser-implementations", "web-programming"]
-exclude = [
-    "scripts/**",
-]
 
 [lib]
 name = "scah"

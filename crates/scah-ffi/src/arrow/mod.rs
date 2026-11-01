@@ -2,13 +2,15 @@
 //! Interface.
 //!
 //! An [`ArrowTable`] lays out the elements matched by one selector as
-//! columns. The store already keeps every string as a span of one of three
-//! buffers (the HTML and the two text tapes), and which one depends only on
-//! the column, so each string column is a `Utf8View` array over a single
-//! buffer of the store's: strings of up to 12 bytes are inlined in their
-//! 16-byte view and longer ones point into that buffer. Building a table
-//! copies no string data, and every exported struct keeps the table, and
-//! through it the store, alive until the consumer releases it.
+//! columns. The store already keeps every string as a span of one of its
+//! buffers (the HTML, the two text tapes, and decoded attribute values), so
+//! each string column is a `Utf8View` array over the store's buffers:
+//! strings of up to 12 bytes are inlined in their 16-byte view and longer
+//! ones point into a buffer. A column's values are in one buffer, except
+//! attribute values, which are in the HTML or, when they had character
+//! references, decoded in the store. Building a table copies no string
+//! data, and every exported struct keeps the table, and through it the
+//! store, alive until the consumer releases it.
 //!
 //! ```text
 //! mod.rs      ArrowTable::build: pick the rows, then one column per field

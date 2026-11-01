@@ -1,7 +1,7 @@
 WHATWG HTML named character references
 
-scah's entity decoding table (src/capture/entities_table.rs) is generated from
-the WHATWG named character reference dataset:
+scah's entity decoding table (src/entities_table.rs in scah-html) is generated
+from the WHATWG named character reference dataset:
 
   Source:  https://html.spec.whatwg.org/entities.json
   SHA-256: d741d877ac77c4194c4ad526b5b4a19aef8dfe411ab840a466891cdbb9f362e6
@@ -9,7 +9,7 @@ the WHATWG named character reference dataset:
 
 The table changes the representation of the data, not the entity names or
 character values. The source repository also carries an unmodified copy of the
-dataset at crates/scah/scripts/entities.json. The upstream license notice
+dataset at crates/scah-html/scripts/entities.json. The upstream license notice
 follows verbatim.
 
 --------------------------------------------------------------------------------

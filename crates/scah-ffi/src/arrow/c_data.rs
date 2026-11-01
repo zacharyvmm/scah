@@ -164,20 +164,21 @@ fn export_column(table: &Arc<ArrowTable>, data: &ColumnData) -> ArrowArray {
         ),
         ColumnData::Utf8View {
             views,
-            buffer,
+            buffers: data,
             validity,
             null_count,
             ..
         } => {
-            // At most the one store buffer this column's views point into.
-            let data: Option<&[u8]> = buffer.map(|buffer| table.store.store().buffer(buffer));
+            // The store buffers this column's views point into.
+            let store = table.store.store();
+            let data: Vec<&[u8]> = data.iter().map(|&buffer| store.buffer(buffer)).collect();
             // Checked against i32::MAX when the column was built.
             let variadic_sizes: Vec<i64> = data.iter().map(|data| data.len() as i64).collect();
             let validity = validity.as_ref().map_or(ptr::null(), |bits| bits.as_ptr());
             let mut buffers: Vec<*const c_void> = vec![validity.cast(), views.as_ptr().cast()];
             // An empty slice still has a non-NULL (dangling, aligned)
             // pointer, which the spec allows for a zero-sized buffer.
-            buffers.extend(data.map(|data| data.as_ptr().cast::<c_void>()));
+            buffers.extend(data.iter().map(|data| data.as_ptr().cast::<c_void>()));
             // The vector's heap buffer does not move when the vector is moved
             // into the private data below.
             buffers.push(variadic_sizes.as_ptr().cast());

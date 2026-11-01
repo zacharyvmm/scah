@@ -155,6 +155,19 @@ def test_named_attributes():
         assert row == expected
 
 
+def test_attribute_values_are_decoded():
+    pages = ["<a id='&#x61;' href='?a=1&amp;b=2' title='&copy 2'>x</a>"]
+    query = Query.all('a[href="?a=1&b=2"]', Save.none()).build()
+    [[row]] = run(pages, query, attributes=["id", "href", "title"]).to_list()
+    assert row == {"tag": "a", "id": "a", "href": "?a=1&b=2", "title": "© 2"}
+    [[row]] = run(pages, query).to_list()
+    assert row["attributes"] == [
+        {"name": "id", "value": "a"},
+        {"name": "href", "value": "?a=1&b=2"},
+        {"name": "title", "value": "© 2"},
+    ]
+
+
 def test_valueless_attributes_are_null_pairs():
     query = Query.all("a", Save.none()).build()
     pairs = run(PAGES, query).to_list()[0][1]["attributes"]

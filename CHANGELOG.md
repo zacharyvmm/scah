@@ -71,6 +71,12 @@ breaking change). Rust code that reads results needs the changes in
   selector or index that is not a query rather than returning an empty list,
   and `Store.to_arrow` and `scah_store_export_arrow` reject such a selector
   rather than exporting an empty table. ([#132])
+- `ElementRef::class`, `id`, and `attribute` return `&'store str`, and
+  `Attributes` yields `Attribute<'store>`, because a value with character
+  references is decoded into a buffer the store keeps. `Store::field_range`
+  returns the buffer of each value, which for attributes may be the new
+  `Buffer::Attributes`, and `Field::buffer` is removed. The HTML entity
+  decoder and its generated table move from `scah` to `scah-html`. ([#138], [#152])
 
 ### Added
 
@@ -180,6 +186,14 @@ breaking change). Rust code that reads results needs the changes in
 
 ### Fixed
 
+- Character references in attribute values are decoded, as in a browser.
+  Selectors compare decoded values, so `[title="&"]` matches `title="&amp;"`
+  and `[title="&amp;"]` no longer does; this covers `#id`, `.class`, every
+  attribute operator, and the `i` and `s` flags. `attribute()`, `attributes()`,
+  `id()`, and `class()` return decoded values in every binding, the C ABI,
+  and Arrow and polars exports. Values without `&` are still slices of the
+  HTML. Parsing does no extra work: values are decoded when read, and
+  matching decodes only compared values that contain `&`. ([#138], [#152])
 - End tags with attributes, such as `</div class=x>`, close their element.
   ([#92], [#96])
 - A `/` ends a tag name, so `<x/y>` opens `x` and `</x/y>` closes it.
@@ -375,3 +389,5 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#143]: https://github.com/zacharyvmm/scah/issues/143
 [#150]: https://github.com/zacharyvmm/scah/pull/150
 [#132]: https://github.com/zacharyvmm/scah/issues/132
+[#138]: https://github.com/zacharyvmm/scah/issues/138
+[#152]: https://github.com/zacharyvmm/scah/pull/152

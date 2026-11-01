@@ -6,6 +6,7 @@
 //! indexer     the next open or close tag, comment or raw-text end (SIMD)
 //! tape        a structural tape for documents worth indexing ahead (simdlex)
 //! element     the attributes of an open tag, only those asked for
+//! entities    character references in text and attribute values
 //! tag_id      tag names resolved to a one-byte TagId
 //! tag         what HTML says about a tag: void, raw text, implied closes
 //! tree        the open elements, and the rules that close them
@@ -17,6 +18,7 @@
 mod attribute_interest;
 mod attributes;
 mod element;
+pub mod entities;
 mod indexer;
 mod reader;
 mod simd_classifier;

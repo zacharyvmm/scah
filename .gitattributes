@@ -1,2 +1,2 @@
-crates/scah/scripts/entities.json linguist-generated=true
-crates/scah/src/capture/entities_table.rs linguist-generated=true
+crates/scah-html/scripts/entities.json linguist-generated=true
+crates/scah-html/src/entities_table.rs linguist-generated=true

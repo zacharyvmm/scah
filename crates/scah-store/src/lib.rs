@@ -19,7 +19,9 @@
 //! guarantees of its own; use scah instead.
 
 use scah_html::XHtmlElement;
+use scah_html::entities::value_contains_ampersand;
 use std::ops::Range;
+use std::sync::OnceLock;
 
 mod columns;
 mod element;
@@ -106,6 +108,9 @@ pub struct Store<'html, 'query> {
     columns: Columns,
     /// Accumulated raw-text and normalized-text buffers shared by all elements.
     text: TextStore,
+    /// Saved attribute values with character references, decoded when one
+    /// of them is first read, so parses that never read one decode nothing.
+    decoded: OnceLock<DecodedValues>,
     /// A text range or an attribute index did not fit in 32 bits.
     overflowed: bool,
     /// Sections of the parsed queries, in declaration order.
@@ -138,7 +143,8 @@ pub struct HeapUsage {
     pub rows: usize,
     /// The result index, including the tables of query sections.
     pub results: usize,
-    /// The attribute key and value columns.
+    /// The attribute key and value columns, and the values decoded so far
+    /// (see [`ElementRef`]).
     pub attributes: usize,
     /// The raw-text and normalized-text buffers.
     pub text: usize,
@@ -324,6 +330,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             columns,
             overflowed: false,
             text,
+            decoded: OnceLock::new(),
             sections: Box::default(),
             roots: Box::default(),
             children: Box::default(),
@@ -419,7 +426,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
                 + bytes(&self.slot_starts)
                 + bytes(&self.slot_offsets)
                 + bytes(&self.results),
-            attributes: bytes(&columns.attribute_keys) + bytes(&columns.attribute_values),
+            attributes: bytes(&columns.attribute_keys)
+                + bytes(&columns.attribute_values)
+                + self.decoded.get().map_or(0, DecodedValues::heap_bytes),
             text: self.text.raw_text.capacity() + self.text.text.capacity(),
         }
     }
@@ -518,6 +527,47 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         // subslices of `html`, so the range is in bounds and both ends are
         // on character boundaries.
         Some(unsafe { self.html.get_unchecked(range) })
+    }
+
+    /// The value of the saved attribute at `index`, with its character
+    /// references decoded.
+    ///
+    /// `index` must be below the number of saved attributes.
+    #[inline]
+    fn attribute_value(&self, index: usize) -> Option<&str> {
+        let (buffer, range) = self.attribute_location(index)?;
+        Some(match buffer {
+            Buffer::Html => {
+                debug_assert!(self.html.get(range.clone()).is_some());
+                // SAFETY: attribute value spans are only built by
+                // `html_span`, from `&str` subslices of `html`.
+                unsafe { self.html.get_unchecked(range) }
+            }
+            _ => self.decoded().text.slice(range),
+        })
+    }
+
+    /// The buffer and range of [`Store::attribute_value`]: the value in the
+    /// HTML when it has no `&`, and otherwise its decoded text.
+    #[inline]
+    fn attribute_location(&self, index: usize) -> Option<(Buffer, Range<usize>)> {
+        debug_assert!(index < self.columns.attribute_values.len());
+        // SAFETY: the caller passes the index of a saved attribute.
+        let (_, value) = unsafe { self.columns.attribute_unchecked(index) };
+        let range = value.range()?;
+        // SAFETY: as in `attribute_value`.
+        let raw = unsafe { self.html.get_unchecked(range.clone()) };
+        if !value_contains_ampersand(raw) {
+            return Some((Buffer::Html, range));
+        }
+        Some((Buffer::Attributes, self.decoded().range(index)))
+    }
+
+    /// The saved attribute values with character references, decoded on the
+    /// first call.
+    #[inline]
+    fn decoded(&self) -> &DecodedValues {
+        self.decoded.get_or_init(|| DecodedValues::new(self))
     }
 
     /// Span of `value`, a string borrowed from the parsed HTML.
@@ -668,6 +718,50 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         for index in 1..counts.len() {
             counts[index] += counts[index - 1];
         }
+    }
+}
+
+/// The saved attribute values that have character references, decoded.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct DecodedValues {
+    /// The decoded values, one after another.
+    text: TextTape,
+    /// Index in the attribute columns and range of `text` of each decoded
+    /// value, by index.
+    values: Vec<(usize, Range<usize>)>,
+}
+
+impl DecodedValues {
+    /// Decode every value of `store` that has `&` in it.
+    #[cold]
+    #[inline(never)]
+    fn new(store: &Store<'_, '_>) -> Self {
+        let mut decoded = Self::default();
+        for (index, value) in store.columns.attribute_values.iter().enumerate() {
+            let Some(raw) = store.html_value(*value) else {
+                continue;
+            };
+            if value_contains_ampersand(raw) {
+                let start = decoded.text.len();
+                decoded.text.push_decoded_attribute(raw);
+                decoded.values.push((index, start..decoded.text.len()));
+            }
+        }
+        decoded
+    }
+
+    /// The range of `text` that the attribute at `index`, whose value has
+    /// `&`, decodes to.
+    fn range(&self, index: usize) -> Range<usize> {
+        let found = self.values.binary_search_by_key(&index, |(at, _)| *at);
+        // Every saved value with `&` is decoded, so the search finds it.
+        self.values[found.expect("decoded every value with `&`")]
+            .1
+            .clone()
+    }
+
+    fn heap_bytes(&self) -> usize {
+        self.text.capacity() + self.values.capacity() * std::mem::size_of::<(usize, Range<usize>)>()
     }
 }
 

@@ -6,12 +6,6 @@ that point, and it rejects the rest when the query is built. It never quietly
 runs a narrowed version of a selector it doesn't support: unsupported syntax
 is an error.
 
-> **Attribute values are compared as written.** Character references in
-> attribute values are not decoded, so `[title="&"]` doesn't match
-> `title="&amp;"`, but `[title="&amp;"]` does. Attribute values read back from
-> results are undecoded too. See
-> [#138](https://github.com/zacharyvmm/scah/issues/138).
-
 ## Supported syntax
 
 | Syntax | Example | Notes |
@@ -38,6 +32,14 @@ is an error.
 
 A *compound selector* is a sequence of simple selectors with no combinator,
 such as `a.external[href]`.
+
+IDs, classes, and attribute values are compared with their character
+references decoded, as a browser compares them: `[title="&"]` matches
+`title="&amp;"`, `a[href*="a=1&b=2"]` matches `href="?a=1&amp;b=2"`, and `.x`
+matches `class="x&#32;y"`. Values read back from results are decoded the same
+way. As in HTML, a named reference without its `;` stays as written when an
+`=` or a letter or digit follows it, so `href="?a=1&copy=2"` keeps its
+`&copy`.
 
 ## Rejected selectors
 
