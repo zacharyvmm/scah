@@ -32,7 +32,14 @@ tracing = { version = "0.1", optional = true }
 default = []
 bench-internals = []
 simd-bench-internals = []
-otel = ["dep:tracing"]
+# Record a trace of each parse; see `scah::debug::parse_traced`.
+trace = []
+# Also emit each trace event to `tracing`.
+otel = ["trace", "dep:tracing"]
+
+[package.metadata.docs.rs]
+features = ["trace"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

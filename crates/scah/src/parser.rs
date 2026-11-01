@@ -17,7 +17,7 @@
 use crate::ParseError;
 use crate::capture::{Capture, TextElementFlags};
 use crate::debug::ImpliedCloseReason;
-#[cfg(any(debug_assertions, test))]
+#[cfg(any(feature = "trace", test))]
 use crate::debug::{TraceEvent, TraceStore};
 use crate::engine::matcher::{AnyMatcher, SaveHit};
 use crate::engine::structural::StructuralState;
@@ -511,8 +511,8 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
 
     pub fn trace_parse_started(
         &mut self,
-        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] html_len: usize,
-        #[cfg_attr(not(any(debug_assertions, test)), allow(unused_variables))] query_count: usize,
+        #[cfg_attr(not(any(feature = "trace", test)), allow(unused_variables))] html_len: usize,
+        #[cfg_attr(not(any(feature = "trace", test)), allow(unused_variables))] query_count: usize,
     ) {
         crate::scah_trace!(
             self.out.trace,
@@ -535,16 +535,16 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
     }
 
     pub fn finish(self) -> Store<'html, 'query> {
-        // Debug and test builds trace the end of the parse.
-        #[cfg(any(debug_assertions, test))]
+        // With the `trace` feature, trace the end of the parse.
+        #[cfg(any(feature = "trace", test))]
         let (store, _trace) = self.finish_traced();
-        #[cfg(not(any(debug_assertions, test)))]
+        #[cfg(not(any(feature = "trace", test)))]
         let store = self.out.store.finish();
         store
     }
 
     /// [`XHtmlParser::finish`], also returning the trace of the parse.
-    #[cfg(any(debug_assertions, test))]
+    #[cfg(any(feature = "trace", test))]
     pub(crate) fn finish_traced(self) -> (Store<'html, 'query>, TraceStore<'html, 'query>) {
         let Output { store, mut trace } = self.out;
         let tapes = store.text();
@@ -682,7 +682,7 @@ impl<'html, 'query: 'html> XHtmlParser<'html, 'query> {
         reason: ImpliedCloseReason,
         named: Option<&'html str>,
     ) -> bool {
-        // Only the trace reads `reason`; release builds compile it out.
+        // Only the trace reads `reason`; without the `trace` feature it compiles out.
         let _ = reason;
         let mut closing = std::mem::take(&mut self.temp_state.closing);
         let base_depth = self.open_elements.depth();

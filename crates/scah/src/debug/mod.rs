@@ -1,19 +1,31 @@
 //! The trace of a parse: the tags it read, the elements it saved and the
-//! content it finished, as recorded by debug and test builds.
+//! content it finished.
+//!
+//! Recording a trace needs the `trace` cargo feature, which adds
+//! `parse_traced`; builds without it, debug or release, record nothing and
+//! pay nothing for it. The `otel` feature implies `trace` and also emits each
+//! event to [`tracing`](https://docs.rs/tracing) under the `scah::trace`
+//! target.
+//!
+//! ```toml
+//! [dependencies]
+//! scah = { version = "0.2", features = ["trace"] }
+//! ```
 
 use crate::ElementId;
-#[cfg(any(debug_assertions, test))]
+#[cfg(any(feature = "trace", test))]
 use crate::{ParseError, Program, QuerySpec, Store};
 use std::fmt::Write as _;
 use std::path::Path;
 
 /// Parse like [`parse`](crate::parse), and also return the trace of the
-/// parse. Only debug and test builds record traces.
+/// parse. Needs the `trace` feature.
 ///
 /// # Errors
 ///
 /// The same as [`parse`](crate::parse).
-#[cfg(any(debug_assertions, test))]
+#[cfg(any(feature = "trace", test))]
+#[cfg_attr(docsrs, doc(cfg(feature = "trace")))]
 pub fn parse_traced<'a: 'query, 'html: 'query, 'query: 'html, Q>(
     html: &'html str,
     queries: &'a [Q],

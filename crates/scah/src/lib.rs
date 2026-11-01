@@ -94,6 +94,14 @@
 //! of the input HTML. Raw and normalized text are assembled while parsing and
 //! borrow from the [`Store`].
 //!
+//! ## Cargo features
+//!
+//! - `trace`: adds `parse_traced` to the [`debug`] module, which also returns
+//!   a trace of the tags the parse read and the elements it saved. Off by
+//!   default; without it the parser records nothing.
+//! - `otel`: implies `trace`, and emits each trace event to
+//!   [`tracing`](https://docs.rs/tracing).
+//!
 //! ## Guides
 //!
 //! - [Selector support](https://github.com/zacharyvmm/scah/blob/main/docs/selectors.md):
@@ -102,6 +110,8 @@
 //!   what `inner_html`, `raw_text`, and `text` contain.
 //! - [Architecture](https://github.com/zacharyvmm/scah/blob/main/docs/architecture.md):
 //!   how a parse works, and which crate does what.
+
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::borrow::Cow;
 
@@ -112,7 +122,7 @@ mod output;
 mod parser;
 mod support;
 
-#[cfg(all(any(debug_assertions, test), feature = "otel"))]
+#[cfg(feature = "otel")]
 mod otel;
 
 pub use parser::XHtmlParser;
@@ -412,7 +422,7 @@ fn run<'html, 'query: 'html>(
 }
 
 /// [`run`], also returning the trace of the parse.
-#[cfg(any(debug_assertions, test))]
+#[cfg(any(feature = "trace", test))]
 fn run_traced<'html, 'query: 'html>(
     html: &'html str,
     program: Cow<'query, Program<'query>>,

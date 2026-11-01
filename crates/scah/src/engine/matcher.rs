@@ -428,7 +428,7 @@ impl<'q, P: ProgramRef<'q>, const W: usize> Matcher<'q, P, W> {
                 }
             }
         }
-        #[cfg(not(any(debug_assertions, test)))]
+        #[cfg(not(any(feature = "trace", test)))]
         let _ = out;
     }
 
