@@ -3,8 +3,9 @@
 //! `li`, `option` or table cell, and the end of the input.
 //!
 //! The stack indexes the open elements those implied closes look for, and the
-//! scope barriers that stop them, so an open tag decides what it closes in
-//! constant time however deep the stack is.
+//! scope barriers that stop them, and chains the open elements of each tag
+//! name together, so an open or end tag decides what it closes in constant
+//! time however deep the stack is.
 
 use crate::TagId;
 use crate::tag::{ScopeKind, TagFlags};
@@ -24,16 +25,25 @@ pub struct OpenElement<'html> {
     /// `name` resolved once at the open tag; close tags compare ids.
     pub id: TagId,
     packed_flags: u32,
+    /// For an unknown name, the [`TagChains`] chain its name hashes to.
+    /// Set, like `below`, when the element is chained; see
+    /// [`OpenElementStack::chain_open_elements`].
+    unknown_chain: u8,
+    /// Position of the next element down this element's chain, or
+    /// [`NO_POSITION`].
+    below: DepthSize,
 }
 
 impl<'html> OpenElement<'html> {
     const PAYLOAD_SHIFT: u32 = 25;
     /// Bits left for the payload above the tag flags.
     pub const PAYLOAD_BITS: u32 = u32::BITS - Self::PAYLOAD_SHIFT;
+    /// Set in `packed_flags`, below the payload, once the element is chained.
+    const CHAINED: u32 = 1 << (Self::PAYLOAD_SHIFT - 1);
 
     #[inline]
     pub fn tag(&self) -> TagFlags {
-        TagFlags::from_bits(self.packed_flags & ((1 << Self::PAYLOAD_SHIFT) - 1))
+        TagFlags::from_bits(self.packed_flags & (Self::CHAINED - 1))
     }
 
     /// The bits the caller pushed with the element. scah keeps the
@@ -52,6 +62,92 @@ impl<'html> OpenElement<'html> {
         } else {
             self.name == name || self.name.eq_ignore_ascii_case(name)
         }
+    }
+
+    /// The chain this element is on, once chained.
+    #[inline(always)]
+    fn chain(&self) -> Chain {
+        if self.id.is_known() {
+            Chain::Known(self.id)
+        } else {
+            Chain::Unknown(self.unknown_chain)
+        }
+    }
+}
+
+/// End of a [`TagChains`] chain.
+const NO_POSITION: DepthSize = DepthSize::MAX;
+const _: () = assert!(NO_POSITION > MAX_ELEMENT_DEPTH);
+
+/// Chains for names outside the known-tag table, picked by a hash of the name.
+const UNKNOWN_CHAINS: usize = 256;
+
+/// Barriers of the default scope, where every unknown name closes.
+const DEFAULT_BARRIERS: TagFlags = match ScopeKind::Default.barriers() {
+    Some(barriers) => barriers,
+    None => unreachable!(),
+};
+
+/// Which [`TagChains`] chain an element is on: its tag id's, or for an
+/// unknown name, the one its name hashes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Chain {
+    Known(TagId),
+    Unknown(u8),
+}
+
+impl Chain {
+    #[inline(always)]
+    fn of(name: &str, id: TagId) -> Self {
+        if id.is_known() {
+            Self::Known(id)
+        } else {
+            // `| 0x20` folds ASCII case, so names that are equal ignoring
+            // case hash alike. Other bytes it merges only share a chain.
+            let hash = name.bytes().fold(0_u32, |hash, byte| {
+                (hash.rotate_left(5) ^ u32::from(byte | 0x20)).wrapping_mul(0x9e37_79b9)
+            });
+            Self::Unknown((hash >> 24) as u8)
+        }
+    }
+}
+
+/// The innermost chained element on each chain. An element with a known tag
+/// id is on that id's chain, and any other element is on one of
+/// [`UNKNOWN_CHAINS`] chains by a hash of its name. An element records the
+/// next one down its chain, so the chains are linked lists through the stack,
+/// and chaining or popping an element updates them in constant time.
+#[derive(Debug, PartialEq)]
+struct TagChains {
+    known: [DepthSize; TagId::COUNT],
+    unknown: [DepthSize; UNKNOWN_CHAINS],
+}
+
+impl Default for TagChains {
+    fn default() -> Self {
+        Self {
+            known: [NO_POSITION; TagId::COUNT],
+            unknown: [NO_POSITION; UNKNOWN_CHAINS],
+        }
+    }
+}
+
+impl TagChains {
+    #[inline(always)]
+    fn innermost_mut(&mut self, chain: Chain) -> &mut DepthSize {
+        match chain {
+            Chain::Known(id) => &mut self.known[id.index()],
+            Chain::Unknown(hash) => &mut self.unknown[usize::from(hash)],
+        }
+    }
+
+    #[inline(always)]
+    fn innermost(&self, chain: Chain) -> Option<usize> {
+        let position = match chain {
+            Chain::Known(id) => self.known[id.index()],
+            Chain::Unknown(hash) => self.unknown[usize::from(hash)],
+        };
+        (position != NO_POSITION).then_some(usize::from(position))
     }
 }
 
@@ -144,9 +240,14 @@ impl FlagIndex {
 #[derive(Debug, PartialEq)]
 pub struct OpenElementStack<'html> {
     entries: Vec<OpenElement<'html>>,
-    /// Kept in step with `entries`: every push and pop goes through
-    /// `push_classified`, `pop_entry` or `close_all_at_eof_into`.
+    /// `index` and `chains` are kept in step with `entries`: every push and
+    /// pop goes through `push_classified`, `pop_entry` or
+    /// `close_all_at_eof_into`.
     index: FlagIndex,
+    /// Chains of the entries below `chained`. Pushes leave new entries
+    /// unchained, and an end tag that needs the chains chains them first.
+    chains: TagChains,
+    chained: usize,
 }
 
 impl<'html> Default for OpenElementStack<'html> {
@@ -155,6 +256,8 @@ impl<'html> Default for OpenElementStack<'html> {
         Self {
             entries: Vec::with_capacity(ASSUMED_MAX_DEPTH),
             index: FlagIndex::default(),
+            chains: TagChains::default(),
+            chained: 0,
         }
     }
 }
@@ -189,19 +292,55 @@ impl<'html> OpenElementStack<'html> {
             name,
             id,
             packed_flags: tag.bits() | (u32::from(payload) << OpenElement::PAYLOAD_SHIFT),
+            unknown_chain: 0,
+            below: NO_POSITION,
         });
         self.debug_check_index();
         Ok(())
     }
 
-    /// Pop the top entry, keeping the flag index in step.
+    /// Pop the top entry, keeping the flag index and tag chains in step.
     #[inline(always)]
     fn pop_entry(&mut self) -> Option<OpenElement<'html>> {
         let open = self.entries.pop()?;
-        if open.tag().intersects(TagFlags::INDEXED) {
-            self.index.pop(open.tag(), self.entries.len());
+        // One test for both, since most elements are neither.
+        if open.packed_flags & (TagFlags::INDEXED.bits() | OpenElement::CHAINED) != 0 {
+            if open.tag().intersects(TagFlags::INDEXED) {
+                self.index.pop(open.tag(), self.entries.len());
+            }
+            if open.packed_flags & OpenElement::CHAINED != 0 {
+                self.unchain(&open);
+            }
         }
         Some(open)
+    }
+
+    /// Take the element just popped off its chain.
+    #[cold]
+    fn unchain(&mut self, open: &OpenElement<'html>) {
+        debug_assert!(self.entries.len() < self.chained);
+        self.chained = self.entries.len();
+        let innermost = self.chains.innermost_mut(open.chain());
+        debug_assert_eq!(usize::from(*innermost), self.chained);
+        *innermost = open.below;
+    }
+
+    /// Chain every entry pushed since the last end tag that needed the
+    /// chains. Each entry is chained at most once, so over a parse this costs
+    /// no more than the pushes did.
+    fn chain_open_elements(&mut self) {
+        for position in self.chained..self.entries.len() {
+            let entry = &mut self.entries[position];
+            entry.packed_flags |= OpenElement::CHAINED;
+            let chain = Chain::of(entry.name, entry.id);
+            if let Chain::Unknown(hash) = chain {
+                entry.unknown_chain = hash;
+            }
+            // Positions stay below `MAX_ELEMENT_DEPTH`, so they fit.
+            entry.below =
+                std::mem::replace(self.chains.innermost_mut(chain), position as DepthSize);
+        }
+        self.chained = self.entries.len();
     }
 
     /// Pop every entry at `index` and above into `popped`, innermost first.
@@ -214,7 +353,7 @@ impl<'html> OpenElementStack<'html> {
         }
     }
 
-    /// Check the flag index against a rebuild from `entries`.
+    /// Check the flag index and tag chains against a rebuild from `entries`.
     ///
     /// The rebuild walks the whole stack, so outside this crate's own tests
     /// it only runs on shallow stacks, which keeps debug builds of deep
@@ -224,12 +363,25 @@ impl<'html> OpenElementStack<'html> {
         #[cfg(debug_assertions)]
         if cfg!(test) || self.entries.len() <= 64 {
             let mut rebuilt = FlagIndex::default();
+            let mut chains = TagChains::default();
+            assert!(self.chained <= self.entries.len());
             for (position, entry) in self.entries.iter().enumerate() {
                 if entry.tag().intersects(TagFlags::INDEXED) {
                     rebuilt.push(entry.tag(), position);
                 }
+                if position < self.chained {
+                    let chain = Chain::of(entry.name, entry.id);
+                    let below =
+                        std::mem::replace(chains.innermost_mut(chain), position as DepthSize);
+                    assert_eq!(
+                        (entry.chain(), entry.below),
+                        (chain, below),
+                        "tag chain drifted"
+                    );
+                }
             }
             assert_eq!(self.index, rebuilt, "open-element flag index drifted");
+            assert_eq!(self.chains, chains, "tag chains drifted");
         }
     }
 
@@ -303,18 +455,13 @@ impl<'html> OpenElementStack<'html> {
             return;
         }
 
-        let tag = TagFlags::of(id);
-        if let Some(index) = self.find_matching_index(name, id, tag.close_scope()) {
+        self.chain_open_elements();
+        if let Some(index) = self.find_closed_by(name, id) {
             self.pop_down_to_into(index, popped);
         }
         self.debug_check_index();
     }
 
-    /// Pop the top entry when it is the element that `name` closes.
-    ///
-    /// This is exactly `find_matching_index`'s first iteration: that loop tests
-    /// the entry name before the scope barrier, so a matching top always wins
-    /// there too. Callers can take this path without deriving `close_scope()`.
     /// Pop the top entry when its name is exactly `name`.
     #[inline(always)]
     pub fn pop_exact_top(&mut self, name: &str) -> Option<OpenElement<'html>> {
@@ -324,6 +471,11 @@ impl<'html> OpenElementStack<'html> {
             .then(|| self.pop_entry().expect("matching top element must exist"))
     }
 
+    /// Pop the top entry when it is the element that `name` closes.
+    ///
+    /// This is the first thing `close_by_end_tag_into` tries: a matching top
+    /// wins even if it is also a scope barrier. Callers can take this path
+    /// without deriving `close_scope()`.
     #[inline]
     pub fn pop_matching_top(&mut self, name: &str, id: TagId) -> Option<OpenElement<'html>> {
         self.entries
@@ -345,6 +497,10 @@ impl<'html> OpenElementStack<'html> {
         popped.clear();
         popped.extend(self.entries.drain(..).rev());
         self.index.clear();
+        if self.chained != 0 {
+            self.chains = TagChains::default();
+            self.chained = 0;
+        }
     }
 
     #[cfg(test)]
@@ -385,7 +541,13 @@ impl<'html> OpenElementStack<'html> {
             return Some(top);
         }
         let index = self.index.innermost(tags)?;
-        let blocked = match scope.barriers() {
+        (!self.barrier_above(index, scope)).then_some(index)
+    }
+
+    /// Whether a barrier of `scope` is open above `index`.
+    #[inline]
+    fn barrier_above(&self, index: usize, scope: ScopeKind) -> bool {
+        match scope.barriers() {
             Some(barriers) => self
                 .index
                 .innermost(barriers)
@@ -397,26 +559,49 @@ impl<'html> OpenElementStack<'html> {
                 .iter()
                 .rev()
                 .any(|entry| entry.tag().is_scope_barrier(scope)),
-        };
-        (!blocked).then_some(index)
+        }
     }
 
-    fn find_matching_index(&self, name: &str, id: TagId, scope: ScopeKind) -> Option<usize> {
-        for (index, entry) in self.entries.iter().enumerate().rev() {
+    /// Position of the innermost open element that an end tag `name`,
+    /// resolved to `id`, closes, unless a barrier of the tag's close scope is
+    /// open above it.
+    ///
+    /// This is what walking down from the top, stopping at the first element
+    /// the tag closes or else at the first barrier, would find. A known tag
+    /// reads the element off its chain, so a stray end tag costs the same at
+    /// any depth. Every entry must be chained.
+    #[inline]
+    fn find_closed_by(&self, name: &str, id: TagId) -> Option<usize> {
+        let chain = Chain::of(name, id);
+        let mut index = self.chains.innermost(chain)?;
+        let scope = TagFlags::of(id).close_scope();
+        if let Chain::Known(_) = chain {
+            return (!self.barrier_above(index, scope)).then_some(index);
+        }
+        // Other unknown names can share the chain. Skipping them stops at the
+        // innermost barrier, where the walk would stop, so only open elements
+        // whose names share the chain and are in scope cost a step.
+        debug_assert_eq!(scope, ScopeKind::Default);
+        let floor = self.index.innermost(DEFAULT_BARRIERS);
+        loop {
+            if floor.is_some_and(|barrier| barrier > index) {
+                return None;
+            }
+            let entry = &self.entries[index];
             if entry.closed_by(name, id) {
                 return Some(index);
             }
-            if entry.tag().is_scope_barrier(scope) {
+            if entry.below == NO_POSITION {
                 return None;
             }
+            index = usize::from(entry.below);
         }
-        None
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_ELEMENT_DEPTH, OpenElement, OpenElementStack};
+    use super::{Chain, MAX_ELEMENT_DEPTH, OpenElement, OpenElementStack};
     use crate::TagId;
     use crate::tag::{ScopeKind, TagFlags};
 
@@ -431,8 +616,16 @@ mod tests {
     }
 
     #[test]
+    fn tag_flags_fit_below_the_chained_bit() {
+        for index in 0..TagId::COUNT {
+            let tag = TagFlags::of(TagId::from_index(index));
+            assert!(tag.bits() < OpenElement::CHAINED, "{index}");
+        }
+    }
+
+    #[test]
     fn open_element_keeps_hot_stack_entries_compact() {
-        assert!(std::mem::size_of::<OpenElement<'_>>() <= 32);
+        assert!(std::mem::size_of::<OpenElement<'_>>() <= 24);
     }
 
     #[test]
@@ -602,8 +795,69 @@ mod tests {
         assert_eq!(names(&stack), ["div", "td", "p", "tr"]);
     }
 
-    /// The stack before it indexed flags: every implied close walks down
-    /// from the top.
+    #[test]
+    fn test_stray_end_tags_leave_deep_stack_alone() {
+        let mut stack = OpenElementStack::default();
+        for _ in 0..2_000 {
+            open(&mut stack, "div");
+        }
+        open(&mut stack, "x-a");
+        for name in ["span", "p", "li", "td", "option", "x-b", "X-B", "x-636"] {
+            assert!(stack.close_by_end_tag(name).is_empty(), "</{name}>");
+        }
+        assert_eq!(stack.close_by_end_tag("div").len(), 2);
+        assert_eq!(stack.depth(), 1_999);
+    }
+
+    #[test]
+    fn test_end_tag_below_barrier_is_ignored() {
+        let mut stack = OpenElementStack::default();
+        open(&mut stack, "span");
+        open(&mut stack, "x-a");
+        open(&mut stack, "table");
+        for _ in 0..2_000 {
+            open(&mut stack, "div");
+        }
+        assert!(stack.close_by_end_tag("span").is_empty());
+        assert!(stack.close_by_end_tag("x-a").is_empty());
+        let popped = stack.close_by_end_tag("table");
+        assert_eq!(popped.len(), 2_001);
+        assert_eq!(stack.close_by_end_tag("X-A").len(), 1);
+        assert_eq!(names(&stack), ["span"]);
+    }
+
+    #[test]
+    fn test_unknown_names_sharing_a_chain_close_by_name() {
+        // `x-636` hashes to the same chain as `x-a`.
+        assert_eq!(
+            Chain::of("x-636", TagId::UNKNOWN),
+            Chain::of("x-a", TagId::UNKNOWN)
+        );
+        let mut stack = OpenElementStack::default();
+        open(&mut stack, "X-A");
+        open(&mut stack, "x-636");
+        open(&mut stack, "div");
+        open(&mut stack, "x-636");
+        assert_eq!(
+            stack
+                .close_by_end_tag("x-a")
+                .iter()
+                .map(|e| e.name)
+                .collect::<Vec<_>>(),
+            ["x-636", "div", "x-636", "X-A"]
+        );
+        open(&mut stack, "x-636");
+        open(&mut stack, "object");
+        open(&mut stack, "x-a");
+        open(&mut stack, "x-636");
+        assert_eq!(stack.close_by_end_tag("x-a").len(), 2);
+        assert!(stack.close_by_end_tag("x-a").is_empty());
+        assert!(stack.close_by_end_tag("X-636").is_empty());
+        assert_eq!(names(&stack), ["x-636", "object"]);
+    }
+
+    /// The stack before it indexed flags: every implied close and end tag
+    /// walks down from the top.
     #[derive(Default)]
     struct WalkingStack(Vec<(&'static str, TagFlags)>);
 
@@ -650,10 +904,16 @@ mod tests {
         }
 
         fn close(&mut self, name: &str) -> Vec<&'static str> {
-            let scope = TagFlags::classify(name).close_scope();
+            let id = TagId::of(name);
+            let scope = TagFlags::of(id).close_scope();
             for index in (0..self.0.len()).rev() {
                 let (open, tag) = self.0[index];
-                if TagId::of(open) == TagId::of(name) {
+                let closes = if id.is_known() || TagId::of(open).is_known() {
+                    TagId::of(open) == id
+                } else {
+                    open.eq_ignore_ascii_case(name)
+                };
+                if closes {
                     return self.0.drain(index..).rev().map(|(name, _)| name).collect();
                 }
                 if tag.is_scope_barrier(scope) {
@@ -665,13 +925,55 @@ mod tests {
     }
 
     /// Random opens, closes and EOF drains over every tag the implied
-    /// closes care about pop exactly what the walking stack pops.
+    /// closes and end tags care about pop exactly what the walking stack
+    /// pops. Unknown names include mixed case and names that share a chain.
     #[test]
-    fn test_indexed_implied_closes_match_walking_stack() {
+    fn test_indexed_closes_match_walking_stack() {
         const TAGS: &[&str] = &[
-            "p", "div", "section", "span", "b", "button", "li", "ul", "ol", "dt", "dd", "dl",
-            "option", "optgroup", "select", "table", "tbody", "tr", "td", "th", "caption",
-            "object", "marquee", "applet", "template", "html", "hr", "br",
+            "p",
+            "div",
+            "section",
+            "span",
+            "b",
+            "button",
+            "li",
+            "ul",
+            "ol",
+            "dt",
+            "dd",
+            "dl",
+            "option",
+            "optgroup",
+            "select",
+            "table",
+            "tbody",
+            "tr",
+            "td",
+            "th",
+            "caption",
+            "object",
+            "marquee",
+            "applet",
+            "template",
+            "html",
+            "hr",
+            "br",
+            "img",
+            "script",
+            "style",
+            "title",
+            "textarea",
+            "DIV",
+            "Span",
+            "TD",
+            "x-a",
+            "X-A",
+            "x-636",
+            "x-784",
+            "x-b",
+            "my-widget",
+            "My-Widget",
+            "averyveryverylongtagname",
         ];
         let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
         let mut next = move || {

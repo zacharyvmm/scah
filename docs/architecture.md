@@ -50,7 +50,8 @@ flowchart TD
    for void elements, implied end tags (an open `p`, `li`, `option`, or table
    cell closed by a new tag), and misnested end tags. It indexes the open
    elements an implied end tag can close and the scope barriers that stop
-   one, so deciding what an open tag closes takes the same time at any depth.
+   one, and links the open elements of each tag name together, so deciding
+   what an open or end tag closes takes the same time at any depth.
    The matcher then decides which selector steps the element satisfies.
    Attributes are parsed only if a candidate selector or a `Save` needs them.
 4. **Capture.** While a saved element that wants text is open, text between

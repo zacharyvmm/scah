@@ -34,3 +34,38 @@ fn extra_end_tag_after_valid_close_does_not_create_extra_matches() {
     assert_eq!(attr(&store, "a", "href"), vec![Some("x")]);
     assert_eq!(texts(&store, "a"), vec![Some("Link")]);
 }
+
+#[test]
+fn stray_end_tags_under_deep_nesting_are_ignored() {
+    let depth = 3_000;
+    let html = format!(
+        "<main>{}<x-item>a{}{}</X-ITEM>b{}<p>c</p></main>",
+        "<div>".repeat(depth),
+        "</span>".repeat(depth),
+        "</x-other>".repeat(depth),
+        "</div>".repeat(depth)
+    );
+    let store = parse_all(&html, &["x-item", "div > x-item", "main > div", "main > p"]);
+
+    assert_eq!(texts(&store, "x-item"), vec![Some("a")]);
+    assert_eq!(elements(&store, "div > x-item").len(), 1);
+    assert_eq!(elements(&store, "main > div").len(), 1);
+    assert_eq!(texts(&store, "main > p"), vec![Some("c")]);
+}
+
+#[test]
+fn end_tags_below_a_barrier_are_ignored_under_deep_nesting() {
+    let depth = 3_000;
+    let html = format!(
+        "<span><x-item><table>{}{}{}{}</table></x-item></span><b>u</b>",
+        "<div>".repeat(depth),
+        "</span>".repeat(depth),
+        "</x-item>".repeat(depth),
+        "</div>".repeat(depth)
+    );
+    let store = parse_all(&html, &["span > x-item > table", "table div", "span b"]);
+
+    assert_eq!(elements(&store, "span > x-item > table").len(), 1);
+    assert_eq!(elements(&store, "table div").len(), depth);
+    assert!(elements(&store, "span b").is_empty());
+}
