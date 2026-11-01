@@ -137,6 +137,11 @@ features. Rust code that reads results needs the changes in
   instead of `JsQuery`; `then`'s callback takes a `QueryFactory`, and
   `Store.get` and `Store.query` return `Element` arrays. `JsQuery` and the
   other `Js` type aliases remain. ([#141])
+- An open tag finds the `p`, `li`, `option`, table row or cell it implicitly
+  closes, and the scope barriers that stop it, from an index kept by the
+  open-element stack instead of walking the stack. Nesting `div`s or
+  `section`s, which close an open `p`, no longer costs time quadratic in the
+  depth: 4,096 nested `section`s parse about 26× faster. ([#121])
 
 ### Deprecated
 
@@ -322,6 +327,7 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#49]: https://github.com/zacharyvmm/scah/pull/49
 [#53]: https://github.com/zacharyvmm/scah/pull/53
 [#117]: https://github.com/zacharyvmm/scah/pull/117
+[#121]: https://github.com/zacharyvmm/scah/issues/121
 [#122]: https://github.com/zacharyvmm/scah/pull/122
 [#123]: https://github.com/zacharyvmm/scah/pull/123
 [#124]: https://github.com/zacharyvmm/scah/pull/124

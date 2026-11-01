@@ -1,6 +1,10 @@
 //! The stack of open elements, and the HTML rules that close them: end
 //! tags that close elements further down, open tags that close an open `p`,
 //! `li`, `option` or table cell, and the end of the input.
+//!
+//! The stack indexes the open elements those implied closes look for, and the
+//! scope barriers that stop them, so an open tag decides what it closes in
+//! constant time however deep the stack is.
 
 use crate::TagId;
 use crate::tag::{ScopeKind, TagFlags};
@@ -51,9 +55,98 @@ impl<'html> OpenElement<'html> {
     }
 }
 
+/// First [`TagFlags::INDEXED`] bit; slot `i` of a [`Snapshot`] holds bit
+/// `FIRST_INDEXED_BIT + i`.
+const FIRST_INDEXED_BIT: u32 = TagFlags::INDEXED.bits().trailing_zeros();
+const INDEXED_SLOTS: usize =
+    (u32::BITS - TagFlags::INDEXED.bits().leading_zeros() - FIRST_INDEXED_BIT) as usize;
+
+/// The innermost open element with each [`TagFlags::INDEXED`] flag, as seen
+/// from one element down.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Snapshot {
+    /// The indexed flags some element at or below this one carries.
+    occupied: u32,
+    /// For each occupied flag, the stack position of the innermost element
+    /// that carries it.
+    innermost: [DepthSize; INDEXED_SLOTS],
+}
+
+/// A [`Snapshot`] for each open element with an indexed flag, innermost
+/// last, so the last one answers for the whole stack.
+///
+/// Elements leave the stack top first, so popping an indexed element pops
+/// its snapshot and leaves the one that was current before it opened.
+#[derive(Debug, Default, PartialEq)]
+struct FlagIndex {
+    /// The last snapshot's `occupied`, or 0 when there is none.
+    occupied: u32,
+    snapshots: Vec<Snapshot>,
+}
+
+impl FlagIndex {
+    #[inline]
+    fn push(&mut self, tag: TagFlags, position: usize) {
+        let mut snapshot = self.snapshots.last().copied().unwrap_or_default();
+        let mut bits = tag.bits() & TagFlags::INDEXED.bits();
+        snapshot.occupied |= bits;
+        while bits != 0 {
+            let slot = (bits.trailing_zeros() - FIRST_INDEXED_BIT) as usize;
+            // Positions stay below `MAX_ELEMENT_DEPTH`, so they fit.
+            snapshot.innermost[slot] = position as DepthSize;
+            bits &= bits - 1;
+        }
+        self.occupied = snapshot.occupied;
+        self.snapshots.push(snapshot);
+    }
+
+    #[inline]
+    fn pop(&mut self, tag: TagFlags, position: usize) {
+        let popped = self.snapshots.pop();
+        debug_assert!(popped.is_some_and(|snapshot| {
+            let slot = (tag.bits() & TagFlags::INDEXED.bits()).trailing_zeros() - FIRST_INDEXED_BIT;
+            usize::from(snapshot.innermost[slot as usize]) == position
+        }));
+        self.occupied = self
+            .snapshots
+            .last()
+            .map_or(0, |snapshot| snapshot.occupied);
+    }
+
+    fn clear(&mut self) {
+        self.occupied = 0;
+        self.snapshots.clear();
+    }
+
+    /// Whether an open element has any flag in `mask`.
+    #[inline(always)]
+    fn any(&self, mask: TagFlags) -> bool {
+        self.occupied & mask.bits() != 0
+    }
+
+    /// Position of the innermost open element with any flag in `mask`, which
+    /// must be indexed.
+    #[inline]
+    fn innermost(&self, mask: TagFlags) -> Option<usize> {
+        debug_assert_eq!(mask.bits() & !TagFlags::INDEXED.bits(), 0);
+        let mut bits = mask.bits() & self.occupied;
+        let snapshot = self.snapshots.last().filter(|_| bits != 0)?;
+        let mut innermost = 0;
+        while bits != 0 {
+            let slot = (bits.trailing_zeros() - FIRST_INDEXED_BIT) as usize;
+            innermost = innermost.max(usize::from(snapshot.innermost[slot]));
+            bits &= bits - 1;
+        }
+        Some(innermost)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct OpenElementStack<'html> {
     entries: Vec<OpenElement<'html>>,
+    /// Kept in step with `entries`: every push and pop goes through
+    /// `push_classified`, `pop_entry` or `close_all_at_eof_into`.
+    index: FlagIndex,
 }
 
 impl<'html> Default for OpenElementStack<'html> {
@@ -61,6 +154,7 @@ impl<'html> Default for OpenElementStack<'html> {
         const ASSUMED_MAX_DEPTH: usize = 16;
         Self {
             entries: Vec::with_capacity(ASSUMED_MAX_DEPTH),
+            index: FlagIndex::default(),
         }
     }
 }
@@ -88,12 +182,55 @@ impl<'html> OpenElementStack<'html> {
         if Self::would_exceed_max_depth(self.entries.len()) {
             return Err(DepthExceeded);
         }
+        if tag.intersects(TagFlags::INDEXED) {
+            self.index.push(tag, self.entries.len());
+        }
         self.entries.push(OpenElement {
             name,
             id,
             packed_flags: tag.bits() | (u32::from(payload) << OpenElement::PAYLOAD_SHIFT),
         });
+        self.debug_check_index();
         Ok(())
+    }
+
+    /// Pop the top entry, keeping the flag index in step.
+    #[inline(always)]
+    fn pop_entry(&mut self) -> Option<OpenElement<'html>> {
+        let open = self.entries.pop()?;
+        if open.tag().intersects(TagFlags::INDEXED) {
+            self.index.pop(open.tag(), self.entries.len());
+        }
+        Some(open)
+    }
+
+    /// Pop every entry at `index` and above into `popped`, innermost first.
+    #[inline]
+    fn pop_down_to_into(&mut self, index: usize, popped: &mut Vec<OpenElement<'html>>) {
+        while self.entries.len() > index {
+            if let Some(open) = self.pop_entry() {
+                popped.push(open);
+            }
+        }
+    }
+
+    /// Check the flag index against a rebuild from `entries`.
+    ///
+    /// The rebuild walks the whole stack, so outside this crate's own tests
+    /// it only runs on shallow stacks, which keeps debug builds of deep
+    /// documents linear.
+    #[inline(always)]
+    fn debug_check_index(&self) {
+        #[cfg(debug_assertions)]
+        if cfg!(test) || self.entries.len() <= 64 {
+            let mut rebuilt = FlagIndex::default();
+            for (position, entry) in self.entries.iter().enumerate() {
+                if entry.tag().intersects(TagFlags::INDEXED) {
+                    rebuilt.push(entry.tag(), position);
+                }
+            }
+            assert_eq!(self.index, rebuilt, "open-element flag index drifted");
+        }
     }
 
     #[cfg(test)]
@@ -112,7 +249,16 @@ impl<'html> OpenElementStack<'html> {
     #[inline]
     pub fn prepare_for_open_into(&mut self, tag: TagFlags, popped: &mut Vec<OpenElement<'html>>) {
         popped.clear();
+        // Usually nothing the tag could close is open.
+        if self.index.any(tag.implied_close_targets()) {
+            self.close_implied_by_into(tag, popped);
+        }
+    }
 
+    /// Pop what opening `tag` implicitly closes, once something it could
+    /// close is known to be open. Kept out of line, off the common path.
+    #[inline(never)]
+    fn close_implied_by_into(&mut self, tag: TagFlags, popped: &mut Vec<OpenElement<'html>>) {
         if tag.closes_open_p() {
             self.pop_matching_in_scope_into(TagFlags::P_MASK, ScopeKind::Default, popped);
         }
@@ -133,6 +279,7 @@ impl<'html> OpenElementStack<'html> {
         } else if tag.intersects(TagFlags::CELL_MASK) {
             self.pop_matching_in_scope_into(TagFlags::CELL_MASK, ScopeKind::Table, popped);
         }
+        self.debug_check_index();
     }
 
     #[cfg(test)]
@@ -158,12 +305,9 @@ impl<'html> OpenElementStack<'html> {
 
         let tag = TagFlags::of(id);
         if let Some(index) = self.find_matching_index(name, id, tag.close_scope()) {
-            while self.entries.len() > index {
-                if let Some(open) = self.entries.pop() {
-                    popped.push(open);
-                }
-            }
+            self.pop_down_to_into(index, popped);
         }
+        self.debug_check_index();
     }
 
     /// Pop the top entry when it is the element that `name` closes.
@@ -177,7 +321,7 @@ impl<'html> OpenElementStack<'html> {
         self.entries
             .last()
             .is_some_and(|entry| entry.name == name)
-            .then(|| self.entries.pop().expect("matching top element must exist"))
+            .then(|| self.pop_entry().expect("matching top element must exist"))
     }
 
     #[inline]
@@ -185,7 +329,7 @@ impl<'html> OpenElementStack<'html> {
         self.entries
             .last()
             .is_some_and(|entry| entry.closed_by(name, id))
-            .then(|| self.entries.pop().expect("matching top element must exist"))
+            .then(|| self.pop_entry().expect("matching top element must exist"))
     }
 
     #[cfg(test)]
@@ -200,6 +344,7 @@ impl<'html> OpenElementStack<'html> {
     pub fn close_all_at_eof_into(&mut self, popped: &mut Vec<OpenElement<'html>>) {
         popped.clear();
         popped.extend(self.entries.drain(..).rev());
+        self.index.clear();
     }
 
     #[cfg(test)]
@@ -221,24 +366,39 @@ impl<'html> OpenElementStack<'html> {
         popped: &mut Vec<OpenElement<'html>>,
     ) {
         if let Some(index) = self.find_first_of(tags, scope) {
-            while self.entries.len() > index {
-                if let Some(open) = self.entries.pop() {
-                    popped.push(open);
-                }
-            }
+            self.pop_down_to_into(index, popped);
         }
     }
 
+    /// Position of the innermost open element with a flag in `tags`, unless
+    /// a barrier of `scope` is open above it.
+    ///
+    /// This is what walking down from the top, stopping at the first element
+    /// that matches `tags` or else is a barrier, would find, but it reads the
+    /// innermost match and barrier off the flag index instead.
+    #[inline]
     fn find_first_of(&self, tags: TagFlags, scope: ScopeKind) -> Option<usize> {
-        for (index, entry) in self.entries.iter().enumerate().rev() {
-            if entry.tag().intersects(tags) {
-                return Some(index);
-            }
-            if entry.tag().is_scope_barrier(scope) {
-                return None;
-            }
+        // The walk's first step, and the usual answer when `tags` is open:
+        // a matching top element wins even if it is also a barrier.
+        let top = self.entries.len().checked_sub(1)?;
+        if self.entries[top].tag().intersects(tags) {
+            return Some(top);
         }
-        None
+        let index = self.index.innermost(tags)?;
+        let blocked = match scope.barriers() {
+            Some(barriers) => self
+                .index
+                .innermost(barriers)
+                .is_some_and(|barrier| barrier > index),
+            // Select scope's barriers are everything but `option` and
+            // `optgroup`, which close each other, so the walk to the first
+            // barrier above `index` takes a step or two.
+            None => self.entries[index + 1..]
+                .iter()
+                .rev()
+                .any(|entry| entry.tag().is_scope_barrier(scope)),
+        };
+        (!blocked).then_some(index)
     }
 
     fn find_matching_index(&self, name: &str, id: TagId, scope: ScopeKind) -> Option<usize> {
@@ -257,6 +417,8 @@ impl<'html> OpenElementStack<'html> {
 #[cfg(test)]
 mod tests {
     use super::{MAX_ELEMENT_DEPTH, OpenElement, OpenElementStack};
+    use crate::TagId;
+    use crate::tag::{ScopeKind, TagFlags};
 
     #[test]
     fn would_exceed_max_depth_at_boundary() {
@@ -375,5 +537,173 @@ mod tests {
         let popped = stack.close_by_end_tag("div");
         assert!(popped.is_empty());
         assert_eq!(stack.depth(), 2);
+    }
+
+    fn names(stack: &OpenElementStack<'_>) -> Vec<String> {
+        stack.entries.iter().map(|e| e.name.to_owned()).collect()
+    }
+
+    fn open(stack: &mut OpenElementStack<'static>, name: &'static str) -> Vec<&'static str> {
+        let popped = stack
+            .prepare_for_open(name)
+            .iter()
+            .map(|e| e.name)
+            .collect();
+        if !TagFlags::classify(name).is_void() {
+            stack.push(name).unwrap();
+        }
+        popped
+    }
+
+    #[test]
+    fn test_deep_chain_then_p_and_li_close_correctly() {
+        let mut stack = OpenElementStack::default();
+        open(&mut stack, "ul");
+        open(&mut stack, "li");
+        for _ in 0..2_000 {
+            assert!(open(&mut stack, "section").is_empty());
+        }
+        assert_eq!(open(&mut stack, "p"), Vec::<&str>::new());
+        assert_eq!(open(&mut stack, "div"), vec!["p"]);
+        assert_eq!(stack.close_by_end_tag("div").len(), 1);
+        for _ in 0..2_000 {
+            assert_eq!(stack.close_by_end_tag("section").len(), 1);
+        }
+        open(&mut stack, "span");
+        assert_eq!(open(&mut stack, "li"), vec!["span", "li"]);
+        assert_eq!(names(&stack), ["ul", "li"]);
+    }
+
+    #[test]
+    fn test_barrier_deep_below_top_blocks_implied_close() {
+        let mut stack = OpenElementStack::default();
+        open(&mut stack, "p");
+        open(&mut stack, "td");
+        for _ in 0..2_000 {
+            assert!(open(&mut stack, "div").is_empty());
+        }
+        let popped = stack.close_by_end_tag("td");
+        assert_eq!(popped.len(), 2_001);
+        assert_eq!(open(&mut stack, "div"), vec!["p"]);
+    }
+
+    #[test]
+    fn test_eof_drain_resets_index() {
+        let mut stack = OpenElementStack::default();
+        open(&mut stack, "table");
+        open(&mut stack, "tr");
+        open(&mut stack, "td");
+        open(&mut stack, "p");
+        assert_eq!(stack.close_all_at_eof().len(), 4);
+        open(&mut stack, "div");
+        assert_eq!(open(&mut stack, "td"), Vec::<&str>::new());
+        assert_eq!(open(&mut stack, "p"), Vec::<&str>::new());
+        assert_eq!(open(&mut stack, "tr"), Vec::<&str>::new());
+        assert_eq!(names(&stack), ["div", "td", "p", "tr"]);
+    }
+
+    /// The stack before it indexed flags: every implied close walks down
+    /// from the top.
+    #[derive(Default)]
+    struct WalkingStack(Vec<(&'static str, TagFlags)>);
+
+    impl WalkingStack {
+        fn pop_in_scope(&mut self, tags: TagFlags, scope: ScopeKind, popped: &mut Vec<&str>) {
+            for index in (0..self.0.len()).rev() {
+                let tag = self.0[index].1;
+                if tag.intersects(tags) {
+                    popped.extend(self.0.drain(index..).rev().map(|(name, _)| name));
+                    return;
+                }
+                if tag.is_scope_barrier(scope) {
+                    return;
+                }
+            }
+        }
+
+        fn open(&mut self, name: &'static str) -> Vec<&'static str> {
+            let tag = TagFlags::classify(name);
+            let mut popped = Vec::new();
+            if tag.closes_open_p() {
+                self.pop_in_scope(TagFlags::P_MASK, ScopeKind::Default, &mut popped);
+            }
+            if tag.intersects(TagFlags::BUTTON_MASK) {
+                self.pop_in_scope(TagFlags::BUTTON_MASK, ScopeKind::Button, &mut popped);
+            } else if tag.intersects(TagFlags::LI_MASK) {
+                self.pop_in_scope(TagFlags::LI_MASK, ScopeKind::ListItem, &mut popped);
+            } else if tag.intersects(TagFlags::DT_DD_MASK) {
+                self.pop_in_scope(TagFlags::DT_DD_MASK, ScopeKind::ListItem, &mut popped);
+            } else if tag.intersects(TagFlags::OPTION_MASK) {
+                self.pop_in_scope(TagFlags::OPTION_MASK, ScopeKind::Select, &mut popped);
+            } else if tag.intersects(TagFlags::OPTGROUP_MASK) {
+                self.pop_in_scope(TagFlags::OPTION_MASK, ScopeKind::Select, &mut popped);
+                self.pop_in_scope(TagFlags::OPTGROUP_MASK, ScopeKind::Select, &mut popped);
+            } else if tag.intersects(TagFlags::TR_MASK) {
+                self.pop_in_scope(TagFlags::TR_MASK, ScopeKind::Table, &mut popped);
+            } else if tag.intersects(TagFlags::CELL_MASK) {
+                self.pop_in_scope(TagFlags::CELL_MASK, ScopeKind::Table, &mut popped);
+            }
+            if !tag.is_void() {
+                self.0.push((name, tag));
+            }
+            popped
+        }
+
+        fn close(&mut self, name: &str) -> Vec<&'static str> {
+            let scope = TagFlags::classify(name).close_scope();
+            for index in (0..self.0.len()).rev() {
+                let (open, tag) = self.0[index];
+                if TagId::of(open) == TagId::of(name) {
+                    return self.0.drain(index..).rev().map(|(name, _)| name).collect();
+                }
+                if tag.is_scope_barrier(scope) {
+                    break;
+                }
+            }
+            Vec::new()
+        }
+    }
+
+    /// Random opens, closes and EOF drains over every tag the implied
+    /// closes care about pop exactly what the walking stack pops.
+    #[test]
+    fn test_indexed_implied_closes_match_walking_stack() {
+        const TAGS: &[&str] = &[
+            "p", "div", "section", "span", "b", "button", "li", "ul", "ol", "dt", "dd", "dl",
+            "option", "optgroup", "select", "table", "tbody", "tr", "td", "th", "caption",
+            "object", "marquee", "applet", "template", "html", "hr", "br",
+        ];
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+
+        for _ in 0..200 {
+            let mut stack = OpenElementStack::default();
+            let mut walking = WalkingStack::default();
+            for _ in 0..400 {
+                let roll = next();
+                let name = TAGS[(roll >> 8) as usize % TAGS.len()];
+                // Open three times as often as close, so stacks grow deep.
+                if roll % 4 != 0 {
+                    assert_eq!(open(&mut stack, name), walking.open(name), "<{name}>");
+                } else {
+                    let popped: Vec<_> = stack
+                        .close_by_end_tag(name)
+                        .iter()
+                        .map(|e| e.name)
+                        .collect();
+                    assert_eq!(popped, walking.close(name), "</{name}>");
+                }
+                assert_eq!(
+                    names(&stack),
+                    walking.0.iter().map(|e| e.0).collect::<Vec<_>>()
+                );
+            }
+            assert_eq!(stack.close_all_at_eof().len(), walking.0.len());
+        }
     }
 }
