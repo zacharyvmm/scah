@@ -110,7 +110,7 @@ pub struct Store<'html, 'query> {
     text: TextStore,
     /// Saved attribute values with character references, decoded when one
     /// of them is first read, so parses that never read one decode nothing.
-    decoded: OnceLock<DecodedValues>,
+    decoded: DecodedCache,
     /// A text range or an attribute index did not fit in 32 bits.
     overflowed: bool,
     /// Sections of the parsed queries, in declaration order.
@@ -330,7 +330,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
             columns,
             overflowed: false,
             text,
-            decoded: OnceLock::new(),
+            decoded: DecodedCache::default(),
             sections: Box::default(),
             roots: Box::default(),
             children: Box::default(),
@@ -428,7 +428,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
                 + bytes(&self.results),
             attributes: bytes(&columns.attribute_keys)
                 + bytes(&columns.attribute_values)
-                + self.decoded.get().map_or(0, DecodedValues::heap_bytes),
+                + self.decoded.0.get().map_or(0, DecodedValues::heap_bytes),
             text: self.text.raw_text.capacity() + self.text.text.capacity(),
         }
     }
@@ -567,7 +567,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     /// first call.
     #[inline]
     fn decoded(&self) -> &DecodedValues {
-        self.decoded.get_or_init(|| DecodedValues::new(self))
+        self.decoded.0.get_or_init(|| DecodedValues::new(self))
     }
 
     /// Span of `value`, a string borrowed from the parsed HTML.
@@ -718,6 +718,17 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         for index in 1..counts.len() {
             counts[index] += counts[index - 1];
         }
+    }
+}
+
+/// [`Store`]'s lazily filled [`DecodedValues`]. It is derived from the rest
+/// of the store, so whether it has been filled yet doesn't affect equality.
+#[derive(Debug, Default)]
+struct DecodedCache(OnceLock<DecodedValues>);
+
+impl PartialEq for DecodedCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
     }
 }
 

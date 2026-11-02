@@ -298,3 +298,16 @@ fn a_nested_query_that_matched_nothing_under_a_row_has_empty_results() {
     assert!(h2.get("h2").is_none());
     assert!(h2.nested(0).is_none());
 }
+
+#[test]
+fn reading_a_decoded_attribute_keeps_stores_equal() {
+    let html = "<a href='a&amp;b'>x</a>";
+    let queries = [Query::all("a", Save::none()).unwrap().build()];
+    let read = parse(html, &queries).unwrap();
+    let unread = parse(html, &queries).unwrap();
+
+    let href = read.get("a").unwrap().next().unwrap().attribute("href");
+    assert_eq!(href, Some("a&b"));
+    assert_eq!(read, unread);
+    assert_eq!(unread, read);
+}
