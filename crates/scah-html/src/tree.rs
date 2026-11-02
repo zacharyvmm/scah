@@ -25,13 +25,6 @@ pub struct OpenElement<'html> {
     /// `name` resolved once at the open tag; close tags compare ids.
     pub id: TagId,
     packed_flags: u32,
-    /// For an unknown name, the [`TagChains`] chain its name hashes to.
-    /// Set, like `below`, when the element is chained; see
-    /// [`OpenElementStack::chain_open_elements`].
-    unknown_chain: u8,
-    /// Position of the next element down this element's chain, or
-    /// [`NO_POSITION`].
-    below: DepthSize,
 }
 
 impl<'html> OpenElement<'html> {
@@ -61,16 +54,6 @@ impl<'html> OpenElement<'html> {
             self.id == id
         } else {
             self.name == name || self.name.eq_ignore_ascii_case(name)
-        }
-    }
-
-    /// The chain this element is on, once chained.
-    #[inline(always)]
-    fn chain(&self) -> Chain {
-        if self.id.is_known() {
-            Chain::Known(self.id)
-        } else {
-            Chain::Unknown(self.unknown_chain)
         }
     }
 }
@@ -112,11 +95,20 @@ impl Chain {
     }
 }
 
+/// A chained element's chain, and the position of the next element down it,
+/// or [`NO_POSITION`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Link {
+    chain: Chain,
+    below: DepthSize,
+}
+
 /// The innermost chained element on each chain. An element with a known tag
 /// id is on that id's chain, and any other element is on one of
-/// [`UNKNOWN_CHAINS`] chains by a hash of its name. An element records the
-/// next one down its chain, so the chains are linked lists through the stack,
-/// and chaining or popping an element updates them in constant time.
+/// [`UNKNOWN_CHAINS`] chains by a hash of its name. Each chained element has
+/// a [`Link`] to the next one down its chain, so the chains are linked lists
+/// through the stack, and chaining or popping an element updates them in
+/// constant time.
 #[derive(Debug, PartialEq)]
 struct TagChains {
     known: [DepthSize; TagId::COUNT],
@@ -244,10 +236,12 @@ pub struct OpenElementStack<'html> {
     /// pop goes through `push_classified`, `pop_entry` or
     /// `close_all_at_eof_into`.
     index: FlagIndex,
-    /// Chains of the entries below `chained`. Pushes leave new entries
-    /// unchained, and an end tag that needs the chains chains them first.
+    /// Chains of the entries below `links.len()`, and their links. Pushes
+    /// leave new entries unchained, and an end tag that needs the chains
+    /// chains them first. The links live beside `entries`, not in them, so a
+    /// push writes no more than it did before the chains existed.
     chains: TagChains,
-    chained: usize,
+    links: Vec<Link>,
 }
 
 impl<'html> Default for OpenElementStack<'html> {
@@ -257,7 +251,7 @@ impl<'html> Default for OpenElementStack<'html> {
             entries: Vec::with_capacity(ASSUMED_MAX_DEPTH),
             index: FlagIndex::default(),
             chains: TagChains::default(),
-            chained: 0,
+            links: Vec::new(),
         }
     }
 }
@@ -292,8 +286,6 @@ impl<'html> OpenElementStack<'html> {
             name,
             id,
             packed_flags: tag.bits() | (u32::from(payload) << OpenElement::PAYLOAD_SHIFT),
-            unknown_chain: 0,
-            below: NO_POSITION,
         });
         self.debug_check_index();
         Ok(())
@@ -309,7 +301,7 @@ impl<'html> OpenElementStack<'html> {
                 self.index.pop(open.tag(), self.entries.len());
             }
             if open.packed_flags & OpenElement::CHAINED != 0 {
-                self.unchain(&open);
+                self.unchain();
             }
         }
         Some(open)
@@ -317,30 +309,27 @@ impl<'html> OpenElementStack<'html> {
 
     /// Take the element just popped off its chain.
     #[cold]
-    fn unchain(&mut self, open: &OpenElement<'html>) {
-        debug_assert!(self.entries.len() < self.chained);
-        self.chained = self.entries.len();
-        let innermost = self.chains.innermost_mut(open.chain());
-        debug_assert_eq!(usize::from(*innermost), self.chained);
-        *innermost = open.below;
+    #[inline(never)]
+    fn unchain(&mut self) {
+        let link = self.links.pop().expect("a chained element has a link");
+        debug_assert_eq!(self.links.len(), self.entries.len());
+        let innermost = self.chains.innermost_mut(link.chain);
+        debug_assert_eq!(usize::from(*innermost), self.entries.len());
+        *innermost = link.below;
     }
 
     /// Chain every entry pushed since the last end tag that needed the
     /// chains. Each entry is chained at most once, so over a parse this costs
     /// no more than the pushes did.
     fn chain_open_elements(&mut self) {
-        for position in self.chained..self.entries.len() {
+        for position in self.links.len()..self.entries.len() {
             let entry = &mut self.entries[position];
             entry.packed_flags |= OpenElement::CHAINED;
             let chain = Chain::of(entry.name, entry.id);
-            if let Chain::Unknown(hash) = chain {
-                entry.unknown_chain = hash;
-            }
             // Positions stay below `MAX_ELEMENT_DEPTH`, so they fit.
-            entry.below =
-                std::mem::replace(self.chains.innermost_mut(chain), position as DepthSize);
+            let below = std::mem::replace(self.chains.innermost_mut(chain), position as DepthSize);
+            self.links.push(Link { chain, below });
         }
-        self.chained = self.entries.len();
     }
 
     /// Pop every entry at `index` and above into `popped`, innermost first.
@@ -364,18 +353,24 @@ impl<'html> OpenElementStack<'html> {
         if cfg!(test) || self.entries.len() <= 64 {
             let mut rebuilt = FlagIndex::default();
             let mut chains = TagChains::default();
-            assert!(self.chained <= self.entries.len());
+            assert!(self.links.len() <= self.entries.len());
             for (position, entry) in self.entries.iter().enumerate() {
                 if entry.tag().intersects(TagFlags::INDEXED) {
                     rebuilt.push(entry.tag(), position);
                 }
-                if position < self.chained {
+                let chained = position < self.links.len();
+                assert_eq!(
+                    entry.packed_flags & OpenElement::CHAINED != 0,
+                    chained,
+                    "chained flag drifted"
+                );
+                if chained {
                     let chain = Chain::of(entry.name, entry.id);
                     let below =
                         std::mem::replace(chains.innermost_mut(chain), position as DepthSize);
                     assert_eq!(
-                        (entry.chain(), entry.below),
-                        (chain, below),
+                        self.links[position],
+                        Link { chain, below },
                         "tag chain drifted"
                     );
                 }
@@ -497,9 +492,9 @@ impl<'html> OpenElementStack<'html> {
         popped.clear();
         popped.extend(self.entries.drain(..).rev());
         self.index.clear();
-        if self.chained != 0 {
+        if !self.links.is_empty() {
             self.chains = TagChains::default();
-            self.chained = 0;
+            self.links.clear();
         }
     }
 
@@ -587,14 +582,14 @@ impl<'html> OpenElementStack<'html> {
             if floor.is_some_and(|barrier| barrier > index) {
                 return None;
             }
-            let entry = &self.entries[index];
-            if entry.closed_by(name, id) {
+            if self.entries[index].closed_by(name, id) {
                 return Some(index);
             }
-            if entry.below == NO_POSITION {
+            let below = self.links[index].below;
+            if below == NO_POSITION {
                 return None;
             }
-            index = usize::from(entry.below);
+            index = usize::from(below);
         }
     }
 }
