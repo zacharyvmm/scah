@@ -205,7 +205,7 @@ breaking change). Rust code that reads results needs the changes in
   `lang="x<NUL>y"`. A CR from a reference such as `&#13;` stays CR. This
   covers the same reads, bindings, exports, and selectors as the character
   reference decoding above; values without `&`, CR, or NUL are still slices
-  of the HTML. ([#153])
+  of the HTML. ([#153], [#154])
 - End tags with attributes, such as `</div class=x>`, close their element.
   ([#92], [#96])
 - A `/` ends a tag name, so `<x/y>` opens `x` and `</x/y>` closes it.
@@ -406,3 +406,4 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#149]: https://github.com/zacharyvmm/scah/issues/149
 [#151]: https://github.com/zacharyvmm/scah/pull/151
 [#153]: https://github.com/zacharyvmm/scah/issues/153
+[#154]: https://github.com/zacharyvmm/scah/pull/154
