@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|mut titles| titles.next())
             .and_then(|title| title.text())
             .unwrap_or_default();
-        let links = store.query(1).map_or(0, |links| links.len());
+        let links = store.query(1).unwrap().len();
         println!("{title}: {links} links");
     }
     Ok(())

@@ -162,9 +162,9 @@ typedef enum ScahStatus {
 /**
  * The ids of the elements matched by one selector, in document order.
  *
- * Created by `scah_store_get` or `scah_element_get` and released with
- * `scah_element_list_free`. A list owns its ids and may outlive its store,
- * though the ids are then meaningless.
+ * Created by `scah_store_get`, `scah_store_query`, or `scah_element_get`
+ * and released with `scah_element_list_free`. A list owns its ids and may
+ * outlive its store, though the ids are then meaningless.
  */
 typedef struct ScahElementList ScahElementList;
 
@@ -571,10 +571,10 @@ size_t scah_store_len(const struct ScahStore *store);
 /**
  * Look up the elements matched by a top-level query section.
  *
- * `selector` must equal the selector string the section was built with. When
- * nothing matched it, or no query has such a section, this succeeds and sets
- * `*out_list` to NULL. Otherwise `*out_list` receives a non-empty list to
- * free with `scah_element_list_free`.
+ * `selector` must equal the selector string the section was built with.
+ * `*out_list` receives a list to free with `scah_element_list_free`, which
+ * is empty when the section matched nothing. When no query has such a
+ * section, this succeeds and sets `*out_list` to NULL.
  *
  * # Safety
  *
@@ -591,8 +591,9 @@ enum ScahStatus scah_store_get(const struct ScahStore *store,
  * `scah_parse`.
  *
  * Unlike `scah_store_get`, this tells apart queries that share a selector.
- * When the query matched nothing, or `index` is not below the number of
- * queries, this succeeds and sets `*out_list` to NULL.
+ * `*out_list` receives a list to free with `scah_element_list_free`, which
+ * is empty when the query matched nothing. When `index` is not below the
+ * number of queries, this succeeds and sets `*out_list` to NULL.
  *
  * # Safety
  *
@@ -609,7 +610,9 @@ enum ScahStatus scah_store_query(const struct ScahStore *store,
  * with `scah_query_builder_then`.
  *
  * `selector` must equal the child's selector string. Like `scah_store_get`,
- * this succeeds with `*out_list` set to NULL when there are no matches.
+ * `*out_list` receives an empty list when the child query matched nothing
+ * under `element`, and NULL when `element`'s section has no child query
+ * with that selector.
  *
  * # Safety
  *
@@ -622,8 +625,8 @@ enum ScahStatus scah_element_get(const struct ScahStore *store,
                                  struct ScahError **out_error);
 
 /**
- * The number of ids in `list`. NULL yields 0, so a missing result can be
- * treated as an empty list.
+ * The number of ids in `list`. NULL yields 0, so a selector that is not a
+ * query can be treated as an empty list.
  *
  * # Safety
  *
@@ -805,13 +808,14 @@ enum ScahStatus scah_element_attribute_at(const struct ScahStore *store,
  * into the store's HTML and text buffers, which are exported as data
  * buffers without copying. The schema and the array each keep that data
  * alive until released through their `release` callbacks, even after
- * `scah_store_free`. A selector without matches yields an empty array.
+ * `scah_store_free`. A query without matches yields an empty array.
  *
  * On entry `*out_schema` and `*out_array` are marked released (`release`
  * set to NULL); on success both must be released by the caller.
- * `SCAH_STATUS_INVALID_ARGUMENT` reports an attribute that repeats a column
- * name or contains a NUL byte, and `SCAH_STATUS_EXPORT_TOO_LARGE` a buffer beyond
- * Arrow's 32-bit offsets.
+ * `SCAH_STATUS_INVALID_ARGUMENT` reports a `selector` or `parent` that is
+ * not a query, or an attribute that repeats a column name or contains a NUL
+ * byte, and `SCAH_STATUS_EXPORT_TOO_LARGE` a buffer beyond Arrow's 32-bit
+ * offsets.
  *
  * # Safety
  *

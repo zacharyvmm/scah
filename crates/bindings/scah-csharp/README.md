@@ -54,7 +54,11 @@ and nested queries. Fields the query did not save are `null`.
 
 `Store.Get(selector)` returns the results of the first query built with that
 selector; `Store.QueryResults(index)` picks a query by its position in
-`Store.Parse`. `Store.Parse` also takes UTF-8 bytes (`ReadOnlySpan<byte>`),
+`Store.Parse`. A query that matched nothing gives an empty list. A selector
+that no query was built with throws `ArgumentException`, and an index past the
+last query throws `ArgumentOutOfRangeException`; `Element.Get` likewise throws
+`ArgumentException` for a selector that is not a child query of the element's
+query. `Store.Parse` also takes UTF-8 bytes (`ReadOnlySpan<byte>`),
 which skips transcoding the document.
 
 ## Resources and threads

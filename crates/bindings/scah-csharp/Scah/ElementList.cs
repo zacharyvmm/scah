@@ -14,12 +14,15 @@ public sealed class ElementList : IReadOnlyList<Element>
         this.ids = ids;
     }
 
-    /// <summary>Copy a native list's ids and free it. NULL is an empty list.</summary>
-    internal static unsafe ElementList Take(Store store, nint list)
+    /// <summary>
+    /// Copy a native list's ids and free it. NULL, which the lookups return
+    /// for a selector or index that is not a query, yields null.
+    /// </summary>
+    internal static unsafe ElementList? Take(Store store, nint list)
     {
         if (list == nint.Zero)
         {
-            return new(store, []);
+            return null;
         }
         try
         {

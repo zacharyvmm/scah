@@ -37,6 +37,11 @@ pub enum ArrowError {
     DuplicateColumn(String),
     /// A requested attribute name contains a NUL byte.
     InvalidColumnName(String),
+    /// No top-level query has this selector.
+    UnknownQuery(String),
+    /// The top-level query `parent` has no child query with this
+    /// `selector`.
+    UnknownChildQuery { parent: String, selector: String },
     /// A buffer does not fit Arrow's 32-bit view offsets.
     TooLarge(String),
 }
@@ -47,6 +52,12 @@ impl fmt::Display for ArrowError {
             Self::DuplicateColumn(name) => write!(f, "duplicate column name `{name}`"),
             Self::InvalidColumnName(name) => {
                 write!(f, "column name {name:?} contains a NUL byte")
+            }
+            Self::UnknownQuery(selector) => {
+                write!(f, "`{selector}` is not the selector of a top-level query")
+            }
+            Self::UnknownChildQuery { parent, selector } => {
+                write!(f, "`{selector}` is not a child query of `{parent}`")
             }
             Self::TooLarge(detail) => write!(f, "too large for an Arrow export: {detail}"),
         }
@@ -87,8 +98,9 @@ impl ArrowTable {
     ///
     /// `attributes` names extra columns, read like
     /// [`scah::ElementRef::attribute`] except that `id` and `class` read the
-    /// element's id and class. A selector without matches yields an empty
-    /// table with the full schema.
+    /// element's id and class. A query without matches yields an empty
+    /// table with the full schema; a selector that names no such query is
+    /// an [`ArrowError::UnknownQuery`] or [`ArrowError::UnknownChildQuery`].
     pub fn build(
         store: Arc<OwnedStore>,
         selector: &str,
@@ -97,7 +109,7 @@ impl ArrowTable {
     ) -> Result<Self, ArrowError> {
         let names = column_names(parent.is_some(), attributes)?;
         let doc = store.store();
-        let rows = select_rows(doc, selector, parent);
+        let rows = select_rows(doc, selector, parent)?;
 
         let mut data = vec![ColumnData::ids(&rows.ids)];
         data.extend(rows.parents.map(ColumnData::UInt32));
@@ -167,23 +179,45 @@ struct Rows {
 
 /// The results of top-level section `selector`, or of its child section
 /// under each result of top-level section `parent`.
-fn select_rows(store: &Store<'_, '_>, selector: &str, parent: Option<&str>) -> Rows {
+fn select_rows(
+    store: &Store<'_, '_>,
+    selector: &str,
+    parent: Option<&str>,
+) -> Result<Rows, ArrowError> {
+    let unknown_query = |selector: &str| ArrowError::UnknownQuery(selector.to_owned());
     let Some(parent) = parent else {
-        let ids = store.results(selector).unwrap_or_default().to_vec();
-        return Rows { ids, parents: None };
+        let ids = store
+            .results(selector)
+            .ok_or_else(|| unknown_query(selector))?;
+        return Ok(Rows {
+            ids: ids.to_vec(),
+            parents: None,
+        });
     };
+    let query = store
+        .query_index(parent)
+        .ok_or_else(|| unknown_query(parent))?;
+    // Resolved on the query rather than a row, so it is checked even when
+    // the parent matched nothing.
+    let unknown_child = || ArrowError::UnknownChildQuery {
+        parent: parent.to_owned(),
+        selector: selector.to_owned(),
+    };
+    let child = store
+        .query_nested_index(query, selector)
+        .ok_or_else(unknown_child)?;
     let mut ids = Vec::new();
     let mut parents = Vec::new();
-    for &parent in store.results(parent).unwrap_or_default() {
-        let children = store.child_results(parent, selector).unwrap_or_default();
+    for &parent in store.query_results(query).unwrap_or_default() {
+        let children = store.nested_results(parent, child).unwrap_or_default();
         ids.extend_from_slice(children);
         // Store rows are numbered in `u32`.
         parents.extend(std::iter::repeat_n(parent.index() as u32, children.len()));
     }
-    Rows {
+    Ok(Rows {
         ids,
         parents: Some(parents),
-    }
+    })
 }
 
 /// The table's column names, or an error when an attribute reuses one.

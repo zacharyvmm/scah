@@ -61,7 +61,11 @@ of chained sections and nested queries. Fields the query did not save are
 
 `Store.get(selector)` returns the results of the first query built with that
 selector; `Store.queryResults(index)` picks a query by its position in
-`Store.parse`. `Store.parse` also takes UTF-8 bytes, which skips encoding the
+`Store.parse`. A query that matched nothing gives an empty list. A selector
+that no query was built with throws `IllegalArgumentException`, and an index
+past the last query throws `IndexOutOfBoundsException`; `Element.get` likewise
+throws `IllegalArgumentException` for a selector that is not a child query of
+the element's query. `Store.parse` also takes UTF-8 bytes, which skips encoding the
 document.
 
 ## Resources and threads

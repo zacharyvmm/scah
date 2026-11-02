@@ -60,13 +60,16 @@ interface Backend {
     /** The number of elements in a store. */
     long storeLength(long store);
 
-    /** The ids matched by a top-level section; empty when there are none. */
+    /** The ids matched by a top-level section, or null when no top-level section has {@code selector}. */
     long[] storeGet(long store, String selector);
 
-    /** The ids matched by the query at {@code index}; empty when there are none. */
+    /** The ids matched by the query at {@code index}, or null when there is no such query. */
     long[] storeQuery(long store, long index);
 
-    /** The ids matched under {@code element} by section {@code selector}; empty when there are none. */
+    /**
+     * The ids matched under {@code element} by section {@code selector}, or null when no section
+     * nested under the element's has that selector.
+     */
     long[] elementGet(long store, long element, String selector);
 
     /** The element's tag name. */

@@ -125,8 +125,9 @@ public sealed class Store : IDisposable
     /// <paramref name="selector"/> must be the exact string the section was
     /// built with. When several queries share it, the first one's results are
     /// returned; use <see cref="QueryResults"/> to pick another. The list is
-    /// empty when nothing matched or no section has that selector.
+    /// empty when the query matched nothing.
     /// </remarks>
+    /// <exception cref="ArgumentException">No top-level query has <paramref name="selector"/>.</exception>
     public unsafe ElementList Get(string selector)
     {
         using Utf8.Buffer bytes = Utf8.Encode(selector, stackalloc byte[Utf8.StackLimit]);
@@ -138,7 +139,8 @@ public sealed class Store : IDisposable
             int status = Native.scah_store_get(
                 store.Pointer, new StringView(data, (nuint)bytes.Bytes.Length), &list, &error);
             Native.Check(status, error);
-            return ElementList.Take(this, list);
+            return ElementList.Take(this, list) ?? throw new ArgumentException(
+                $"`{selector}` is not the selector of a top-level query", nameof(selector));
         }
     }
 
@@ -146,7 +148,8 @@ public sealed class Store : IDisposable
     /// The elements matched by the query at <paramref name="index"/> in the
     /// array given to <see cref="Parse(string, Query[])"/>, in document order.
     /// </summary>
-    /// <remarks>The list is empty when nothing matched or there is no such query.</remarks>
+    /// <remarks>The list is empty when the query matched nothing.</remarks>
+    /// <exception cref="ArgumentOutOfRangeException">There is no query at <paramref name="index"/>.</exception>
     public unsafe ElementList QueryResults(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
@@ -154,7 +157,8 @@ public sealed class Store : IDisposable
         nint list;
         nint error;
         Native.Check(Native.scah_store_query(store.Pointer, (nuint)index, &list, &error), error);
-        return ElementList.Take(this, list);
+        return ElementList.Take(this, list) ?? throw new ArgumentOutOfRangeException(
+            nameof(index), index, "There is no query at this index.");
     }
 
     /// <summary>Free the store. Elements read from it can no longer be read.</summary>

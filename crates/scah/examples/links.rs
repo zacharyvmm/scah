@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let queries = [Query::all("a[href]", Save::only_text())?.build()];
     let store = parse(&html, &queries)?;
 
-    for link in store.get("a[href]").into_iter().flatten() {
+    for link in store.get("a[href]").unwrap() {
         let href = link.attribute("href").unwrap_or_default();
         let text = link.text().unwrap_or_default();
         println!("{href}\t{text}");

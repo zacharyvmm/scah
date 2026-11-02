@@ -397,6 +397,24 @@ test('selective lookup cardinality', () => {
   expect(store.get('missing')).toBeNull()
 })
 
+test('a query without matches returns an empty array', () => {
+  const store = parse('<div>no links</div>', [Query.all('a[href]').build()])
+  expect(store.get('a[href]')).toEqual([])
+  expect(store.query(0)).toEqual([])
+  expect(store.get('a')).toBeNull()
+  expect(store.query(1)).toBeNull()
+})
+
+test('a child query without matches returns an empty array', () => {
+  const q = Query.all('article')
+    .then((a) => [a.all('h2', { text: true })])
+    .build()
+  const store = parse('<article><h2>A</h2></article><article>no heading</article>', [q])
+  const headings = store.get('article')?.map((a) => a.get('h2').map((h) => h.text))
+  expect(headings).toEqual([['A'], []])
+  expect(() => store.get('article')?.at(1)?.get('p')).toThrow(/`p` is not a child query/)
+})
+
 test('parse with empty queries throws', () => {
   expect(() => parse('<a></a>', [])).toThrow(/parse requires at least one query/)
 })

@@ -109,8 +109,8 @@ class, and attributes. Save only what you read: each extra field costs time.
 
 | `Store` | |
 | ------- | - |
-| `store.get(selector)` | The matches of the first query with that selector, or `None` if it matched nothing or no query has it |
-| `store.query(index)` | The matches of the query at `index` in the list passed to `parse`, or `None` as for `get` |
+| `store.get(selector)` | The matches of the first query with that selector (`[]` if it matched nothing), or `None` if no query has it |
+| `store.query(index)` | The matches of the query at `index` in the list passed to `parse` (`[]` if it matched nothing), or `None` if there is no such query |
 | `store.to_arrow(selector, *, attributes=None, parent=None)` | The matches as an Arrow table; see [Arrow export](#arrow-export) |
 | `len(store)` | The number of saved elements |
 
@@ -119,7 +119,7 @@ class, and attributes. Save only what you read: each extra field costs time.
 | `name`, `id`, `class_name` | The tag name, `id`, and `class` attribute |
 | `attributes`, `get_attribute(name)` | The other attributes, as a `dict` or one at a time |
 | `inner_html`, `raw_text`, `text` | Saved content, or `None` if the query didn't save it |
-| `get(selector)` | The element's matches for a child query; raises `ValueError` if there are none |
+| `get(selector)` | The element's matches for a child query (`[]` if it matched nothing under this element); raises `ValueError` if `selector` is not a child query of this element's query |
 | `keys()`, `element[key]` | The fields above as a mapping, with `class` for `class_name`, so `dict(element)` works |
 
 ## Arrow export
@@ -142,7 +142,9 @@ df = pl.DataFrame(store.to_arrow("a", attributes=["href"]))
 
 Pass `parent=` to export a child section, for example
 `store.to_arrow("h1", parent="div.product")`. Each row then carries a
-`parent` column holding the parent's `index`, ready to join. Use Arrow when
+`parent` column holding the parent's `index`, ready to join. A query that
+matched nothing gives an empty table with the same columns; a selector that
+is not a query raises `ValueError`. Use Arrow when
 the data stays columnar: building a polars DataFrame this way is about ten
 times faster than through element objects, but reading values back one by
 one is not.

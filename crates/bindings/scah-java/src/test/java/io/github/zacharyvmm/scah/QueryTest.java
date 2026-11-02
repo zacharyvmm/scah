@@ -29,7 +29,7 @@ class QueryTest {
                 Store store = Store.parse("<main><a href='x'>x</a></main>", query)) {
             Element main = single(store.get("main"));
             assertEquals(Optional.of("x"), single(main.get("a")).attribute("href"));
-            assertTrue(store.get("a").isEmpty());
+            assertThrows(IllegalArgumentException.class, () -> store.get("a"));
         }
     }
 
@@ -70,15 +70,16 @@ class QueryTest {
             try (Store store = Store.parse(html, headings)) {
                 Element section = single(store.get("section"));
                 assertEquals(1, section.get("h2").size());
-                assertTrue(section.get("a").isEmpty());
+                assertThrows(IllegalArgumentException.class, () -> section.get("a"));
             }
             try (Store store = Store.parse(html, links)) {
                 Element section = single(store.get("section"));
-                assertTrue(section.get("h2").isEmpty());
+                assertThrows(IllegalArgumentException.class, () -> section.get("h2"));
                 assertEquals(1, section.get("a").size());
             }
             try (Store store = Store.parse(html, bare)) {
-                assertTrue(single(store.get("section")).get("h2").isEmpty());
+                Element section = single(store.get("section"));
+                assertThrows(IllegalArgumentException.class, () -> section.get("h2"));
             }
         }
     }

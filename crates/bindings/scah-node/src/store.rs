@@ -14,7 +14,8 @@ pub struct JSStore {
 
 #[napi]
 impl JSStore {
-    /// Results of the first query whose selector is `query`.
+    /// Results of the first query whose selector is `query`: an empty array
+    /// when it matched nothing, `null` when no query has that selector.
     #[napi(ts_return_type = "Array<Element> | null")]
     pub fn get(&self, query: String) -> Option<Vec<JsElement>> {
         self.store
@@ -23,7 +24,9 @@ impl JSStore {
             .map(|ids| self.elements(ids))
     }
 
-    /// Results of the query at `index` in the list given to `parse`.
+    /// Results of the query at `index` in the list given to `parse`: an
+    /// empty array when it matched nothing, `null` when there is no such
+    /// query.
     #[napi(ts_return_type = "Array<Element> | null")]
     pub fn query(&self, index: u32) -> Option<Vec<JsElement>> {
         self.store

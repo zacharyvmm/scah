@@ -110,16 +110,24 @@ public final class Element {
      * section chained after this element's with {@link QueryBuilder#all} or {@link
      * QueryBuilder#first}, or a child query nested with {@link QueryBuilder#then(QueryBuilder...)}.
      *
-     * <p>The list is empty when nothing matched or no such section has that selector.
+     * <p>The list is empty when that section matched nothing under this element.
+     *
+     * @throws IllegalArgumentException if {@code selector} is not the selector of a section nested
+     *     under this element's
      */
     public List<Element> get(String selector) {
         Objects.requireNonNull(selector, "selector");
+        long[] ids;
         long handle = store.resource.acquire();
         try {
-            return new ElementList(store, Native.backend().elementGet(handle, id, selector));
+            ids = Native.backend().elementGet(handle, id, selector);
         } finally {
             store.resource.release();
         }
+        if (ids == null) {
+            throw new IllegalArgumentException("`" + selector + "` is not a child query of this element's query");
+        }
+        return new ElementList(store, ids);
     }
 
     private Optional<String> field(Backend.Field field) {

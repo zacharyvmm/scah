@@ -342,7 +342,8 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     /// `"main > section > a[href]"`). When several queries share a
     /// selector, use [`Store::query`] to pick one.
     ///
-    /// Returns `None` when no query has that selector or it matched nothing.
+    /// Returns an empty [`Elements`] when the query matched nothing, and
+    /// `None` only when no query has that selector.
     ///
     /// # Example
     ///
@@ -367,7 +368,8 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     /// Results saved for the query at `index` in the slice given to
     /// [`parse`](https://docs.rs/scah/latest/scah/fn.parse.html).
     ///
-    /// Returns `None` when there is no such query or it matched nothing.
+    /// Returns an empty [`Elements`] when the query matched nothing, and
+    /// `None` only when there is no such query.
     #[inline]
     pub fn query(&self, index: usize) -> Option<Elements<'_, 'html, 'query>> {
         Some(Elements::new(self, self.query_results(index)?))
@@ -428,16 +430,15 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         self.len() == 0
     }
 
-    /// Row ids of [`Store::get`]'s results.
+    /// Row ids of [`Store::get`]'s results: empty when the query matched
+    /// nothing, `None` when no query has that selector.
     #[inline]
     pub fn results(&self, selector: &str) -> Option<&[ElementId]> {
-        let root = self.roots.iter().position(|&section| {
-            same_selector(self.sections[section as usize].selector, selector)
-        })?;
-        self.slot_results(root)
+        self.slot_results(self.query_index(selector)?)
     }
 
-    /// Row ids of [`Store::query`]'s results.
+    /// Row ids of [`Store::query`]'s results: empty when the query matched
+    /// nothing, `None` when there is no such query.
     #[inline]
     pub fn query_results(&self, index: usize) -> Option<&[ElementId]> {
         if index >= self.roots.len() {
@@ -447,7 +448,8 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     }
 
     /// Row ids saved under `parent` by its first nested section whose
-    /// selector is `selector`.
+    /// selector is `selector`: empty when it saved nothing under `parent`,
+    /// `None` when `parent`'s section has no such nested section.
     #[inline]
     pub fn child_results(&self, parent: ElementId, selector: &str) -> Option<&[ElementId]> {
         let child = self.child_sections(parent).iter().position(|&section| {
@@ -457,7 +459,9 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     }
 
     /// Row ids saved under `parent` by its nested section at `index`, in
-    /// the order the sections were declared.
+    /// the order the sections were declared: empty when it saved nothing
+    /// under `parent`, `None` when `parent`'s section has no nested section
+    /// at `index`.
     #[inline]
     pub fn nested_results(&self, parent: ElementId, index: usize) -> Option<&[ElementId]> {
         if index >= self.child_sections(parent).len() {
@@ -471,6 +475,26 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     /// parents counts once per parent.
     pub fn result_count(&self) -> usize {
         self.results.len()
+    }
+
+    /// Index of the first query whose selector is `selector`, the one
+    /// [`Store::get`] reads.
+    #[inline]
+    pub fn query_index(&self, selector: &str) -> Option<usize> {
+        self.roots
+            .iter()
+            .position(|&section| same_selector(self.sections[section as usize].selector, selector))
+    }
+
+    /// Index of the first nested section of the query at `query` whose
+    /// selector is `selector`: the `index` to give [`Store::nested_results`]
+    /// for that query's results. Answers even when the query matched
+    /// nothing.
+    pub fn query_nested_index(&self, query: usize, selector: &str) -> Option<usize> {
+        let (start, end) = self.sections[*self.roots.get(query)? as usize].children;
+        self.children[start as usize..end as usize]
+            .iter()
+            .position(|&section| same_selector(self.sections[section as usize].selector, selector))
     }
 
     /// Selector of the query at `index`.
@@ -520,12 +544,13 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         &self.children[start as usize..end as usize]
     }
 
-    /// Results of `slot`, or `None` when empty.
+    /// Results of `slot`, which may be empty, or `None` when there is no
+    /// such slot.
     #[inline]
     fn slot_results(&self, slot: usize) -> Option<&[ElementId]> {
         let start = *self.slot_offsets.get(slot)? as usize;
         let end = *self.slot_offsets.get(slot + 1)? as usize;
-        (start < end).then(|| &self.results[start..end])
+        self.results.get(start..end)
     }
 
     /// Append `element`'s attributes to the attribute columns as spans of
@@ -1151,12 +1176,40 @@ mod tests {
         assert_eq!(store.child_results(first, "> a[href]"), Some(&[direct][..]));
         assert_eq!(store.child_results(first, "div a"), Some(&[deep][..]));
         assert_eq!(store.nested_results(first, 1), Some(&[deep][..]));
-        assert_eq!(store.child_results(second, "div a"), None);
+        assert_eq!(store.child_results(second, "div a"), Some(&[][..]));
+        assert_eq!(store.nested_results(second, 0), Some(&[][..]));
+        assert_eq!(store.child_results(second, "p"), None, "no such section");
+        assert_eq!(store.nested_results(second, 2), None, "no such section");
         assert_eq!(
             store.results("> a[href]"),
             None,
             "nested sections are not roots"
         );
+    }
+
+    #[test]
+    fn sections_resolve_without_rows() {
+        let store = store_for(&[
+            section("main > section", None, ALL),
+            section("> a[href]", Some(0), ALL),
+            section("div a", Some(0), ALL),
+            section("p", None, ALL),
+        ])
+        .finish();
+
+        assert_eq!(store.query_index("p"), Some(1));
+        assert_eq!(
+            store.query_index("div a"),
+            None,
+            "nested sections are not roots"
+        );
+        assert_eq!(store.query_nested_index(0, "div a"), Some(1));
+        assert_eq!(store.query_nested_index(1, "div a"), None);
+        assert_eq!(store.query_nested_index(2, "div a"), None);
+        assert_eq!(store.results("main > section"), Some(&[][..]));
+        assert_eq!(store.query_results(1), Some(&[][..]));
+        assert_eq!(store.query_results(2), None);
+        assert_eq!(store.results("div a"), None);
     }
 
     #[test]

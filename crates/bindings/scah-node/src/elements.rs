@@ -108,14 +108,14 @@ impl JsElement {
     }
 
     #[napi]
-    /// This element's matches for the child query `query`. Throws if this
-    /// element has no matches for `query`, or `query` is not one of its
-    /// child queries.
+    /// This element's matches for the child query `query`: an empty array
+    /// when it matched nothing under this element. Throws if `query` is not
+    /// one of the child queries of this element's query.
     pub fn get(&self, query: String) -> Result<Vec<JsElement>> {
         match self.store.store().child_results(self.id, &query) {
             None => Err(Error::new(
                 Status::GenericFailure,
-                format!("This Element does not have children selected with `{query}`"),
+                format!("`{query}` is not a child query of this Element's query"),
             )),
             Some(children) => Ok(children
                 .iter()

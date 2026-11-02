@@ -120,34 +120,48 @@ public final class Store implements AutoCloseable {
      *
      * <p>{@code selector} must be the exact string the section was built with. When several
      * queries share it, the first one's results are returned; use {@link #queryResults} to pick
-     * another. The list is empty when nothing matched or no section has that selector.
+     * another. The list is empty when the query matched nothing.
+     *
+     * @throws IllegalArgumentException if no top-level query has {@code selector}
      */
     public List<Element> get(String selector) {
         Objects.requireNonNull(selector, "selector");
+        long[] ids;
         long handle = resource.acquire();
         try {
-            return new ElementList(this, Native.backend().storeGet(handle, selector));
+            ids = Native.backend().storeGet(handle, selector);
         } finally {
             resource.release();
         }
+        if (ids == null) {
+            throw new IllegalArgumentException("`" + selector + "` is not the selector of a top-level query");
+        }
+        return new ElementList(this, ids);
     }
 
     /**
      * The elements matched by the query at {@code index} in the array given to {@link
      * #parse(String, Query...)}, in document order.
      *
-     * <p>The list is empty when nothing matched or there is no such query.
+     * <p>The list is empty when the query matched nothing.
+     *
+     * @throws IndexOutOfBoundsException if there is no query at {@code index}
      */
     public List<Element> queryResults(int index) {
         if (index < 0) {
             throw new IndexOutOfBoundsException("Negative query index " + index);
         }
+        long[] ids;
         long handle = resource.acquire();
         try {
-            return new ElementList(this, Native.backend().storeQuery(handle, index));
+            ids = Native.backend().storeQuery(handle, index);
         } finally {
             resource.release();
         }
+        if (ids == null) {
+            throw new IndexOutOfBoundsException("No query at index " + index);
+        }
+        return new ElementList(this, ids);
     }
 
     /** Free the store. Its elements can no longer be read. Closing twice does nothing. */

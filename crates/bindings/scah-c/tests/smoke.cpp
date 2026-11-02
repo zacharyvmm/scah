@@ -233,7 +233,8 @@ int main() {
 
   auto items = get(s, uls[0], "> li").value();
   CHECK(items.size() == 3);
-  CHECK(get(s, items[1], "a") == std::nullopt);
+  CHECK(get(s, items[1], "a").value().empty());
+  CHECK(get(s, items[1], "b") == std::nullopt);  // not a child query
 
   auto a = get(s, items[0], "a").value();
   CHECK(a.size() == 1);

@@ -38,7 +38,7 @@ fn comment_open_only_at_eof_does_not_panic() {
     let html = "<!--";
     let queries = &[Query::all("div", Save::none()).unwrap().build()];
     let store = parse(html, queries).unwrap();
-    assert!(store.get("div").is_none());
+    assert_eq!(store.get("div").unwrap().count(), 0);
 }
 
 #[test]

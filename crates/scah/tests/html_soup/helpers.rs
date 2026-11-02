@@ -27,8 +27,8 @@ pub fn parse_with_saves<'a>(html: &'a str, queries: &[(&'a str, Save)]) -> Store
 pub fn elements<'a>(store: &'a Store<'a, 'a>, selector: &str) -> Vec<ElementRef<'a, 'a, 'a>> {
     store
         .get(selector)
-        .map(|items| items.collect())
-        .unwrap_or_default()
+        .expect("a query with this selector")
+        .collect()
 }
 
 pub fn texts<'a>(store: &'a Store<'a, 'a>, selector: &str) -> Vec<Option<&'a str>> {

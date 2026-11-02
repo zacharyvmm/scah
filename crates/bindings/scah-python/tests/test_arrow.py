@@ -78,14 +78,6 @@ def handle_row(element, attributes):
     return row
 
 
-def children(element, selector):
-    """Child matches through the handle API, which raises when there are none."""
-    try:
-        return element.get(selector)
-    except ValueError:
-        return []
-
-
 def handle_rows(elements, attributes):
     return [handle_row(element, attributes) for element in elements]
 
@@ -165,10 +157,10 @@ def test_nested_tables_join_on_parent():
     expected_titles, expected_ratings = [], []
     expected_title_parents, expected_rating_parents = [], []
     for product_id, product in zip(product_ids, store.get("div.product")):
-        for h1 in children(product, "h1"):
+        for h1 in product.get("h1"):
             expected_titles.append(handle_row(h1, []))
             expected_title_parents.append(product_id)
-        for rating in children(product, "span.rating"):
+        for rating in product.get("span.rating"):
             expected_ratings.append(handle_row(rating, ["class"]))
             expected_rating_parents.append(product_id)
 
@@ -179,14 +171,31 @@ def test_nested_tables_join_on_parent():
 
 
 def test_empty_results_keep_the_schema():
-    store = links_store()
-    for kwargs in ({}, {"parent": "never"}):
-        table = store.to_arrow("never", attributes=["href"], **kwargs)
+    query = (
+        Query.all("div", Save.all())
+        .then(lambda div: [div.all("a", Save.all())])
+        .build()
+    )
+    store = parse("<p>no divs</p>", [Query.all("a", Save.all()).build(), query])
+    for selector, kwargs in (("a", {}), ("div", {}), ("a", {"parent": "div"})):
+        table = store.to_arrow(selector, attributes=["href"], **kwargs)
         assert len(table) == 0
         batch = pa.record_batch(table)
         assert batch.num_rows == 0
         assert len(batch.schema) == 6 + len(kwargs)
         assert batch.schema.field("href").type == pa.string_view()
+
+
+def test_selectors_that_are_not_queries_are_rejected():
+    store = catalog_store()
+    with pytest.raises(ValueError, match="`never` is not the selector of a top-level query"):
+        store.to_arrow("never")
+    with pytest.raises(ValueError, match="`h1` is not the selector of a top-level query"):
+        store.to_arrow("h1")
+    with pytest.raises(ValueError, match="`never` is not the selector of a top-level query"):
+        store.to_arrow("h1", parent="never")
+    with pytest.raises(ValueError, match="`p` is not a child query of `div.product`"):
+        store.to_arrow("p", parent="div.product")
 
 
 def test_conflicting_column_names_are_rejected():

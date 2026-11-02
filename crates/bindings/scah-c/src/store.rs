@@ -30,12 +30,16 @@ pub struct ScahStore {
 
 /// The ids of the elements matched by one selector, in document order.
 ///
-/// Created by `scah_store_get` or `scah_element_get` and released with
-/// `scah_element_list_free`. A list owns its ids and may outlive its store,
-/// though the ids are then meaningless.
+/// Created by `scah_store_get`, `scah_store_query`, or `scah_element_get`
+/// and released with `scah_element_list_free`. A list owns its ids and may
+/// outlive its store, though the ids are then meaningless.
 pub struct ScahElementList {
-    ids: Box<[ScahElementId]>,
+    ids: Vec<ScahElementId>,
 }
+
+/// The list returned for every query that matched nothing, so that those
+/// lookups allocate nothing. `scah_element_list_free` leaves it alone.
+static EMPTY_LIST: ScahElementList = ScahElementList { ids: Vec::new() };
 
 /// Parse `html` against `queries`.
 ///
@@ -233,10 +237,10 @@ pub unsafe extern "C" fn scah_store_len(store: *const ScahStore) -> usize {
 
 /// Look up the elements matched by a top-level query section.
 ///
-/// `selector` must equal the selector string the section was built with. When
-/// nothing matched it, or no query has such a section, this succeeds and sets
-/// `*out_list` to NULL. Otherwise `*out_list` receives a non-empty list to
-/// free with `scah_element_list_free`.
+/// `selector` must equal the selector string the section was built with.
+/// `*out_list` receives a list to free with `scah_element_list_free`, which
+/// is empty when the section matched nothing. When no query has such a
+/// section, this succeeds and sets `*out_list` to NULL.
 ///
 /// # Safety
 ///
@@ -268,8 +272,9 @@ pub unsafe extern "C" fn scah_store_get(
 /// `scah_parse`.
 ///
 /// Unlike `scah_store_get`, this tells apart queries that share a selector.
-/// When the query matched nothing, or `index` is not below the number of
-/// queries, this succeeds and sets `*out_list` to NULL.
+/// `*out_list` receives a list to free with `scah_element_list_free`, which
+/// is empty when the query matched nothing. When `index` is not below the
+/// number of queries, this succeeds and sets `*out_list` to NULL.
 ///
 /// # Safety
 ///
@@ -299,7 +304,9 @@ pub unsafe extern "C" fn scah_store_query(
 /// with `scah_query_builder_then`.
 ///
 /// `selector` must equal the child's selector string. Like `scah_store_get`,
-/// this succeeds with `*out_list` set to NULL when there are no matches.
+/// `*out_list` receives an empty list when the child query matched nothing
+/// under `element`, and NULL when `element`'s section has no child query
+/// with that selector.
 ///
 /// # Safety
 ///
@@ -327,21 +334,21 @@ pub unsafe extern "C" fn scah_element_get(
     })
 }
 
-/// Collect the ids of `elements` into a list, or NULL when there are none.
+/// Collect the ids of `elements` into a list: NULL when there is no such
+/// query, and [`EMPTY_LIST`] when it matched nothing.
 fn new_list(elements: Option<Elements<'_, '_, '_>>) -> *mut ScahElementList {
-    let ids: Box<[_]> = elements
-        .into_iter()
-        .flatten()
-        .map(|element| element.index().index())
-        .collect();
-    if ids.is_empty() {
+    let Some(elements) = elements else {
         return std::ptr::null_mut();
+    };
+    if elements.len() == 0 {
+        return (&raw const EMPTY_LIST).cast_mut();
     }
+    let ids = elements.map(|element| element.index().index()).collect();
     Box::into_raw(Box::new(ScahElementList { ids }))
 }
 
-/// The number of ids in `list`. NULL yields 0, so a missing result can be
-/// treated as an empty list.
+/// The number of ids in `list`. NULL yields 0, so a selector that is not a
+/// query can be treated as an empty list.
 ///
 /// # Safety
 ///
@@ -378,8 +385,9 @@ pub unsafe extern "C" fn scah_element_list_ids(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scah_element_list_free(list: *mut ScahElementList) {
     guard_value((), || {
-        if !list.is_null() {
-            // SAFETY: the caller transfers ownership of a live list.
+        if !list.is_null() && !std::ptr::eq(list, &EMPTY_LIST) {
+            // SAFETY: the caller transfers ownership of a live list, and
+            // every list but `EMPTY_LIST` is boxed.
             drop(unsafe { Box::from_raw(list) });
         }
     })
@@ -932,7 +940,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn selectors_without_matches_yield_no_list() {
+    fn queries_without_matches_yield_an_empty_list() {
         let ul = builder("ul", ALL);
         let li = builder("li", ALL);
         let children = [li.cast_const()];
@@ -946,14 +954,32 @@ pub(crate) mod tests {
             "<ul></ul><ul><li></li></ul>",
             &[build(ul), build(builder("b", ALL))],
         );
-        assert_eq!(get(store, "b"), None);
-        assert_eq!(get(store, "never-queried"), None);
+        assert_eq!(get(store, "b"), Some(vec![]));
+        assert_eq!(get(store, "never-queried"), None, "not a query");
 
         let lists = get(store, "ul").unwrap();
         assert_eq!(lists.len(), 2);
-        assert_eq!(nested(store, lists[0], "li"), None);
+        assert_eq!(nested(store, lists[0], "li"), Some(vec![]));
         assert_eq!(nested(store, lists[1], "li").map(|li| li.len()), Some(1));
-        assert_eq!(nested(store, lists[1], "span"), None);
+        assert_eq!(nested(store, lists[1], "span"), None, "not a child query");
+
+        // Empty results share one list, which allocates nothing and which
+        // freeing leaves alone.
+        let mut b = ptr::null_mut();
+        let mut li = ptr::null_mut();
+        // SAFETY: `store` is live and the out-pointers are locals.
+        unsafe {
+            let status = scah_store_query(store, 1, &mut b, ptr::null_mut());
+            assert_eq!(status, ScahStatus::Ok);
+            let status = scah_element_get(store, lists[0], view("li"), &mut li, ptr::null_mut());
+            assert_eq!(status, ScahStatus::Ok);
+            assert!(!b.is_null());
+            assert_eq!(b, li);
+            assert_eq!(scah_element_list_len(b), 0);
+            scah_element_list_free(b);
+            scah_element_list_free(li);
+            assert_eq!(scah_element_list_len(b), 0);
+        }
         // SAFETY: the test owns `store`.
         unsafe { scah_store_free(store) };
     }
@@ -976,7 +1002,7 @@ pub(crate) mod tests {
         assert_ne!(first, third, "each query saves its own rows");
         assert_eq!(get(store, "a"), Some(first), "get finds the first query");
         assert_eq!(query(store, 1).map(|b| b.len()), Some(1));
-        assert_eq!(query(store, 3), None, "a query without matches");
+        assert_eq!(query(store, 3), Some(vec![]), "a query without matches");
         assert_eq!(query(store, 4), None, "past the last query");
         // SAFETY: the test owns `store`.
         unsafe { scah_store_free(store) };

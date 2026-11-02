@@ -89,14 +89,15 @@ impl PyElement {
         Ok(self.text())
     }
 
-    /// This element's matches for the child query `query`.
+    /// This element's matches for the child query `query`: an empty list
+    /// when it matched nothing under this element.
     ///
-    /// Raises `ValueError` if this element has no matches for `query`, or
-    /// `query` is not one of its child queries.
+    /// Raises `ValueError` if `query` is not one of the child queries of
+    /// this element's query.
     pub fn get(&self, query: String) -> PyResult<Vec<PyElement>> {
         match self.store.store().child_results(self.id, &query) {
             None => Err(PyValueError::new_err(format!(
-                "This Element does not have children selected with `{query}`"
+                "`{query}` is not a child query of this Element's query"
             ))),
             Some(children) => Ok(children
                 .iter()
@@ -151,7 +152,8 @@ pub(crate) struct PyStore {
 #[gen_stub_pymethods]
 #[pymethods]
 impl PyStore {
-    /// Results of the first query whose selector is `query`.
+    /// Results of the first query whose selector is `query`: an empty list
+    /// when it matched nothing, `None` when no query has that selector.
     fn get(&self, query: String) -> Option<Vec<PyElement>> {
         self.store
             .store()
@@ -159,7 +161,9 @@ impl PyStore {
             .map(|ids| self.elements(ids))
     }
 
-    /// Results of the query at `index` in the list given to `parse`.
+    /// Results of the query at `index` in the list given to `parse`: an
+    /// empty list when it matched nothing, `None` when there is no such
+    /// query.
     fn query(&self, index: usize) -> Option<Vec<PyElement>> {
         self.store
             .store()
@@ -184,6 +188,9 @@ impl PyStore {
     /// `parent`, and `tag` are null when not saved or absent. Strings are
     /// `string_view` columns that borrow the store's memory instead of
     /// copying it.
+    ///
+    /// A query without matches gives an empty table. Raises `ValueError` if
+    /// `selector` or `parent` is not a query.
     #[pyo3(signature = (selector, *, attributes=None, parent=None))]
     fn to_arrow(
         &self,

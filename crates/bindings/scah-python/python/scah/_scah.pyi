@@ -120,10 +120,11 @@ class Element:
         """
     def get(self, query: builtins.str) -> builtins.list[Element]:
         r"""
-        This element's matches for the child query `query`.
+        This element's matches for the child query `query`: an empty list
+        when it matched nothing under this element.
         
-        Raises `ValueError` if this element has no matches for `query`, or
-        `query` is not one of its child queries.
+        Raises `ValueError` if `query` is not one of the child queries of
+        this element's query.
         """
     def keys(self) -> builtins.list[builtins.str]: ...
     def __getitem__(self, key: builtins.str) -> typing.Any: ...
@@ -247,11 +248,14 @@ class Store:
     """
     def get(self, query: builtins.str) -> typing.Optional[builtins.list[Element]]:
         r"""
-        Results of the first query whose selector is `query`.
+        Results of the first query whose selector is `query`: an empty list
+        when it matched nothing, `None` when no query has that selector.
         """
     def query(self, index: builtins.int) -> typing.Optional[builtins.list[Element]]:
         r"""
-        Results of the query at `index` in the list given to `parse`.
+        Results of the query at `index` in the list given to `parse`: an
+        empty list when it matched nothing, `None` when there is no such
+        query.
         """
     def __len__(self) -> builtins.int:
         r"""
@@ -271,6 +275,9 @@ class Store:
         `parent`, and `tag` are null when not saved or absent. Strings are
         `string_view` columns that borrow the store's memory instead of
         copying it.
+        
+        A query without matches gives an empty table. Raises `ValueError` if
+        `selector` or `parent` is not a query.
         """
 
 def parse(html: builtins.str, queries: typing.Sequence[CompiledQuery]) -> Store:

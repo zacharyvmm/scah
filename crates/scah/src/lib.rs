@@ -41,7 +41,8 @@
 //! - **[`parse`]**: runs every query in one pass and returns a [`Store`].
 //! - **[`Store`]** and **[`ElementRef`]**: the results. Look them up by
 //!   selector with [`Store::get`], or by position with [`Store::query`] when
-//!   two queries share a selector.
+//!   two queries share a selector. A query that matched nothing has empty
+//!   results; `None` means no query has that selector or position.
 //!
 //! ## Nested queries
 //!

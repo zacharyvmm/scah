@@ -112,6 +112,10 @@ for (const a of store.get('a[href]') ?? []) {
 }
 ```
 
+`get` takes the selector string a query was built with. A query that matched
+nothing gives an empty list (an empty iterator in Rust); only a selector that
+no query was built with gives `None` (`null` in JavaScript).
+
 ### Java, .NET, C, and C++
 
 The Java and .NET bindings, and the C ABI they are built on, expose the same

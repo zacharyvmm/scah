@@ -35,9 +35,9 @@ export declare class Element {
   /** Deprecated compatibility alias for `text`. */
   get textContent(): string | null
   /**
-   * This element's matches for the child query `query`. Throws if this
-   * element has no matches for `query`, or `query` is not one of its
-   * child queries.
+   * This element's matches for the child query `query`: an empty array
+   * when it matched nothing under this element. Throws if `query` is not
+   * one of the child queries of this element's query.
    */
   get(query: string): Array<Element>
 }
@@ -94,9 +94,16 @@ export type JsQueryFactory = QueryFactory
 
 /** The results of `parse`. */
 export declare class Store {
-  /** Results of the first query whose selector is `query`. */
+  /**
+   * Results of the first query whose selector is `query`: an empty array
+   * when it matched nothing, `null` when no query has that selector.
+   */
   get(query: string): Array<Element> | null
-  /** Results of the query at `index` in the list given to `parse`. */
+  /**
+   * Results of the query at `index` in the list given to `parse`: an
+   * empty array when it matched nothing, `null` when there is no such
+   * query.
+   */
   query(index: number): Array<Element> | null
   /** The number of saved elements. */
   get length(): number

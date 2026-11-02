@@ -64,21 +64,40 @@ public class StoreTests
         Assert.Equal([null, null], store.QueryResults(1).Select(a => a.Text));
         Assert.Equal(store.QueryResults(0), store.Get("a"));
         Assert.Empty(store.QueryResults(2));
-        Assert.Empty(store.QueryResults(3));
+        Assert.Throws<ArgumentOutOfRangeException>(() => store.QueryResults(3));
         Assert.Throws<ArgumentOutOfRangeException>(() => store.QueryResults(-1));
         Assert.Equal(4, store.ElementCount);
     }
 
     [Fact]
-    public void MissingSelectorsYieldEmptyLists()
+    public void QueriesWithoutMatchesYieldEmptyLists()
+    {
+        using Query articles = Query.All("article", Save.None).Then(Query.All("h2", Save.OnlyText)).Build();
+        using Query links = Query.All("a[href]", Save.None).Build();
+        using Store store = Store.Parse("<article><h2>A</h2></article><article>no heading</article>", articles, links);
+
+        Assert.Empty(store.Get("a[href]"));
+        Assert.Empty(store.QueryResults(1));
+        string?[][] headings = store.Get("article")
+            .Select(article => article.Get("h2").Select(h2 => h2.Text).ToArray())
+            .ToArray();
+        Assert.Equal([["A"], []], headings);
+    }
+
+    [Fact]
+    public void SelectorsThatAreNotQueriesThrow()
     {
         using Query query = Query.All("ul", Save.None).Then(Query.All("li", Save.None)).Build();
         using Store store = Store.Parse("<ul></ul>", query);
 
-        Assert.Empty(store.Get("never-queried"));
+        ArgumentException error = Assert.Throws<ArgumentException>(() => store.Get("never-queried"));
+        Assert.StartsWith("`never-queried` is not the selector of a top-level query", error.Message);
+        Assert.Equal("selector", error.ParamName);
+        Assert.Throws<ArgumentException>(() => store.Get("li"));
         Element ul = Assert.Single(store.Get("ul"));
         Assert.Empty(ul.Get("li"));
-        Assert.Empty(ul.Get("span"));
+        error = Assert.Throws<ArgumentException>(() => ul.Get("span"));
+        Assert.StartsWith("`span` is not a child query of this element's query", error.Message);
     }
 
     [Fact]

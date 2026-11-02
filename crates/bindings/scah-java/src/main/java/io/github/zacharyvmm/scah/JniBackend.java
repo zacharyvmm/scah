@@ -13,7 +13,7 @@ import java.nio.file.Path;
  */
 final class JniBackend implements Backend {
     /** The version of the native methods this class declares; see PROTOCOL_VERSION in lib.rs. */
-    private static final int PROTOCOL_VERSION = 2;
+    private static final int PROTOCOL_VERSION = 3;
 
     // Save flags, as in lib.rs.
     private static final int INNER_HTML = 1;

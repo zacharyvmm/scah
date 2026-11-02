@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()];
     let store = parse(HTML, &queries)?;
 
-    for product in store.get("article.product").into_iter().flatten() {
+    for product in store.get("article.product").unwrap() {
         let sku = product.attribute("data-sku").unwrap_or_default();
         let first_text = |selector| {
             product
