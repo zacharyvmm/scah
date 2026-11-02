@@ -169,6 +169,11 @@ breaking change). Rust code that reads results needs the changes in
   open-element stack instead of walking the stack. Nesting `div`s or
   `section`s, which close an open `p`, no longer costs time quadratic in the
   depth: 4,096 nested `section`s parse about 26× faster. ([#121])
+- An end tag that doesn't close the current element finds the element it
+  closes from per-name chains of open elements instead of walking the stack.
+  End tags that match nothing open, or only elements behind a scope barrier,
+  no longer cost time quadratic in the depth: 16,384 nested `div`s followed by
+  as many stray `</span>`s parse about 160× faster. ([#149], [#151])
 
 ### Deprecated
 
@@ -391,3 +396,5 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#132]: https://github.com/zacharyvmm/scah/issues/132
 [#138]: https://github.com/zacharyvmm/scah/issues/138
 [#152]: https://github.com/zacharyvmm/scah/pull/152
+[#149]: https://github.com/zacharyvmm/scah/issues/149
+[#151]: https://github.com/zacharyvmm/scah/pull/151
