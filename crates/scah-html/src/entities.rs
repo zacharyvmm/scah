@@ -87,17 +87,43 @@ pub fn value_needs_decoding(value: &str) -> bool {
     const ONES: u64 = u64::from_ne_bytes([0x01; 8]);
     const HIGHS: u64 = u64::from_ne_bytes([0x80; 8]);
     const AMPERSANDS: u64 = u64::from_ne_bytes([b'&'; 8]);
-    const CRS: u64 = u64::from_ne_bytes([b'\r'; 8]);
-    // Whether a byte of `word` is zero.
-    let has_zero = |word: u64| word.wrapping_sub(ONES) & !word;
-    let (chunks, rest) = value.as_bytes().as_chunks::<8>();
+    const BELOW_SO: u64 = u64::from_ne_bytes([0x0E; 8]);
+    // `&` is tested exactly. CR and NUL are tested with a cheaper test that
+    // also takes in the other bytes below U+000E, such as tab, LF, and FF:
+    // values with one of those are rare, and get the exact test.
+    let bytes = value.as_bytes();
+    let Some(&last) = bytes.last_chunk::<8>() else {
+        for &byte in bytes {
+            if byte < 0x0E || byte == b'&' {
+                return byte == b'&' || bytes_need_decoding(bytes);
+            }
+        }
+        return false;
+    };
+    // The high bit of each `&` byte, or of each byte below U+000E.
+    let ampersands = |word: u64| {
+        let ampersands = word ^ AMPERSANDS;
+        ampersands.wrapping_sub(ONES) & !ampersands & HIGHS
+    };
+    let found = |word: u64| ampersands(word) | (word.wrapping_sub(BELOW_SO) & !word & HIGHS);
+    let (chunks, _) = bytes.as_chunks::<8>();
     for &chunk in chunks {
         let word = u64::from_ne_bytes(chunk);
-        if (has_zero(word) | has_zero(word ^ AMPERSANDS) | has_zero(word ^ CRS)) & HIGHS != 0 {
-            return true;
+        if found(word) != 0 {
+            return ampersands(word) != 0 || bytes_need_decoding(bytes);
         }
     }
-    rest.iter().any(|&byte| matches!(byte, b'&' | b'\r' | 0))
+    // The last eight bytes overlap the last whole chunk, rather than
+    // leaving a tail to test a byte at a time.
+    let word = u64::from_ne_bytes(last);
+    found(word) != 0 && (ampersands(word) != 0 || bytes_need_decoding(bytes))
+}
+
+/// The exact test of [`value_needs_decoding`].
+#[cold]
+#[inline(never)]
+fn bytes_need_decoding(bytes: &[u8]) -> bool {
+    bytes.iter().any(|&byte| matches!(byte, b'&' | b'\r' | 0))
 }
 
 /// Decode HTML character references in `source` into `out`.
@@ -157,69 +183,39 @@ fn decode_character_references_impl<
     source: &str,
     out: &mut Vec<u8>,
 ) {
+    // Source preprocessing: with `NORMALIZE_SOURCE_NEWLINES`, CR and CRLF
+    // become LF, and in an `ATTRIBUTE` value NUL becomes U+FFFD, as the
+    // tokenizer would see them. Only bytes copied from `source` change, not
+    // those a reference produces.
+    let special = |byte: u8| {
+        byte == b'&' || (NORMALIZE_SOURCE_NEWLINES && byte == b'\r') || (ATTRIBUTE && byte == 0)
+    };
     let bytes = source.as_bytes();
     let mut copied_through = 0;
 
-    while let Some(relative_ampersand) = bytes[copied_through..]
+    while let Some(relative) = bytes[copied_through..]
         .iter()
-        .position(|&byte| byte == b'&')
-    {
-        let ampersand = copied_through + relative_ampersand;
-        append_source::<NORMALIZE_SOURCE_NEWLINES, ATTRIBUTE>(
-            &bytes[copied_through..ampersand],
-            out,
-        );
-
-        match decode_after_ampersand::<ATTRIBUTE>(&bytes[ampersand + 1..], out) {
-            Some(consumed) => copied_through = ampersand + 1 + consumed,
-            None => {
-                out.push(b'&');
-                copied_through = ampersand + 1;
-            }
-        }
-    }
-
-    append_source::<NORMALIZE_SOURCE_NEWLINES, ATTRIBUTE>(&bytes[copied_through..], out);
-}
-
-/// Append `source`, a run of the HTML with no character reference in it.
-/// With `NORMALIZE_SOURCE_NEWLINES`, its CR and CRLF become LF, and in an
-/// `ATTRIBUTE` value its NUL becomes U+FFFD, as the tokenizer would see them.
-#[inline]
-fn append_source<const NORMALIZE_SOURCE_NEWLINES: bool, const ATTRIBUTE: bool>(
-    source: &[u8],
-    out: &mut Vec<u8>,
-) {
-    let replaced =
-        |byte: u8| (NORMALIZE_SOURCE_NEWLINES && byte == b'\r') || (ATTRIBUTE && byte == 0);
-    let needs_replacing = match (NORMALIZE_SOURCE_NEWLINES, ATTRIBUTE) {
-        (false, false) => false,
-        (true, false) => source.contains(&b'\r'),
-        _ => source.iter().any(|&byte| replaced(byte)),
-    };
-    if !needs_replacing {
-        out.extend_from_slice(source);
-        return;
-    }
-
-    let mut copied_through = 0;
-    while let Some(relative) = source[copied_through..]
-        .iter()
-        .position(|&byte| replaced(byte))
+        .position(|&byte| special(byte))
     {
         let at = copied_through + relative;
-        out.extend_from_slice(&source[copied_through..at]);
+        out.extend_from_slice(&bytes[copied_through..at]);
         copied_through = at + 1;
-        if source[at] == 0 {
-            out.extend_from_slice("\u{FFFD}".as_bytes());
-            continue;
-        }
-        out.push(b'\n');
-        if source.get(copied_through) == Some(&b'\n') {
-            copied_through += 1;
+        match bytes[at] {
+            b'\r' if NORMALIZE_SOURCE_NEWLINES => {
+                out.push(b'\n');
+                if bytes.get(copied_through) == Some(&b'\n') {
+                    copied_through += 1;
+                }
+            }
+            0 if ATTRIBUTE => out.extend_from_slice("\u{FFFD}".as_bytes()),
+            _ => match decode_after_ampersand::<ATTRIBUTE>(&bytes[copied_through..], out) {
+                Some(consumed) => copied_through += consumed,
+                None => out.push(b'&'),
+            },
         }
     }
-    out.extend_from_slice(&source[copied_through..]);
+
+    out.extend_from_slice(&bytes[copied_through..]);
 }
 
 /// Decode the bytes following an ampersand and return their consumed length.
