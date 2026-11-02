@@ -120,8 +120,8 @@ impl ColumnPlan {
 /// others in source order. The `class` and `id` keys are
 /// [`Span::CLASS_KEY`] and [`Span::ID_KEY`], so finding them compares no
 /// strings. A value is [`Span::ABSENT`] for an attribute without one. Values
-/// are spans of the HTML as written, character references included; the
-/// store decodes them when they are read.
+/// are spans of the HTML as written, character references, CR, and NUL
+/// included; the store decodes them when they are read.
 ///
 /// Public only for scah's tests, which read it through the hidden
 /// `Store::columns`.

@@ -13,12 +13,13 @@ use scah_html::Attribute;
 /// the store's columns and are read through methods. Strings borrow from the
 /// parsed HTML (`'html`) or from the store's buffers (`'store`).
 ///
-/// Attribute values, `class` and `id` included, are returned with their
-/// character references decoded, as a DOM's `getAttribute` returns them:
-/// `title="&amp;"` reads as `&`. A value without `&` is a slice of the HTML.
-/// The first read of a value with `&` decodes every such value of the store
-/// at once, and the store keeps them, so these methods borrow from the store
-/// (`'store`).
+/// Attribute values, `class` and `id` included, are returned decoded, as a
+/// DOM's `getAttribute` returns them: character references are decoded, so
+/// `title="&amp;"` reads as `&`, CR and CRLF written in the HTML read as LF,
+/// and NUL reads as U+FFFD. A value without `&`, CR, or NUL is a slice of
+/// the HTML. The first read of a value with one decodes every such value of
+/// the store at once, and the store keeps them, so these methods borrow from
+/// the store (`'store`).
 ///
 /// | Data | How to access |
 /// |------|---------------|
@@ -60,8 +61,8 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
         self.store.html_value(head.name).unwrap_or_default()
     }
 
-    /// The `class` attribute value, if present and saved, with its
-    /// character references decoded.
+    /// The `class` attribute value, if present and saved, decoded as
+    /// described on [`ElementRef`].
     ///
     /// The first `class` attribute with a value, like in selector matching.
     #[inline]
@@ -77,8 +78,8 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
             .then_some(range.start)
     }
 
-    /// The `id` attribute value, if present and saved, with its character
-    /// references decoded.
+    /// The `id` attribute value, if present and saved, decoded as
+    /// described on [`ElementRef`].
     ///
     /// The first `id` attribute with a value, like in selector matching.
     #[inline]
@@ -167,7 +168,7 @@ impl<'store, 'html, 'query: 'html> ElementRef<'store, 'html, 'query> {
     }
 
     /// Look up a single attribute value by name (ASCII case-insensitive),
-    /// with its character references decoded.
+    /// decoded as described on [`ElementRef`].
     ///
     /// Returns `None` if the attribute is not present, has no value, or was
     /// not saved.

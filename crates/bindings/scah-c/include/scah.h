@@ -733,8 +733,8 @@ enum ScahStatus scah_element_text(const struct ScahStore *store,
 
 /**
  * The value of the attribute named `key`, compared ASCII
- * case-insensitively, with character references decoded (`&amp;` reads as
- * `&`).
+ * case-insensitively, decoded as a browser decodes it: `&amp;` reads as `&`,
+ * CR and CRLF as LF, and NUL as U+FFFD.
  *
  * Missing when the attribute is absent, has no value (as in `<input
  * disabled>`), or the query did not save attributes. Present but empty for

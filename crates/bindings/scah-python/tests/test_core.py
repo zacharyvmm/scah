@@ -485,6 +485,31 @@ def test_attribute_values_are_decoded():
     assert element.attributes == {"title": "&", "lang": "ab", "data-q": "?a=1&copy=2"}
 
 
+def test_attribute_values_normalize_newlines_and_nul():
+    """CR and CRLF in attribute values read as LF and NUL as U+FFFD, as a
+    browser's getAttribute gives them; a CR from a reference stays CR."""
+    html = '<p id="i\0" class="x\r\ny" title="a\r\nb" lang="x\0y" dir="c\rd" data-r="&#13;\r">t</p>'
+
+    def count(selector):
+        found = parse(html, [Query.all(selector, Save.none()).build()]).get(selector)
+        return len(found) if found else 0
+
+    assert count('[lang="x\ufffdy"]') == 1
+    assert count('[title="a\nb"]') == 1
+    assert count("p.x.y") == 1
+
+    element = parse(html, [Query.all("p", Save.all()).build()]).get("p")[0]
+    assert element.id == "i\ufffd"
+    assert element.class_name == "x\ny"
+    assert element.get_attribute("title") == "a\nb"
+    assert element.attributes == {
+        "title": "a\nb",
+        "lang": "x\ufffdy",
+        "dir": "c\nd",
+        "data-r": "\r\n",
+    }
+
+
 def test_attributes_materialize_zero_to_many():
     """Attribute maps cover empty, small, exactly-8, and overflow (>8) cases."""
     q = Query.all("el", Save.all()).build()

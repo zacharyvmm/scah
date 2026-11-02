@@ -93,10 +93,11 @@ attributes, inner HTML, raw text, text) is a column of 32-bit spans, and a
 column exists only if some query saves that field. Names, attributes, and
 inner HTML point into the input HTML; text points into a tape the parse
 filled. Attribute values are stored as written; one with a character
-reference (`&amp;`) is decoded when read. The first such read decodes every
-saved value that needs it into a buffer the store keeps, so reads can borrow
-from it. Matching decodes only the values it compares that contain `&`, so
-documents without references parse as before. `ElementRef` is a small handle to a row.
+reference (`&amp;`), a CR, or a NUL is decoded when read, as a browser would
+see it. The first such read decodes every saved value that needs it into a
+buffer the store keeps, so reads can borrow from it. Matching decodes only
+the values it compares that contain `&`, CR, or NUL, so documents without
+them parse as before. `ElementRef` is a small handle to a row.
 
 A dropped store keeps up to 32 MiB of its buffers for the next parse on the
 same thread, so parsing many documents in a loop doesn't allocate a fresh

@@ -103,8 +103,9 @@ like.
 | `Save(inner_html=False, text=False, attributes=True, *, raw_text=False)` | Any combination |
 
 Every option except `name_only` and `attributes=False` keeps the element's id,
-class, and attributes, with their character references decoded (`&amp;`
-reads as `&`). Save only what you read: each extra field costs time.
+class, and attributes, decoded as a browser decodes them: `&amp;` reads as
+`&`, CR and CRLF as LF, and NUL as U+FFFD. Save only what you read: each
+extra field costs time.
 
 ### Reading results
 

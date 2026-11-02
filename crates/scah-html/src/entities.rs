@@ -4,6 +4,10 @@
 //! Attribute values follow the same rules except one: a named reference
 //! written without its `;` stays as written when an `=` or an ASCII letter
 //! or digit follows it, so `?a=1&copy=2` keeps its `&copy`.
+//!
+//! Attribute values are also preprocessed as a browser's tokenizer sees
+//! them: CRLF and a lone CR written in the HTML become LF, and NUL becomes
+//! U+FFFD. A CR that a reference such as `&#13;` produces stays CR.
 
 #[path = "entities_table.rs"]
 mod entities_table;
@@ -74,24 +78,26 @@ pub fn contains_ampersand(source: &str) -> bool {
     source.as_bytes().contains(&b'&')
 }
 
-/// [`contains_ampersand`] for attribute values, which are mostly short:
-/// inline, eight bytes at a time, with no call into `memchr`.
+/// Return whether the attribute value `value`, as written, might differ
+/// once decoded by [`decode_attribute_value`]: whether it has `&`, CR, or
+/// NUL. Inline, eight bytes at a time, with no call into `memchr`, since
+/// attribute values are mostly short.
 #[inline(always)]
-// A byte loop for the last few bytes: `contains` would call `memchr`.
-#[allow(clippy::manual_contains)]
-pub fn value_contains_ampersand(value: &str) -> bool {
+pub fn value_needs_decoding(value: &str) -> bool {
     const ONES: u64 = u64::from_ne_bytes([0x01; 8]);
     const HIGHS: u64 = u64::from_ne_bytes([0x80; 8]);
     const AMPERSANDS: u64 = u64::from_ne_bytes([b'&'; 8]);
+    const CRS: u64 = u64::from_ne_bytes([b'\r'; 8]);
+    // Whether a byte of `word` is zero.
+    let has_zero = |word: u64| word.wrapping_sub(ONES) & !word;
     let (chunks, rest) = value.as_bytes().as_chunks::<8>();
     for &chunk in chunks {
-        // A byte of `word` is zero where the chunk has `&`.
-        let word = u64::from_ne_bytes(chunk) ^ AMPERSANDS;
-        if word.wrapping_sub(ONES) & !word & HIGHS != 0 {
+        let word = u64::from_ne_bytes(chunk);
+        if (has_zero(word) | has_zero(word ^ AMPERSANDS) | has_zero(word ^ CRS)) & HIGHS != 0 {
             return true;
         }
     }
-    rest.iter().any(|&byte| byte == b'&')
+    rest.iter().any(|&byte| matches!(byte, b'&' | b'\r' | 0))
 }
 
 /// Decode HTML character references in `source` into `out`.
@@ -116,28 +122,31 @@ pub fn decode_character_references_normalizing_source_newlines(source: &str, out
     decode_character_references_impl::<true, false>(source, out);
 }
 
-/// Decode the character references of an attribute value into `out`, by
-/// the attribute-value rules (see the [module](self) docs).
+/// Decode an attribute value into `out`, as a browser's tokenizer does:
+/// character references by the attribute-value rules, CR and CRLF to LF,
+/// and NUL to U+FFFD (see the [module](self) docs).
 ///
 /// Appends whole UTF-8 sequences only, so `out` stays valid UTF-8 if it was.
 #[cold]
 #[inline(never)]
 pub fn decode_attribute_value_into(source: &str, out: &mut Vec<u8>) {
-    decode_character_references_impl::<false, true>(source, out);
+    decode_character_references_impl::<true, true>(source, out);
 }
 
-/// An attribute value with its character references decoded: `source`
-/// itself when it has no `&`, so most values are never copied.
+/// An attribute value decoded as [`decode_attribute_value_into`] does:
+/// `source` itself when it has no `&`, CR, or NUL, so most values are never
+/// copied.
 #[inline]
 pub fn decode_attribute_value(source: &str) -> Cow<'_, str> {
-    if !value_contains_ampersand(source) {
+    if !value_needs_decoding(source) {
         return Cow::Borrowed(source);
     }
     let mut out = Vec::with_capacity(source.len());
     decode_attribute_value_into(source, &mut out);
     debug_assert!(std::str::from_utf8(&out).is_ok());
-    // SAFETY: the decoder copies `source` only between ASCII `&` bytes, so
-    // at character boundaries, and otherwise appends whole UTF-8 sequences.
+    // SAFETY: the decoder copies `source` only between ASCII `&`, CR, LF and
+    // NUL bytes, so at character boundaries, and otherwise appends whole
+    // UTF-8 sequences.
     Cow::Owned(unsafe { String::from_utf8_unchecked(out) })
 }
 
@@ -156,7 +165,10 @@ fn decode_character_references_impl<
         .position(|&byte| byte == b'&')
     {
         let ampersand = copied_through + relative_ampersand;
-        append_source::<NORMALIZE_SOURCE_NEWLINES>(&bytes[copied_through..ampersand], out);
+        append_source::<NORMALIZE_SOURCE_NEWLINES, ATTRIBUTE>(
+            &bytes[copied_through..ampersand],
+            out,
+        );
 
         match decode_after_ampersand::<ATTRIBUTE>(&bytes[ampersand + 1..], out) {
             Some(consumed) => copied_through = ampersand + 1 + consumed,
@@ -167,25 +179,42 @@ fn decode_character_references_impl<
         }
     }
 
-    append_source::<NORMALIZE_SOURCE_NEWLINES>(&bytes[copied_through..], out);
+    append_source::<NORMALIZE_SOURCE_NEWLINES, ATTRIBUTE>(&bytes[copied_through..], out);
 }
 
+/// Append `source`, a run of the HTML with no character reference in it.
+/// With `NORMALIZE_SOURCE_NEWLINES`, its CR and CRLF become LF, and in an
+/// `ATTRIBUTE` value its NUL becomes U+FFFD, as the tokenizer would see them.
 #[inline]
-fn append_source<const NORMALIZE_SOURCE_NEWLINES: bool>(source: &[u8], out: &mut Vec<u8>) {
-    if !NORMALIZE_SOURCE_NEWLINES || !source.contains(&b'\r') {
+fn append_source<const NORMALIZE_SOURCE_NEWLINES: bool, const ATTRIBUTE: bool>(
+    source: &[u8],
+    out: &mut Vec<u8>,
+) {
+    let replaced =
+        |byte: u8| (NORMALIZE_SOURCE_NEWLINES && byte == b'\r') || (ATTRIBUTE && byte == 0);
+    let needs_replacing = match (NORMALIZE_SOURCE_NEWLINES, ATTRIBUTE) {
+        (false, false) => false,
+        (true, false) => source.contains(&b'\r'),
+        _ => source.iter().any(|&byte| replaced(byte)),
+    };
+    if !needs_replacing {
         out.extend_from_slice(source);
         return;
     }
 
     let mut copied_through = 0;
-    while let Some(relative_cr) = source[copied_through..]
+    while let Some(relative) = source[copied_through..]
         .iter()
-        .position(|&byte| byte == b'\r')
+        .position(|&byte| replaced(byte))
     {
-        let cr = copied_through + relative_cr;
-        out.extend_from_slice(&source[copied_through..cr]);
+        let at = copied_through + relative;
+        out.extend_from_slice(&source[copied_through..at]);
+        copied_through = at + 1;
+        if source[at] == 0 {
+            out.extend_from_slice("\u{FFFD}".as_bytes());
+            continue;
+        }
         out.push(b'\n');
-        copied_through = cr + 1;
         if source.get(copied_through) == Some(&b'\n') {
             copied_through += 1;
         }
@@ -388,7 +417,7 @@ fn append_code_point(character: char, out: &mut Vec<u8>) {
 mod tests {
     use super::{
         contains_ampersand, decode_attribute_value, decode_character_references,
-        decode_character_references_normalizing_source_newlines, value_contains_ampersand,
+        decode_character_references_normalizing_source_newlines, value_needs_decoding,
     };
     use std::borrow::Cow;
 
@@ -405,18 +434,25 @@ mod tests {
     }
 
     #[test]
-    fn value_scan_finds_ampersands_at_every_offset() {
-        assert!(!value_contains_ampersand(""));
+    fn value_scan_finds_ampersands_crs_and_nuls_at_every_offset() {
+        assert!(!value_needs_decoding(""));
         for len in 1..40 {
-            let plain = "a%'é".chars().cycle().take(len).collect::<String>();
-            assert!(!value_contains_ampersand(&plain), "{plain:?}");
+            // LF, tab, and bytes one off `&`, CR, and NUL need no decoding.
+            let plain = "a%'é\n\t\x0c\x01"
+                .chars()
+                .cycle()
+                .take(len)
+                .collect::<String>();
+            assert!(!value_needs_decoding(&plain), "{plain:?}");
             for at in 0..plain.len() {
                 if !plain.is_char_boundary(at) {
                     continue;
                 }
-                let mut value = plain.clone();
-                value.insert(at, '&');
-                assert!(value_contains_ampersand(&value), "{value:?}");
+                for special in ['&', '\r', '\0'] {
+                    let mut value = plain.clone();
+                    value.insert(at, special);
+                    assert!(value_needs_decoding(&value), "{value:?}");
+                }
             }
         }
     }
@@ -558,8 +594,8 @@ mod tests {
     }
 
     #[test]
-    fn attribute_values_without_ampersands_are_borrowed() {
-        let value = "/search?q=a;b";
+    fn attribute_values_without_ampersands_crs_or_nuls_are_borrowed() {
+        let value = "/search?q=a;b\n\tc";
         let Cow::Borrowed(decoded) = decode_attribute_value(value) else {
             panic!("copied a value without references");
         };
@@ -614,6 +650,31 @@ mod tests {
         ] {
             assert_eq!(decode_attribute_value(source), expected, "{source:?}");
         }
+    }
+
+    #[test]
+    fn attribute_values_normalize_source_newlines_and_nuls() {
+        for (source, expected) in [
+            ("a\r\nb", "a\nb"),
+            ("c\rd", "c\nd"),
+            ("\r\r\n\n\r", "\n\n\n\n"),
+            ("x\0y\0", "x\u{FFFD}y\u{FFFD}"),
+            ("é\0\r\né", "é\u{FFFD}\né"),
+            // References compose: only CR and NUL written in the HTML change.
+            ("a&amp;\r\nb", "a&\nb"),
+            ("&#13;&#10;\r\n", "\r\n\n"),
+            ("&#x0D;\0&#0;", "\r\u{FFFD}\u{FFFD}"),
+            ("&\r&\0", "&\n&\u{FFFD}"),
+            ("&copy\r\n", "©\n"),
+            ("&am\0p;", "&am\u{FFFD}p;"),
+        ] {
+            assert_eq!(decode_attribute_value(source), expected, "{source:?}");
+        }
+        // Text keeps its NUL; only preformatted text normalizes newlines.
+        assert_eq!(decode("a\0\r\n&amp;"), "a\0\r\n&");
+        let mut output = Vec::new();
+        decode_character_references_normalizing_source_newlines("a\0\r\n&amp;", &mut output);
+        assert_eq!(output, b"a\0\n&");
     }
 
     #[test]

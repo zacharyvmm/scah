@@ -70,8 +70,9 @@ public final class Element {
     }
 
     /**
-     * The value of the attribute named {@code name}, compared ASCII case-insensitively, with
-     * character references decoded ({@code &amp;amp;} reads as {@code &amp;}).
+     * The value of the attribute named {@code name}, compared ASCII case-insensitively, decoded
+     * as a browser decodes it: {@code &amp;amp;} reads as {@code &amp;}, CR and CRLF as LF, and
+     * NUL as U+FFFD.
      *
      * <p>Empty when the attribute is absent, has no value (as in {@code <input disabled>}), or
      * attributes were not saved.

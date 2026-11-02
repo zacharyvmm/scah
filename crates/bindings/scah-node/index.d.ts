@@ -24,7 +24,8 @@ export declare class Element {
   get id(): string | null
   /**
    * The value of the attribute named `key`, matched case-insensitively,
-   * with character references decoded (`&amp;` reads as `&`).
+   * decoded as a browser decodes it: `&amp;` reads as `&`, CR and CRLF as
+   * LF, and NUL as U+FFFD.
    */
   getAttribute(key: string): string | null
   /**

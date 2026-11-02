@@ -207,7 +207,8 @@ including reusing compiled queries across many documents.
 | `Save::name_only()` | `Save.name_only()` | `{ attributes: false }` | No content and no attributes |
 
 Every option except `name_only` also keeps the element's id, class, and
-attributes, with their character references decoded (`&amp;` reads as `&`).
+attributes, decoded as a browser decodes them: `&amp;` reads as `&`, CR and
+CRLF as LF, and NUL as U+FFFD.
 Normalized text decodes character references, skips `script`,
 `style`, and `hidden` content, and adds line breaks for block elements; see
 [Text extraction](https://github.com/zacharyvmm/scah/blob/main/docs/text-extraction.md).

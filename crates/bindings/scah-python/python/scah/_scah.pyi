@@ -118,7 +118,8 @@ class Element:
     def get_attribute(self, key: builtins.str) -> typing.Optional[builtins.str]:
         r"""
         The value of the attribute named `key`, matched case-insensitively,
-        with character references decoded (`&amp;` reads as `&`).
+        decoded as a browser decodes it: `&amp;` reads as `&`, CR and CRLF as
+        LF, and NUL as U+FFFD.
         """
     def get(self, query: builtins.str) -> builtins.list[Element]:
         r"""
