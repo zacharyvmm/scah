@@ -276,6 +276,19 @@ def test_top_level_leading_sibling_combinator_needs_a_preceding_selector():
 
 
 @pytest.mark.parametrize(
+    ("selector", "position"),
+    [("+ p", 0), ("  + p", 2), ("h2, + p", 4), ("h2,   + p", 6), ("h2, a[", 6)],
+)
+def test_selector_error_position_counts_from_the_start_of_the_selector(
+    selector, position
+):
+    """The byte in the message is an offset into the whole selector, also
+    for a later alternative of a selector list."""
+    with pytest.raises(ValueError, match=f" at byte {position}$"):
+        Query.all(selector, Save.none()).build()
+
+
+@pytest.mark.parametrize(
     ("selector", "expected"),
     [
         (":scope > h2 + p", ["one"]),

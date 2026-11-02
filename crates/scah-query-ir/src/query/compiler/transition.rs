@@ -531,16 +531,27 @@ impl<'query> Transition<'query> {
         query: &'query str,
         scoped: bool,
     ) -> Result<Vec<Vec<Self>>, SelectorParseError> {
-        if query.bytes().any(|byte| byte == 0x0b) {
-            return Err(SelectorParseError::new("illegal selector token", 0));
+        if let Some(position) = query.bytes().position(|byte| byte == 0x0b) {
+            return Err(SelectorParseError::new("illegal selector token", position));
         }
-        let alternatives = split_selector_list(query)?;
+        let alternatives = selector::split_selector_list(query);
         let mut paths = Vec::with_capacity(alternatives.len());
-        for alternative in alternatives {
-            paths.push(require_modeled_syntax(
-                alternative,
-                Self::generate_single_path(alternative, scoped),
-            )?);
+        // Each alternative is parsed on its own, so its errors are positioned
+        // relative to it until they are offset back into `query`.
+        for (offset, alternative) in alternatives {
+            if alternative.is_empty() {
+                return Err(SelectorParseError::new(
+                    "selector list has an empty alternative",
+                    offset,
+                ));
+            }
+            paths.push(
+                require_modeled_syntax(
+                    alternative,
+                    Self::generate_single_path(alternative, scoped),
+                )
+                .map_err(|error| error.offset_by(offset))?,
+            );
         }
         Ok(paths)
     }
@@ -549,9 +560,6 @@ impl<'query> Transition<'query> {
         query: &'query str,
         scoped: bool,
     ) -> Result<Vec<Self>, SelectorParseError> {
-        if query.bytes().any(|byte| byte == 0x0b) {
-            return Err(SelectorParseError::new("illegal selector token", 0));
-        }
         if scoped {
             reject_sibling_of_scope(query, 0)?;
         }
@@ -639,20 +647,6 @@ fn reject_sibling_of_scope(query: &str, position: usize) -> Result<(), SelectorP
         _ => return Ok(()),
     };
     Err(SelectorParseError::unsupported(message, position))
-}
-
-fn split_selector_list(source: &str) -> Result<Vec<&str>, SelectorParseError> {
-    let parts = selector::split_selector_list(source)
-        .into_iter()
-        .map(|part| part.trim_matches(is_css_whitespace_char))
-        .collect::<Vec<_>>();
-    if parts.iter().any(|part| part.is_empty()) {
-        return Err(SelectorParseError::new(
-            "selector list has an empty alternative",
-            0,
-        ));
-    }
-    Ok(parts)
 }
 
 const fn const_ascii_case_insensitive_eq(left: &str, right: &str) -> bool {

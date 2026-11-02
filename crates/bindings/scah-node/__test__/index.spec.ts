@@ -419,6 +419,19 @@ test('nested sibling combinators on the scope fail at build', () => {
   expect(() => Query.all('+ p').build()).toThrow(/requires a preceding selector/)
 })
 
+test('selector errors count bytes from the start of the selector', () => {
+  const cases: [string, number][] = [
+    ['+ p', 0],
+    ['  + p', 2],
+    ['h2, + p', 4],
+    ['h2,   + p', 6],
+    ['h2, a[', 6],
+  ]
+  for (const [selector, position] of cases) {
+    expect(() => Query.all(selector).build()).toThrow(new RegExp(` at byte ${position}$`))
+  }
+})
+
 test('nested sibling combinators after the scope still match', () => {
   const html = '<section><h2>a</h2><p>one</p><div><h2>b</h2><p>two</p></div><p>three</p></section>'
   const cases: [string, string[]][] = [

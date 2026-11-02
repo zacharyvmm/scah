@@ -97,6 +97,13 @@ assert_eq!(err.position(), 2);
 println!("{err}"); // "unsupported pseudo-class at byte 2"
 ```
 
+The position is a byte offset into the selector as you wrote it, counting any
+leading whitespace. In a selector list it counts from the start of the whole
+list, not from the alternative that failed: `h2, + p` reports byte 4. An empty
+alternative, as in `a,,b` or `a,`, points at the comma that leaves it empty.
+`query!` puts its compile error on the selector literal, and the byte in the
+message counts from the start of the selector string.
+
 The Python and JavaScript bindings check selectors when `build()` is called:
 Python raises `ValueError`, and JavaScript throws an `Error`.
 

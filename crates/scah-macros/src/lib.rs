@@ -185,9 +185,8 @@ fn compile_node<'a>(node: &'a QueryNode, scoped: bool) -> Result<QueryBuilder<'a
 }
 
 fn expand_query(node: &QueryNode) -> Result<proc_macro2::TokenStream> {
-    let compiled = compile_node(node, false)
-        .map(QueryBuilder::build)
-        .map_err(|err| syn::Error::new(node.selector.span(), err.to_string()))?;
+    // `compile_node` already puts each error on the selector it came from.
+    let compiled = compile_node(node, false).map(QueryBuilder::build)?;
 
     let attribute_consts = compiled
         .states

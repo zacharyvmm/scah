@@ -324,12 +324,12 @@ fn nested_queries_reject_sibling_combinators_on_the_scope() {
         (":SCOPE ~ p > span", NESTED_SUBSEQUENT_SIBLING, 7),
         ("+ p", NESTED_NEXT_SIBLING, 0),
         ("~ p", NESTED_SUBSEQUENT_SIBLING, 0),
-        (" \t+ p", NESTED_NEXT_SIBLING, 0),
+        (" \t+ p", NESTED_NEXT_SIBLING, 2),
         // One dead alternative rejects the whole list, rather than quietly
         // matching only the others.
         (":scope + p, h2", NESTED_NEXT_SIBLING, 7),
-        ("h2, :scope ~ p", NESTED_SUBSEQUENT_SIBLING, 7),
-        ("h2, + p", NESTED_NEXT_SIBLING, 0),
+        ("h2, :scope ~ p", NESTED_SUBSEQUENT_SIBLING, 11),
+        ("h2, + p", NESTED_NEXT_SIBLING, 4),
     ] {
         let chained = Query::all("h1", Save::none())
             .unwrap()
@@ -349,16 +349,17 @@ fn nested_queries_reject_sibling_combinators_on_the_scope() {
     }
 
     // A top-level `:scope + p` appended under `.then()` is rejected too.
-    for (selector, message) in [
-        (":scope + p", NESTED_NEXT_SIBLING),
-        (":scope ~ p", NESTED_SUBSEQUENT_SIBLING),
-        ("h2, :scope + p", NESTED_NEXT_SIBLING),
+    for (selector, message, position) in [
+        (":scope + p", NESTED_NEXT_SIBLING, 7),
+        (":scope ~ p", NESTED_SUBSEQUENT_SIBLING, 7),
+        ("h2, :scope + p", NESTED_NEXT_SIBLING, 11),
     ] {
         let error = Query::all("h1", Save::none())
             .unwrap()
             .then(|_| Ok([Query::all(selector, Save::none())?]))
             .unwrap_err();
         assert_eq!(error.message(), message, "{selector:?}");
+        assert_eq!(error.position(), position, "{selector:?}");
     }
 
     // At the top level there is no parent match to explain.
@@ -368,6 +369,244 @@ fn nested_queries_reject_sibling_combinators_on_the_scope() {
     ] {
         let error = Query::all(selector, Save::none()).unwrap_err();
         assert_eq!(error.message(), message, "{selector:?}");
+    }
+}
+
+/// Builds `selector` as a top-level query, nested under `.then()`, chained
+/// with `.all()` and through the lazy builder the bindings use, and returns
+/// the errors.
+fn selector_errors(selector: &str, nested: bool) -> Vec<scah::SelectorParseError> {
+    if !nested {
+        let lazy = scah::lazy::LazyQuery::all(selector, Save::none());
+        // SAFETY: the query is dropped without being used.
+        let lazy = unsafe { lazy.try_to_query() }.err().unwrap();
+        return vec![Query::all(selector, Save::none()).unwrap_err(), lazy];
+    }
+    let chained = Query::all("h1", Save::none())
+        .unwrap()
+        .all(selector, Save::none())
+        .unwrap_err();
+    let factory = Query::all("h1", Save::none())
+        .unwrap()
+        .then(|h1| Ok([h1.all(selector, Save::none())?]))
+        .unwrap_err();
+    let lazy = scah::lazy::LazyQuery::all("h1", Save::none()).all(selector, Save::none());
+    // SAFETY: the query is dropped without being used.
+    let lazy = unsafe { lazy.try_to_query() }.err().unwrap();
+    vec![chained, factory, lazy]
+}
+
+#[test]
+fn selector_error_positions_count_from_the_start_of_the_selector() {
+    let deep = format!("a{}b{}", ":is(".repeat(33), ")".repeat(33));
+    // Each selector on its own, with the byte its error points at.
+    let cases = [
+        (
+            "+ p",
+            "combinator '+' requires a preceding selector",
+            0,
+            false,
+        ),
+        ("a > > b", "missing selector element", 4, false),
+        (
+            "a[",
+            "attribute selector is missing a closing ']'",
+            2,
+            false,
+        ),
+        ("a[x=]", "attribute selector is missing a value", 5, false),
+        ("a#", "missing id string", 2, false),
+        ("a.", "missing class string", 2, false),
+        (
+            "[x]*",
+            "universal selector must start a compound selector",
+            3,
+            false,
+        ),
+        ("a]", "illegal selector token", 1, false),
+        ("a\u{b}b", "illegal selector token", 1, false),
+        ("a:last-child", "unsupported pseudo-class", 1, false),
+        ("a:not(b", "pseudo-class has an unclosed ')'", 7, false),
+        (
+            "a:not(b c)",
+            "combinators are not supported inside local pseudo-classes",
+            7,
+            false,
+        ),
+        (
+            "a:not(b, , c)",
+            "pseudo-class selector list has an empty alternative",
+            9,
+            false,
+        ),
+        (
+            "a:not(b,)",
+            "pseudo-class selector list has an empty alternative",
+            7,
+            false,
+        ),
+        ("li:nth-child(2n+x)", "invalid An+B offset", 15, false),
+        ("li:nth-child( 2n+x of a)", "invalid An+B offset", 16, false),
+        (
+            "li:nth-child(n of a, :first-child)",
+            "structural pseudo-classes are not supported inside local selector lists",
+            21,
+            false,
+        ),
+        (
+            "li:nth-child(2n of )",
+            "invalid filtered An+B formula",
+            15,
+            false,
+        ),
+        (
+            "li:nth-of-type(2n of a)",
+            "filtered nth-of-type is not supported",
+            23,
+            false,
+        ),
+        (
+            "li:nth-child(99999999999)",
+            "An+B values outside the i32 range are not supported",
+            13,
+            false,
+        ),
+        ("a /* b */", "CSS comments are not supported", 2, false),
+        ("svg|a", "namespaces are not supported", 3, false),
+        (
+            deep.as_str(),
+            "selector nesting exceeds the maximum depth",
+            133,
+            false,
+        ),
+        // Errors that only nested queries report.
+        ("+ p", NESTED_NEXT_SIBLING, 0, true),
+        (":scope ~ p", NESTED_SUBSEQUENT_SIBLING, 7, true),
+        (
+            ":scope",
+            "terminal :scope selectors are not supported",
+            0,
+            true,
+        ),
+        (
+            ":scope.card > a",
+            "compound :scope anchors are not supported",
+            0,
+            true,
+        ),
+    ];
+    for (selector, message, position, nested) in cases {
+        // The same selector after leading whitespace or in a later
+        // alternative of a list: the position moves with it.
+        for (prefix, suffix) in [
+            ("", ""),
+            ("", "  "),
+            ("  ", ""),
+            ("h2, ", ""),
+            ("h2,\t\n", " "),
+            ("h2 , h3 ,  ", "\t"),
+        ] {
+            let source = format!("{prefix}{selector}{suffix}");
+            for error in selector_errors(&source, nested) {
+                assert_eq!(error.message(), message, "{source:?}");
+                assert_eq!(error.position(), prefix.len() + position, "{source:?}");
+                assert!(
+                    error
+                        .to_string()
+                        .ends_with(&format!(" at byte {}", prefix.len() + position)),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn selector_list_errors_point_into_the_failing_alternative() {
+    // The examples from #143, and errors in a middle alternative.
+    for (selector, message, position) in [
+        ("+ p", "combinator '+' requires a preceding selector", 0),
+        ("h2, + p", "combinator '+' requires a preceding selector", 4),
+        (
+            "h2,   + p",
+            "combinator '+' requires a preceding selector",
+            6,
+        ),
+        ("a[", "attribute selector is missing a closing ']'", 2),
+        ("h2, a[", "attribute selector is missing a closing ']'", 6),
+        ("h2, a:last-child, h3", "unsupported pseudo-class", 5),
+        (
+            "h2, a:not(b c), h3",
+            "combinators are not supported inside local pseudo-classes",
+            11,
+        ),
+        (
+            "h2, a:not(b, ,c), h3",
+            "pseudo-class selector list has an empty alternative",
+            13,
+        ),
+        ("h2, li:nth-child(2n+x), h3", "invalid An+B offset", 19),
+        ("h2, a/**/, h3", "CSS comments are not supported", 5),
+    ] {
+        let error = Query::all(selector, Save::none()).unwrap_err();
+        assert_eq!(error.message(), message, "{selector:?}");
+        assert_eq!(error.position(), position, "{selector:?}");
+        assert_eq!(error.to_string(), format!("{message} at byte {position}"));
+    }
+}
+
+#[test]
+fn appended_scope_errors_count_from_the_start_of_the_selector() {
+    // A top-level query appended under `.then()` loses its `:scope` anchor,
+    // so its `:scope` errors are reported when it is appended.
+    for (selector, message, position) in [
+        (":scope", "terminal :scope selectors are not supported", 0),
+        (
+            "h2,  :scope",
+            "terminal :scope selectors are not supported",
+            5,
+        ),
+        (
+            "h2, a:scope",
+            "compound :scope anchors are not supported",
+            4,
+        ),
+        ("h2, :scope ~ p", NESTED_SUBSEQUENT_SIBLING, 11),
+        ("  :scope + p, h2", NESTED_NEXT_SIBLING, 9),
+    ] {
+        let error = Query::all("h1", Save::none())
+            .unwrap()
+            .then(|_| Ok([Query::all(selector, Save::none())?]))
+            .unwrap_err();
+        assert_eq!(error.message(), message, "{selector:?}");
+        assert_eq!(error.position(), position, "{selector:?}");
+    }
+}
+
+#[test]
+fn empty_selector_list_alternatives_point_at_their_comma() {
+    // The comma after the empty alternative, or for a trailing one the comma
+    // before it.
+    for (selector, position) in [
+        ("a,,b", 2),
+        ("a, ,b", 3),
+        (", a", 0),
+        ("  , a", 2),
+        ("a,", 1),
+        ("a , ", 2),
+        ("", 0),
+        ("  ", 0),
+    ] {
+        for nested in [false, true] {
+            for error in selector_errors(selector, nested) {
+                assert_eq!(
+                    error.message(),
+                    "selector list has an empty alternative",
+                    "{selector:?}"
+                );
+                assert_eq!(error.position(), position, "{selector:?}");
+            }
+        }
     }
 }
 

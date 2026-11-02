@@ -5,6 +5,7 @@
 //! [`scan`], so a delimiter inside a quoted string, an escape, a comment or a
 //! nested `()` / `[]` block can never split a selector.
 
+use super::trim_css_whitespace;
 use crate::query::compiler::SelectorParseError;
 
 /// Syntax seen during a [`scan`] that matters to callers.
@@ -86,18 +87,40 @@ pub(crate) fn scan(
     (None, summary)
 }
 
-/// Splits a selector list on its top-level commas.
-pub(crate) fn split_selector_list(source: &str) -> Vec<&str> {
+/// Splits a selector list on its top-level commas into its alternatives,
+/// trimmed of CSS whitespace, each paired with its byte offset in `source`.
+///
+/// An empty alternative is paired with the position of the comma that makes
+/// it empty instead: the comma after it, or for the last alternative of a
+/// list, the comma before it. That is where an error about it points. A
+/// source with no commas is a single alternative.
+pub(crate) fn split_selector_list(source: &str) -> Vec<(usize, &str)> {
     let mut parts = Vec::new();
     let mut start = 0;
     scan(source, |index, byte| {
         if byte == b',' {
-            parts.push(&source[start..index]);
+            let (offset, part) = trim_css_whitespace(&source[start..index]);
+            parts.push((
+                if part.is_empty() {
+                    index
+                } else {
+                    start + offset
+                },
+                part,
+            ));
             start = index + 1;
         }
         false
     });
-    parts.push(&source[start..]);
+    let (offset, part) = trim_css_whitespace(&source[start..]);
+    parts.push((
+        if part.is_empty() {
+            start.saturating_sub(1)
+        } else {
+            start + offset
+        },
+        part,
+    ));
     parts
 }
 
@@ -212,15 +235,32 @@ mod tests {
     #[test]
     fn splits_only_on_top_level_commas() {
         for (source, expected) in [
-            (".a, .b", &[".a", " .b"][..]),
-            (r#"[x="a,b"], .c"#, &[r#"[x="a,b"]"#, " .c"]),
-            (r"[x=a\,b], .c", &[r"[x=a\,b]", " .c"]),
-            (r".a\,b", &[r".a\,b"]),
-            (":not(.a, .b), .c", &[":not(.a, .b)", " .c"]),
-            ("[x=a,b], .c", &["[x=a,b]", " .c"]),
-            (".a/*,*/, .b", &[".a/*,*/", " .b"]),
-            (r#"[x="a\",b"], .c"#, &[r#"[x="a\",b"]"#, " .c"]),
-            ("[x=(], .c", &["[x=(], .c"]),
+            (".a, .b", &[(0, ".a"), (4, ".b")][..]),
+            (r#"[x="a,b"], .c"#, &[(0, r#"[x="a,b"]"#), (11, ".c")]),
+            (r"[x=a\,b], .c", &[(0, r"[x=a\,b]"), (10, ".c")]),
+            (r".a\,b", &[(0, r".a\,b")]),
+            (":not(.a, .b), .c", &[(0, ":not(.a, .b)"), (14, ".c")]),
+            ("[x=a,b], .c", &[(0, "[x=a,b]"), (9, ".c")]),
+            (".a/*,*/, .b", &[(0, ".a/*,*/"), (9, ".b")]),
+            (r#"[x="a\",b"], .c"#, &[(0, r#"[x="a\",b"]"#), (13, ".c")]),
+            ("[x=(], .c", &[(0, "[x=(], .c")]),
+            ("  .a ,\t.b  ", &[(2, ".a"), (7, ".b")]),
+        ] {
+            assert_eq!(split_selector_list(source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn empty_alternatives_point_at_their_comma() {
+        for (source, expected) in [
+            (".a,,.b", &[(0, ".a"), (3, ""), (4, ".b")][..]),
+            (".a, , .b", &[(0, ".a"), (4, ""), (6, ".b")]),
+            (", .a", &[(0, ""), (2, ".a")]),
+            (" , .a", &[(1, ""), (3, ".a")]),
+            (".a,", &[(0, ".a"), (2, "")]),
+            (".a ,  ", &[(0, ".a"), (3, "")]),
+            ("", &[(0, "")]),
+            ("   ", &[(0, "")]),
         ] {
             assert_eq!(split_selector_list(source), expected, "{source}");
         }
