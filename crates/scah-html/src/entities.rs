@@ -1,7 +1,14 @@
-//! HTML data-state character-reference decoding.
+//! HTML character-reference decoding, for text and attribute values.
+//!
+//! Text decodes references as the HTML tokenizer's data state does.
+//! Attribute values follow the same rules except one: a named reference
+//! written without its `;` stays as written when an `=` or an ASCII letter
+//! or digit follows it, so `?a=1&copy=2` keeps its `&copy`.
 
 #[path = "entities_table.rs"]
 mod entities_table;
+
+use std::borrow::Cow;
 
 use entities_table::{
     ENTITY_NAME_ENDS, ENTITY_NAMES, ENTITY_VALUE_ENDS, ENTITY_VALUES, MAX_NAME_LEN,
@@ -63,8 +70,28 @@ fn entity_value(index: usize) -> &'static [u8] {
 
 /// Return whether `source` might need character-reference decoding.
 #[inline]
-pub(crate) fn contains_ampersand(source: &str) -> bool {
+pub fn contains_ampersand(source: &str) -> bool {
     source.as_bytes().contains(&b'&')
+}
+
+/// [`contains_ampersand`] for attribute values, which are mostly short:
+/// inline, eight bytes at a time, with no call into `memchr`.
+#[inline(always)]
+// A byte loop for the last few bytes: `contains` would call `memchr`.
+#[allow(clippy::manual_contains)]
+pub fn value_contains_ampersand(value: &str) -> bool {
+    const ONES: u64 = u64::from_ne_bytes([0x01; 8]);
+    const HIGHS: u64 = u64::from_ne_bytes([0x80; 8]);
+    const AMPERSANDS: u64 = u64::from_ne_bytes([b'&'; 8]);
+    let (chunks, rest) = value.as_bytes().as_chunks::<8>();
+    for &chunk in chunks {
+        // A byte of `word` is zero where the chunk has `&`.
+        let word = u64::from_ne_bytes(chunk) ^ AMPERSANDS;
+        if word.wrapping_sub(ONES) & !word & HIGHS != 0 {
+            return true;
+        }
+    }
+    rest.iter().any(|&byte| byte == b'&')
 }
 
 /// Decode HTML character references in `source` into `out`.
@@ -74,8 +101,8 @@ pub(crate) fn contains_ampersand(source: &str) -> bool {
 /// character reference.
 #[cold]
 #[inline(never)]
-pub(crate) fn decode_character_references(source: &str, out: &mut Vec<u8>) {
-    decode_character_references_impl::<false>(source, out);
+pub fn decode_character_references(source: &str, out: &mut Vec<u8>) {
+    decode_character_references_impl::<false, false>(source, out);
 }
 
 /// Decode character references after applying HTML source-newline normalization.
@@ -85,14 +112,39 @@ pub(crate) fn decode_character_references(source: &str, out: &mut Vec<u8>) {
 /// resolved after source preprocessing.
 #[cold]
 #[inline(never)]
-pub(crate) fn decode_character_references_normalizing_source_newlines(
-    source: &str,
-    out: &mut Vec<u8>,
-) {
-    decode_character_references_impl::<true>(source, out);
+pub fn decode_character_references_normalizing_source_newlines(source: &str, out: &mut Vec<u8>) {
+    decode_character_references_impl::<true, false>(source, out);
 }
 
-fn decode_character_references_impl<const NORMALIZE_SOURCE_NEWLINES: bool>(
+/// Decode the character references of an attribute value into `out`, by
+/// the attribute-value rules (see the [module](self) docs).
+///
+/// Appends whole UTF-8 sequences only, so `out` stays valid UTF-8 if it was.
+#[cold]
+#[inline(never)]
+pub fn decode_attribute_value_into(source: &str, out: &mut Vec<u8>) {
+    decode_character_references_impl::<false, true>(source, out);
+}
+
+/// An attribute value with its character references decoded: `source`
+/// itself when it has no `&`, so most values are never copied.
+#[inline]
+pub fn decode_attribute_value(source: &str) -> Cow<'_, str> {
+    if !value_contains_ampersand(source) {
+        return Cow::Borrowed(source);
+    }
+    let mut out = Vec::with_capacity(source.len());
+    decode_attribute_value_into(source, &mut out);
+    debug_assert!(std::str::from_utf8(&out).is_ok());
+    // SAFETY: the decoder copies `source` only between ASCII `&` bytes, so
+    // at character boundaries, and otherwise appends whole UTF-8 sequences.
+    Cow::Owned(unsafe { String::from_utf8_unchecked(out) })
+}
+
+fn decode_character_references_impl<
+    const NORMALIZE_SOURCE_NEWLINES: bool,
+    const ATTRIBUTE: bool,
+>(
     source: &str,
     out: &mut Vec<u8>,
 ) {
@@ -106,7 +158,7 @@ fn decode_character_references_impl<const NORMALIZE_SOURCE_NEWLINES: bool>(
         let ampersand = copied_through + relative_ampersand;
         append_source::<NORMALIZE_SOURCE_NEWLINES>(&bytes[copied_through..ampersand], out);
 
-        match decode_after_ampersand(&bytes[ampersand + 1..], out) {
+        match decode_after_ampersand::<ATTRIBUTE>(&bytes[ampersand + 1..], out) {
             Some(consumed) => copied_through = ampersand + 1 + consumed,
             None => {
                 out.push(b'&');
@@ -142,11 +194,14 @@ fn append_source<const NORMALIZE_SOURCE_NEWLINES: bool>(source: &[u8], out: &mut
 }
 
 /// Decode the bytes following an ampersand and return their consumed length.
-fn decode_after_ampersand(source: &[u8], out: &mut Vec<u8>) -> Option<usize> {
+fn decode_after_ampersand<const ATTRIBUTE: bool>(
+    source: &[u8],
+    out: &mut Vec<u8>,
+) -> Option<usize> {
     if source.first() == Some(&b'#') {
         decode_numeric(source, out)
     } else {
-        decode_named(source, out)
+        decode_named::<ATTRIBUTE>(source, out)
     }
 }
 
@@ -192,7 +247,7 @@ fn digit_value(byte: u8, radix: u32) -> Option<u32> {
     }
 }
 
-fn decode_named(source: &[u8], out: &mut Vec<u8>) -> Option<usize> {
+fn decode_named<const ATTRIBUTE: bool>(source: &[u8], out: &mut Vec<u8>) -> Option<usize> {
     // Escaped HTML most often uses these five complete spellings. Resolve
     // them before the full-table search. Requiring the semicolon leaves
     // longest-prefix and legacy semicolon-less matching to the general path.
@@ -228,8 +283,7 @@ fn decode_named(source: &[u8], out: &mut Vec<u8>) -> Option<usize> {
     };
 
     if let Ok(index) = binary_search_entity_name(&source[..candidate_end]) {
-        out.extend_from_slice(entity_value(index));
-        return Some(candidate_end);
+        return emit_named::<ATTRIBUTE>(source, index, candidate_end, out);
     }
 
     // A shorter match cannot include the terminal semicolon. Only legacy
@@ -238,13 +292,37 @@ fn decode_named(source: &[u8], out: &mut Vec<u8>) -> Option<usize> {
     while candidate_end > 0 {
         let candidate = &source[..candidate_end];
         if let Ok(index) = binary_search_entity_name(candidate) {
-            out.extend_from_slice(entity_value(index));
-            return Some(candidate_end);
+            return emit_named::<ATTRIBUTE>(source, index, candidate_end, out);
         }
         candidate_end -= 1;
     }
 
     None
+}
+
+/// Append the value of the entity at `index`, the longest name that starts
+/// `source` and is `consumed` bytes long, and return `consumed`.
+///
+/// In an attribute value, a name matched without its `;` and followed by
+/// `=` or an ASCII alphanumeric is not a reference, for historical reasons
+/// (HTML's named character reference state): `None`, appending nothing.
+#[inline]
+fn emit_named<const ATTRIBUTE: bool>(
+    source: &[u8],
+    index: usize,
+    consumed: usize,
+    out: &mut Vec<u8>,
+) -> Option<usize> {
+    if ATTRIBUTE
+        && source[consumed - 1] != b';'
+        && source
+            .get(consumed)
+            .is_some_and(|&next| next == b'=' || next.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+    out.extend_from_slice(entity_value(index));
+    Some(consumed)
 }
 
 #[inline]
@@ -309,9 +387,10 @@ fn append_code_point(character: char, out: &mut Vec<u8>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        contains_ampersand, decode_character_references,
-        decode_character_references_normalizing_source_newlines,
+        contains_ampersand, decode_attribute_value, decode_character_references,
+        decode_character_references_normalizing_source_newlines, value_contains_ampersand,
     };
+    use std::borrow::Cow;
 
     fn decode(source: &str) -> String {
         let mut output = Vec::new();
@@ -323,6 +402,23 @@ mod tests {
     fn detects_ampersands() {
         assert!(!contains_ampersand("plain text"));
         assert!(contains_ampersand("one &amp; two"));
+    }
+
+    #[test]
+    fn value_scan_finds_ampersands_at_every_offset() {
+        assert!(!value_contains_ampersand(""));
+        for len in 1..40 {
+            let plain = "a%'é".chars().cycle().take(len).collect::<String>();
+            assert!(!value_contains_ampersand(&plain), "{plain:?}");
+            for at in 0..plain.len() {
+                if !plain.is_char_boundary(at) {
+                    continue;
+                }
+                let mut value = plain.clone();
+                value.insert(at, '&');
+                assert!(value_contains_ampersand(&value), "{value:?}");
+            }
+        }
     }
 
     #[test]
@@ -446,7 +542,7 @@ mod tests {
                     })
                     .max_by_key(|&candidate| super::entity_name(candidate).len());
                 let mut output = Vec::new();
-                let consumed = super::decode_named(source.as_bytes(), &mut output);
+                let consumed = super::decode_named::<false>(source.as_bytes(), &mut output);
                 assert_eq!(
                     consumed,
                     expected.map(|candidate| super::entity_name(candidate).len()),
@@ -458,6 +554,65 @@ mod tests {
                     "{source}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn attribute_values_without_ampersands_are_borrowed() {
+        let value = "/search?q=a;b";
+        let Cow::Borrowed(decoded) = decode_attribute_value(value) else {
+            panic!("copied a value without references");
+        };
+        assert_eq!(decoded.as_ptr(), value.as_ptr());
+    }
+
+    #[test]
+    fn attribute_values_decode_references_with_semicolons() {
+        for (source, expected) in [
+            ("&amp;", "&"),
+            ("a&#x62;", "ab"),
+            ("a=1&amp;b=2", "a=1&b=2"),
+            ("&copy;=2", "©=2"),
+            ("&notin;", "∉"),
+            ("&NotEqualTilde;x", "\u{2242}\u{0338}x"),
+        ] {
+            assert_eq!(decode_attribute_value(source), expected, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn attribute_values_keep_legacy_references_before_equals_or_alphanumerics() {
+        for (source, expected) in [
+            // Followed by `=` or an alphanumeric: not a reference.
+            ("?a=1&copy=2", "?a=1&copy=2"),
+            ("&ampx", "&ampx"),
+            ("&amp1", "&amp1"),
+            ("&notit;", "&notit;"),
+            // Followed by anything else, or nothing: decoded as in text.
+            ("&copy 2", "© 2"),
+            ("&copy", "©"),
+            ("&amp&lt", "&<"),
+            ("&copy-2", "©-2"),
+        ] {
+            assert_eq!(decode_attribute_value(source), expected, "{source:?}");
+        }
+        // Text decodes the same legacy references.
+        assert_eq!(decode("?a=1&copy=2&notit;"), "?a=1©=2¬it;");
+    }
+
+    #[test]
+    fn attribute_values_decode_numeric_references_as_text_does() {
+        for (source, expected) in [
+            ("&#x62;", "b"),
+            ("&#98", "b"),
+            ("&#x62x", "bx"),
+            ("&#0;", "\u{FFFD}"),
+            ("&#x80;", "€"),
+            ("&#xD800;", "\u{FFFD}"),
+            ("&#;", "&#;"),
+            ("& &x; &#x;", "& &x; &#x;"),
+        ] {
+            assert_eq!(decode_attribute_value(source), expected, "{source:?}");
         }
     }
 

@@ -52,25 +52,27 @@ impl JsElement {
     }
 
     #[napi(getter)]
-    /// The `class` attribute.
+    /// The `class` attribute, with character references decoded.
     pub fn class_name(&self) -> Option<&str> {
         self.element().and_then(|e| e.class())
     }
 
     #[napi(getter)]
-    /// The `id` attribute.
+    /// The `id` attribute, with character references decoded.
     pub fn id(&self) -> Option<&str> {
         self.element().and_then(|e| e.id())
     }
 
     #[napi]
-    /// The value of the attribute named `key`, matched case-insensitively.
+    /// The value of the attribute named `key`, matched case-insensitively,
+    /// with character references decoded (`&amp;` reads as `&`).
     pub fn get_attribute(&self, key: String) -> Option<&str> {
         self.element().and_then(|e| e.attribute(&key))
     }
 
     #[napi(getter)]
-    /// The attributes other than `id` and `class`.
+    /// The attributes other than `id` and `class`, with character references
+    /// decoded.
     pub fn attributes<'a>(&'a self, env: Env) -> Result<Object<'a>> {
         let mut object = Object::new(&env)?;
         let attributes = self.element().and_then(|e| e.attributes());

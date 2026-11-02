@@ -1,6 +1,6 @@
 # scah-html
 
-The HTML layer of scah: the SIMD tag lexer, tag ids and their HTML properties, on-demand attribute parsing, and the stack of open elements with HTML's implied-close rules.
+The HTML layer of scah: the SIMD tag lexer, tag ids and their HTML properties, on-demand attribute parsing, character reference decoding, and the stack of open elements with HTML's implied-close rules.
 
 **This crate is an implementation detail of [scah](https://crates.io/crates/scah)**
 and has no stability guarantees of its own: its API can change in any
@@ -11,4 +11,5 @@ for where this crate fits.
 
 ## License
 
-MIT
+MIT. The character reference table is derived from the WHATWG HTML Standard;
+see [`THIRD_PARTY_LICENSES`](https://github.com/zacharyvmm/scah/blob/main/crates/scah-html/THIRD_PARTY_LICENSES/WHATWG-HTML.txt).

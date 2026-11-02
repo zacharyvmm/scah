@@ -1,4 +1,4 @@
-use super::entities::{
+use scah_html::entities::{
     contains_ampersand, decode_character_references,
     decode_character_references_normalizing_source_newlines,
 };

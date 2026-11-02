@@ -478,6 +478,24 @@ test('attributes preserve missing versus empty values', () => {
   expect(element.getAttribute('missing')).toBeNull()
 })
 
+test('attribute values are decoded', () => {
+  const html = '<p id="&#x61;" class="x&#32;y" title="&amp;" lang="a&#x62;" data-q="?a=1&copy=2">x</p>'
+  const count = (selector: string) =>
+    parse(html, [Query.all(selector, {}).build()]).get(selector)?.length ?? 0
+
+  // What jsdom gives.
+  expect(count('[title="&"]')).toBe(1)
+  expect(count('[title="&amp;"]')).toBe(0)
+  expect(count('[lang=ab]')).toBe(1)
+  expect(count('#a.x.y')).toBe(1)
+
+  const element = parse(html, [Query.all('p', {}).build()]).get('p')![0]
+  expect(element.id).toBe('a')
+  expect(element.className).toBe('x y')
+  expect(element.getAttribute('title')).toBe('&')
+  expect(element.attributes).toEqual({ title: '&', lang: 'ab', 'data-q': '?a=1&copy=2' })
+})
+
 test('attributes materialize zero to many', () => {
   const q = Query.all('el', { innerHtml: true, text: true }).build()
   const attrs = (n: number) => Array.from({ length: n }, (_, i) => `k${i}="v${i}"`).join(' ')

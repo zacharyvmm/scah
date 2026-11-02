@@ -9,6 +9,9 @@ description = "Streaming HTML tag lexer and open-element tree used by scah."
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/scah-html"
+exclude = [
+    "scripts/**",
+]
 
 [dependencies]
 # Structural tape for documents the adaptive policy indexes ahead.

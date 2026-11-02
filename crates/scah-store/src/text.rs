@@ -88,6 +88,17 @@ impl TextTape {
         self.content.push_str(text);
     }
 
+    /// Append `value`, an attribute value as written in the HTML, with its
+    /// character references decoded.
+    #[inline]
+    pub fn push_decoded_attribute(&mut self, value: &str) {
+        // SAFETY: the decoder appends whole UTF-8 sequences, so the content
+        // stays valid UTF-8.
+        scah_html::entities::decode_attribute_value_into(value, unsafe {
+            self.content.as_mut_vec()
+        });
+    }
+
     #[inline]
     pub fn last_byte(&self) -> Option<u8> {
         self.content.as_bytes().last().copied()

@@ -54,6 +54,26 @@ class StoreTest {
     }
 
     @Test
+    void attributeValuesAreDecoded() {
+        String selector = "p[title=\"&\"]";
+        try (Query query = Query.all(selector, Save.all()).build();
+                Store store = Store.parse(
+                        "<p id='&#x61;' class='x&#32;y' title='&amp;' lang='a&#x62;' data-q='?a=1&copy=2'>x</p>",
+                        query)) {
+            Element p = single(store.get(selector));
+            assertEquals(Optional.of("a"), p.id());
+            assertEquals(Optional.of("x y"), p.className());
+            assertEquals(Optional.of("&"), p.attribute("title"));
+            assertEquals(
+                    List.of(
+                            new Attribute("title", "&"),
+                            new Attribute("lang", "ab"),
+                            new Attribute("data-q", "?a=1&copy=2")),
+                    p.attributes());
+        }
+    }
+
+    @Test
     void unsavedFieldsAreEmpty() {
         try (Query query = Query.all("a", Save.nameOnly()).build();
                 Store store = Store.parse("<a id='i' href='/'>text</a>", query)) {

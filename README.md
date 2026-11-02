@@ -207,7 +207,8 @@ including reusing compiled queries across many documents.
 | `Save::name_only()` | `Save.name_only()` | `{ attributes: false }` | No content and no attributes |
 
 Every option except `name_only` also keeps the element's id, class, and
-attributes. Normalized text decodes character references, skips `script`,
+attributes, with their character references decoded (`&amp;` reads as `&`).
+Normalized text decodes character references, skips `script`,
 `style`, and `hidden` content, and adds line breaks for block elements; see
 [Text extraction](https://github.com/zacharyvmm/scah/blob/main/docs/text-extraction.md).
 
@@ -215,8 +216,8 @@ attributes. Normalized text decodes character references, skips `script`,
 
 For bulk work, export matches as an [Apache Arrow](https://arrow.apache.org/)
 table instead of element objects. String columns point straight into the
-parsed HTML and text buffers rather than copying them (values of 12 bytes or
-fewer are stored inline, as Arrow string views do), and no per-element
+parsed HTML and the store's buffers rather than copying them (values of 12
+bytes or fewer are stored inline, as Arrow string views do), and no per-element
 objects are created. Any library that reads the Arrow C Data Interface can
 import the table:
 
@@ -366,4 +367,4 @@ to report a vulnerability.
 
 scah is available under the [MIT License](https://github.com/zacharyvmm/scah/blob/main/LICENSE).
 Its HTML character reference table is derived from the WHATWG HTML Standard;
-see [`THIRD_PARTY_LICENSES`](https://github.com/zacharyvmm/scah/blob/main/crates/scah/THIRD_PARTY_LICENSES/WHATWG-HTML.txt).
+see [`THIRD_PARTY_LICENSES`](https://github.com/zacharyvmm/scah/blob/main/crates/scah-html/THIRD_PARTY_LICENSES/WHATWG-HTML.txt).

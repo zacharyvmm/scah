@@ -26,7 +26,7 @@ Run `just` to list every recipe.
 | Path | Contents |
 | ---- | -------- |
 | `crates/scah` | The public crate: parser, query engine, content capture, and [examples](crates/scah/examples) |
-| `crates/scah-html` | Finding tags, reading attributes, and the open-element tree |
+| `crates/scah-html` | Finding tags, reading attributes, character references, and the open-element tree |
 | `crates/scah-store` | The result store: saved elements, their content, and the result index |
 | `crates/scah-query-ir` | Selector parsing and the compiled query representation |
 | `crates/scah-macros` | The `query!` macro |
@@ -79,8 +79,8 @@ compare against it instead, for example `just gate-text HEAD~1`.
 
 ### HTML entity table
 
-`crates/scah/src/capture/entities_table.rs` is generated. Don't edit it by hand;
-see [`crates/scah/scripts/README.md`](crates/scah/scripts/README.md).
+`crates/scah-html/src/entities_table.rs` is generated. Don't edit it by hand;
+see [`crates/scah-html/scripts/README.md`](crates/scah-html/scripts/README.md).
 
 ## Releases
 

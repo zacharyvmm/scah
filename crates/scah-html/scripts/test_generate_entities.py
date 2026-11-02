@@ -154,12 +154,12 @@ class ProvenanceTests(unittest.TestCase):
         notice = (
             self.repo_root
             / "crates"
-            / "scah"
+            / "scah-html"
             / "THIRD_PARTY_LICENSES"
             / "WHATWG-HTML.txt"
         ).read_text(encoding="utf-8")
         readme = (
-            self.repo_root / "crates" / "scah" / "scripts" / "README.md"
+            self.repo_root / "crates" / "scah-html" / "scripts" / "README.md"
         ).read_text(encoding="utf-8")
 
         self.assertEqual(

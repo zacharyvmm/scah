@@ -711,9 +711,7 @@ mod tests {
 
     /// Attributes other than `class` and `id` of every saved row, in row
     /// order.
-    fn saved_attributes<'html, 'query: 'html>(
-        store: &Store<'html, 'query>,
-    ) -> Vec<Attribute<'html>> {
+    fn saved_attributes<'store>(store: &'store Store<'_, '_>) -> Vec<Attribute<'store>> {
         store
             .elements()
             .flat_map(|element| element.attributes().into_iter().flatten())

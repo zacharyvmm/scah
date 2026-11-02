@@ -574,7 +574,7 @@ impl Attributes {
 
 /// `element`'s attribute `name`, reading `class` and `id` like the Arrow
 /// export does.
-fn attribute<'h, 'q: 'h>(element: &ElementRef<'_, 'h, 'q>, name: &str) -> Option<&'h str> {
+fn attribute<'s>(element: &ElementRef<'s, '_, '_>, name: &str) -> Option<&'s str> {
     if name.eq_ignore_ascii_case("class") {
         element.class()
     } else if name.eq_ignore_ascii_case("id") {

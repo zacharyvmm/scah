@@ -152,11 +152,18 @@ fn check(
     assert_eq!(rows(&batch, parent.is_some()), expected);
 
     let doc = store.store();
-    let shared = [Buffer::Html, Buffer::RawText, Buffer::Text].map(|buffer| doc.buffer(buffer));
+    let shared = [
+        Buffer::Html,
+        Buffer::RawText,
+        Buffer::Text,
+        Buffer::Attributes,
+    ]
+    .map(|buffer| doc.buffer(buffer));
     for column in &batch.columns()[1 + usize::from(parent.is_some())..] {
-        // At most one data buffer, one of the store's own, never a copy.
+        // At most two data buffers (the HTML and decoded attribute values),
+        // the store's own, never a copy.
         let buffers = strings(column).data_buffers();
-        assert!(buffers.len() <= 1);
+        assert!(buffers.len() <= 2);
         for buffer in buffers.iter() {
             assert!(
                 shared
@@ -496,26 +503,52 @@ fn columns_list_only_the_buffers_they_use() {
 }
 
 #[test]
+fn attribute_columns_read_decoded_values_from_the_store() {
+    let html = concat!(
+        "<a id='a&amp;b' class='x&#32;y' href='/search?q=fish&amp;chips&amp;page=2'>1</a>",
+        "<a href='/a/long/path/without/references' title='&lt;b&gt;'>2</a>",
+        "<a href='?a=1&copy=2' title='&copy 2'>3</a>",
+    );
+    let store = parse(html, vec![LazyQuery::all("a".to_owned(), Save::all())]);
+    let batch = check(&store, "a", None, &["id", "class", "href", "title"]);
+    let column = |name| strings(batch.column_by_name(name).unwrap());
+    assert_eq!(column("id").value(0), "a&b");
+    assert_eq!(column("class").value(0), "x y");
+    assert_eq!(column("href").value(0), "/search?q=fish&chips&page=2");
+    assert_eq!(column("href").value(1), "/a/long/path/without/references");
+    assert_eq!(column("href").value(2), "?a=1&copy=2");
+    assert_eq!(column("title").value(1), "<b>");
+    assert_eq!(column("title").value(2), "© 2");
+
+    // Long values with and without references: one data buffer each.
+    let doc = store.store();
+    let buffers = column("href").data_buffers();
+    assert_eq!(buffers.len(), 2);
+    assert_eq!(buffers[0].as_ptr(), doc.buffer(Buffer::Attributes).as_ptr());
+    assert_eq!(buffers[1].as_ptr(), doc.buffer(Buffer::Html).as_ptr());
+}
+
+#[test]
 fn views_follow_the_layout() {
     let len = |view: &View| i32::from_ne_bytes(view.0[..4].try_into().unwrap());
     // Inlined from a fixed window of the buffer, and from its very end.
     let buffer = b"<twelve-bytes>, then more than twelve bytes";
-    let inline = View::new(buffer, 1..13);
+    let inline = View::new(buffer, 1..13, 0);
     assert_eq!(len(&inline), 12);
     assert_eq!(&inline.0[4..], b"twelve-bytes");
     for buffer in [&b"<abc> and more than twelve bytes"[..], b"<abc"] {
-        let short = View::new(buffer, 1..4);
+        let short = View::new(buffer, 1..4, 0);
         assert_eq!(len(&short), 3);
         assert_eq!(&short.0[4..], b"abc\0\0\0\0\0\0\0\0\0", "zero-padded");
     }
-    assert_eq!(View::new(buffer, 5..5).0, [0; 16], "empty");
+    assert_eq!(View::new(buffer, 5..5, 0).0, [0; 16], "empty");
 
-    let reference = View::new(b"0123456thirteen-byte", 7..20);
+    let reference = View::new(b"0123456thirteen-byte", 7..20, 1);
     let field =
         |range: std::ops::Range<usize>| i32::from_ne_bytes(reference.0[range].try_into().unwrap());
     assert_eq!(field(0..4), 13);
     assert_eq!(&reference.0[4..8], b"thir");
-    assert_eq!(field(8..12), 0, "the column's only data buffer");
+    assert_eq!(field(8..12), 1, "the column's second data buffer");
     assert_eq!(field(12..16), 7);
 }
 

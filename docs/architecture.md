@@ -91,7 +91,11 @@ Results live in a columnar store. Each match is a row; each saved field (name,
 attributes, inner HTML, raw text, text) is a column of 32-bit spans, and a
 column exists only if some query saves that field. Names, attributes, and
 inner HTML point into the input HTML; text points into a tape the parse
-filled. `ElementRef` is a small handle to a row.
+filled. Attribute values are stored as written; one with a character
+reference (`&amp;`) is decoded when read. The first such read decodes every
+saved value that needs it into a buffer the store keeps, so reads can borrow
+from it. Matching decodes only the values it compares that contain `&`, so
+documents without references parse as before. `ElementRef` is a small handle to a row.
 
 A dropped store keeps up to 32 MiB of its buffers for the next parse on the
 same thread, so parsing many documents in a loop doesn't allocate a fresh
@@ -102,7 +106,7 @@ store each time.
 | Crate | Role |
 | ----- | ---- |
 | [`scah`](../crates/scah) | The public API, the parse loop, the matcher, and text capture |
-| [`scah-html`](../crates/scah-html) | The tag lexer, tag ids and properties, attribute parsing, and the open-element stack |
+| [`scah-html`](../crates/scah-html) | The tag lexer, tag ids and properties, attribute parsing, character references, and the open-element stack |
 | [`scah-query-ir`](../crates/scah-query-ir) | Selector parsing, the query builders, and the compiled `Program` |
 | [`scah-macros`](../crates/scah-macros) | The `query!` macro |
 | [`scah-store`](../crates/scah-store) | The columnar result store |
@@ -136,8 +140,10 @@ flowchart LR
 ```
 
 Inside `crates/scah/src`, modules follow the pipeline: `parser.rs` is the
-parse loop, `engine/` the matcher and scopes, `capture/` text extraction and
-character references, and `output.rs` what a parse writes.
+parse loop, `engine/` the matcher and scopes, `capture/` text extraction, and
+`output.rs` what a parse writes. Character references are decoded by
+`scah-html`'s `entities` module, which text capture, matching, and the store
+share.
 
 ## Testing
 

@@ -18,13 +18,19 @@ export declare class Element {
   toJson(): JsonElement
   /** The tag name. */
   get name(): string | null
-  /** The `class` attribute. */
+  /** The `class` attribute, with character references decoded. */
   get className(): string | null
-  /** The `id` attribute. */
+  /** The `id` attribute, with character references decoded. */
   get id(): string | null
-  /** The value of the attribute named `key`, matched case-insensitively. */
+  /**
+   * The value of the attribute named `key`, matched case-insensitively,
+   * with character references decoded (`&amp;` reads as `&`).
+   */
   getAttribute(key: string): string | null
-  /** The attributes other than `id` and `class`. */
+  /**
+   * The attributes other than `id` and `class`, with character references
+   * decoded.
+   */
   get attributes(): object
   /** The markup inside the element. */
   get innerHtml(): string | null

@@ -67,10 +67,10 @@ jobs:
         run: cargo test -p scah --release implied_close_preflight_matches_reactivated_attribute_cursor
       - name: Verify generated entity table and provenance
         run: |
-          python3 crates/scah/scripts/generate_entities.py --self-test
-          python3 -m unittest crates/scah/scripts/test_generate_entities.py
-          python3 crates/scah/scripts/generate_entities.py
-          git diff --exit-code -- crates/scah/src/capture/entities_table.rs
+          python3 crates/scah-html/scripts/generate_entities.py --self-test
+          python3 -m unittest crates/scah-html/scripts/test_generate_entities.py
+          python3 crates/scah-html/scripts/generate_entities.py
+          git diff --exit-code -- crates/scah-html/src/entities_table.rs
       - name: Verify benchmark report tables
         run: |
           python3 -m unittest benches/report/test_report.py
@@ -82,18 +82,19 @@ jobs:
             crates/bindings/scah-csharp/README.md
       - name: Verify third-party license notice
         run: |
-          test -f crates/scah/THIRD_PARTY_LICENSES/WHATWG-HTML.txt
+          test -f crates/scah-html/THIRD_PARTY_LICENSES/WHATWG-HTML.txt
           grep -F "THIRD_PARTY_LICENSES/WHATWG-HTML.txt" \
-            crates/scah/src/capture/entities_table.rs
+            crates/scah-html/src/entities_table.rs
       - name: Verify scah package contents
         run: |
-          cargo package -p scah --list > /tmp/scah-package-files.txt
-          cat /tmp/scah-package-files.txt
+          # scah-html ships the entity table, so it carries the notice.
+          cargo package -p scah-html --list > /tmp/scah-html-package-files.txt
+          cat /tmp/scah-html-package-files.txt
 
           grep -Fx "THIRD_PARTY_LICENSES/WHATWG-HTML.txt" \
-            /tmp/scah-package-files.txt
+            /tmp/scah-html-package-files.txt
 
-          if grep -E '^scripts/' /tmp/scah-package-files.txt; then
+          if grep -E '^scripts/' /tmp/scah-html-package-files.txt; then
             echo "Generator assets were included in the package"
             exit 1
           fi

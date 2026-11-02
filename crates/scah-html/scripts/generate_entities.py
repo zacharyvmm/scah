@@ -7,8 +7,8 @@ and update both the fixture and generated table from the same bytes. Each file
 is replaced atomically, but the two-file update is not transactional.
 
 Usage:
-  python crates/scah/scripts/generate_entities.py
-  python crates/scah/scripts/generate_entities.py --update-fixture
+  python crates/scah-html/scripts/generate_entities.py
+  python crates/scah-html/scripts/generate_entities.py --update-fixture
 """
 
 from __future__ import annotations
@@ -25,10 +25,10 @@ from urllib.request import urlopen
 
 SCRIPT_PATH = Path(__file__).resolve()
 DEFAULT_INPUT = SCRIPT_PATH.with_name("entities.json")
-DESTINATION = SCRIPT_PATH.parents[1] / "src" / "capture" / "entities_table.rs"
+DESTINATION = SCRIPT_PATH.parents[1] / "src" / "entities_table.rs"
 SOURCE_URL = "https://html.spec.whatwg.org/entities.json"
-GENERATOR_REL = "crates/scah/scripts/generate_entities.py"
-FIXTURE_REL = "crates/scah/scripts/entities.json"
+GENERATOR_REL = "crates/scah-html/scripts/generate_entities.py"
+FIXTURE_REL = "crates/scah-html/scripts/entities.json"
 LICENSE_REL = "THIRD_PARTY_LICENSES/WHATWG-HTML.txt"
 
 

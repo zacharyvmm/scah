@@ -464,6 +464,27 @@ def test_attributes_preserve_missing_versus_empty():
     assert element.get_attribute("missing") is None
 
 
+def test_attribute_values_are_decoded():
+    """Selectors and reads see attribute values with character references
+    decoded, as a browser does."""
+    html = '<p id="&#x61;" class="x&#32;y" title="&amp;" lang="a&#x62;" data-q="?a=1&copy=2">x</p>'
+
+    def count(selector):
+        found = parse(html, [Query.all(selector, Save.none()).build()]).get(selector)
+        return len(found) if found else 0
+
+    assert count('[title="&"]') == 1
+    assert count('[title="&amp;"]') == 0
+    assert count("[lang=ab]") == 1
+    assert count("#a.x.y") == 1
+
+    element = parse(html, [Query.all("p", Save.all()).build()]).get("p")[0]
+    assert element.id == "a"
+    assert element.class_name == "x y"
+    assert element.get_attribute("title") == "&"
+    assert element.attributes == {"title": "&", "lang": "ab", "data-q": "?a=1&copy=2"}
+
+
 def test_attributes_materialize_zero_to_many():
     """Attribute maps cover empty, small, exactly-8, and overflow (>8) cases."""
     q = Query.all("el", Save.all()).build()
