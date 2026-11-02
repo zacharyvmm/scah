@@ -199,6 +199,13 @@ breaking change). Rust code that reads results needs the changes in
   and Arrow and polars exports. Values without `&` are still slices of the
   HTML. Parsing does no extra work: values are decoded when read, and
   matching decodes only compared values that contain `&`. ([#138], [#152])
+- Attribute values read and match as a browser's tokenizer sees them: a CR
+  or CRLF written in the HTML is LF, and a NUL is U+FFFD, so
+  `title="a<CR><LF>b"` reads as `a\nb` and `[lang="x\u{FFFD}y"]` matches
+  `lang="x<NUL>y"`. A CR from a reference such as `&#13;` stays CR. This
+  covers the same reads, bindings, exports, and selectors as the character
+  reference decoding above; values without `&`, CR, or NUL are still slices
+  of the HTML. ([#153], [#154])
 - End tags with attributes, such as `</div class=x>`, close their element.
   ([#92], [#96])
 - A `/` ends a tag name, so `<x/y>` opens `x` and `</x/y>` closes it.
@@ -398,3 +405,5 @@ See the [GitHub releases](https://github.com/zacharyvmm/scah/releases).
 [#152]: https://github.com/zacharyvmm/scah/pull/152
 [#149]: https://github.com/zacharyvmm/scah/issues/149
 [#151]: https://github.com/zacharyvmm/scah/pull/151
+[#153]: https://github.com/zacharyvmm/scah/issues/153
+[#154]: https://github.com/zacharyvmm/scah/pull/154

@@ -496,6 +496,24 @@ test('attribute values are decoded', () => {
   expect(element.attributes).toEqual({ title: '&', lang: 'ab', 'data-q': '?a=1&copy=2' })
 })
 
+test('attribute values normalize newlines and NUL', () => {
+  // A CR from a reference (`&#13;`) stays CR; one written in the HTML is LF.
+  const html = '<p id="i\0" class="x\r\ny" title="a\r\nb" lang="x\0y" dir="c\rd" data-r="&#13;\r">t</p>'
+  const count = (selector: string) =>
+    parse(html, [Query.all(selector, {}).build()]).get(selector)?.length ?? 0
+
+  // What a browser's getAttribute gives.
+  expect(count('[lang="x\uFFFDy"]')).toBe(1)
+  expect(count('[title="a\nb"]')).toBe(1)
+  expect(count('p.x.y')).toBe(1)
+
+  const element = parse(html, [Query.all('p', {}).build()]).get('p')![0]
+  expect(element.id).toBe('i\uFFFD')
+  expect(element.className).toBe('x\ny')
+  expect(element.getAttribute('title')).toBe('a\nb')
+  expect(element.attributes).toEqual({ title: 'a\nb', lang: 'x\uFFFDy', dir: 'c\nd', 'data-r': '\r\n' })
+})
+
 test('attributes materialize zero to many', () => {
   const q = Query.all('el', { innerHtml: true, text: true }).build()
   const attrs = (n: number) => Array.from({ length: n }, (_, i) => `k${i}="v${i}"`).join(' ')

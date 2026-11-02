@@ -88,8 +88,8 @@ impl TextTape {
         self.content.push_str(text);
     }
 
-    /// Append `value`, an attribute value as written in the HTML, with its
-    /// character references decoded.
+    /// Append `value`, an attribute value as written in the HTML, decoded:
+    /// character references, CR and CRLF become LF, and NUL becomes U+FFFD.
     #[inline]
     pub fn push_decoded_attribute(&mut self, value: &str) {
         // SAFETY: the decoder appends whole UTF-8 sequences, so the content

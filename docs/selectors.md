@@ -41,6 +41,11 @@ way. As in HTML, a named reference without its `;` stays as written when an
 `=` or a letter or digit follows it, so `href="?a=1&copy=2"` keeps its
 `&copy`.
 
+Values are also compared and read back as a browser's tokenizer sees them:
+a CR or CRLF written in the HTML reads as LF, and a NUL as U+FFFD, so a
+selector matches a value written with NUL by having U+FFFD in its place. A
+CR that a reference produces, as `&#13;` does, stays CR.
+
 ## Rejected selectors
 
 ### Selectors that depend on what comes later

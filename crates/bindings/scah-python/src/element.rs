@@ -41,7 +41,8 @@ impl PyElement {
     }
 
     /// The value of the attribute named `key`, matched case-insensitively,
-    /// with character references decoded (`&amp;` reads as `&`).
+    /// decoded as a browser decodes it: `&amp;` reads as `&`, CR and CRLF as
+    /// LF, and NUL as U+FFFD.
     pub fn get_attribute(&self, key: String) -> Option<&str> {
         self.element().and_then(|e| e.attribute(&key))
     }

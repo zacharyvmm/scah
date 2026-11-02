@@ -1,11 +1,12 @@
 use super::builder::{AttributeSelection, ElementPredicate, IElement};
 use super::string_search::{AttributeSelectionKind, css_words};
 use scah_html::Attribute;
-use scah_html::entities::{decode_attribute_value, value_contains_ampersand};
+use scah_html::entities::{decode_attribute_value, value_needs_decoding};
 
 impl<'a> AttributeSelection<'a> {
     /// Whether `other`, as written in the HTML, satisfies this selector.
-    /// Its value is compared with its character references decoded.
+    /// Its value is compared decoded, as
+    /// [`decode_attribute_value`] decodes it.
     pub fn matches_attribute(&self, other: &Attribute<'_>) -> bool {
         // Attribute names are case-insensitive in HTML.
         if !self.name.eq_ignore_ascii_case(other.key) {
@@ -41,13 +42,14 @@ impl<'a> AttributeSelection<'a> {
     /// written in the HTML, once decoded.
     #[inline]
     fn matches_value(&self, value: &str) -> bool {
-        if value_contains_ampersand(value) {
+        if value_needs_decoding(value) {
             return self.matches_decoded_value(value);
         }
         self.compare_value(value)
     }
 
-    /// [`Self::matches_value`] for a value with `&`, which may need decoding.
+    /// [`Self::matches_value`] for a value with `&`, CR, or NUL, which may
+    /// need decoding.
     #[cold]
     #[inline(never)]
     fn matches_decoded_value(&self, value: &str) -> bool {
@@ -206,20 +208,22 @@ impl<'a> ElementPredicate<'a> {
     }
 
     /// [`Self::matches_classes`] for a class value as written, once
-    /// decoded. Selector classes have no `&`, and a word without one decodes
-    /// to itself, so this only finds more when the value has `&`.
+    /// decoded. Selector classes have no `&`, CR, or NUL, and a word without
+    /// them decodes to itself, so this only finds more when the value has
+    /// one.
     #[cold]
     #[inline(never)]
     fn matches_decoded_classes(&self, element_classes: &str) -> bool {
-        value_contains_ampersand(element_classes)
+        value_needs_decoding(element_classes)
             && self.matches_classes(&decode_attribute_value(element_classes))
     }
 
     /// Id, class, and attribute checks. Never recurses.
     ///
-    /// Values are compared with their character references decoded. Ids and
-    /// classes are compared as written first, which is enough unless they
-    /// have `&`, since selector ids and classes cannot.
+    /// Values are compared decoded, as [`decode_attribute_value`] decodes
+    /// them. Ids and classes are compared as written first, which is enough
+    /// unless they have `&`, CR, or NUL, since selector ids and classes
+    /// cannot.
     #[inline(always)]
     fn matches_local_after_name<'b, E: IElement<'b>>(&self, other: &E) -> bool {
         if let Some(id) = self.id {
@@ -338,7 +342,7 @@ impl<'a> ElementPredicate<'a> {
 #[cold]
 #[inline(never)]
 fn decoded_id_matches(element_id: &str, id: &str) -> bool {
-    value_contains_ampersand(element_id) && *decode_attribute_value(element_id) == *id
+    value_needs_decoding(element_id) && *decode_attribute_value(element_id) == *id
 }
 
 #[cfg(test)]
@@ -405,11 +409,29 @@ mod tests {
     }
 
     #[test]
+    fn attribute_selections_compare_values_with_crs_and_nuls_normalized() {
+        let selection = |value| AttributeSelection {
+            name: "title",
+            value: Some(value),
+            kind: AttributeSelectionKind::Exact,
+            case_sensitivity: crate::AttributeCaseSensitivity::Default,
+        };
+        let attribute = |value| Attribute {
+            key: "title",
+            value: Some(value),
+        };
+        assert!(selection("a\nb\n\u{FFFD}").matches_attribute(&attribute("a\r\nb\r\0")));
+        assert!(!selection("a\r\nb\r\0").matches_attribute(&attribute("a\r\nb\r\0")));
+        assert!(selection("a\rb").matches_attribute(&attribute("a&#13;b")));
+        assert!(!selection("a\rb").matches_attribute(&attribute("a\rb")));
+    }
+
+    #[test]
     fn element_values_are_decoded() {
         let predicate = ElementPredicate {
             name: Some("p"),
             id: Some("a"),
-            classes: ClassSelections::from_static(&["x", "y"]),
+            classes: ClassSelections::from_static(&["x", "y", "z\u{FFFD}"]),
             attributes: AttributeSelections::from(vec![AttributeSelection {
                 name: "lang",
                 value: Some("ab"),
@@ -422,7 +444,7 @@ mod tests {
         let element = FakeElement {
             name: "p",
             id: Some("&#x61;"),
-            class: Some("x&#32;y"),
+            class: Some("x&#32;y\r\nz\0"),
             attributes: &[Attribute {
                 key: "lang",
                 value: Some("a&#x62;"),

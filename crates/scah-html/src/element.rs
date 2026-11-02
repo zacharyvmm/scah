@@ -6,8 +6,9 @@ use crate::tag::TagFlags;
 /// A key-value pair representing an HTML element attribute.
 ///
 /// While parsing, both `key` and `value` are zero-copy `&str` references
-/// into the original HTML source, with character references in `value`
-/// still encoded. Attributes read back from a store have decoded values.
+/// into the original HTML source, with character references, CR, and NUL
+/// in `value` as written. Attributes read back from a store have decoded
+/// values.
 /// `value` is `None` for an attribute written without `=`, such as
 /// `<input disabled>`.
 #[derive(Debug, PartialEq, Clone)]

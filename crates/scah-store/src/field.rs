@@ -5,8 +5,8 @@
 //! Every string a store holds is a span of one of four buffers: the parsed
 //! HTML, the raw-text tape, the normalized-text tape, or the tape of decoded
 //! attribute values. Which one depends only on the field, except for
-//! attribute values: those with character references are in the decoded
-//! tape and the others in the HTML. So a column of values is a list of
+//! attribute values: those with `&`, CR, or NUL are in the decoded tape and
+//! the others in the HTML. So a column of values is a list of
 //! ranges of at most two buffers.
 
 use std::ops::Range;
@@ -38,13 +38,13 @@ pub enum Field<'a> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Buffer {
     /// The parsed HTML: names, inner HTML, and attribute values without
-    /// character references.
+    /// `&`, CR, or NUL.
     Html,
     /// The raw-text tape.
     RawText,
     /// The normalized-text tape.
     Text,
-    /// Attribute values that had character references, decoded.
+    /// Attribute values that had `&`, CR, or NUL, decoded.
     Attributes,
 }
 
@@ -67,7 +67,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     /// The bytes of `buffer`. Each buffer is valid UTF-8 as a whole and at
     /// the ends of every range [`Store::field_range`] returns.
     /// [`Buffer::Attributes`] decodes the store's attribute values with
-    /// character references, if no read has yet.
+    /// `&`, CR, or NUL, if no read has yet.
     #[inline]
     pub fn buffer(&self, buffer: Buffer) -> &[u8] {
         match buffer {
@@ -83,7 +83,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     /// without slicing it.
     ///
     /// The buffer is [`Buffer::Html`] for the name, inner HTML, and
-    /// attribute values without character references,
+    /// attribute values without `&`, CR, or NUL,
     /// [`Buffer::Attributes`] for attribute values with them, and the
     /// matching tape for the text fields.
     ///
@@ -121,7 +121,7 @@ mod tests {
     use crate::{Content, ElementRef, Section, StoreBuilder};
     use scah_html::{Attribute, XHtmlElement};
 
-    static HTML: &str = "<a class=c&amp;d id=i href=h&lt; rel=r title>x</a>";
+    static HTML: &str = "<a class=c&amp;d id=i href=h&lt; rel=r dir='l\r\nr' title>x</a>";
 
     /// The first `text` in `HTML`.
     fn at(text: &str) -> &'static str {
@@ -148,6 +148,10 @@ mod tests {
             Attribute {
                 key: at("rel"),
                 value: Some(&at("r ")[..1]),
+            },
+            Attribute {
+                key: at("dir"),
+                value: Some(at("l\r\nr")),
             },
             Attribute {
                 key: at("title"),
@@ -213,6 +217,11 @@ mod tests {
                 element.attribute("rel"),
             ),
             (
+                Field::attribute("dir"),
+                Buffer::Attributes,
+                element.attribute("dir"),
+            ),
+            (
                 Field::attribute("title"),
                 Buffer::Html,
                 element.attribute("title"),
@@ -230,6 +239,7 @@ mod tests {
         }
         assert_eq!(element.class(), Some("c&d"));
         assert_eq!(element.attribute("href"), Some("h<"));
+        assert_eq!(element.attribute("dir"), Some("l\nr"));
         assert_eq!(element.attribute("title"), None, "valueless");
         assert_eq!(store.field_range(ElementId(1), Field::Name), None);
     }

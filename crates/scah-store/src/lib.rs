@@ -19,7 +19,7 @@
 //! guarantees of its own; use scah instead.
 
 use scah_html::XHtmlElement;
-use scah_html::entities::value_contains_ampersand;
+use scah_html::entities::value_needs_decoding;
 use std::ops::Range;
 use std::sync::OnceLock;
 
@@ -108,8 +108,8 @@ pub struct Store<'html, 'query> {
     columns: Columns,
     /// Accumulated raw-text and normalized-text buffers shared by all elements.
     text: TextStore,
-    /// Saved attribute values with character references, decoded when one
-    /// of them is first read, so parses that never read one decode nothing.
+    /// Saved attribute values with `&`, CR, or NUL, decoded when one of
+    /// them is first read, so parses that never read one decode nothing.
     decoded: DecodedCache,
     /// A text range or an attribute index did not fit in 32 bits.
     overflowed: bool,
@@ -548,7 +548,7 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
     }
 
     /// The buffer and range of [`Store::attribute_value`]: the value in the
-    /// HTML when it has no `&`, and otherwise its decoded text.
+    /// HTML when it has no `&`, CR, or NUL, and otherwise its decoded text.
     #[inline]
     fn attribute_location(&self, index: usize) -> Option<(Buffer, Range<usize>)> {
         debug_assert!(index < self.columns.attribute_values.len());
@@ -557,13 +557,13 @@ impl<'html, 'query: 'html> Store<'html, 'query> {
         let range = value.range()?;
         // SAFETY: as in `attribute_value`.
         let raw = unsafe { self.html.get_unchecked(range.clone()) };
-        if !value_contains_ampersand(raw) {
+        if !value_needs_decoding(raw) {
             return Some((Buffer::Html, range));
         }
         Some((Buffer::Attributes, self.decoded().range(index)))
     }
 
-    /// The saved attribute values with character references, decoded on the
+    /// The saved attribute values with `&`, CR, or NUL, decoded on the
     /// first call.
     #[inline]
     fn decoded(&self) -> &DecodedValues {
@@ -732,7 +732,7 @@ impl PartialEq for DecodedCache {
     }
 }
 
-/// The saved attribute values that have character references, decoded.
+/// The saved attribute values that have `&`, CR, or NUL, decoded.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DecodedValues {
     /// The decoded values, one after another.
@@ -743,7 +743,7 @@ struct DecodedValues {
 }
 
 impl DecodedValues {
-    /// Decode every value of `store` that has `&` in it.
+    /// Decode every value of `store` that has `&`, CR, or NUL in it.
     #[cold]
     #[inline(never)]
     fn new(store: &Store<'_, '_>) -> Self {
@@ -752,7 +752,7 @@ impl DecodedValues {
             let Some(raw) = store.html_value(*value) else {
                 continue;
             };
-            if value_contains_ampersand(raw) {
+            if value_needs_decoding(raw) {
                 let start = decoded.text.len();
                 decoded.text.push_decoded_attribute(raw);
                 decoded.values.push((index, start..decoded.text.len()));
@@ -762,11 +762,11 @@ impl DecodedValues {
     }
 
     /// The range of `text` that the attribute at `index`, whose value has
-    /// `&`, decodes to.
+    /// `&`, CR, or NUL, decodes to.
     fn range(&self, index: usize) -> Range<usize> {
         let found = self.values.binary_search_by_key(&index, |(at, _)| *at);
-        // Every saved value with `&` is decoded, so the search finds it.
-        self.values[found.expect("decoded every value with `&`")]
+        // Every saved value that needs it is decoded, so the search finds it.
+        self.values[found.expect("decoded every value that needs it")]
             .1
             .clone()
     }

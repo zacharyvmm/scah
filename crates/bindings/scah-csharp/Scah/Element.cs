@@ -94,8 +94,8 @@ public readonly struct Element : IEquatable<Element>
 
     /// <summary>
     /// The value of the attribute named <paramref name="name"/>, compared ASCII
-    /// case-insensitively, with character references decoded (<c>&amp;amp;</c>
-    /// reads as <c>&amp;</c>).
+    /// case-insensitively, decoded as a browser decodes it: <c>&amp;amp;</c>
+    /// reads as <c>&amp;</c>, CR and CRLF as LF, and NUL as U+FFFD.
     /// </summary>
     /// <returns>
     /// The value, or <see langword="null"/> when the attribute is absent, has no
