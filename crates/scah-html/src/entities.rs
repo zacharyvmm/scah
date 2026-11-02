@@ -156,7 +156,37 @@ pub fn decode_character_references_normalizing_source_newlines(source: &str, out
 #[cold]
 #[inline(never)]
 pub fn decode_attribute_value_into(source: &str, out: &mut Vec<u8>) {
-    decode_character_references_impl::<true, true>(source, out);
+    // One pass that stops at `&`, CR, and NUL. Only bytes copied from
+    // `source` are preprocessed, not those a reference produces.
+    //
+    // This is a loop of its own rather than a mode of the text decoder
+    // below: folding CR and NUL into that one changed how LTO compiled the
+    // tokenizer's attribute parsing (`XHtmlElement::parse_from`), which made
+    // parsing 20-30% slower on CI's AMD runners with the same instructions.
+    let bytes = source.as_bytes();
+    let mut copied_through = 0;
+    while let Some(relative) = bytes[copied_through..]
+        .iter()
+        .position(|&byte| matches!(byte, b'&' | b'\r' | 0))
+    {
+        let at = copied_through + relative;
+        out.extend_from_slice(&bytes[copied_through..at]);
+        copied_through = at + 1;
+        match bytes[at] {
+            b'\r' => {
+                out.push(b'\n');
+                if bytes.get(copied_through) == Some(&b'\n') {
+                    copied_through += 1;
+                }
+            }
+            0 => out.extend_from_slice("\u{FFFD}".as_bytes()),
+            _ => match decode_after_ampersand::<true>(&bytes[copied_through..], out) {
+                Some(consumed) => copied_through += consumed,
+                None => out.push(b'&'),
+            },
+        }
+    }
+    out.extend_from_slice(&bytes[copied_through..]);
 }
 
 /// An attribute value decoded as [`decode_attribute_value_into`] does:
@@ -183,39 +213,49 @@ fn decode_character_references_impl<
     source: &str,
     out: &mut Vec<u8>,
 ) {
-    // Source preprocessing: with `NORMALIZE_SOURCE_NEWLINES`, CR and CRLF
-    // become LF, and in an `ATTRIBUTE` value NUL becomes U+FFFD, as the
-    // tokenizer would see them. Only bytes copied from `source` change, not
-    // those a reference produces.
-    let special = |byte: u8| {
-        byte == b'&' || (NORMALIZE_SOURCE_NEWLINES && byte == b'\r') || (ATTRIBUTE && byte == 0)
-    };
     let bytes = source.as_bytes();
     let mut copied_through = 0;
 
-    while let Some(relative) = bytes[copied_through..]
+    while let Some(relative_ampersand) = bytes[copied_through..]
         .iter()
-        .position(|&byte| special(byte))
+        .position(|&byte| byte == b'&')
     {
-        let at = copied_through + relative;
-        out.extend_from_slice(&bytes[copied_through..at]);
-        copied_through = at + 1;
-        match bytes[at] {
-            b'\r' if NORMALIZE_SOURCE_NEWLINES => {
-                out.push(b'\n');
-                if bytes.get(copied_through) == Some(&b'\n') {
-                    copied_through += 1;
-                }
+        let ampersand = copied_through + relative_ampersand;
+        append_source::<NORMALIZE_SOURCE_NEWLINES>(&bytes[copied_through..ampersand], out);
+
+        match decode_after_ampersand::<ATTRIBUTE>(&bytes[ampersand + 1..], out) {
+            Some(consumed) => copied_through = ampersand + 1 + consumed,
+            None => {
+                out.push(b'&');
+                copied_through = ampersand + 1;
             }
-            0 if ATTRIBUTE => out.extend_from_slice("\u{FFFD}".as_bytes()),
-            _ => match decode_after_ampersand::<ATTRIBUTE>(&bytes[copied_through..], out) {
-                Some(consumed) => copied_through += consumed,
-                None => out.push(b'&'),
-            },
         }
     }
 
-    out.extend_from_slice(&bytes[copied_through..]);
+    append_source::<NORMALIZE_SOURCE_NEWLINES>(&bytes[copied_through..], out);
+}
+
+#[inline]
+fn append_source<const NORMALIZE_SOURCE_NEWLINES: bool>(source: &[u8], out: &mut Vec<u8>) {
+    if !NORMALIZE_SOURCE_NEWLINES || !source.contains(&b'\r') {
+        out.extend_from_slice(source);
+        return;
+    }
+
+    let mut copied_through = 0;
+    while let Some(relative_cr) = source[copied_through..]
+        .iter()
+        .position(|&byte| byte == b'\r')
+    {
+        let cr = copied_through + relative_cr;
+        out.extend_from_slice(&source[copied_through..cr]);
+        out.push(b'\n');
+        copied_through = cr + 1;
+        if source.get(copied_through) == Some(&b'\n') {
+            copied_through += 1;
+        }
+    }
+    out.extend_from_slice(&source[copied_through..]);
 }
 
 /// Decode the bytes following an ampersand and return their consumed length.
