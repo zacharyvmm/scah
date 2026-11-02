@@ -19,3 +19,8 @@ updates:
     groups:
       cargo:
         patterns: ["*"]
+    ignore:
+      # napi-derive 3.6 needs napi >= 3.13, which slows the Node binding
+      # (element_fields ~1.8x; see #81 and #140). Bump these by hand once
+      # the binding performance gate passes.
+      - dependency-name: "napi*"
